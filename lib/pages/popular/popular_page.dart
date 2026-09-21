@@ -1,4 +1,3 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_modular/flutter_modular.dart';
 import 'package:kazumi/bean/liquid_glass/kazumi_glass.dart';
@@ -185,14 +184,10 @@ class _PopularPageState extends State<PopularPage> {
         child: dtb.DragToMoveArea(
           child: LayoutBuilder(
             builder: (context, constraints) {
-              final double maxExtent = 120 - MediaQuery.of(context).padding.top;
-              final t = (1 -
-                  ((constraints.maxHeight - kToolbarHeight) /
-                          (maxExtent - kToolbarHeight))
-                      .clamp(0.0, 1.0));
-              // 字重收缩后为 w500，展开时为 w700
-              final fontWeight = t < 0.5 ? FontWeight.w700 : FontWeight.w500;
-              final fontSize = lerpDouble(28, 20, t)!;
+              // 标题只跟着顶栏往上走，字号和字重全程不变。以前按折叠进度把
+              // 28/w700 线性缩成 20/w500，上滑时字一直在跳。
+              const double fontSize = 28;
+              const FontWeight fontWeight = FontWeight.w700;
               return Align(
                 alignment: Alignment.centerLeft,
                 child: Padding(

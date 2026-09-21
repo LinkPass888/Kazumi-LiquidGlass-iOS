@@ -14,7 +14,6 @@ class _InterfaceSettingsPageState extends State<InterfaceSettingsPage> {
   late bool showRating;
   late bool showAnimeCounter;
   late String defaultPage;
-  late bool liquidGlass;
   final MenuController defaultPageMenuController = MenuController();
 
   static const Map<String, String> defaultPageMap = {
@@ -30,7 +29,6 @@ class _InterfaceSettingsPageState extends State<InterfaceSettingsPage> {
     showRating = GStorage.getSetting(SettingsKeys.showRating);
     showAnimeCounter = GStorage.getSetting(SettingsKeys.showAnimeCounter);
     defaultPage = GStorage.getSetting(SettingsKeys.defaultStartupPage);
-    liquidGlass = GStorage.getSetting(SettingsKeys.enableLiquidGlass);
   }
 
   void updateDefaultPage(String page) {
@@ -114,20 +112,6 @@ class _InterfaceSettingsPageState extends State<InterfaceSettingsPage> {
               title: Text('显示追番统计'),
               description: Text('在追番页面的分类标签上显示数量'),
               initialValue: showAnimeCounter,
-            ),
-          ]),
-          SettingsSection(title: Text('外观'), tiles: [
-            SettingsTile.switchTile(
-              leading: Icons.blur_on_rounded,
-              onToggle: (value) async {
-                liquidGlass = value ?? !liquidGlass;
-                await GStorage.putSetting(
-                    SettingsKeys.enableLiquidGlass, liquidGlass);
-                setState(() {});
-              },
-              title: Text('液态玻璃'),
-              description: Text('iOS 26 使用原生液态玻璃标签栏与顶栏，关闭后恢复普通样式'),
-              initialValue: liquidGlass,
             ),
           ]),
         ],

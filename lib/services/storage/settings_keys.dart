@@ -243,11 +243,6 @@ class SettingsKeys {
     false,
     group: SettingGroup.theme,
   );
-  static const enableLiquidGlass = SettingKey<bool>(
-    _SettingBoxKey.liquidGlass,
-    true,
-    group: SettingGroup.interface,
-  );
   static const displayMode = SettingKey<String?>(
     _SettingBoxKey.displayMode,
     null,
@@ -708,7 +703,6 @@ class _SettingBoxKey {
       danmakuFontWeight = 'danmakuFontWeight',
       danmakuFollowSpeed = 'danmakuFollowSpeed',
       themeMode = 'themeMode',
-      liquidGlass = 'liquidGlass',
       themeColor = 'themeColor',
       privateMode = 'privateMode',
       autoPlay = 'autoPlay',

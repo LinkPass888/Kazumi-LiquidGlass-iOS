@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:kazumi/services/storage/storage.dart';
 import 'package:real_liquid_glass/real_liquid_glass.dart';
 
 /// 菜单条目点完要关到哪一层。
@@ -155,6 +154,20 @@ abstract final class KazumiGlass {
   /// 不贴屏幕边。
   static const double floatingBarInset = 16;
 
+  /// 浮起玻璃条内部四周的留白宽度。
+  ///
+  /// 和菜单面板（[menuPanelInset]）同一套约定：横向是「玻璃 3 + 条目 3 = 6」，
+  /// 纵向玻璃直接给 6。于是深色填充离玻璃边框、离相邻填充、上下离玻璃边框，
+  /// 四周都是同样宽的一条。
+  static const double floatingBarGap = 6;
+
+  /// 玻璃条给内容的留白；条目自己还要再补 [floatingBarGap] / 2 的横向外边距，
+  /// 两者相加才是 6。
+  static const EdgeInsets floatingBarPadding = EdgeInsets.symmetric(
+    horizontal: floatingBarGap / 2,
+    vertical: floatingBarGap,
+  );
+
   /// 屏幕（机身）圆角半径的估算值。
   ///
   /// 和 [panelRadiusOf] 同理：这个 Flutter 版本的 MediaQueryData 没有
@@ -212,16 +225,17 @@ abstract final class KazumiGlass {
       shape: panelShapeOf(context),
       padding: padding,
       selected: selected,
-      // 高亮块和玻璃同心：玻璃圆角 − 内边距
-      radius: radius ?? (floatingBarRadiusOf(context) - 8).clamp(10.0, 22.0),
+      // 高亮块和玻璃同心：玻璃圆角 − 四周留白
+      radius: radius ?? floatingBarRadiusOf(context) - floatingBarGap,
       wrapInGlass: false,
       child: child,
     );
   }
 
-  /// 是否启用液态玻璃，可在「设置 - 界面设置」里关闭。
-  static bool get enabled =>
-      GStorage.getSetting(SettingsKeys.enableLiquidGlass);
+  /// 是否启用液态玻璃。
+  /// 设置里那个开关已经删掉，现在恒为 true：整个玻璃体系仍然只有这一处总开关，
+  /// 真要整体退回原来的 Material 外观，把这个返回值改成 false 就行。
+  static bool get enabled => true;
 
   /// 页面为了让开浮动的玻璃标签栏，需要额外留出的底部内边距。
   static double bottomInset(BuildContext context) {
@@ -251,7 +265,7 @@ abstract final class KazumiGlass {
 
   /// 一块玻璃表面，[child] 画在玻璃之上。
   ///
-  /// 关闭液态玻璃时原样返回 [child]，由调用方自己决定原来的外观。
+  /// 总开关关掉时原样返回 [child]，由调用方自己决定原来的外观。
   static Widget glassSurface({
     required Widget child,
     LiquidGlassShape shape = circleShape,
