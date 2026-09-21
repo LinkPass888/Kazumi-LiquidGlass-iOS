@@ -10,7 +10,7 @@ import 'package:kazumi/bean/liquid_glass/kazumi_glass.dart';
 /// 这一条的总高度和原来的 Material 标签栏一样（[kTextTabBarHeight]），
 /// 所以换成玻璃之后，它和上面顶栏的间距一点没变。
 ///
-/// 「设置 → 界面设置 → 液态玻璃」关掉玻璃时，退回 Material 的 [TabBar]，
+/// 总开关（[KazumiGlass.enabled]）关掉时退回 Material 的 [TabBar]，
 /// 外观和以前完全一样。
 class KazumiGlassTabBar extends StatelessWidget implements PreferredSizeWidget {
   const KazumiGlassTabBar({

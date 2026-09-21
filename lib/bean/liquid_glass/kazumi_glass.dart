@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:kazumi/services/storage/storage.dart';
 import 'package:real_liquid_glass/real_liquid_glass.dart';
 
 /// 菜单条目点完要关到哪一层。
@@ -233,9 +232,10 @@ abstract final class KazumiGlass {
     );
   }
 
-  /// 是否启用液态玻璃，可在「设置 - 界面设置」里关闭。
-  static bool get enabled =>
-      GStorage.getSetting(SettingsKeys.enableLiquidGlass);
+  /// 是否启用液态玻璃。
+  /// 设置里那个开关已经删掉，现在恒为 true：整个玻璃体系仍然只有这一处总开关，
+  /// 真要整体退回原来的 Material 外观，把这个返回值改成 false 就行。
+  static bool get enabled => true;
 
   /// 页面为了让开浮动的玻璃标签栏，需要额外留出的底部内边距。
   static double bottomInset(BuildContext context) {
@@ -265,7 +265,7 @@ abstract final class KazumiGlass {
 
   /// 一块玻璃表面，[child] 画在玻璃之上。
   ///
-  /// 关闭液态玻璃时原样返回 [child]，由调用方自己决定原来的外观。
+  /// 总开关关掉时原样返回 [child]，由调用方自己决定原来的外观。
   static Widget glassSurface({
     required Widget child,
     LiquidGlassShape shape = circleShape,
