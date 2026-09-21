@@ -352,7 +352,7 @@ class _InfoPageState extends State<InfoPage> with TickerProviderStateMixin {
           body: NestedScrollView(
             headerSliverBuilder:
                 (BuildContext context, bool innerBoxIsScrolled) {
-              // 顶部这条玻璃标签栏占掉的高度（关掉液态玻璃时是 Material 标签栏）
+              // 顶部这条玻璃标签栏占掉的高度
               final double tabBand = KazumiGlassTabBar.heightOf(context);
               return <Widget>[
                 SliverOverlapAbsorber(
@@ -366,7 +366,7 @@ class _InfoPageState extends State<InfoPage> with TickerProviderStateMixin {
                     // 淡掉，往上滑才又出现，松手就没了。这里改成自己按折叠进度
                     // 控制显隐，折叠完成就一直显示。
                     pinned: true,
-                    title: _CollapsibleTitle(
+                    title: _CollapseFade(
                       child: EmbeddedNativeControlArea(
                         child: dtb.DragToMoveArea(
                           child: Container(
@@ -394,14 +394,23 @@ class _InfoPageState extends State<InfoPage> with TickerProviderStateMixin {
                       ),
                     ),
                     actions: [
-                      if (innerBoxIsScrolled)
-                        _barButton(
-                          CollectButton(
+                      // 收藏按钮和标题同一套显隐：跟着折叠进度淡入，折叠完一直
+                      // 显示。之前用 innerBoxIsScrolled 判断 —— 那是「内层列表
+                      // 有没有滚」，外层折叠完、内层列表回到顶部时它就跟着消失，
+                      // 也就是「松手就没了」。
+                      _barButton(
+                        _CollapseFade(
+                          child: CollectButton(
                             bangumiItem: infoController.bangumiItem,
                             color:
                                 Theme.of(context).colorScheme.onSurfaceVariant,
+                            // 按钮贴着屏幕右上角：菜单右对齐按钮、往下 10、往里
+                            // 12，既不粘在按钮上，也不顶着屏幕边。
+                            menuAlignment: AlignmentDirectional.bottomEnd,
+                            menuAlignmentOffset: const Offset(-12, 10),
                           ),
                         ),
+                      ),
                       _barButton(
                         IconButton(
                           onPressed: () {
@@ -436,14 +445,15 @@ class _InfoPageState extends State<InfoPage> with TickerProviderStateMixin {
                     expandedHeight: (Platform.isMacOS && showWindowButton)
                         ? 364 + tabBand + kToolbarHeight + 22
                         : 364 + tabBand + kToolbarHeight,
+                    // collapsedHeight 只写「工具栏」那一截。Flutter 自己还会
+                    // 加上底部标签栏和状态栏内边距 —— app_bar.dart:
+                    //   collapsedHeight = (widget.collapsedHeight
+                    //       ?? widget.toolbarHeight) + bottomHeight + topPadding
+                    // 这里之前把状态栏和标签栏也写了进去，于是收起后顶栏白白多出
+                    // 107（= 59 状态栏 + 48 标签栏）的空档，标签条停在半路上不去。
                     collapsedHeight: (Platform.isMacOS && showWindowButton)
-                        ? tabBand +
-                            kToolbarHeight +
-                            MediaQuery.paddingOf(context).top +
-                            22
-                        : tabBand +
-                            kToolbarHeight +
-                            MediaQuery.paddingOf(context).top,
+                        ? kToolbarHeight + 22
+                        : kToolbarHeight,
                     flexibleSpace: FlexibleSpaceBar(
                       collapseMode: CollapseMode.pin,
                       background: Observer(builder: (context) {
@@ -579,16 +589,18 @@ Widget _barButton(Widget child) {
   );
 }
 
-/// 折叠时才出现的标题。
+/// 折叠时才出现的顶栏内容（标题、收藏按钮）。
 ///
 /// 为什么不用 [SliverAppBar.medium] 那套：medium / large 的工具栏标题只是
 /// 一个「内容滚到顶栏下面时」才淡入的副本，真正的展开态标题由它自己的弹性空间
 /// 渲染 —— 而详情页要用自定义 background，把它整个覆盖掉了。于是就成了：
 /// 外层折叠完、内层列表还停在顶部时它淡出，往上滑才又出现，松手就没了。
 ///
-/// 这里改成跟着**折叠进度**走：展开时透明，折叠过半淡入，折叠完成一直显示。
-class _CollapsibleTitle extends StatelessWidget {
-  const _CollapsibleTitle({required this.child});
+/// 这里跟着**折叠进度**走：展开时透明，折叠过半淡入，折叠完成一直显示。
+/// 收藏按钮也是同一套 —— 用 innerBoxIsScrolled 判断的话，外层折叠完、内层
+/// 列表回到顶部，它会跟着一起消失。
+class _CollapseFade extends StatelessWidget {
+  const _CollapseFade({required this.child});
 
   final Widget child;
 

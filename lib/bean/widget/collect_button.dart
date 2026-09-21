@@ -11,6 +11,8 @@ class CollectButton extends StatefulWidget {
     this.color = Colors.white,
     this.onOpen,
     this.onClose,
+    this.menuAlignment,
+    this.menuAlignmentOffset = Offset.zero,
   }) {
     isExtended = false;
   }
@@ -21,6 +23,8 @@ class CollectButton extends StatefulWidget {
     this.color = Colors.white,
     this.onOpen,
     this.onClose,
+    this.menuAlignment,
+    this.menuAlignmentOffset = Offset.zero,
   }) {
     isExtended = true;
   }
@@ -30,6 +34,12 @@ class CollectButton extends StatefulWidget {
   late final bool isExtended;
   final void Function()? onOpen;
   final void Function()? onClose;
+
+  /// 菜单相对按钮的对齐方式。留空就是框架默认（右对齐时菜单会贴着屏幕边）。
+  final AlignmentGeometry? menuAlignment;
+
+  /// 菜单在 [menuAlignment] 基础上的偏移：往下一点、往里一点都靠它。
+  final Offset menuAlignmentOffset;
 
   @override
   State<CollectButton> createState() => _CollectButtonState();
@@ -97,9 +107,12 @@ class _CollectButtonState extends State<CollectButton> {
       onClose: widget.onClose,
       onOpen: widget.onOpen,
       crossAxisUnconstrained: false,
+      // 默认摆法会「贴着按钮、贴着屏幕边」，给个偏移挪开一点
+      alignmentOffset: widget.menuAlignmentOffset,
       // 面板本身画不了玻璃（框架自己画 Material），所以把它整块变透明，
       // 再在 menuChildren 里放一块玻璃顶上去。
       style: MenuStyle(
+        alignment: widget.menuAlignment,
         backgroundColor: const WidgetStatePropertyAll(Colors.transparent),
         elevation: const WidgetStatePropertyAll(0),
         padding: const WidgetStatePropertyAll(EdgeInsets.zero),
