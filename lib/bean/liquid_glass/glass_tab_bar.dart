@@ -45,7 +45,7 @@ class KazumiGlassTabBar extends StatelessWidget implements PreferredSizeWidget {
         isScrollable: true,
         tabAlignment: TabAlignment.center,
         dividerHeight: 0,
-        tabs: tabs.map((String name) => Tab(name: name)).toList(),
+        tabs: tabs.map((String name) => Tab(text: name)).toList(),
       );
     }
     return Padding(
