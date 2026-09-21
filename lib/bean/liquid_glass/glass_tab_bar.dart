@@ -51,18 +51,24 @@ class KazumiGlassTabBar extends StatelessWidget implements PreferredSizeWidget {
         context: context,
         // 玻璃内部留白：横向条目自己再补一半，加起来正好也是 6
         padding: KazumiGlass.floatingBarPadding,
-        child: LayoutBuilder(
-          builder: (BuildContext context, BoxConstraints constraints) {
-            return SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              physics: const ClampingScrollPhysics(),
-              child: ConstrainedBox(
-                // 一行放得下就居中，放不下才能左右滑
-                constraints: BoxConstraints(minWidth: constraints.maxWidth),
-                child: _GlassTabItems(controller: controller, tabs: tabs),
-              ),
-            );
-          },
+        // 高度必须自己钉死：AppBar 把 bottom 放进一个 Column，而 Column 给子项的
+        // 是「竖直方向无上限」的约束，不钉的话里面那一行（stretch）会去要无限
+        // 高度，真机上直接崩。
+        child: SizedBox(
+          height: barHeight - KazumiGlass.floatingBarPadding.vertical,
+          child: LayoutBuilder(
+            builder: (BuildContext context, BoxConstraints constraints) {
+              return SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                physics: const ClampingScrollPhysics(),
+                child: ConstrainedBox(
+                  // 一行放得下就居中，放不下才能左右滑
+                  constraints: BoxConstraints(minWidth: constraints.maxWidth),
+                  child: _GlassTabItems(controller: controller, tabs: tabs),
+                ),
+              );
+            },
+          ),
         ),
       ),
     );
