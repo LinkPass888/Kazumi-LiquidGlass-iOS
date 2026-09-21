@@ -48,6 +48,7 @@ class BangumiCardV extends StatelessWidget {
                           transitionOnUserGestures: true,
                           flightShuttleBuilder:
                               NetworkImgLayer.heroFlightShuttleBuilder,
+                          createRectTween: NetworkImgLayer.heroRectTween,
                           tag: bangumiItem.id,
                           child: NetworkImgLayer(
                             src: bangumiItem.images['large'] ?? '',

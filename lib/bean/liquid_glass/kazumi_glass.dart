@@ -149,6 +149,76 @@ abstract final class KazumiGlass {
   /// 顶栏按钮占位宽度：按钮 + 两侧留白。
   static const double barLeadingWidth = barButtonSize + barEdgeInset * 2;
 
+  /// 浮起的玻璃条（详情页标签栏这类）两侧的留白。
+  ///
+  /// 和首页底部标签栏同一套语言：玻璃是「浮」在内容上的，左右都让开一段，
+  /// 不贴屏幕边。
+  static const double floatingBarInset = 16;
+
+  /// 屏幕（机身）圆角半径的估算值。
+  ///
+  /// 和 [panelRadiusOf] 同理：这个 Flutter 版本的 MediaQueryData 没有
+  /// displayCornerRadius，只能按屏幕短边换算 —— 短边 393 的那一代机器
+  /// （iPhone 15/16/17）机身圆角约 55，小屏略小、大屏略大。
+  static double screenRadiusOf(BuildContext context) {
+    final double shortest = MediaQuery.of(context).size.shortestSide;
+    if (!shortest.isFinite || shortest <= 0) {
+      return 55;
+    }
+    return (shortest * 55.0 / 393.0).clamp(24.0, 68.0);
+  }
+
+  /// 浮起的玻璃条的圆角：和屏幕圆角同心。
+  ///
+  /// iOS 26 的浮层就是这么取的：控件左右各离屏幕边 [floatingBarInset]，圆角取
+  /// 「屏幕圆角 − 这段距离」，两个圆角共用同一个圆心，边线才是连着的一条曲线，
+  /// 而不是各圆各的。手机上算出来比半高还大，渲染出来是胶囊，和首页底部标签栏
+  /// 一致。
+  static double floatingBarRadiusOf(BuildContext context) =>
+      (screenRadiusOf(context) - floatingBarInset).clamp(18.0, 40.0);
+
+  /// 一条浮起来的玻璃：左右留白 + 同心圆角，内容画在玻璃之上。
+  static Widget floatingBar({
+    required BuildContext context,
+    required Widget child,
+    EdgeInsetsGeometry padding = EdgeInsets.zero,
+  }) {
+    if (!enabled) {
+      return child;
+    }
+    return LiquidGlassContainer(
+      shape: LiquidGlassShape.roundedRectangle(floatingBarRadiusOf(context)),
+      style: LiquidGlassStyle.regular,
+      padding: padding,
+      child: child,
+    );
+  }
+
+  /// 玻璃条里的一个选项（详情页标签这类）。
+  ///
+  /// 选中和按下是同一个盒子上的深色填充，形状必然一致；整条已经是一块玻璃，
+  /// 所以这里不再叠玻璃（苹果不建议玻璃叠玻璃，实测也会点不动）。
+  static Widget barSegment({
+    required BuildContext context,
+    required Widget child,
+    required VoidCallback? onTap,
+    bool selected = false,
+    EdgeInsetsGeometry padding =
+        const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+    double? radius,
+  }) {
+    return _GlassTapTarget(
+      onTap: onTap,
+      shape: panelShapeOf(context),
+      padding: padding,
+      selected: selected,
+      // 高亮块和玻璃同心：玻璃圆角 − 内边距
+      radius: radius ?? (floatingBarRadiusOf(context) - 8).clamp(10.0, 22.0),
+      wrapInGlass: false,
+      child: child,
+    );
+  }
+
   /// 是否启用液态玻璃，可在「设置 - 界面设置」里关闭。
   static bool get enabled =>
       GStorage.getSetting(SettingsKeys.enableLiquidGlass);
