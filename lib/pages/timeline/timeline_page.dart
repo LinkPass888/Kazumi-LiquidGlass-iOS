@@ -438,6 +438,7 @@ class _TimelinePageState extends State<TimelinePage>
     return MaterialBottomSheetHeader(
       title: '时间线选项',
       description: '调整排序和过滤条件，结果会立即应用到当前时间线。',
+      glassClose: true,
       onClose: KazumiDialog.dismiss,
       footer: Observer(
         builder: (context) {
@@ -475,68 +476,6 @@ class _TimelinePageState extends State<TimelinePage>
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
     final isSelected = timelineController.sortType == sortType;
-
-    if (KazumiGlass.enabled) {
-      // 玻璃版：整块是一块面板玻璃，选中项是与玻璃同心的深色填充 —— 和收藏
-      // 状态菜单、详情页标签栏同一套语言。
-      return KazumiGlass.glassSurface(
-        shape: KazumiGlass.panelShapeOf(context),
-        padding: KazumiGlass.menuPanelPadding,
-        child: KazumiGlass.barSegment(
-          context: context,
-          onTap: () {
-            KazumiDialog.dismiss();
-            timelineController.changeSortType(sortType);
-          },
-          selected: isSelected,
-          radius: KazumiGlass.menuItemRadiusOf(context),
-          padding: const EdgeInsets.symmetric(horizontal: 17, vertical: 9),
-          child: Row(
-            children: <Widget>[
-              Icon(
-                icon,
-                color: isSelected
-                    ? colorScheme.primary
-                    : colorScheme.onSurfaceVariant,
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text(
-                      title,
-                      style: textTheme.titleMedium?.copyWith(
-                        color: isSelected
-                            ? colorScheme.primary
-                            : colorScheme.onSurface,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      description,
-                      style: textTheme.bodySmall?.copyWith(
-                        color: colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 12),
-              Icon(
-                isSelected
-                    ? Icons.check_circle_rounded
-                    : Icons.radio_button_unchecked_rounded,
-                color: isSelected
-                    ? colorScheme.primary
-                    : colorScheme.onSurfaceVariant,
-              ),
-            ],
-          ),
-        ),
-      );
-    }
 
     return Ink(
       decoration: BoxDecoration(

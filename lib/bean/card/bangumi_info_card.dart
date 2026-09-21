@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:kazumi/bean/liquid_glass/kazumi_glass.dart';
 import 'package:flutter_modular/flutter_modular.dart';
@@ -287,6 +289,18 @@ class _BangumiInfoCardVState extends State<BangumiInfoCardV> {
     );
   }
 
+  /// 封面那一列的宽高比：宽度定下来，高度就定了。
+  static const double _coverAspectRatio = 0.65;
+
+  /// 封面和右侧信息之间的间距。
+  static const double _coverGap = 16;
+
+  /// 右侧的「评分透视」要不要显示：宽屏 + 有评分 + 不是骨架屏。
+  bool _showVoteChart(BuildContext context) =>
+      widget.showRating &&
+      MediaQuery.sizeOf(context).width >= LayoutBreakpoint.compact['width']! &&
+      !widget.isLoading;
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -305,205 +319,225 @@ class _BangumiInfoCardVState extends State<BangumiInfoCardV> {
           ),
           SizedBox(height: 16),
           Expanded(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Flexible(
-                  child: AspectRatio(
-                    aspectRatio: 0.65,
-                    child: LayoutBuilder(builder: (context, boxConstraints) {
-                      final double maxWidth = boxConstraints.maxWidth;
-                      final double maxHeight = boxConstraints.maxHeight;
-                      return Hero(
-                        transitionOnUserGestures: true,
-                        flightShuttleBuilder:
-                            NetworkImgLayer.heroFlightShuttleBuilder,
-                        createRectTween: NetworkImgLayer.heroRectTween,
-                        tag: widget.bangumiItem.id,
-                        child: NetworkImgLayer(
-                          src: widget.bangumiItem.images['large'] ?? '',
-                          width: maxWidth,
-                          height: maxHeight,
-                          fadeInDuration: const Duration(milliseconds: 0),
-                          fadeOutDuration: const Duration(milliseconds: 0),
-                        ),
-                      );
-                    }),
+            child: LayoutBuilder(builder: (context, rowConstraints) {
+              // 封面是「宽高比 0.65」定尺寸的：行里除了 16 的间距，其余都是弹性
+              // 子项（封面、文字列、可选的评分透视），所以封面那一份宽度 =
+              // （行宽 - 间距）/ 弹性子项个数，高度 = 宽度 / 0.65、最多不超过
+              // 这一行的高。右下角那个收藏按钮要跟封面底边平齐 —— 右侧文字列
+              // 的高度就得是这一份高度（原来撑满整行，按钮比封面底边低了小半格）。
+              final double share = (rowConstraints.maxWidth - _coverGap) /
+                  (_showVoteChart(context) ? 3 : 2);
+              final double coverHeight = math.min(
+                share / _coverAspectRatio,
+                rowConstraints.maxHeight,
+              );
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Flexible(
+                    child: AspectRatio(
+                      aspectRatio: _coverAspectRatio,
+                      child: LayoutBuilder(builder: (context, boxConstraints) {
+                        final double maxWidth = boxConstraints.maxWidth;
+                        final double maxHeight = boxConstraints.maxHeight;
+                        return Hero(
+                          transitionOnUserGestures: true,
+                          flightShuttleBuilder:
+                              NetworkImgLayer.heroFlightShuttleBuilder,
+                          createRectTween: NetworkImgLayer.heroRectTween,
+                          tag: widget.bangumiItem.id,
+                          child: NetworkImgLayer(
+                            src: widget.bangumiItem.images['large'] ?? '',
+                            width: maxWidth,
+                            height: maxHeight,
+                            fadeInDuration: const Duration(milliseconds: 0),
+                            fadeOutDuration: const Duration(milliseconds: 0),
+                          ),
+                        );
+                      }),
+                    ),
                   ),
-                ),
-                SizedBox(width: 16),
-                Flexible(
-                  child: Skeletonizer(
-                    enabled: widget.isLoading,
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Column(
+                  SizedBox(width: _coverGap),
+                  Flexible(
+                    child: SizedBox(
+                      // 和封面一样高：收藏按钮的底部于是和封面底部齐平
+                      height: coverHeight,
+                      child: Skeletonizer(
+                        enabled: widget.isLoading,
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              '放送开始:',
-                            ),
-                            Text(
-                              widget.bangumiItem.airDate == ''
-                                  ? '2000-11-11' // Skeleton Loader 占位符
-                                  : widget.bangumiItem.airDate,
-                              style: TextStyle(
-                                fontSize: 20,
-                                fontWeight: FontWeight.bold,
-                                color: Theme.of(context).colorScheme.primary,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            const Text('放送星期:'),
-                            Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                InkWell(
-                                  borderRadius: BorderRadius.circular(8),
-                                  onTap: widget.isLoading
-                                      ? null
-                                      : () => _showWeekdayPicker(),
-                                  child: Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 2,
-                                      vertical: 2,
+                            // 高度不够时（超小屏、大字号）让上面的信息自己收，不要顶到按钮
+                            Flexible(
+                              child: SingleChildScrollView(
+                                physics: const NeverScrollableScrollPhysics(),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      '放送开始:',
                                     ),
-                                    child: Row(
+                                    Text(
+                                      widget.bangumiItem.airDate == ''
+                                          ? '2000-11-11' // Skeleton Loader 占位符
+                                          : widget.bangumiItem.airDate,
+                                      style: TextStyle(
+                                        fontSize: 20,
+                                        fontWeight: FontWeight.bold,
+                                        color: Theme.of(context).colorScheme.primary,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    const Text('放送星期:'),
+                                    Row(
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
-                                        Text(
-                                          weekdayCnLabel(weekday),
-                                          style: TextStyle(
-                                            fontSize: 20,
-                                            fontWeight: FontWeight.bold,
-                                            color: Theme.of(context)
-                                                .colorScheme
-                                                .primary,
+                                        InkWell(
+                                          borderRadius: BorderRadius.circular(8),
+                                          onTap: widget.isLoading
+                                              ? null
+                                              : () => _showWeekdayPicker(),
+                                          child: Padding(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 2,
+                                              vertical: 2,
+                                            ),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Text(
+                                                  weekdayCnLabel(weekday),
+                                                  style: TextStyle(
+                                                    fontSize: 20,
+                                                    fontWeight: FontWeight.bold,
+                                                    color: Theme.of(context)
+                                                        .colorScheme
+                                                        .primary,
+                                                  ),
+                                                ),
+                                                Icon(
+                                                  Icons.expand_more_rounded,
+                                                  size: 20,
+                                                  color: Theme.of(context)
+                                                      .colorScheme
+                                                      .primary,
+                                                ),
+                                              ],
+                                            ),
                                           ),
                                         ),
-                                        Icon(
-                                          Icons.expand_more_rounded,
-                                          size: 20,
-                                          color: Theme.of(context)
-                                              .colorScheme
-                                              .primary,
+                                        const SizedBox(width: 6),
+                                        Tooltip(
+                                          message: '在时间表展示',
+                                          child: InkWell(
+                                            borderRadius: BorderRadius.circular(20),
+                                            onTap: widget.isLoading
+                                                ? null
+                                                : () => _setShowInTimeline(
+                                                    !showInTimeline),
+                                            child: Padding(
+                                              padding: const EdgeInsets.all(6),
+                                              child: Icon(
+                                                showInTimeline
+                                                    ? Icons.timeline
+                                                    : Icons.timeline_outlined,
+                                                size: 24,
+                                                color: showInTimeline
+                                                    ? Theme.of(context)
+                                                        .colorScheme
+                                                        .primary
+                                                    : Theme.of(context)
+                                                        .colorScheme
+                                                        .outline,
+                                              ),
+                                            ),
+                                          ),
                                         ),
                                       ],
                                     ),
-                                  ),
-                                ),
-                                const SizedBox(width: 6),
-                                Tooltip(
-                                  message: '在时间表展示',
-                                  child: InkWell(
-                                    borderRadius: BorderRadius.circular(20),
-                                    onTap: widget.isLoading
-                                        ? null
-                                        : () => _setShowInTimeline(
-                                            !showInTimeline),
-                                    child: Padding(
-                                      padding: const EdgeInsets.all(6),
-                                      child: Icon(
-                                        showInTimeline
-                                            ? Icons.timeline
-                                            : Icons.timeline_outlined,
-                                        size: 24,
-                                        color: showInTimeline
-                                            ? Theme.of(context)
-                                                .colorScheme
-                                                .primary
-                                            : Theme.of(context)
-                                                .colorScheme
-                                                .outline,
+                                    SizedBox(height: 8),
+                                    Text(
+                                      widget.showRating
+                                          ? '${widget.bangumiItem.votes} 人评分:'
+                                          : '*** 人评分:',
+                                    ),
+                                    if (widget.isLoading)
+                                      // Skeleton Loader 占位符
+                                      Text(
+                                        '10.0 ********',
+                                        style: TextStyle(
+                                          fontSize: 20,
+                                          fontWeight: FontWeight.bold,
+                                          color: Theme.of(context).colorScheme.primary,
+                                        ),
+                                      ),
+                                    if (!widget.isLoading)
+                                      Row(
+                                        children: [
+                                          Text(
+                                            widget.showRating
+                                                ? '${widget.bangumiItem.ratingScore}'
+                                                : '***',
+                                            style: TextStyle(
+                                              fontSize: 16,
+                                              fontWeight: FontWeight.bold,
+                                              color:
+                                                  Theme.of(context).colorScheme.primary,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          RatingBarIndicator(
+                                            itemCount: 5,
+                                            rating: widget.showRating
+                                                ? widget.bangumiItem.ratingScore
+                                                        .toDouble() /
+                                                    2
+                                                : 0,
+                                            itemBuilder: (context, index) => Icon(
+                                              Icons.star_rounded,
+                                              color:
+                                                  Theme.of(context).colorScheme.primary,
+                                            ),
+                                            itemSize: 20.0,
+                                          ),
+                                        ],
+                                      ),
+                                    SizedBox(height: 8),
+                                    Text(
+                                      'Bangumi Ranked:',
+                                    ),
+                                    Text(
+                                      widget.showRating
+                                          ? '#${widget.bangumiItem.rank}'
+                                          : '***',
+                                      style: TextStyle(
+                                        fontSize: 20,
+                                        fontWeight: FontWeight.bold,
+                                        color: Theme.of(context).colorScheme.primary,
                                       ),
                                     ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            SizedBox(height: 8),
-                            Text(
-                              widget.showRating
-                                  ? '${widget.bangumiItem.votes} 人评分:'
-                                  : '*** 人评分:',
-                            ),
-                            if (widget.isLoading)
-                              // Skeleton Loader 占位符
-                              Text(
-                                '10.0 ********',
-                                style: TextStyle(
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.bold,
-                                  color: Theme.of(context).colorScheme.primary,
+                                  ],
                                 ),
                               ),
-                            if (!widget.isLoading)
-                              Row(
-                                children: [
-                                  Text(
-                                    widget.showRating
-                                        ? '${widget.bangumiItem.ratingScore}'
-                                        : '***',
-                                    style: TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.bold,
-                                      color:
-                                          Theme.of(context).colorScheme.primary,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  RatingBarIndicator(
-                                    itemCount: 5,
-                                    rating: widget.showRating
-                                        ? widget.bangumiItem.ratingScore
-                                                .toDouble() /
-                                            2
-                                        : 0,
-                                    itemBuilder: (context, index) => Icon(
-                                      Icons.star_rounded,
-                                      color:
-                                          Theme.of(context).colorScheme.primary,
-                                    ),
-                                    itemSize: 20.0,
-                                  ),
-                                ],
-                              ),
-                            SizedBox(height: 8),
-                            Text(
-                              'Bangumi Ranked:',
                             ),
-                            Text(
-                              widget.showRating
-                                  ? '#${widget.bangumiItem.rank}'
-                                  : '***',
-                              style: TextStyle(
-                                fontSize: 20,
-                                fontWeight: FontWeight.bold,
-                                color: Theme.of(context).colorScheme.primary,
+                            SizedBox(
+                              width: 120,
+                              height: 40,
+                              child: CollectButton.extend(
+                                bangumiItem: widget.bangumiItem,
                               ),
                             ),
                           ],
                         ),
-                        SizedBox(
-                          width: 120,
-                          height: 40,
-                          child: CollectButton.extend(
-                            bangumiItem: widget.bangumiItem,
-                          ),
-                        ),
-                      ],
+                      ),
                     ),
                   ),
-                ),
-                if (widget.showRating &&
-                    MediaQuery.sizeOf(context).width >=
-                        LayoutBreakpoint.compact['width']! &&
-                    !widget.isLoading)
-                  voteBarChart,
-              ],
-            ),
+                  if (_showVoteChart(context))
+                    voteBarChart,
+                ],
+              );
+            }),
           ),
         ],
       ),

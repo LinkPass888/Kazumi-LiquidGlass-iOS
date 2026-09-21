@@ -7,7 +7,6 @@ import 'package:kazumi/bean/liquid_glass/kazumi_glass.dart';
 import 'package:kazumi/pages/info/rating_review_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_modular/flutter_modular.dart';
-import 'package:kazumi/bean/widget/collect_button.dart';
 import 'package:kazumi/bean/widget/embedded_native_control_area.dart';
 import 'package:kazumi/services/storage/storage.dart';
 import 'package:kazumi/pages/info/info_controller.dart';
@@ -394,23 +393,8 @@ class _InfoPageState extends State<InfoPage> with TickerProviderStateMixin {
                       ),
                     ),
                     actions: [
-                      // 收藏按钮和标题同一套显隐：跟着折叠进度淡入，折叠完一直
-                      // 显示。之前用 innerBoxIsScrolled 判断 —— 那是「内层列表
-                      // 有没有滚」，外层折叠完、内层列表回到顶部时它就跟着消失，
-                      // 也就是「松手就没了」。
-                      _barButton(
-                        _CollapseFade(
-                          child: CollectButton(
-                            bangumiItem: infoController.bangumiItem,
-                            color:
-                                Theme.of(context).colorScheme.onSurfaceVariant,
-                            // 按钮贴着屏幕右上角：菜单右对齐按钮、往下 10、往里
-                            // 12，既不粘在按钮上，也不顶着屏幕边。
-                            menuAlignment: AlignmentDirectional.bottomEnd,
-                            menuAlignmentOffset: const Offset(-12, 10),
-                          ),
-                        ),
-                      ),
+                      // 收藏状态改由卡片里那个按钮负责（底部和封面平齐），顶栏
+                      // 这里只留「在浏览器里打开」。
                       _barButton(
                         IconButton(
                           onPressed: () {
@@ -589,7 +573,7 @@ Widget _barButton(Widget child) {
   );
 }
 
-/// 折叠时才出现的顶栏内容（标题、收藏按钮）。
+/// 折叠时才出现的顶栏内容（标题）。
 ///
 /// 为什么不用 [SliverAppBar.medium] 那套：medium / large 的工具栏标题只是
 /// 一个「内容滚到顶栏下面时」才淡入的副本，真正的展开态标题由它自己的弹性空间
@@ -597,8 +581,8 @@ Widget _barButton(Widget child) {
 /// 外层折叠完、内层列表还停在顶部时它淡出，往上滑才又出现，松手就没了。
 ///
 /// 这里跟着**折叠进度**走：展开时透明，折叠过半淡入，折叠完成一直显示。
-/// 收藏按钮也是同一套 —— 用 innerBoxIsScrolled 判断的话，外层折叠完、内层
-/// 列表回到顶部，它会跟着一起消失。
+/// 不用 innerBoxIsScrolled 判断：那是「内层列表有没有滚」，外层折叠完、内层
+/// 列表回到顶部时标题就会跟着消失。
 class _CollapseFade extends StatelessWidget {
   const _CollapseFade({required this.child});
 

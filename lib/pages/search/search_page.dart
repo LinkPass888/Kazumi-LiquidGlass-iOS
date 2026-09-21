@@ -5,7 +5,6 @@ import 'package:kazumi/bean/dialog/adaptive_bottom_sheet.dart';
 import 'package:kazumi/bean/dialog/material_bottom_sheet.dart';
 import 'package:kazumi/bean/appbar/sys_app_bar.dart';
 import 'package:kazumi/bean/liquid_glass/kazumi_glass.dart';
-import 'package:kazumi/bean/liquid_glass/glass_segmented.dart';
 import 'package:kazumi/bean/card/bangumi_card.dart';
 import 'package:kazumi/bean/widget/error_widget.dart';
 import 'package:kazumi/modules/bangumi/bangumi_item.dart';
@@ -589,6 +588,7 @@ class _SearchWorkbenchSheetState extends State<_SearchWorkbenchSheet> {
           MaterialBottomSheetHeader(
             title: '筛选条件',
             description: '组合标签、季度和评分等条件，更快找到想看的番剧。',
+            glassClose: true,
             onClose: () => Navigator.pop(context),
           ),
           Expanded(
@@ -599,21 +599,22 @@ class _SearchWorkbenchSheetState extends State<_SearchWorkbenchSheet> {
                   title: '排序',
                   description: '选择列表优先展示的内容。',
                   icon: Icons.sort_rounded,
-                  // 四个选项原本是 Material 的分段按钮，现在和详情页标签栏同一
-                  // 套：整条浮起玻璃 + 选中项深色填充
-                  child: KazumiGlassSegmented<String>(
-                    selected: draft.sort,
-                    onSelected: (String value) {
-                      setState(() {
-                        draft = draft.copyWith(sort: value);
-                      });
-                    },
-                    segments: const <KazumiGlassSegment<String>>[
-                      KazumiGlassSegment(value: 'heat', label: '热度'),
-                      KazumiGlassSegment(value: 'rank', label: '排名'),
-                      KazumiGlassSegment(value: 'score', label: '评分'),
-                      KazumiGlassSegment(value: 'match', label: '匹配'),
-                    ],
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: SegmentedButton<String>(
+                      selected: {draft.sort},
+                      onSelectionChanged: (value) {
+                        setState(() {
+                          draft = draft.copyWith(sort: value.first);
+                        });
+                      },
+                      segments: const [
+                        ButtonSegment(value: 'heat', label: Text('热度')),
+                        ButtonSegment(value: 'rank', label: Text('排名')),
+                        ButtonSegment(value: 'score', label: Text('评分')),
+                        ButtonSegment(value: 'match', label: Text('匹配')),
+                      ],
+                    ),
                   ),
                 ),
                 const SizedBox(height: 12),
