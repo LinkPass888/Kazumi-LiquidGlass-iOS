@@ -94,7 +94,6 @@ class BangumiTimelineCard extends StatelessWidget {
       img = Hero(
         tag: bangumiItem.id,
         transitionOnUserGestures: true,
-        createRectTween: NetworkImgLayer.heroRectTween,
         child: ClipRRect(
           borderRadius: borderRadius,
           child: img,
