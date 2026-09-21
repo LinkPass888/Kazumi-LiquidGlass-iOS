@@ -155,6 +155,20 @@ abstract final class KazumiGlass {
   /// 不贴屏幕边。
   static const double floatingBarInset = 16;
 
+  /// 浮起玻璃条内部四周的留白宽度。
+  ///
+  /// 和菜单面板（[menuPanelInset]）同一套约定：横向是「玻璃 3 + 条目 3 = 6」，
+  /// 纵向玻璃直接给 6。于是深色填充离玻璃边框、离相邻填充、上下离玻璃边框，
+  /// 四周都是同样宽的一条。
+  static const double floatingBarGap = 6;
+
+  /// 玻璃条给内容的留白；条目自己还要再补 [floatingBarGap] / 2 的横向外边距，
+  /// 两者相加才是 6。
+  static const EdgeInsets floatingBarPadding = EdgeInsets.symmetric(
+    horizontal: floatingBarGap / 2,
+    vertical: floatingBarGap,
+  );
+
   /// 屏幕（机身）圆角半径的估算值。
   ///
   /// 和 [panelRadiusOf] 同理：这个 Flutter 版本的 MediaQueryData 没有
@@ -212,8 +226,8 @@ abstract final class KazumiGlass {
       shape: panelShapeOf(context),
       padding: padding,
       selected: selected,
-      // 高亮块和玻璃同心：玻璃圆角 − 内边距
-      radius: radius ?? (floatingBarRadiusOf(context) - 8).clamp(10.0, 22.0),
+      // 高亮块和玻璃同心：玻璃圆角 − 四周留白
+      radius: radius ?? floatingBarRadiusOf(context) - floatingBarGap,
       wrapInGlass: false,
       child: child,
     );

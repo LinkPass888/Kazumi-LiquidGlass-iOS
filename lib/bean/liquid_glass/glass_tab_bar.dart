@@ -4,8 +4,11 @@ import 'package:kazumi/bean/liquid_glass/kazumi_glass.dart';
 /// 详情页顶部那一排标签（概览 / 吐槽 / 角色 / 关联 / 制作人员）。
 ///
 /// 和首页底部标签栏同一套语言：整条玻璃浮在内容之上 —— 左右各让开一段，
-/// 圆角和屏幕圆角同心；选中项、按住时都是一块深色填充，底下没有 Material
-/// 标签栏那条会跟着滑动的下划线。标签多了一行放不下，可以左右滑动。
+/// 圆角和屏幕圆角同心；选中项、按住时都是一块深色填充，四周留白等宽，
+/// 底下没有 Material 标签栏那条会跟着滑动的下划线。一行放不下可以左右滑。
+///
+/// 这一条的总高度和原来的 Material 标签栏一样（[kTextTabBarHeight]），
+/// 所以换成玻璃之后，它和上面顶栏的间距一点没变。
 ///
 /// 「设置 → 界面设置 → 液态玻璃」关掉玻璃时，退回 Material 的 [TabBar]，
 /// 外观和以前完全一样。
@@ -19,23 +22,14 @@ class KazumiGlassTabBar extends StatelessWidget implements PreferredSizeWidget {
   final TabController controller;
   final List<String> tabs;
 
-  /// 玻璃条本身的高度。
-  static const double barHeight = 44;
+  /// 这一条占掉的高度：和原来的 Material 标签栏一致，间距不会变。
+  static const double barHeight = kTextTabBarHeight;
 
-  /// 玻璃条上下的留白：上面留一点，下面留多一点，和正文分开。
-  static const double topGap = 6;
-  static const double bottomGap = 12;
-
-  /// 这条玻璃在 [SliverAppBar.bottom] 槽里占掉的整段高度。
-  static const double bandHeight = topGap + barHeight + bottomGap;
-
-  /// 当前实际占掉的高度：关掉液态玻璃时退回 Material 标签栏的高度。
-  static double heightOf(BuildContext context) =>
-      KazumiGlass.enabled ? bandHeight : kTextTabBarHeight;
+  /// 当前实际占掉的高度。
+  static double heightOf(BuildContext context) => barHeight;
 
   @override
-  Size get preferredSize =>
-      Size.fromHeight(KazumiGlass.enabled ? bandHeight : kTextTabBarHeight);
+  Size get preferredSize => const Size.fromHeight(barHeight);
 
   @override
   Widget build(BuildContext context) {
@@ -49,31 +43,26 @@ class KazumiGlassTabBar extends StatelessWidget implements PreferredSizeWidget {
       );
     }
     return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        KazumiGlass.floatingBarInset,
-        topGap,
-        KazumiGlass.floatingBarInset,
-        bottomGap,
+      // 左右让开一段（和首页底部标签栏同一套语言）；上下不留，高度不额外增加
+      padding: const EdgeInsets.symmetric(
+        horizontal: KazumiGlass.floatingBarInset,
       ),
       child: KazumiGlass.floatingBar(
         context: context,
-        // 条目自己还有 2 的间距，玻璃再补 4：左右留白和上下一样宽
-        padding: const EdgeInsets.symmetric(horizontal: 4),
-        child: SizedBox(
-          height: barHeight,
-          child: LayoutBuilder(
-            builder: (BuildContext context, BoxConstraints constraints) {
-              return SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                physics: const ClampingScrollPhysics(),
-                child: ConstrainedBox(
-                  // 一行放得下就居中，放不下才能左右滑
-                  constraints: BoxConstraints(minWidth: constraints.maxWidth),
-                  child: _GlassTabItems(controller: controller, tabs: tabs),
-                ),
-              );
-            },
-          ),
+        // 玻璃内部留白：横向条目自己再补一半，加起来正好也是 6
+        padding: KazumiGlass.floatingBarPadding,
+        child: LayoutBuilder(
+          builder: (BuildContext context, BoxConstraints constraints) {
+            return SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              physics: const ClampingScrollPhysics(),
+              child: ConstrainedBox(
+                // 一行放得下就居中，放不下才能左右滑
+                constraints: BoxConstraints(minWidth: constraints.maxWidth),
+                child: _GlassTabItems(controller: controller, tabs: tabs),
+              ),
+            );
+          },
         ),
       ),
     );
@@ -115,6 +104,8 @@ class _GlassTabItems extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       mainAxisAlignment: MainAxisAlignment.center,
+      // 撑满玻璃内高，深色填充才是整条的高度（而不是只包住文字）
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         for (int index = 0; index < tabs.length; index++)
           _item(
@@ -135,14 +126,18 @@ class _GlassTabItems extends StatelessWidget {
   }) {
     final ThemeData theme = Theme.of(context);
     final ColorScheme scheme = theme.colorScheme;
-    final TextStyle baseStyle =
-        theme.textTheme.labelLarge ?? const TextStyle();
+    final TextStyle baseStyle = theme.textTheme.labelLarge ?? const TextStyle();
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 2),
+      // 玻璃那边给了 3，这里再补 3：离玻璃边框 6，相邻两块之间也是 3 + 3 = 6
+      padding: const EdgeInsets.symmetric(
+        horizontal: KazumiGlass.floatingBarGap / 2,
+      ),
       child: KazumiGlass.barSegment(
         context: context,
         onTap: () => controller.animateTo(index),
         selected: selected,
+        // 竖向留白交给玻璃统一给，这里只留文字左右的呼吸
+        padding: const EdgeInsets.symmetric(horizontal: 14),
         child: Text(
           tabs[index],
           maxLines: 1,
