@@ -588,7 +588,6 @@ class _SearchWorkbenchSheetState extends State<_SearchWorkbenchSheet> {
           MaterialBottomSheetHeader(
             title: '筛选条件',
             description: '组合标签、季度和评分等条件，更快找到想看的番剧。',
-            glassClose: true,
             onClose: () => Navigator.pop(context),
           ),
           Expanded(

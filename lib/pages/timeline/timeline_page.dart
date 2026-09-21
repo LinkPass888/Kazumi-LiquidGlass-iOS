@@ -438,7 +438,6 @@ class _TimelinePageState extends State<TimelinePage>
     return MaterialBottomSheetHeader(
       title: '时间线选项',
       description: '调整排序和过滤条件，结果会立即应用到当前时间线。',
-      glassClose: true,
       onClose: KazumiDialog.dismiss,
       footer: Observer(
         builder: (context) {

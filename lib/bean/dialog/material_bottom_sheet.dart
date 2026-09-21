@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:kazumi/bean/liquid_glass/kazumi_glass.dart';
 
 const double materialBottomSheetRadius = 24;
 const EdgeInsets materialBottomSheetContentPadding =
@@ -13,7 +12,6 @@ class MaterialBottomSheetHeader extends StatelessWidget {
     this.onClose,
     this.footer,
     this.trailing,
-    this.glassClose = false,
   });
 
   final String title;
@@ -21,13 +19,6 @@ class MaterialBottomSheetHeader extends StatelessWidget {
   final VoidCallback? onClose;
   final Widget? footer;
   final Widget? trailing;
-
-  /// 右上角的关闭键要不要用液态玻璃。
-  ///
-  /// 默认关：原生玻璃视图在**弹窗**里曾经渲染成一大块遮挡（见 3d4cc952），
-  /// 所以只给明确要玻璃的那两个面板开（搜索筛选、时间线选项），其余仍旧是
-  /// Material 的圆形填充按钮。
-  final bool glassClose;
 
   @override
   Widget build(BuildContext context) {
@@ -70,23 +61,17 @@ class MaterialBottomSheetHeader extends StatelessWidget {
                 trailing!,
               ] else if (onClose != null) ...[
                 const SizedBox(width: 12),
-                if (glassClose)
-                  KazumiGlass.iconButton(
-                    context: context,
-                    icon: const Icon(Icons.close_rounded, size: 22),
+                // 这里不用原生液态玻璃：弹窗里铺原生玻璃视图会渲染成一大块
+                // 遮挡，退回 Material 的圆形填充按钮，尺寸仍是 40。
+                SizedBox.square(
+                  dimension: 40,
+                  child: IconButton.filledTonal(
                     onPressed: onClose,
                     tooltip: '关闭',
-                  )
-                else
-                  SizedBox.square(
-                    dimension: 40,
-                    child: IconButton.filledTonal(
-                      onPressed: onClose,
-                      tooltip: '关闭',
-                      padding: EdgeInsets.zero,
-                      icon: const Icon(Icons.close_rounded, size: 22),
-                    ),
+                    padding: EdgeInsets.zero,
+                    icon: const Icon(Icons.close_rounded, size: 22),
                   ),
+                ),
               ],
             ],
           ),
