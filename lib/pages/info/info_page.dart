@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:ui';
 import 'package:kazumi/bean/dialog/adaptive_bottom_sheet.dart';
 import 'package:kazumi/bean/dialog/dialog_helper.dart';
+import 'package:kazumi/bean/liquid_glass/glass_tab_bar.dart';
 import 'package:kazumi/bean/liquid_glass/kazumi_glass.dart';
 import 'package:kazumi/pages/info/rating_review_dialog.dart';
 import 'package:flutter/material.dart';
@@ -351,6 +352,8 @@ class _InfoPageState extends State<InfoPage> with TickerProviderStateMixin {
           body: NestedScrollView(
             headerSliverBuilder:
                 (BuildContext context, bool innerBoxIsScrolled) {
+              // 顶部这条玻璃标签栏占掉的高度（关掉液态玻璃时是 Material 标签栏）
+              final double tabBand = KazumiGlassTabBar.heightOf(context);
               return <Widget>[
                 SliverOverlapAbsorber(
                   handle:
@@ -412,15 +415,24 @@ class _InfoPageState extends State<InfoPage> with TickerProviderStateMixin {
                         : kToolbarHeight,
                     stretch: true,
                     centerTitle: false,
+                    // 364 = 卡片的 356 + 8 余量；再补上状态栏内边距，
+                    // 卡片才不会从下面探出去压住标签栏
                     expandedHeight: (Platform.isMacOS && showWindowButton)
-                        ? 364 + kTextTabBarHeight + kToolbarHeight + 22
-                        : 364 + kTextTabBarHeight + kToolbarHeight,
-                    collapsedHeight: (Platform.isMacOS && showWindowButton)
-                        ? kTextTabBarHeight +
+                        ? 364 +
+                            tabBand +
                             kToolbarHeight +
                             MediaQuery.paddingOf(context).top +
                             22
-                        : kTextTabBarHeight +
+                        : 364 +
+                            tabBand +
+                            kToolbarHeight +
+                            MediaQuery.paddingOf(context).top,
+                    collapsedHeight: (Platform.isMacOS && showWindowButton)
+                        ? tabBand +
+                            kToolbarHeight +
+                            MediaQuery.paddingOf(context).top +
+                            22
+                        : tabBand +
                             kToolbarHeight +
                             MediaQuery.paddingOf(context).top,
                     flexibleSpace: FlexibleSpaceBar(
@@ -428,48 +440,57 @@ class _InfoPageState extends State<InfoPage> with TickerProviderStateMixin {
                       background: Observer(builder: (context) {
                         final showBangumiInfoSkeleton =
                             _isShowingBangumiInfoSkeleton;
-                        return Stack(
-                          children: [
-                            // No background image when loading to make loading looks better
-                            if (!showBangumiInfoSkeleton)
-                              Positioned.fill(
-                                bottom: kTextTabBarHeight,
-                                child: IgnorePointer(
-                                  child: _InfoHeaderBackground(
-                                    imageUrl: infoController
-                                            .bangumiItem.images['large'] ??
-                                        '',
+                        final FlexibleSpaceBarSettings? flexibleSettings =
+                            context.dependOnInheritedWidgetOfExactType<
+                                FlexibleSpaceBarSettings>();
+                        return ClipRect(
+                          // 折叠时弹性空间会变矮，卡片本身高度不变 —— 底边裁到
+                          // 标签栏的上沿，卡片就不会滑出去盖住标签
+                          clipper: _HeaderBottomClip(
+                            visibleHeight: flexibleSettings == null
+                                ? null
+                                : flexibleSettings.currentExtent - tabBand,
+                          ),
+                          child: Stack(
+                            children: [
+                              // No background image when loading to make loading looks better
+                              if (!showBangumiInfoSkeleton)
+                                Positioned.fill(
+                                  bottom: tabBand,
+                                  child: IgnorePointer(
+                                    child: _InfoHeaderBackground(
+                                      imageUrl: infoController
+                                              .bangumiItem.images['large'] ??
+                                          '',
+                                    ),
                                   ),
                                 ),
-                              ),
-                            SafeArea(
-                              bottom: false,
-                              child: EmbeddedNativeControlArea(
-                                child: Align(
-                                  alignment: Alignment.topCenter,
-                                  child: Padding(
-                                    padding: const EdgeInsets.fromLTRB(
-                                        16, kToolbarHeight, 16, 0),
-                                    child: BangumiInfoCardV(
-                                      bangumiItem: infoController.bangumiItem,
-                                      isLoading: showBangumiInfoSkeleton,
-                                      showRating: showRating,
+                              SafeArea(
+                                bottom: false,
+                                child: EmbeddedNativeControlArea(
+                                  child: Align(
+                                    alignment: Alignment.topCenter,
+                                    child: Padding(
+                                      padding: const EdgeInsets.fromLTRB(
+                                          16, kToolbarHeight, 16, 0),
+                                      child: BangumiInfoCardV(
+                                        bangumiItem: infoController.bangumiItem,
+                                        isLoading: showBangumiInfoSkeleton,
+                                        showRating: showRating,
+                                      ),
                                     ),
                                   ),
                                 ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         );
                       }),
                     ),
                     forceElevated: innerBoxIsScrolled,
-                    bottom: TabBar(
+                    bottom: KazumiGlassTabBar(
                       controller: infoTabController,
-                      isScrollable: true,
-                      tabAlignment: TabAlignment.center,
-                      dividerHeight: 0,
-                      tabs: _infoTabs.map((name) => Tab(text: name)).toList(),
+                      tabs: _infoTabs,
                     ),
                   ),
                 ),
@@ -548,6 +569,30 @@ Widget _barButton(Widget child) {
       child: child,
     ),
   );
+}
+
+/// 把详情页顶栏的背景裁到「弹性空间的可视高度」。
+///
+/// 底边正好停在标签栏的上沿：顶栏折叠时它跟着往上收，卡片比可视高度高的那
+/// 部分被裁掉，不会滑到标签栏上把字盖住。
+class _HeaderBottomClip extends CustomClipper<Rect> {
+  const _HeaderBottomClip({this.visibleHeight});
+
+  /// 可视高度；拿不到顶栏尺寸时为 null，退化成整个盒子。
+  final double? visibleHeight;
+
+  @override
+  Rect getClip(Size size) {
+    final double? height = visibleHeight;
+    if (height == null || !height.isFinite) {
+      return Offset.zero & size;
+    }
+    return Rect.fromLTWH(0, 0, size.width, height.clamp(0.0, size.height));
+  }
+
+  @override
+  bool shouldReclip(_HeaderBottomClip oldClipper) =>
+      oldClipper.visibleHeight != visibleHeight;
 }
 
 class _InfoHeaderBackground extends StatelessWidget {
