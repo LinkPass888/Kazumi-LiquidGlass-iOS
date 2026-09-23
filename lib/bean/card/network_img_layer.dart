@@ -56,15 +56,6 @@ class NetworkImgLayer extends StatelessWidget {
     );
   }
 
-  /// 卡片 ↔ 详情页之间飞行时用的矩形插值。
-  ///
-  /// 不用框架默认的 [MaterialRectArcTween]：它走的是一条带弧度的路径，两端矩形
-  /// 差得越多，中途偏得越远 —— 缩略图会先甩到页面外面再折回卡片，看着就是「飘
-  /// 了一下」。这里改成直线插值：中心走直线、宽高各自等比，途中生成的矩形一定
-  /// 落在两个端点的包围盒里，不会跑到卡片和海报之外的地方去。
-  static RectTween heroRectTween(Rect? begin, Rect? end) =>
-      RectTween(begin: begin, end: end);
-
   @override
   Widget build(BuildContext context) {
     final String imageUrl = src ?? '';

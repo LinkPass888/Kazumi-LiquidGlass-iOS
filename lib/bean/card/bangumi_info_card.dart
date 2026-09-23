@@ -344,7 +344,6 @@ class _BangumiInfoCardVState extends State<BangumiInfoCardV> {
                           transitionOnUserGestures: true,
                           flightShuttleBuilder:
                               NetworkImgLayer.heroFlightShuttleBuilder,
-                          createRectTween: NetworkImgLayer.heroRectTween,
                           tag: widget.bangumiItem.id,
                           child: NetworkImgLayer(
                             src: widget.bangumiItem.images['large'] ?? '',
