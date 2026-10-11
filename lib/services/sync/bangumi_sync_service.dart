@@ -39,6 +39,8 @@ class BangumiSyncService extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> ping() => _operations.run(_connectConfiguredToken);
+
   Future<void> setEnabled(bool enabled) {
     return _operations.run(() async {
       if (enabled) {
