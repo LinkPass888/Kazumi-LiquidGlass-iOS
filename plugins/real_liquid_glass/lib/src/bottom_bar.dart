@@ -306,6 +306,10 @@ class _NativeLiquidGlassTabBarState extends State<_NativeLiquidGlassTabBar> {
   MethodChannel? _channel;
   bool _hidden = false;
 
+  /// 这条标签栏所属的路由：首页（shell）route。push 详情页时它不属于被
+  /// 转场的那一页，所以保持显示，不会在动画结束时突兀闪现。
+  Object? _route;
+
   Map<String, Object> get _params => {
     'labels': widget.items.map((item) => item.label).toList(),
     'symbols': widget.items.map((item) => item.sfSymbol).toList(),
@@ -320,12 +324,21 @@ class _NativeLiquidGlassTabBarState extends State<_NativeLiquidGlassTabBar> {
   @override
   void initState() {
     super.initState();
-    _hidden = LiquidGlassVisibility.isHidden;
-    LiquidGlassVisibility.hiddenListenable.addListener(_onVisibilityChanged);
+    LiquidGlassVisibility.hiddenRoutesListenable.addListener(_onVisibilityChanged);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final Object? route = ModalRoute.of(context);
+    if (route != _route) {
+      _route = route;
+      _hidden = LiquidGlassVisibility.isHiddenFor(_route);
+    }
   }
 
   void _onVisibilityChanged() {
-    final bool hidden = LiquidGlassVisibility.isHidden;
+    final bool hidden = LiquidGlassVisibility.isHiddenFor(_route);
     if (_hidden == hidden) return;
     // 必须 setState：Offstage 依赖 _hidden 重建，否则原生 UITabBar 会一直
     // 被隐藏，要等滚动等操作触发 rebuild 才恢复显示。
@@ -343,7 +356,7 @@ class _NativeLiquidGlassTabBarState extends State<_NativeLiquidGlassTabBar> {
 
   @override
   void dispose() {
-    LiquidGlassVisibility.hiddenListenable.removeListener(_onVisibilityChanged);
+    LiquidGlassVisibility.hiddenRoutesListenable.removeListener(_onVisibilityChanged);
     _channel?.setMethodCallHandler(null);
     super.dispose();
   }

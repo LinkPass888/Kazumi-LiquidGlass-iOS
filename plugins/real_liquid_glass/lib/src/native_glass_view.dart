@@ -5,29 +5,42 @@ import 'package:flutter/services.dart';
 
 import 'glass_style.dart';
 
-/// 全局玻璃可见性控制。
+/// 全局玻璃可见性控制（按路由作用域）。
 ///
 /// 平台视图（UiKitView/AppKitView）是叠加在 Flutter 表面之上的原生层，不参与
-/// Flutter 的路由转场 / Hero 飞行动画 —— 转场期间它会以「截屏残留」盖住下层
-/// 内容（如详情页 Hero 飞行的封面）。转场开始时把玻璃隐藏、结束再恢复，
-/// 即可消除这类遮挡。
+/// Flutter 的路由转场 / Hero 飞行动画 —— 转场期间**正在动画的那一页**的玻璃会
+/// 以「截屏残留」留在原位，盖住滑动的 Flutter 内容（如详情页 Hero 飞行的封面、
+/// push 滑入时详情页的顶栏按钮先就位）。所以这里按**路由**精确隐藏：只隐藏
+/// 正在转场的那一页的玻璃，其它页面（如首页底部标签栏）保持可见，不会在
+/// 动画结束时突兀闪现。
 class LiquidGlassVisibility {
   LiquidGlassVisibility._();
 
-  static final ValueNotifier<bool> _hidden = ValueNotifier<bool>(false);
+  static final ValueNotifier<Set<Object>> _hiddenRoutes =
+      ValueNotifier<Set<Object>>(<Object>{});
 
-  /// 当前是否处于「隐藏玻璃」状态。
-  static bool get isHidden => _hidden.value;
+  /// 指定路由下的玻璃当前是否处于隐藏状态。
+  static bool isHiddenFor(Object? route) =>
+      route != null && _hiddenRoutes.value.contains(route);
 
-  /// 隐藏/恢复所有原生玻璃视图。true = 隐藏（转场/Hero 飞行期间），
-  /// false = 恢复显示。
-  static void setHidden(bool hidden) {
-    if (_hidden.value == hidden) return;
-    _hidden.value = hidden;
+  /// 隐藏/恢复指定路由下的所有原生玻璃视图。
+  ///
+  /// 只有正在做路由转场的那一页（push 进入 / pop 退出 / 侧滑拖走）的玻璃
+  /// 才需要隐藏；其它页面的玻璃保持显示，避免动画结束时突兀闪现。
+  static void setRouteHidden(Object route, bool hidden) {
+    final Set<Object> next = Set<Object>.of(_hiddenRoutes.value);
+    if (hidden) {
+      next.add(route);
+    } else {
+      next.remove(route);
+    }
+    if (setEquals(next, _hiddenRoutes.value)) return;
+    _hiddenRoutes.value = next;
   }
 
   /// 供 [NativeGlassView] 内部订阅。
-  static ValueListenable<bool> get hiddenListenable => _hidden;
+  static ValueListenable<Set<Object>> get hiddenRoutesListenable =>
+      _hiddenRoutes;
 }
 
 /// Embeds the native effect view that carries the glass material.
@@ -57,6 +70,10 @@ class NativeGlassView extends StatefulWidget {
 
 class _NativeGlassViewState extends State<NativeGlassView> {
   MethodChannel? _viewChannel;
+
+  /// 这块玻璃所属的路由（由 [ModalRoute.of] 在依赖变化时解析）。
+  Object? _route;
+
   bool _hidden = false;
 
   Map<String, Object?> get _params => {
@@ -71,12 +88,24 @@ class _NativeGlassViewState extends State<NativeGlassView> {
   @override
   void initState() {
     super.initState();
-    _hidden = LiquidGlassVisibility.isHidden;
-    LiquidGlassVisibility.hiddenListenable.addListener(_onVisibilityChanged);
+    LiquidGlassVisibility.hiddenRoutesListenable.addListener(_onVisibilityChanged);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // 玻璃所属的路由：push 详情页时详情页玻璃解析到详情页 route，首页底部
+    // 标签栏解析到首页 route —— 转场只隐藏正在转场的那一页。
+    final Object? route = ModalRoute.of(context);
+    if (route != _route) {
+      _route = route;
+      _hidden = LiquidGlassVisibility.isHiddenFor(_route);
+    }
+    _viewChannel?.invokeMethod<void>('update', _params);
   }
 
   void _onVisibilityChanged() {
-    final bool hidden = LiquidGlassVisibility.isHidden;
+    final bool hidden = LiquidGlassVisibility.isHiddenFor(_route);
     if (_hidden == hidden) return;
     // 必须 setState：Offstage 依赖 _hidden 重建，否则 UI 停在旧状态，
     // 要等滚动等操作触发 rebuild 才「回来」。
@@ -97,11 +126,7 @@ class _NativeGlassViewState extends State<NativeGlassView> {
     }
   }
 
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _viewChannel?.invokeMethod<void>('update', _params);
-  }
+
 
   @override
   Widget build(BuildContext context) {
@@ -141,7 +166,7 @@ class _NativeGlassViewState extends State<NativeGlassView> {
 
   @override
   void dispose() {
-    LiquidGlassVisibility.hiddenListenable.removeListener(_onVisibilityChanged);
+    LiquidGlassVisibility.hiddenRoutesListenable.removeListener(_onVisibilityChanged);
     _viewChannel?.setMethodCallHandler(null);
     super.dispose();
   }
