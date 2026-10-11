@@ -39,39 +39,16 @@ class GlassRouteObserver extends NavigatorObserver {
   /// 恢复某条路由下的玻璃。
   void _show(Object route) => LiquidGlassVisibility.setRouteHidden(route, false);
 
-  /// 等到转场动画结束后恢复该路由的玻璃。
+  /// 转场动画结束后恢复该路由的玻璃。
   ///
-  /// 平台视图在转场期间不跟随 Flutter 动画，转场结束（动画 dismissed /
-  /// completed）后平台视图已经就位，可以安全恢复。用动画监听而不是固定
-  /// 时长，转场被打断也能正确恢复。
-  void _scheduleShow(Route<dynamic>? route, {required bool onDismiss}) {
+  /// 平台视图在转场期间不跟随 Flutter 动画，转场结束（MaterialPageRoute
+  /// 动画约 300ms）后平台视图已经就位，可以安全恢复。这里用固定延时而不是
+  /// 动画监听：`didPush` 时 `route.animation` 的 ProxyAnimation 状态不稳，
+  /// 挂 listener 会误收到 completed 而提前恢复。侧滑返回的恢复不依赖这里
+  /// （取消回弹由 [didStopUserGesture] 直接恢复）。
+  void _scheduleShow(Route<dynamic>? route) {
     if (route == null || !_isDetailRoute(route)) return;
-    final transition = route is TransitionRoute<dynamic> ? route : null;
-    var ended = false;
-    void finish() {
-      if (ended) return;
-      ended = true;
-      _show(route);
-    }
-
-    // 兜底：无论动画监听是否挂上，最迟 400ms 后一定恢复，防止玻璃永久隐藏。
-    Future<void>.delayed(const Duration(milliseconds: 400), finish);
-
-    if (transition != null) {
-      final Animation<double>? animation = transition.animation;
-      if (animation == null) return;
-      void listener(AnimationStatus status) {
-        final bool done = onDismiss
-            ? status == AnimationStatus.dismissed
-            : status == AnimationStatus.completed;
-        if (done) {
-          animation.removeStatusListener(listener);
-          finish();
-        }
-      }
-
-      animation.addStatusListener(listener);
-    }
+    Future<void>.delayed(const Duration(milliseconds: 400), () => _show(route));
   }
 
   /// push：打开番剧详情页。隐藏详情页自己的玻璃（顶栏按钮、玻璃面板），
@@ -82,7 +59,7 @@ class GlassRouteObserver extends NavigatorObserver {
     super.didPush(route, previousRoute);
     if (!_isDetailRoute(route)) return;
     _hide(route);
-    _scheduleShow(route, onDismiss: false);
+    _scheduleShow(route);
   }
 
   /// pop：番剧详情页正在滑出（按钮返回 / 侧滑返回）。隐藏被弹出的详情页
@@ -98,7 +75,7 @@ class GlassRouteObserver extends NavigatorObserver {
     }
     if (!_isDetailRoute(route)) return;
     _hide(route);
-    _scheduleShow(route, onDismiss: true);
+    _scheduleShow(route);
   }
 
   /// remove：详情页被移除。
@@ -107,7 +84,7 @@ class GlassRouteObserver extends NavigatorObserver {
     super.didRemove(route, previousRoute);
     if (!_isDetailRoute(route)) return;
     _hide(route);
-    _scheduleShow(route, onDismiss: true);
+    _scheduleShow(route);
   }
 
   /// replace：详情页被替换。
@@ -116,11 +93,11 @@ class GlassRouteObserver extends NavigatorObserver {
     super.didReplace(newRoute: newRoute, oldRoute: oldRoute);
     if (newRoute != null && _isDetailRoute(newRoute)) {
       _hide(newRoute);
-      _scheduleShow(newRoute, onDismiss: false);
+      _scheduleShow(newRoute);
     }
     if (oldRoute != null && _isDetailRoute(oldRoute)) {
       _hide(oldRoute);
-      _scheduleShow(oldRoute, onDismiss: true);
+      _scheduleShow(oldRoute);
     }
   }
 
