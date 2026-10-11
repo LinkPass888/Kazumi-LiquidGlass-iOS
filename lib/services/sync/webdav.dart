@@ -291,10 +291,7 @@ class WebDav {
         snapshot: remoteSnapshot,
         eventFiles: downloads.eventFiles,
       );
-      // Locally-owned logs tolerate malformed lines: a crash mid-append must
-      // not permanently block sync, and the Hive box still holds the state a
-      // damaged line described. Remote logs above stay fail-closed so an
-      // invalid file is quarantined as a whole.
+      // Salvage interrupted local writes; reject malformed remote files as a whole.
       final mergedFromFiles = await historySync.mergeEventFiles(
         snapshot: mergedRemoteSnapshot,
         eventFiles: localBatch.files,

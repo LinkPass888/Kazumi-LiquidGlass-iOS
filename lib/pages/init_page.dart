@@ -59,7 +59,7 @@ class _InitPageState extends State<InitPage> {
     widget.danmakuShieldSync.start();
     _migrateStorage();
     _loadShaders();
-    myController.loadShieldList();
+    unawaited(myController.loadShieldList());
     _webDavInit();
     _bangumiInit();
     try {

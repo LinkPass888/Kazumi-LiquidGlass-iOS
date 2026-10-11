@@ -1,8 +1,8 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_modular/flutter_modular.dart';
-import 'package:kazumi/bean/liquid_glass/kazumi_glass.dart';
 import 'package:kazumi/bean/widget/bangumi_mirror_error_widget.dart';
-import 'package:kazumi/bean/widget/custom_dropdown_menu.dart';
+import 'package:kazumi/bean/widget/kazumi_menu.dart';
 import 'package:kazumi/modules/bangumi/bangumi_item.dart';
 import 'package:kazumi/pages/popular/popular_controller.dart';
 import 'package:kazumi/bean/card/bangumi_card.dart';
@@ -10,7 +10,7 @@ import 'package:kazumi/utils/constants.dart';
 import 'package:flutter_mobx/flutter_mobx.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:kazumi/services/logging/logger.dart';
-import 'package:kazumi/services/storage/storage.dart';
+import 'package:kazumi/services/platform/desktop_window_config.dart';
 import 'package:kazumi/bean/appbar/drag_to_move_bar.dart' as dtb;
 import 'package:kazumi/utils/device.dart';
 
@@ -29,9 +29,6 @@ class PopularPage extends StatefulWidget {
 class _PopularPageState extends State<PopularPage> {
   late final ScrollController scrollController;
   PopularController get popularController => widget.controller;
-
-  // Key used to position the dropdown menu for the tag selector
-  final GlobalKey selectorKey = GlobalKey();
 
   @override
   void initState() {
@@ -65,10 +62,6 @@ class _PopularPageState extends State<PopularPage> {
         popularController.queryBangumiByTrend();
       }
     }
-  }
-
-  bool showWindowButton() {
-    return GStorage.getSetting(SettingsKeys.showWindowButton);
   }
 
   @override
@@ -122,13 +115,10 @@ class _PopularPageState extends State<PopularPage> {
               })),
         ],
       ),
-      floatingActionButton: KazumiGlass.floatingButton(
-        context: context,
-        child: FloatingActionButton(
-          onPressed: () => scrollController.animateTo(0,
-              duration: const Duration(milliseconds: 350), curve: Curves.easeOut),
-          child: const Icon(Icons.arrow_upward),
-        ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => scrollController.animateTo(0,
+            duration: const Duration(milliseconds: 350), curve: Curves.easeOut),
+        child: const Icon(Icons.arrow_upward),
       ),
     );
   }
@@ -142,8 +132,7 @@ class _PopularPageState extends State<PopularPage> {
       crossCount = 6;
     }
     return SliverPadding(
-      padding: EdgeInsets.fromLTRB(
-          8, 8, 8, 8 + KazumiGlass.bottomInset(context)),
+      padding: const EdgeInsets.all(8),
       sliver: SliverGrid(
         gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
           // 行间距
@@ -184,10 +173,14 @@ class _PopularPageState extends State<PopularPage> {
         child: dtb.DragToMoveArea(
           child: LayoutBuilder(
             builder: (context, constraints) {
-              // 标题只跟着顶栏往上走，字号和字重全程不变。以前按折叠进度把
-              // 28/w700 线性缩成 20/w500，上滑时字一直在跳。
-              const double fontSize = 28;
-              const FontWeight fontWeight = FontWeight.w700;
+              final double maxExtent = 120 - MediaQuery.of(context).padding.top;
+              final t = (1 -
+                  ((constraints.maxHeight - kToolbarHeight) /
+                          (maxExtent - kToolbarHeight))
+                      .clamp(0.0, 1.0));
+              // 字重收缩后为 w500，展开时为 w700
+              final fontWeight = t < 0.5 ? FontWeight.w700 : FontWeight.w500;
+              final fontSize = lerpDouble(28, 20, t)!;
               return Align(
                 alignment: Alignment.centerLeft,
                 child: Padding(
@@ -198,24 +191,37 @@ class _PopularPageState extends State<PopularPage> {
                     child: Observer(
                       builder: (_) {
                         final bool isTrend = popularController.currentTag == '';
-                        return InkWell(
-                          key: selectorKey,
-                          borderRadius: BorderRadius.circular(8),
-                          onTap: showTagMenu,
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                isTrend ? '热门番组' : popularController.currentTag,
-                                style: theme.textTheme.headlineMedium!.copyWith(
-                                  fontWeight: fontWeight,
-                                  fontSize: fontSize,
-                                ),
+                        return KazumiMenuButton(
+                          animated: true,
+                          style: const MenuStyle(
+                            maximumSize: WidgetStatePropertyAll(Size(240, 350)),
+                          ),
+                          menuChildren: [
+                            for (final tag in ['', ...defaultAnimeTags])
+                              KazumiMenuItem(
+                                label: tag.isEmpty ? '热门番组' : tag,
+                                selected: tag == popularController.currentTag,
+                                onPressed: () => _selectTag(tag),
                               ),
-                              const SizedBox(width: 4),
-                              Icon(Icons.keyboard_arrow_down,
-                                  size: fontSize, color: theme.iconTheme.color),
-                            ],
+                          ],
+                          builder: (context, toggle) => InkWell(
+                            borderRadius: BorderRadius.circular(8),
+                            onTap: toggle,
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  isTrend ? '热门番组' : popularController.currentTag,
+                                  style: theme.textTheme.headlineMedium!.copyWith(
+                                    fontWeight: fontWeight,
+                                    fontSize: fontSize,
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                Icon(Icons.keyboard_arrow_down,
+                                    size: fontSize, color: theme.iconTheme.color),
+                              ],
+                            ),
                           ),
                         );
                       },
@@ -230,108 +236,39 @@ class _PopularPageState extends State<PopularPage> {
     );
   }
 
-  /// 顶栏的圆形玻璃按钮，尺寸与间距和统一顶栏一致。
-  Widget _glassBarButton({
-    required String tooltip,
-    required VoidCallback onPressed,
-    required Widget icon,
-  }) {
-    if (!KazumiGlass.enabled) {
-      return IconButton(tooltip: tooltip, onPressed: onPressed, icon: icon);
-    }
-    return Padding(
-      padding:
-          const EdgeInsets.symmetric(horizontal: KazumiGlass.barButtonGap / 2),
-      child: KazumiGlass.iconButton(
-        context: context,
-        icon: icon,
-        onPressed: onPressed,
-        tooltip: tooltip,
-      ),
-    );
-  }
-
   List<Widget> buildActions() {
-    final actions = <Widget>[
+    return <Widget>[
       if (MediaQuery.of(context).orientation == Orientation.portrait)
-        _glassBarButton(
+        IconButton(
           tooltip: '搜索',
           onPressed: () => context.pushNamed('/search/'),
-          icon: const Icon(Icons.search, size: 22),
+          icon: const Icon(Icons.search),
         ),
-    ];
-    actions.add(
-      _glassBarButton(
+      IconButton(
         tooltip: '历史记录',
         onPressed: () => context.pushNamed('/settings/history/'),
-        icon: const Icon(Icons.history, size: 22),
+        icon: const Icon(Icons.history),
       ),
-    );
-    if (isDesktop()) {
-      if (!showWindowButton()) {
-        actions.add(
-          _glassBarButton(
-            tooltip: '退出',
-            onPressed: () => windowManager.close(),
-            icon: const Icon(Icons.close, size: 22),
-          ),
-        );
-      }
-    }
-    if (KazumiGlass.enabled) {
-      actions.add(
-        const SizedBox(width: KazumiGlass.barEdgeInset - KazumiGlass.barButtonGap / 2),
-      );
-    }
-    return actions;
+      if (isDesktop() && !DesktopWindowConfig.showWindowButton)
+        IconButton(
+          tooltip: '退出',
+          onPressed: () => windowManager.close(),
+          icon: const Icon(Icons.close),
+        ),
+    ];
   }
 
-  Future<void> showTagMenu() async {
-    // Calculate the position of the button manually to position the dropdown menu.
-    // Using CustomDropdownMenu instead of PopupMenuButton to avoid flickering issues
-    // and to support different font sizes in the button and menu items.
-    final RenderBox renderBox =
-        selectorKey.currentContext!.findRenderObject() as RenderBox;
-    final Offset offset = renderBox.localToGlobal(Offset.zero);
-    final Size size = renderBox.size;
-
-    final selected = await Navigator.push<String>(
-      context,
-      PageRouteBuilder(
-        opaque: false,
-        barrierDismissible: true,
-        barrierColor: Colors.transparent,
-        pageBuilder: (context, animation, secondaryAnimation) {
-          return CustomDropdownMenu(
-            offset: offset,
-            buttonSize: size,
-            animation: animation,
-            maxWidth: 80,
-            items: [
-              '',
-              ...defaultAnimeTags,
-            ],
-            itemBuilder: (item) => item.isEmpty ? '热门番组' : item,
-          );
-        },
-        transitionDuration: const Duration(milliseconds: 200),
-        reverseTransitionDuration: const Duration(milliseconds: 150),
-      ),
-    );
-
-    if (selected == null) return;
-    if (selected == '' && popularController.currentTag != '') {
-      scrollController.animateTo(0,
-          duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
-      popularController.setCurrentTag('');
+  Future<void> _selectTag(String selected) async {
+    if (!mounted || selected == popularController.currentTag) return;
+    scrollController.animateTo(0,
+        duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
+    popularController.setCurrentTag(selected);
+    if (selected.isEmpty) {
       popularController.clearBangumiList();
       if (popularController.trendList.isEmpty) {
         await popularController.queryBangumiByTrend();
       }
-    } else if (selected != '' && selected != popularController.currentTag) {
-      scrollController.animateTo(0,
-          duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
-      popularController.setCurrentTag(selected);
+    } else {
       await popularController.queryBangumiByTag(type: 'init');
     }
   }
