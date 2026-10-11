@@ -37,7 +37,8 @@ dependencies:
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.6
-  real_liquid_glass: ^0.3.0
+  real_liquid_glass:
+    path: plugins/real_liquid_glass
   flutter_modular: ^7.1.0
   mobx: ^2.6.0
   flutter_mobx: ^2.3.0
