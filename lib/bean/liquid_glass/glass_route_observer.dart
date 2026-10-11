@@ -19,6 +19,12 @@ class GlassRouteObserver extends NavigatorObserver {
   /// 对话框/菜单是 PopupRoute，不属于页面转场，忽略。
   bool _isPageRoute(Route<dynamic> route) => route is PageRoute;
 
+  /// 正在被侧滑拖走的路由。非 null 表示侧滑手势尚未被 `didPop` 接手。
+  ///
+  /// 侧滑结束时有两种结局：提交 pop（`didPop` 会接管恢复）或取消回弹
+  /// （不会触发 `didPop`，必须由 [didStopUserGesture] 恢复）。
+  Route<dynamic>? _gestureRoute;
+
   /// 隐藏某条路由下的玻璃。
   void _hide(Object route) => LiquidGlassVisibility.setRouteHidden(route, true);
 
@@ -71,9 +77,15 @@ class GlassRouteObserver extends NavigatorObserver {
   }
 
   /// pop：当前页面正在滑出。隐藏被弹出的那页的玻璃，旧页面玻璃保持显示。
+  ///
+  /// 若这条 route 正在被侧滑拖走（[_gestureRoute]），则交还给
+  /// [_scheduleShow] 在动画结束后恢复，[didStopUserGesture] 不再重复处理。
   @override
   void didPop(Route route, Route? previousRoute) {
     super.didPop(route, previousRoute);
+    if (identical(_gestureRoute, route)) {
+      _gestureRoute = null;
+    }
     if (!_isPageRoute(route)) return;
     _hide(route);
     _scheduleShow(route, onDismiss: true);
@@ -110,15 +122,22 @@ class GlassRouteObserver extends NavigatorObserver {
   @override
   void didStartUserGesture(Route<dynamic> route, Route<dynamic>? previousRoute) {
     super.didStartUserGesture(route, previousRoute);
+    _gestureRoute = route;
     if (!_isPageRoute(route)) return;
     _hide(route);
   }
 
-  /// 侧滑返回手势结束：提交 pop（反向动画到 dismissed）或取消回弹（正向动画
-  /// 到 completed）后调用。这时页面动画已结束，恢复被拖走那页的玻璃。
+  /// 侧滑返回手势结束。
+  ///
+  /// 提交 pop 时 [didPop] 已经接管恢复；取消回弹时没有任何后续回调，这里
+  /// 必须手动恢复被隐藏的玻璃，否则它会永久隐藏。
   @override
   void didStopUserGesture() {
     super.didStopUserGesture();
+    final Route<dynamic>? route = _gestureRoute;
+    _gestureRoute = null;
+    if (route == null || !_isPageRoute(route)) return;
+    _show(route);
   }
 }
 
