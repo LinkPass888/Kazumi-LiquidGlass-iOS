@@ -6,7 +6,6 @@ import 'package:flutter_modular/flutter_modular.dart';
 
 import 'package:kazumi/bean/appbar/sys_app_bar.dart';
 import 'package:kazumi/bean/dialog/dialog_helper.dart';
-import 'package:kazumi/bean/widget/state_presentation.dart';
 import 'package:kazumi/modules/bangumi/bangumi_item.dart';
 import 'package:kazumi/modules/bangumi/sync_priority.dart';
 import 'package:kazumi/modules/collect/collect_layout.dart';
@@ -111,25 +110,18 @@ class _CollectPageState extends State<CollectPage> with KazumiDialogOwner {
       appBar: SysAppBar(
         needTopOffset: false,
         toolbarHeight: 72,
-        title: Text(
-          '追番',
-          style: Theme.of(context)
-              .textTheme
-              .headlineSmall
-              ?.copyWith(fontWeight: FontWeight.w700),
-        ),
+        title: Text('追番', style: appBarTitleStyle(context)),
         actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: Tooltip(
-              message: '同步收藏',
-              child: StateActionButton.tonal(
-                text: '同步',
-                onPressed:
-                    _syncDialogOpen || _pendingIds.isNotEmpty ? null : _sync,
-                icon: Icons.sync_rounded,
-              ),
-            ),
+          // 顶栏右侧统一是 40×40 的圆形玻璃图标按钮（SysAppBar 自动给每个
+          // action 铺玻璃底）。上游这里原本是一个带「同步」文字的宽带按钮，
+          // 塞进圆形玻璃里会溢出、也破坏了这套玻璃顶栏的形状语言，所以还原成本
+          // 分支一贯的图标按钮 —— 玻璃里的图标按钮才是这里该有的样子，
+          // 点击行为（_sync）与禁用条件保持不变。
+          IconButton(
+            tooltip: '同步收藏',
+            onPressed:
+                _syncDialogOpen || _pendingIds.isNotEmpty ? null : _sync,
+            icon: const Icon(Icons.sync_rounded, size: 22),
           ),
         ],
       ),

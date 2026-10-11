@@ -7,11 +7,12 @@ import 'package:flutter_modular/flutter_modular.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'package:kazumi/bean/appbar/drag_to_move_bar.dart' as dtb;
+import 'package:kazumi/bean/liquid_glass/glass_tab_bar.dart';
+import 'package:kazumi/bean/liquid_glass/kazumi_glass.dart';
 import 'package:kazumi/bean/card/bangumi_info_card.dart';
 import 'package:kazumi/bean/card/network_img_layer.dart';
 import 'package:kazumi/bean/dialog/adaptive_bottom_sheet.dart';
 import 'package:kazumi/bean/dialog/dialog_helper.dart';
-import 'package:kazumi/bean/widget/collect_button.dart';
 import 'package:kazumi/bean/widget/embedded_native_control_area.dart';
 import 'package:kazumi/modules/bangumi/bangumi_item.dart';
 import 'package:kazumi/pages/info/info_actions_menu.dart';
@@ -313,59 +314,78 @@ class _InfoPageState extends State<InfoPage>
     return Scaffold(
       body: NestedScrollView(
         headerSliverBuilder: (BuildContext context, bool innerBoxIsScrolled) {
+          // 顶部这条玻璃标签栏占掉的高度
+          final double tabBand = KazumiGlassTabBar.heightOf(context);
           return <Widget>[
             SliverOverlapAbsorber(
               handle: NestedScrollView.sliverOverlapAbsorberHandleFor(context),
-              sliver: SliverAppBar.medium(
-                title: EmbeddedNativeControlArea(
-                  child: dtb.DragToMoveArea(
-                    child: Container(
-                      width: double.infinity,
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        infoController.bangumiItem.nameCn == ''
-                            ? infoController.bangumiItem.name
-                            : infoController.bangumiItem.nameCn,
+              sliver: SliverAppBar(
+                // 不用 .medium：那套标题的显隐跟着「内容有没有滚到顶栏下面」
+                // 走（Flutter 的 _SliverAppBarDelegate.build：
+                // opacity: isScrolledUnder ? 1 : 0），而详情页是
+                // NestedScrollView —— 外层折叠完、内层列表还停在顶部时它就
+                // 淡掉，往上滑才又出现，松手就没了。这里改成自己按折叠进度
+                // 控制显隐，折叠完成就一直显示。
+                pinned: true,
+                title: _CollapseFade(
+                  child: EmbeddedNativeControlArea(
+                    child: dtb.DragToMoveArea(
+                      child: Container(
+                        width: double.infinity,
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          infoController.bangumiItem.nameCn == ''
+                              ? infoController.bangumiItem.name
+                              : infoController.bangumiItem.nameCn,
+                        ),
                       ),
                     ),
                   ),
                 ),
                 automaticallyImplyLeading: false,
                 scrolledUnderElevation: 0.0,
-                leading: EmbeddedNativeControlArea(
-                  child: IconButton(
-                    onPressed: () {
-                      context.maybePop();
-                    },
-                    icon: Icon(Icons.arrow_back),
+                leadingWidth: KazumiGlass.barLeadingWidth,
+                leading: Center(
+                  child: KazumiGlass.iconButton(
+                    context: context,
+                    icon: const Icon(Icons.arrow_back, size: 22),
+                    onPressed: () => context.maybePop(),
+                    tooltip:
+                        MaterialLocalizations.of(context).backButtonTooltip,
                   ),
                 ),
                 actions: [
-                  if (innerBoxIsScrolled)
-                    EmbeddedNativeControlArea(
-                      child: CollectButton(
-                        bangumiItem: infoController.bangumiItem,
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  EmbeddedNativeControlArea(
-                    child: InfoActionsMenu(
+                  // 收藏状态由卡片里那个按钮负责（贴封面底边），顶栏不再重复
+                  // 放一个；其余操作（复制标题、保存封面、浏览器打开）都在菜单里。
+                  _barButton(
+                    InfoActionsMenu(
                       bangumiItem: infoController.bangumiItem,
                     ),
                   ),
                   if (isDesktop() && !showWindowButton)
                     CloseButton(onPressed: () => windowManager.close()),
-                  SizedBox(width: 8),
+                  // 每个按钮左右各留 barButtonGap / 2，这里减掉自己那一半，
+                  // 最后一个按钮离屏幕边才是 barEdgeInset（与推荐页右上角一致）
+                  const SizedBox(
+                    width: KazumiGlass.barEdgeInset -
+                        KazumiGlass.barButtonGap / 2,
+                  ),
                 ],
                 toolbarHeight: kToolbarHeight + topOffset,
                 stretch: true,
                 centerTitle: false,
-                expandedHeight:
-                    308 + kTextTabBarHeight + kToolbarHeight + topOffset,
-                collapsedHeight: kTextTabBarHeight +
-                    kToolbarHeight +
-                    MediaQuery.paddingOf(context).top +
-                    topOffset,
+                // 364 = 卡片的 356 + 8 余量。状态栏内边距不要自己加：
+                // Flutter 的 _SliverAppBarDelegate.maxExtent 已经把它算在
+                // 上面了（maxExtent = topPadding + expandedHeight），
+                // 这里再加一次顶栏就会白高出一截。
+                expandedHeight: 364 + tabBand + kToolbarHeight + topOffset,
+                // collapsedHeight 只写「工具栏」那一截。Flutter 自己还会
+                // 加上底部标签栏和状态栏内边距 —— app_bar.dart:
+                //   collapsedHeight = (widget.collapsedHeight
+                //       ?? widget.toolbarHeight) + bottomHeight + topPadding
+                // 这里之前把状态栏和标签栏也写了进去，于是收起后顶栏白白多出
+                // 107（= 59 状态栏 + 48 标签栏）的空档，标签条停在半路上不去。
+                collapsedHeight: kToolbarHeight + topOffset,
                 flexibleSpace: FlexibleSpaceBar(
                   collapseMode: CollapseMode.pin,
                   background: Observer(builder: (context) {
@@ -375,7 +395,7 @@ class _InfoPageState extends State<InfoPage>
                       children: [
                         if (!showBangumiInfoSkeleton)
                           Positioned.fill(
-                            bottom: kTextTabBarHeight,
+                            bottom: tabBand,
                             child: IgnorePointer(
                               child: _InfoHeaderBackground(
                                 imageUrl: infoController
@@ -406,12 +426,9 @@ class _InfoPageState extends State<InfoPage>
                   }),
                 ),
                 forceElevated: innerBoxIsScrolled,
-                bottom: TabBar(
+                bottom: KazumiGlassTabBar(
                   controller: infoTabController,
-                  isScrollable: true,
-                  tabAlignment: TabAlignment.center,
-                  dividerHeight: 0,
-                  tabs: _infoTabs.map((name) => Tab(text: name)).toList(),
+                  tabs: _infoTabs,
                 ),
               ),
             ),
@@ -445,19 +462,23 @@ class _InfoPageState extends State<InfoPage>
           );
         }),
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        tooltip: '开始观看',
-        onPressed: () {
-          showAdaptiveBottomSheet<void>(
-            context: context,
-            maxHeightFactor: 0.88,
-            builder: (context) {
-              return SourceSheet(infoController: infoController);
-            },
-          );
-        },
-        label: const Text('开始观看'),
-        icon: const Icon(Icons.play_arrow_rounded),
+      floatingActionButton: KazumiGlass.floatingButton(
+        context: context,
+        aboveTabBar: false,
+        child: FloatingActionButton.extended(
+          tooltip: '开始观看',
+          onPressed: () {
+            showAdaptiveBottomSheet<void>(
+              context: context,
+              maxHeightFactor: 0.88,
+              builder: (context) {
+                return SourceSheet(infoController: infoController);
+              },
+            );
+          },
+          label: const Text('开始观看'),
+          icon: const Icon(Icons.play_arrow_rounded),
+        ),
       ),
     );
   }
@@ -468,10 +489,8 @@ class _InfoHeaderBackground extends StatelessWidget {
     required this.imageUrl,
   });
 
-  static const double _downsample = 0.5;
   static const double _blurSigma = 15.0;
   static const double _opacity = 0.4;
-  static const double _edgeBleed = 32.0;
   static const double _bottomFeatherHeight = 48.0;
 
   final String imageUrl;
@@ -482,19 +501,17 @@ class _InfoHeaderBackground extends StatelessWidget {
       return const SizedBox.shrink();
     }
 
+    final Color backgroundColor = Theme.of(context).scaffoldBackgroundColor;
+
     return LayoutBuilder(
       builder: (context, constraints) {
-        final width = constraints.maxWidth;
-        final height = constraints.maxHeight;
+        final double width = constraints.maxWidth;
+        final double height = constraints.maxHeight;
         if (width <= 0 || height <= 0) {
           return const SizedBox.shrink();
         }
-
-        final rasterWidth = width * _downsample;
-        final rasterHeight = (height + _edgeBleed) * _downsample;
-
-        final backgroundColor = Theme.of(context).scaffoldBackgroundColor;
-
+        // 按整块区域直接画：不再降采样后 Transform 放大 —— 那条路径会在
+        // 屏幕上留下一条竖着的接缝（放送开始那一行的高度上看得最清楚）。
         return ClipRect(
           child: Stack(
             fit: StackFit.expand,
@@ -511,34 +528,20 @@ class _InfoHeaderBackground extends StatelessWidget {
                     stops: [0.8, 1],
                   ).createShader(bounds);
                 },
-                child: Align(
-                  alignment: Alignment.topCenter,
-                  child: RepaintBoundary(
-                    child: Transform.scale(
-                      scale: 1 / _downsample,
-                      alignment: Alignment.topCenter,
-                      filterQuality: FilterQuality.low,
-                      child: SizedBox(
-                        width: rasterWidth,
-                        height: rasterHeight,
-                        child: ImageFiltered(
-                          imageFilter: ImageFilter.blur(
-                            sigmaX: _blurSigma * _downsample,
-                            sigmaY: _blurSigma * _downsample,
-                          ),
-                          child: NetworkImgLayer(
-                            src: imageUrl,
-                            width: rasterWidth,
-                            height: rasterHeight,
-                            fadeInDuration: Duration.zero,
-                            fadeOutDuration: Duration.zero,
-                            filterQuality: FilterQuality.low,
-                            color: Colors.white.withValues(alpha: _opacity),
-                            colorBlendMode: BlendMode.modulate,
-                          ),
-                        ),
-                      ),
-                    ),
+                child: ImageFiltered(
+                  imageFilter: ImageFilter.blur(
+                    sigmaX: _blurSigma,
+                    sigmaY: _blurSigma,
+                  ),
+                  child: NetworkImgLayer(
+                    src: imageUrl,
+                    width: width,
+                    height: height,
+                    fadeInDuration: Duration.zero,
+                    fadeOutDuration: Duration.zero,
+                    filterQuality: FilterQuality.medium,
+                    color: Colors.white.withValues(alpha: _opacity),
+                    colorBlendMode: BlendMode.modulate,
                   ),
                 ),
               ),
@@ -566,6 +569,61 @@ class _InfoHeaderBackground extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+/// 详情页顶栏按钮：尺寸统一的圆形玻璃，图标居中。
+///
+/// 左右各留 [KazumiGlass.barButtonGap] / 2：两个按钮之间就是 barButtonGap，
+/// 和推荐页右上角那两个按钮一模一样，不会粘在一起。
+Widget _barButton(Widget child) {
+  return Padding(
+    padding: const EdgeInsets.symmetric(
+      horizontal: KazumiGlass.barButtonGap / 2,
+    ),
+    child: KazumiGlass.buttonGlass(
+      child: SizedBox(
+        width: KazumiGlass.barButtonSize,
+        height: KazumiGlass.barButtonSize,
+        child: child,
+      ),
+    ),
+  );
+}
+
+/// 折叠时才出现的顶栏内容（标题）。
+///
+/// 为什么不用 [SliverAppBar.medium] 那套：medium / large 的工具栏标题只是
+/// 一个「内容滚到顶栏下面时」才淡入的副本，真正的展开态标题由它自己的弹性空间
+/// 渲染 —— 而详情页要用自定义 background，把它整个覆盖掉了。于是就成了：
+/// 外层折叠完、内层列表还停在顶部时它淡出，往上滑才又出现，松手就没了。
+///
+/// 这里跟着**折叠进度**走：展开时透明，折叠过半淡入，折叠完成一直显示。
+/// 不用 innerBoxIsScrolled 判断：那是「内层列表有没有滚」，外层折叠完、内层
+/// 列表回到顶部时标题就会跟着消失。
+class _CollapseFade extends StatelessWidget {
+  const _CollapseFade({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final FlexibleSpaceBarSettings? settings =
+        context.dependOnInheritedWidgetOfExactType<FlexibleSpaceBarSettings>();
+    double progress = 1;
+    if (settings != null) {
+      final double span = settings.maxExtent - settings.minExtent;
+      if (span > 0) {
+        progress = ((settings.maxExtent - settings.currentExtent) / span)
+            .clamp(0.0, 1.0);
+      }
+    }
+    return AnimatedOpacity(
+      duration: const Duration(milliseconds: 200),
+      curve: Curves.easeOut,
+      opacity: progress > 0.6 ? 1 : 0,
+      child: child,
     );
   }
 }

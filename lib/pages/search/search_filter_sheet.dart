@@ -394,7 +394,9 @@ class _SearchFilterSheetState extends State<_SearchFilterSheet> {
           )),
           if (!shortWindow)
             Padding(
-                padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
+                // 底部让开浮起的玻璃标签栏，否则「查看结果」会被它压住。
+                padding: EdgeInsets.fromLTRB(
+                    24, 12, 24, 24 + KazumiGlass.bottomInset(context)),
                 child: Row(children: [
                   TextButton(onPressed: _reset, child: const Text('重置')),
                   const SizedBox(width: 16),

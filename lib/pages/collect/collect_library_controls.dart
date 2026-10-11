@@ -12,49 +12,43 @@ class _CollectCategories extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colors = theme.colorScheme;
-    return TabBar(
-      key: const PageStorageKey('collect-filter-strip'),
-      controller: controller,
-      isScrollable: true,
-      tabAlignment: TabAlignment.start,
-      dividerHeight: 0,
-      indicatorSize: TabBarIndicatorSize.tab,
-      indicatorPadding: const EdgeInsets.symmetric(horizontal: 2),
-      indicator: BoxDecoration(
-        color: colors.primaryContainer,
-        borderRadius: BorderRadius.circular(24),
-      ),
-      indicatorAnimation: TabIndicatorAnimation.elastic,
-      labelColor: colors.onPrimaryContainer,
-      unselectedLabelColor: colors.onSurfaceVariant,
-      labelStyle:
-          theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
-      unselectedLabelStyle:
-          theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w500),
-      labelPadding: const EdgeInsets.symmetric(horizontal: 2),
-      splashBorderRadius: BorderRadius.circular(24),
-      tabs: [
-        for (final type in _collectCategories)
-          Tab(
-            height: 48,
-            child: Semantics(
-              label: '${type?.label ?? '全部'}，${count(type)} 部',
-              excludeSemantics: true,
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(minWidth: 64),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
+    // 自己排一行玻璃按钮：TabBar 的选中填充和点击水波纹都按「标签区域」画，
+    // 和玻璃不是一个尺寸，会大一圈也对不上形。选中态仍然由 [controller] 驱动，
+    // 所以竖屏那张 TabBarView 还能照常跟手切换。
+    return SizedBox(
+      height: 40,
+      child: AnimatedBuilder(
+        animation: controller,
+        builder: (context, _) {
+          return ListView.separated(
+            key: const PageStorageKey('collect-filter-strip'),
+            scrollDirection: Axis.horizontal,
+            itemCount: _collectCategories.length,
+            separatorBuilder: (_, _) => const SizedBox(width: 6),
+            itemBuilder: (context, index) {
+              final type = _collectCategories[index];
+              final selected = controller.index == index;
+              return Semantics(
+                selected: selected,
+                inMutuallyExclusiveGroup: true,
+                label: '${type?.label ?? '全部'}，${count(type)} 部',
+                excludeSemantics: true,
+                child: KazumiGlass.glassButton(
+                  context: context,
+                  selected: selected,
+                  onTap: () => controller.animateTo(index),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                   child: Text(
                     type?.label ?? '全部',
                     textAlign: TextAlign.center,
                   ),
                 ),
-              ),
-            ),
-          ),
-      ],
+              );
+            },
+          );
+        },
+      ),
     );
   }
 }

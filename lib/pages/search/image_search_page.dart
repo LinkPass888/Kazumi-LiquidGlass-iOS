@@ -11,6 +11,7 @@ import 'package:path/path.dart' as path;
 import 'package:url_launcher/url_launcher.dart';
 
 import 'package:kazumi/bean/appbar/sys_app_bar.dart';
+import 'package:kazumi/bean/liquid_glass/kazumi_glass.dart';
 import 'package:kazumi/bean/dialog/dialog_helper.dart';
 import 'package:kazumi/bean/widget/empty_state_widget.dart';
 import 'package:kazumi/bean/widget/error_widget.dart';
@@ -328,7 +329,10 @@ class _ImageSearchPageState extends State<ImageSearchPage> {
                     child: SingleChildScrollView(
                       key: const PageStorageKey('image-search-results'),
                       controller: _resultScroll,
-                      padding: EdgeInsets.only(right: inset, bottom: 8),
+                      // 结果底部让开浮起的玻璃标签栏。
+                      padding: EdgeInsets.only(
+                          right: inset,
+                          bottom: 8 + KazumiGlass.bottomInset(context)),
                       child: resultContent,
                     ),
                   ),
@@ -344,7 +348,9 @@ class _ImageSearchPageState extends State<ImageSearchPage> {
         key: const PageStorageKey('image-search-page'),
         controller: _pageScroll,
         keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-        padding: EdgeInsets.fromLTRB(padding, 0, padding, 24),
+        // 底部让开浮起的玻璃标签栏。
+        padding: EdgeInsets.fromLTRB(
+            padding, 0, padding, 24 + KazumiGlass.bottomInset(context)),
         child: Center(
           child: ConstrainedBox(
             constraints: BoxConstraints(maxWidth: showResults ? 640 : 520),
@@ -369,7 +375,10 @@ class _ImageSearchPageState extends State<ImageSearchPage> {
       child: SingleChildScrollView(
         key: const PageStorageKey('image-search-source'),
         controller: _sourceScroll,
-        padding: EdgeInsets.only(bottom: action == null ? 0 : 16),
+        // 底部让开浮起的玻璃标签栏（有固定动作按钮时它压在下面）。
+        padding: EdgeInsets.only(
+            bottom: (action == null ? 0 : 16) +
+                KazumiGlass.bottomInset(context)),
         child: source,
       ),
     );

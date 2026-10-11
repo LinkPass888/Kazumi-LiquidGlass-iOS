@@ -590,10 +590,13 @@ class _PlayerItemPanelState extends State<PlayerItemPanel> {
   Widget _menuButton(
           {required Widget child,
           required List<Widget> items,
-          String? tooltip}) =>
+          String? tooltip,
+          Offset? alignmentOffset}) =>
       PlayerPanelHoldMenuAnchor(
         acquirePlayerPanelHold: widget.acquirePlayerPanelHold,
         onVisibilityChanged: widget.onMenuVisibilityChanged,
+        // 横屏时把菜单顶到按钮上方，避免顶出屏幕；竖屏为 null 保持默认
+        alignmentOffset: alignmentOffset,
         builder: (context, toggle) => tooltip == null
             ? TextButton(onPressed: toggle, child: child)
             : IconButton(onPressed: toggle, icon: child, tooltip: tooltip),
@@ -650,6 +653,7 @@ class _PlayerItemPanelState extends State<PlayerItemPanel> {
         _menuButton(
           child: const Text('超分辨率', style: TextStyle(color: Colors.white)),
           items: _superResolutionItems,
+          alignmentOffset: playerLandscapeOffset(context, const Offset(-30, -240)),
         ),
         _menuButton(
           child: Text(
@@ -658,11 +662,13 @@ class _PlayerItemPanelState extends State<PlayerItemPanel> {
                   : '${playerController.playback.playerSpeed}x',
               style: const TextStyle(color: Colors.white)),
           items: _speedItems,
+          alignmentOffset: playerLandscapeOffset(context, const Offset(-30, -294)),
         ),
         _menuButton(
           child: const Icon(Icons.aspect_ratio_rounded, color: Colors.white),
           tooltip: '视频比例',
           items: _aspectRatioItems,
+          alignmentOffset: playerLandscapeOffset(context, const Offset(-40, -294)),
         ),
         if (widget.onToggleSidePanel != null)
           IconButton(

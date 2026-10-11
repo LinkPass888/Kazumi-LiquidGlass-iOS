@@ -1,6 +1,6 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_modular/flutter_modular.dart';
+import 'package:kazumi/bean/liquid_glass/kazumi_glass.dart';
 import 'package:kazumi/bean/widget/bangumi_mirror_error_widget.dart';
 import 'package:kazumi/bean/widget/kazumi_menu.dart';
 import 'package:kazumi/modules/bangumi/bangumi_item.dart';
@@ -115,10 +115,13 @@ class _PopularPageState extends State<PopularPage> {
               })),
         ],
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => scrollController.animateTo(0,
-            duration: const Duration(milliseconds: 350), curve: Curves.easeOut),
-        child: const Icon(Icons.arrow_upward),
+      floatingActionButton: KazumiGlass.floatingButton(
+        context: context,
+        child: FloatingActionButton(
+          onPressed: () => scrollController.animateTo(0,
+              duration: const Duration(milliseconds: 350), curve: Curves.easeOut),
+          child: const Icon(Icons.arrow_upward),
+        ),
       ),
     );
   }
@@ -132,7 +135,8 @@ class _PopularPageState extends State<PopularPage> {
       crossCount = 6;
     }
     return SliverPadding(
-      padding: const EdgeInsets.all(8),
+      padding: EdgeInsets.fromLTRB(
+          8, 8, 8, 8 + KazumiGlass.bottomInset(context)),
       sliver: SliverGrid(
         gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
           // 行间距
@@ -173,14 +177,10 @@ class _PopularPageState extends State<PopularPage> {
         child: dtb.DragToMoveArea(
           child: LayoutBuilder(
             builder: (context, constraints) {
-              final double maxExtent = 120 - MediaQuery.of(context).padding.top;
-              final t = (1 -
-                  ((constraints.maxHeight - kToolbarHeight) /
-                          (maxExtent - kToolbarHeight))
-                      .clamp(0.0, 1.0));
-              // 字重收缩后为 w500，展开时为 w700
-              final fontWeight = t < 0.5 ? FontWeight.w700 : FontWeight.w500;
-              final fontSize = lerpDouble(28, 20, t)!;
+              // 标题只跟着顶栏往上走，字号和字重全程不变。以前按折叠进度把
+              // 28/w700 线性缩成 20/w500，上滑时字一直在跳。
+              const double fontSize = 28;
+              const FontWeight fontWeight = FontWeight.w700;
               return Align(
                 alignment: Alignment.centerLeft,
                 child: Padding(
@@ -236,26 +236,61 @@ class _PopularPageState extends State<PopularPage> {
     );
   }
 
+  /// 顶栏的圆形玻璃按钮，尺寸与间距和统一顶栏一致。
+  Widget _glassBarButton({
+    required String tooltip,
+    required VoidCallback onPressed,
+    required Widget icon,
+  }) {
+    if (!KazumiGlass.enabled) {
+      return IconButton(tooltip: tooltip, onPressed: onPressed, icon: icon);
+    }
+    return Padding(
+      padding:
+          const EdgeInsets.symmetric(horizontal: KazumiGlass.barButtonGap / 2),
+      child: KazumiGlass.iconButton(
+        context: context,
+        icon: icon,
+        onPressed: onPressed,
+        tooltip: tooltip,
+      ),
+    );
+  }
+
   List<Widget> buildActions() {
-    return <Widget>[
+    final actions = <Widget>[
       if (MediaQuery.of(context).orientation == Orientation.portrait)
-        IconButton(
+        _glassBarButton(
           tooltip: '搜索',
           onPressed: () => context.pushNamed('/search/'),
-          icon: const Icon(Icons.search),
-        ),
-      IconButton(
-        tooltip: '历史记录',
-        onPressed: () => context.pushNamed('/settings/history/'),
-        icon: const Icon(Icons.history),
-      ),
-      if (isDesktop() && !DesktopWindowConfig.showWindowButton)
-        IconButton(
-          tooltip: '退出',
-          onPressed: () => windowManager.close(),
-          icon: const Icon(Icons.close),
+          icon: const Icon(Icons.search, size: 22),
         ),
     ];
+    actions.add(
+      _glassBarButton(
+        tooltip: '历史记录',
+        onPressed: () => context.pushNamed('/settings/history/'),
+        icon: const Icon(Icons.history, size: 22),
+      ),
+    );
+    if (isDesktop()) {
+      if (!DesktopWindowConfig.showWindowButton) {
+        actions.add(
+          _glassBarButton(
+            tooltip: '退出',
+            onPressed: () => windowManager.close(),
+            icon: const Icon(Icons.close, size: 22),
+          ),
+        );
+      }
+    }
+    if (KazumiGlass.enabled) {
+      actions.add(
+        const SizedBox(
+            width: KazumiGlass.barEdgeInset - KazumiGlass.barButtonGap / 2),
+      );
+    }
+    return actions;
   }
 
   Future<void> _selectTag(String selected) async {

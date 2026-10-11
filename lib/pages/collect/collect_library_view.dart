@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:kazumi/bean/card/network_img_layer.dart';
+import 'package:kazumi/bean/liquid_glass/kazumi_glass.dart';
 import 'package:kazumi/bean/widget/empty_state_widget.dart';
 import 'package:kazumi/bean/widget/kazumi_menu.dart';
 import 'package:kazumi/modules/bangumi/bangumi_item.dart';
@@ -334,8 +335,11 @@ class _CollectLibraryViewState extends State<CollectLibraryView>
               )
             else
               SliverPadding(
-                padding: EdgeInsets.fromLTRB(
-                    inset, 0, inset, 24 + MediaQuery.paddingOf(context).bottom),
+                padding: EdgeInsets.fromLTRB(inset, 0, inset,
+                    24 +
+                        MediaQuery.paddingOf(context).bottom +
+                        // 让最后一行躲开浮起的玻璃标签栏。
+                        KazumiGlass.bottomInset(context)),
                 sliver: widget.layout == CollectLayout.cards
                     ? _grid(entries, contentWidth, type: type)
                     : _list(entries, contentWidth),

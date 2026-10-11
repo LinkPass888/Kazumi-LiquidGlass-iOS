@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:kazumi/bean/liquid_glass/kazumi_glass.dart';
 import 'package:kazumi/bean/settings/settings_list.dart';
 import 'package:kazumi/bean/widget/content_section.dart';
-import 'package:kazumi/bean/widget/state_presentation.dart';
 import 'package:kazumi/modules/my/watch_stats.dart';
 import 'package:material_new_shapes/material_new_shapes.dart';
 
@@ -38,7 +38,8 @@ class MySpaceView extends StatelessWidget {
       final wide = width >= 840 && !largeText;
       return SingleChildScrollView(
         key: const PageStorageKey('my-space'),
-        padding: EdgeInsets.fromLTRB(inset, 12, inset, 32),
+        padding: EdgeInsets.fromLTRB(
+            inset, 12, inset, 32 + KazumiGlass.bottomInset(context)),
         child: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 1120),
@@ -592,32 +593,6 @@ class _PreferenceAction extends StatelessWidget {
                     color: colors.onSecondaryContainer)),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class MySettingsButton extends StatelessWidget {
-  const MySettingsButton({super.key, required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    return Tooltip(
-      message: '全部设置',
-      child: FilledButton.tonalIcon(
-        style: StateActionButton.styleOf(context).copyWith(
-          backgroundColor: WidgetStatePropertyAll(colors.surfaceContainerHigh),
-          foregroundColor: WidgetStatePropertyAll(colors.onSurface),
-          padding: const WidgetStatePropertyAll(
-            EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-          ),
-        ),
-        onPressed: onTap,
-        icon: const Icon(Icons.tune_rounded, size: 20),
-        label: const Text('设置'),
       ),
     );
   }

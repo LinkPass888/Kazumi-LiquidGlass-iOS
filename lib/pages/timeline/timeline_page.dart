@@ -3,6 +3,7 @@ import 'package:flutter_mobx/flutter_mobx.dart';
 import 'package:flutter_modular/flutter_modular.dart';
 
 import 'package:kazumi/bean/appbar/sys_app_bar.dart';
+import 'package:kazumi/bean/liquid_glass/kazumi_glass.dart';
 import 'package:kazumi/bean/card/bangumi_timeline_card.dart';
 import 'package:kazumi/bean/dialog/adaptive_bottom_sheet.dart';
 import 'package:kazumi/bean/dialog/material_bottom_sheet.dart';
@@ -64,7 +65,9 @@ class _TimelinePageState extends State<TimelinePage> {
           ),
           Expanded(
             child: ListView.separated(
-              padding: materialBottomSheetContentPadding,
+              // 底部让开浮起的玻璃标签栏，最后一个季度别被压住。
+              padding: materialBottomSheetContentPadding.add(
+                  EdgeInsets.only(bottom: KazumiGlass.bottomInset(context))),
               itemCount: years.length,
               separatorBuilder: (_, __) => const SizedBox(height: 24),
               itemBuilder: (context, index) {
@@ -182,18 +185,16 @@ class _TimelinePageState extends State<TimelinePage> {
                 ? _buildSeasonPicker(context, loading: loading, inAppBar: true)
                 : Text(
                     '时间表',
-                    style: theme.textTheme.headlineSmall
-                        ?.copyWith(fontWeight: FontWeight.w700),
+                    // 顶栏大标题的字号字重和推荐页「热门番组」保持一致。
+                    style: appBarTitleStyle(context),
                   ),
             actions: [
-              Padding(
-                padding: const EdgeInsets.only(right: 12),
-                child: _TimelineOptionsButton(
-                  availableWidth: constraints.maxWidth,
-                  sort: _controller.sort,
-                  filterCount: _controller.activeFilterCount,
-                  onPressed: _showOptions,
-                ),
+              // 顶栏动作会被 SysAppBar 统一套一层 40×40 玻璃，所以这里只出
+              // 玻璃图标按钮（排序名放进 tooltip / 无障碍），不再自带 Padding。
+              _TimelineOptionsButton(
+                sort: _controller.sort,
+                filterCount: _controller.activeFilterCount,
+                onPressed: _showOptions,
               ),
             ],
           ),
@@ -402,7 +403,9 @@ class _TimelinePageState extends State<TimelinePage> {
           )
         else
           SliverPadding(
-            padding: EdgeInsets.fromLTRB(inset, 0, inset, 24),
+            // 底部让开浮起的玻璃标签栏，最后一行卡片别被压住。
+            padding: EdgeInsets.fromLTRB(
+                inset, 0, inset, 24 + KazumiGlass.bottomInset(context)),
             sliver: SliverGrid(
               gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: columns,

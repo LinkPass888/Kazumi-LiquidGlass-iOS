@@ -59,10 +59,17 @@ class MaterialBottomSheetHeader extends StatelessWidget {
                 trailing!,
               ] else if (onClose != null) ...[
                 const SizedBox(width: 12),
-                IconButton(
-                  onPressed: onClose,
-                  tooltip: '鍏抽棴',
-                  icon: const Icon(Icons.close_rounded),
+                // 这里不铺原生液态玻璃：弹窗里放原生玻璃视图会渲染成一大块
+                // 遮挡，退回 Material 的圆形按钮，尺寸仍是 40（和顶栏玻璃按钮
+                // 一致，视觉上是一套）。
+                SizedBox.square(
+                  dimension: 40,
+                  child: IconButton(
+                    onPressed: onClose,
+                    tooltip: '关闭',
+                    padding: EdgeInsets.zero,
+                    icon: const Icon(Icons.close_rounded, size: 22),
+                  ),
                 ),
               ],
             ],

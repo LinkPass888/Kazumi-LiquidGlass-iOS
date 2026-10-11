@@ -12,35 +12,26 @@ extension _TimelineSortLabel on TimelineSort {
 
 class _TimelineOptionsButton extends StatelessWidget {
   const _TimelineOptionsButton({
-    required this.availableWidth,
     required this.sort,
     required this.filterCount,
     required this.onPressed,
   });
 
-  final double availableWidth;
   final TimelineSort sort;
   final int filterCount;
   final VoidCallback onPressed;
 
   @override
   Widget build(BuildContext context) {
-    final scaler = MediaQuery.textScalerOf(context);
-    final compact =
-        availableWidth < scaler.scale(16) * 22 || scaler.scale(14) > 28;
-    final style = StateActionButton.styleOf(context).copyWith(
-      minimumSize: const WidgetStatePropertyAll(Size(48, 48)),
-      padding: const WidgetStatePropertyAll(
-        EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      ),
-    );
     final summary = '${sort.label}，'
         '${filterCount > 0 ? '已启用 $filterCount 项筛选' : '未启用筛选'}';
     final icon = Badge(
       isLabelVisible: filterCount > 0,
       label: Text('$filterCount'),
-      child: const Icon(Icons.tune_rounded, size: 20),
+      child: const Icon(Icons.tune_rounded, size: 22),
     );
+    // 顶栏动作固定 40×40 并会被 SysAppBar 统一套一层玻璃，所以这里只出图标，
+    // 不再用带文字的填充按钮（文字放进 tooltip 与无障碍标签里）。
     return Semantics(
       label: _timelineOptionsTitle,
       value: summary,
@@ -49,18 +40,7 @@ class _TimelineOptionsButton extends StatelessWidget {
       excludeSemantics: true,
       child: Tooltip(
         message: '$_timelineOptionsTitle：$summary',
-        child: compact
-            ? FilledButton.tonal(
-                style: style,
-                onPressed: onPressed,
-                child: icon,
-              )
-            : FilledButton.tonalIcon(
-                style: style,
-                onPressed: onPressed,
-                icon: icon,
-                label: Text(sort.label, maxLines: 1),
-              ),
+        child: IconButton(onPressed: onPressed, icon: icon),
       ),
     );
   }
@@ -84,7 +64,9 @@ class _TimelineOptionsSheet extends StatelessWidget {
           Flexible(
             child: ListView(
               shrinkWrap: true,
-              padding: materialBottomSheetContentPadding,
+              // 底部让开浮起的玻璃标签栏。
+              padding: materialBottomSheetContentPadding.add(
+                  EdgeInsets.only(bottom: KazumiGlass.bottomInset(context))),
               children: [
                 ContentSection(
                   title: '排序',

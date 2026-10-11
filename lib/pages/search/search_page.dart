@@ -5,6 +5,7 @@ import 'package:flutter_mobx/flutter_mobx.dart';
 import 'package:flutter_modular/flutter_modular.dart';
 
 import 'package:kazumi/bean/appbar/sys_app_bar.dart';
+import 'package:kazumi/bean/liquid_glass/kazumi_glass.dart';
 import 'package:kazumi/bean/card/network_img_layer.dart';
 import 'package:kazumi/bean/dialog/adaptive_bottom_sheet.dart';
 import 'package:kazumi/bean/dialog/material_bottom_sheet.dart';
@@ -386,7 +387,10 @@ class _SearchPageState extends State<SearchPage> {
                       ScrollViewKeyboardDismissBehavior.onDrag,
                   slivers: [
                     SliverPadding(
-                      padding: EdgeInsets.fromLTRB(inset, 0, inset, 24),
+                      // 底部多留一段，让结果别被浮起的玻璃标签栏压住 —— 原生
+                      // 标签栏是浮在所有页面（含被打开的搜索页）之上的。
+                      padding: EdgeInsets.fromLTRB(
+                          inset, 0, inset, 24 + KazumiGlass.bottomInset(context)),
                       sliver: SliverMainAxisGroup(slivers: slivers),
                     )
                   ],
