@@ -78,7 +78,11 @@ class _NativeGlassViewState extends State<NativeGlassView> {
   void _onVisibilityChanged() {
     final bool hidden = LiquidGlassVisibility.isHidden;
     if (_hidden == hidden) return;
-    _hidden = hidden;
+    // 必须 setState：Offstage 依赖 _hidden 重建，否则 UI 停在旧状态，
+    // 要等滚动等操作触发 rebuild 才「回来」。
+    setState(() {
+      _hidden = hidden;
+    });
     _viewChannel?.invokeMethod<void>('setHidden', {'hidden': hidden});
   }
 

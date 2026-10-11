@@ -89,7 +89,9 @@ class _BangumiInfoCardVState extends State<BangumiInfoCardV> {
         return AlertDialog(
           // 收窄成正方形：宽高都给死，按钮 2 个一行
           constraints: const BoxConstraints.tightFor(width: 260, height: 260),
-          title: const Text('选择放送星期'),
+          title: const Center(
+            child: Text('选择放送星期'),
+          ),
           content: Wrap(
             // 居中分布：左右余量相等，两侧离边框的距离就一样
             alignment: WrapAlignment.center,

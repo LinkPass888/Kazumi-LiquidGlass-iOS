@@ -327,7 +327,11 @@ class _NativeLiquidGlassTabBarState extends State<_NativeLiquidGlassTabBar> {
   void _onVisibilityChanged() {
     final bool hidden = LiquidGlassVisibility.isHidden;
     if (_hidden == hidden) return;
-    _hidden = hidden;
+    // 必须 setState：Offstage 依赖 _hidden 重建，否则原生 UITabBar 会一直
+    // 被隐藏，要等滚动等操作触发 rebuild 才恢复显示。
+    setState(() {
+      _hidden = hidden;
+    });
     _channel?.invokeMethod<void>('setHidden', {'hidden': hidden});
   }
 
