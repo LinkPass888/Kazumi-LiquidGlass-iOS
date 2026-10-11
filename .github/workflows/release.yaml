@@ -1,24 +1,23 @@
----
-    name: "release"
+name: "release"
 
-    on:
-      push:
-        tags:
-          - "*"
-      workflow_dispatch:
-        inputs:
-          logLevel:
-            description: 'Log level'
-            required: true
-            default: 'warning'
+on:
+  push:
+    tags:
+      - "*"
+  workflow_dispatch:
+    inputs:
+      logLevel:
+        description: 'Log level'
+        required: true
+        default: 'warning'
 
-    env:
-      DANDANAPI_APPID: ${{ secrets.DANDANAPI_APPID }}
-      DANDANAPI_KEY: ${{ secrets.DANDANAPI_KEY }}
-      KAZUMI_APPID: ${{ secrets.KAZUMI_APPID }}
-      KAZUMI_KEY: ${{ secrets.KAZUMI_KEY }}
+env:
+  DANDANAPI_APPID: ${{ secrets.DANDANAPI_APPID }}
+  DANDANAPI_KEY: ${{ secrets.DANDANAPI_KEY }}
+  KAZUMI_APPID: ${{ secrets.KAZUMI_APPID }}
+  KAZUMI_KEY: ${{ secrets.KAZUMI_KEY }}
 
-    jobs:
+jobs:
       flutter-test:
         runs-on: "ubuntu-latest"
         permissions:

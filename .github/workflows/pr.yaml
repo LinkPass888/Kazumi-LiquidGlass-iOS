@@ -1,32 +1,31 @@
----
-    name: "PR workflow"
+name: "PR workflow"
 
-    on:
-      pull_request:
-        types:
-          - opened
-          - synchronize
-          - reopened
-          - ready_for_review
-        paths-ignore:
-          - 'static/**'
-          - '**.md'
-          - '.gitignore'
-          - '.github/ISSUE_TEMPLATE/**'
-      workflow_dispatch:
-        inputs:
-          logLevel:
-            description: 'Log level'
-            required: true
-            default: 'warning'
+on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+    paths-ignore:
+      - 'static/**'
+      - '**.md'
+      - '.gitignore'
+      - '.github/ISSUE_TEMPLATE/**'
+  workflow_dispatch:
+    inputs:
+      logLevel:
+        description: 'Log level'
+        required: true
+        default: 'warning'
 
-    env:
-      DANDANAPI_APPID: ${{ secrets.DANDANAPI_APPID }}
-      DANDANAPI_KEY: ${{ secrets.DANDANAPI_KEY }}
-      KAZUMI_APPID: ${{ secrets.KAZUMI_APPID }}
-      KAZUMI_KEY: ${{ secrets.KAZUMI_KEY }}
+env:
+  DANDANAPI_APPID: ${{ secrets.DANDANAPI_APPID }}
+  DANDANAPI_KEY: ${{ secrets.DANDANAPI_KEY }}
+  KAZUMI_APPID: ${{ secrets.KAZUMI_APPID }}
+  KAZUMI_KEY: ${{ secrets.KAZUMI_KEY }}
 
-    jobs:
+jobs:
       flutter-test:
         if: ${{ github.event_name == 'workflow_dispatch' || ! github.event.pull_request.draft }}
         runs-on: "ubuntu-latest"
