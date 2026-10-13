@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:kazumi/bean/liquid_glass/kazumi_glass.dart';
 import 'package:kazumi/bean/widget/state_presentation.dart';
 
 class SyncPageBody extends StatelessWidget {
@@ -99,7 +100,7 @@ class SyncFeedback extends StatelessWidget {
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: error ? colors.errorContainer : colors.secondaryContainer,
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(KazumiGlass.radiusOf(context)),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,

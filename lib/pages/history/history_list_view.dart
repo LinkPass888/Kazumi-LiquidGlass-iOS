@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:kazumi/bean/liquid_glass/kazumi_glass.dart';
 import 'package:kazumi/bean/widget/empty_state_widget.dart';
 import 'package:kazumi/bean/widget/state_presentation.dart';
 import 'package:kazumi/modules/history/history_module.dart';
@@ -77,8 +78,8 @@ class _HistoryListViewState extends State<HistoryListView> {
     final filtered =
         _query.trim().isNotEmpty || _source != HistorySourceFilter.all;
     final now = DateTime.now();
-    const searchBorder = OutlineInputBorder(
-      borderRadius: BorderRadius.all(Radius.circular(28)),
+    final searchBorder = OutlineInputBorder(
+      borderRadius: BorderRadius.circular(KazumiGlass.radiusOf(context)),
       borderSide: BorderSide.none,
     );
 
@@ -222,8 +223,11 @@ class _HistoryListViewState extends State<HistoryListView> {
       );
     }
     final shape = BorderRadius.vertical(
-      top: Radius.circular(entryIndex == 0 ? 24 : 4),
-      bottom: Radius.circular(entryIndex == group.entries.length - 1 ? 24 : 4),
+      top: Radius.circular(
+          entryIndex == 0 ? KazumiGlass.radiusOf(context) : 4),
+      bottom: Radius.circular(entryIndex == group.entries.length - 1
+          ? KazumiGlass.radiusOf(context)
+          : 4),
     );
     return Padding(
       key: row.key,
@@ -236,7 +240,7 @@ class _HistoryListViewState extends State<HistoryListView> {
     final theme = Theme.of(context);
     final selected = _source == source;
     final colors = theme.colorScheme;
-    final shape = BorderRadius.circular(selected ? 20 : 12);
+    final shape = BorderRadius.circular(KazumiGlass.radiusOf(context));
     return Semantics(
       button: true,
       selected: selected,

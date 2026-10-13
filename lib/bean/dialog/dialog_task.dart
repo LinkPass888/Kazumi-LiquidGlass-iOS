@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:kazumi/bean/dialog/dialog.dart'
     show KazumiDialog, KazumiDialogHandle;
+import 'package:kazumi/bean/liquid_glass/kazumi_glass.dart';
 import 'package:kazumi/bean/widget/loading_indicator.dart';
 
 mixin KazumiDialogOwner<T extends StatefulWidget> on State<T> {
@@ -217,8 +218,9 @@ class _LoadingDialog extends StatelessWidget {
   Widget build(BuildContext context) => Center(
         child: Card(
           elevation: 8,
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(KazumiGlass.radiusOf(context)),
+          ),
           child: Padding(
             padding: const EdgeInsets.all(24),
             child: Column(

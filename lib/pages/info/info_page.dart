@@ -391,11 +391,23 @@ class _InfoPageState extends State<InfoPage>
                   background: Observer(builder: (context) {
                     final showBangumiInfoSkeleton =
                         _isShowingBangumiInfoSkeleton;
+                    // 背景那一层**始终留在 children 里**，只切「画不画」：
+                    // 之前是 `if (!skeleton)` 直接增删这一个 child，骨架结束时
+                    // 它插到 index 0，下面那棵 SafeArea 就从 0 挪到 1 —— 两个
+                    // 都没 key，Flutter 认为对不上，整棵重建：Hero 重新 startFlight，
+                    // 封面被 placeholder 顶掉再显示，就是详情页封面「闪一下」。
+                    // 推荐页的条目没有 summary / 评分分布，进来必然走这段刷新，
+                    // 所以只有从推荐页进详情才看得见（时间表、收藏的数据是全的）。
+                    //
+                    // 用 Offstage 而不是一直画：这块背景是全屏 ImageFilter.blur，
+                    // 骨架期间不画它，既省掉转场中的模糊开销（#2058 原本的用意），
+                    // 又保住元素位置不变。
                     return Stack(
                       children: [
-                        if (!showBangumiInfoSkeleton)
-                          Positioned.fill(
-                            bottom: tabBand,
+                        Positioned.fill(
+                          bottom: tabBand,
+                          child: Offstage(
+                            offstage: showBangumiInfoSkeleton,
                             child: IgnorePointer(
                               child: _InfoHeaderBackground(
                                 imageUrl: infoController
@@ -404,6 +416,7 @@ class _InfoPageState extends State<InfoPage>
                               ),
                             ),
                           ),
+                        ),
                         SafeArea(
                           bottom: false,
                           child: EmbeddedNativeControlArea(

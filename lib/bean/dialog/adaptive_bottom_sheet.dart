@@ -4,6 +4,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
+import 'package:kazumi/bean/liquid_glass/kazumi_glass.dart';
 
 BoxConstraints _adaptiveBottomSheetConstraints(
   BuildContext context, {
@@ -26,10 +27,6 @@ BoxConstraints _adaptiveBottomSheetConstraints(
     maxHeight: maxHeight,
   );
 }
-
-const ShapeBorder _materialSheetShape = RoundedRectangleBorder(
-  borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-);
 
 // Native route motion and the extra surface entrance spring are separate.
 const AnimationStyle _materialSheetAnimationStyle = AnimationStyle(
@@ -124,10 +121,16 @@ class _MaterialSheetSurfaceState extends State<_MaterialSheetSurface>
     final colors = theme.colorScheme;
 
     final background = colors.surface;
+    // 全局统一圆角：底部弹层的顶边圆角跟整机走
+    final sheetShape = RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(
+        top: Radius.circular(KazumiGlass.radiusOf(context)),
+      ),
+    );
     final surface = Material(
       color: background,
       elevation: 0,
-      shape: _materialSheetShape,
+      shape: sheetShape,
       clipBehavior: Clip.antiAlias,
       child: Theme(
         data: theme.copyWith(

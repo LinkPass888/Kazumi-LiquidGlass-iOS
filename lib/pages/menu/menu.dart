@@ -224,9 +224,9 @@ class _ScaffoldMenu extends State<ScaffoldMenu> with RouteAware {
   }
 
   Widget _sideMenu(BuildContext context, int selectedIndex) {
-    const borderRadius = BorderRadius.only(
-      topLeft: Radius.circular(16),
-      bottomLeft: Radius.circular(16),
+    final borderRadius = BorderRadius.only(
+      topLeft: Radius.circular(KazumiGlass.radiusOf(context)),
+      bottomLeft: Radius.circular(KazumiGlass.radiusOf(context)),
     );
     return Scaffold(
       backgroundColor: Theme.of(context).colorScheme.surfaceContainer,

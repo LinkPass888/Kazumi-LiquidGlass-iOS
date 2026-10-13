@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
 import 'package:scrollview_observer/scrollview_observer.dart';
 
+import 'package:kazumi/bean/liquid_glass/kazumi_glass.dart';
 import 'package:kazumi/bean/widget/empty_state_widget.dart';
 import 'package:kazumi/modules/download/download_module.dart';
 import 'package:kazumi/modules/roads/road_module.dart';
@@ -366,10 +367,13 @@ class _RoadSelectorState extends State<_RoadSelector> {
             ),
             shape: WidgetStatePropertyAll(RoundedRectangleBorder(
               borderRadius: selected
-                  ? BorderRadius.circular(20)
+                  ? BorderRadius.circular(KazumiGlass.radiusOf(context))
                   : BorderRadius.vertical(
-                      top: Radius.circular(index == 0 ? 20 : 4),
-                      bottom: Radius.circular(last ? 20 : 4),
+                      top: Radius.circular(index == 0
+                          ? KazumiGlass.radiusOf(context)
+                          : 4),
+                      bottom: Radius.circular(
+                          last ? KazumiGlass.radiusOf(context) : 4),
                     ),
             )),
           ),
@@ -421,7 +425,8 @@ class _RoadSelectorState extends State<_RoadSelector> {
           elevation: const WidgetStatePropertyAll(3),
           padding: const WidgetStatePropertyAll(EdgeInsets.all(8)),
           shape: WidgetStatePropertyAll(RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(28),
+            borderRadius:
+                BorderRadius.circular(KazumiGlass.radiusOf(context)),
           )),
           minimumSize: WidgetStatePropertyAll(Size(width, 0)),
           maximumSize: WidgetStatePropertyAll(Size(
@@ -453,7 +458,8 @@ class _RoadSelectorState extends State<_RoadSelector> {
               animationDuration: duration,
               color:
                   open ? colors.secondaryContainer : colors.surfaceContainerLow,
-              borderRadius: BorderRadius.circular(open ? 16 : 20),
+              borderRadius:
+                  BorderRadius.circular(KazumiGlass.radiusOf(context)),
               clipBehavior: Clip.antiAlias,
               child: InkWell(
                 focusNode: _focusNode,
@@ -608,11 +614,12 @@ class _EpisodeRowState extends State<_EpisodeRow>
         child: AnimatedBuilder(
           animation: _press,
           builder: (context, child) {
+            final surfaceRadius = KazumiGlass.radiusOf(context);
             final restShape = widget.selected
-                ? BorderRadius.circular(20)
+                ? BorderRadius.circular(surfaceRadius)
                 : BorderRadius.vertical(
-                    top: Radius.circular(widget.first ? 20 : 4),
-                    bottom: Radius.circular(widget.last ? 20 : 4),
+                    top: Radius.circular(widget.first ? surfaceRadius : 4),
+                    bottom: Radius.circular(widget.last ? surfaceRadius : 4),
                   );
             final press = _press.value.clamp(0.0, 1.0);
             return Padding(

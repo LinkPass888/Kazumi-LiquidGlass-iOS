@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:kazumi/bean/liquid_glass/kazumi_glass.dart';
 import 'package:kazumi/bean/widget/loading_indicator.dart';
 import 'package:kazumi/bean/widget/state_presentation.dart';
 import 'package:kazumi/modules/bangumi/sync_priority.dart';
@@ -175,7 +176,8 @@ class _CollectSyncDialogState extends State<CollectSyncDialog> {
         insetPadding: const EdgeInsets.all(24),
         backgroundColor: colors.surfaceContainerHigh,
         surfaceTintColor: Colors.transparent,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(KazumiGlass.radiusOf(context))),
         clipBehavior: Clip.antiAlias,
         scrollable: true,
         iconPadding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
@@ -281,10 +283,13 @@ class _CollectSyncDialogState extends State<CollectSyncDialog> {
     );
   }
 
-  BorderRadius _rowRadius(int index, int length) => BorderRadius.vertical(
-        top: Radius.circular(index == 0 ? 20 : 4),
-        bottom: Radius.circular(index == length - 1 ? 20 : 4),
-      );
+  BorderRadius _rowRadius(int index, int length) {
+    final radius = KazumiGlass.radiusOf(context);
+    return BorderRadius.vertical(
+      top: Radius.circular(index == 0 ? radius : 4),
+      bottom: Radius.circular(index == length - 1 ? radius : 4),
+    );
+  }
 
   Widget _setupRow(CollectSyncDestination destination) {
     final theme = Theme.of(context);

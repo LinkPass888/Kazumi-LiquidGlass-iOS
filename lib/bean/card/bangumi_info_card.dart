@@ -445,7 +445,9 @@ class _BangumiInfoCardVState extends State<BangumiInfoCardV> {
                                             message: '在时间表展示',
                                             child: InkWell(
                                               borderRadius:
-                                                  BorderRadius.circular(20),
+                                                  BorderRadius.circular(
+                                                      KazumiGlass.radiusOf(
+                                                          context)),
                                               onTap: widget.isLoading
                                                   ? null
                                                   : () => _setShowInTimeline(

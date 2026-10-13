@@ -203,7 +203,7 @@ class _PlayerItemPanelState extends State<PlayerItemPanel> {
                 border: OutlineInputBorder(
                   borderSide: BorderSide.none,
                   borderRadius:
-                      BorderRadius.all(Radius.circular(_desktop ? 8 : 20)),
+                      BorderRadius.circular(KazumiGlass.radiusOf(context)),
                 ),
                 suffixIconConstraints: const BoxConstraints(minWidth: 0),
                 suffixIcon: Row(
@@ -221,8 +221,8 @@ class _PlayerItemPanelState extends State<PlayerItemPanel> {
                             ? Theme.of(context).colorScheme.primaryContainer
                             : Theme.of(context).disabledColor,
                         shape: RoundedRectangleBorder(
-                          borderRadius:
-                              BorderRadius.circular(_desktop ? 8 : 20),
+                          borderRadius: BorderRadius.circular(
+                              KazumiGlass.radiusOf(context)),
                         ),
                       ),
                       child: const Text('发送'),

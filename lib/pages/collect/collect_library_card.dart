@@ -180,7 +180,7 @@ class _CollectPosterCard extends StatelessWidget {
 
       return Material(
         color: colors.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(compact ? 16 : 20),
+        borderRadius: BorderRadius.circular(KazumiGlass.radiusOf(context)),
         clipBehavior: Clip.antiAlias,
         child: Semantics(
           button: true,
@@ -240,7 +240,7 @@ class _CollectListTile extends StatelessWidget {
 
     return Material(
       color: colors.surfaceContainerLow,
-      borderRadius: BorderRadius.circular(24),
+      borderRadius: BorderRadius.circular(KazumiGlass.radiusOf(context)),
       clipBehavior: Clip.antiAlias,
       child: Stack(
         children: [
@@ -264,7 +264,8 @@ class _CollectListTile extends StatelessWidget {
                       height: 120,
                       child: _CollectCover(
                         item: item,
-                        borderRadius: BorderRadius.circular(16),
+                        borderRadius:
+                            BorderRadius.circular(KazumiGlass.radiusOf(context)),
                       ),
                     ),
                   ),

@@ -6,6 +6,7 @@ import 'package:flutter_mobx/flutter_mobx.dart';
 
 import 'package:kazumi/bean/dialog/adaptive_bottom_sheet.dart';
 import 'package:kazumi/bean/dialog/material_bottom_sheet.dart';
+import 'package:kazumi/bean/liquid_glass/kazumi_glass.dart';
 import 'package:kazumi/bean/widget/loading_indicator.dart';
 import 'package:kazumi/bean/widget/split_list_row.dart';
 import 'package:kazumi/bean/widget/tonal_card.dart';
@@ -58,18 +59,28 @@ Future<T?> _showStep<T>(BuildContext context, WidgetBuilder builder) {
 String _readEndPoint() =>
     GStorage.getSetting<String>(SettingsKeys.syncPlayEndPoint);
 
-InputDecoration _sheetInputDecoration({
+InputDecoration _sheetInputDecoration(
+  BuildContext context, {
   required String labelText,
   String? hintText,
   String? helperText,
   String? errorText,
 }) {
+  // 圆角跟全局走（和主题里 InputDecorationTheme 给的是同一个值）；这里原来
+  // 写死 20，会把这几个输入框从统一圆角里单独摘出去。四个状态都显式给上，
+  // 免得启用/聚焦时又掉回框架默认。
+  final BorderRadius radius =
+      BorderRadius.circular(KazumiGlass.radiusOf(context));
   return InputDecoration(
     labelText: labelText,
     hintText: hintText,
     helperText: helperText,
     errorText: errorText,
-    border: OutlineInputBorder(borderRadius: BorderRadius.circular(20)),
+    border: OutlineInputBorder(borderRadius: radius),
+    enabledBorder: OutlineInputBorder(borderRadius: radius),
+    focusedBorder: OutlineInputBorder(borderRadius: radius),
+    errorBorder: OutlineInputBorder(borderRadius: radius),
+    focusedErrorBorder: OutlineInputBorder(borderRadius: radius),
   );
 }
 
@@ -541,6 +552,7 @@ class _SyncPlayRoomSheetState extends State<_SyncPlayRoomSheet> {
       inputFormatters: [FilteringTextInputFormatter.digitsOnly],
       autovalidateMode: AutovalidateMode.onUserInteraction,
       decoration: _sheetInputDecoration(
+        context,
         labelText: '房间号',
         hintText: '6-10 位数字',
       ),
@@ -563,6 +575,7 @@ class _SyncPlayRoomSheetState extends State<_SyncPlayRoomSheet> {
       textInputAction: TextInputAction.done,
       autovalidateMode: AutovalidateMode.onUserInteraction,
       decoration: _sheetInputDecoration(
+        context,
         labelText: '昵称',
         helperText: compact ? null : '4-12 位英文字母，房间内可见',
       ),
@@ -662,6 +675,7 @@ class _SyncPlayServerSheetState extends State<_SyncPlayServerSheet> {
                 keyboardType: TextInputType.url,
                 autocorrect: false,
                 decoration: _sheetInputDecoration(
+                  context,
                   labelText: '服务器地址',
                   hintText: 'example.com:8996',
                   errorText: _customEndPointError,

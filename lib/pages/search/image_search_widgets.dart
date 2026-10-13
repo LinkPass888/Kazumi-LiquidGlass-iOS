@@ -37,16 +37,17 @@ class _ImageSourceSelector extends StatelessWidget {
                             ? colors.onSecondaryContainer
                             : colors.onSurfaceVariant),
                 shape: WidgetStateProperty.resolveWith((states) {
+                  final double radius = KazumiGlass.radiusOf(context);
                   if (states.contains(WidgetState.pressed)) {
                     return RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12));
                   }
                   return RoundedRectangleBorder(
                       borderRadius: selected
-                          ? BorderRadius.circular(24)
+                          ? BorderRadius.circular(radius)
                           : BorderRadius.horizontal(
-                              left: Radius.circular(url ? 8 : 24),
-                              right: Radius.circular(url ? 24 : 8)));
+                              left: Radius.circular(url ? 8 : radius),
+                              right: Radius.circular(url ? radius : 8)));
                 }),
                 animationDuration: MediaQuery.disableAnimationsOf(context)
                     ? Duration.zero
@@ -260,7 +261,7 @@ class _BestMatch extends StatelessWidget {
       ]),
     );
     final frame = ClipRRect(
-      borderRadius: BorderRadius.circular(16),
+      borderRadius: BorderRadius.circular(KazumiGlass.radiusOf(context)),
       child: SizedBox(
         height: MediaQuery.sizeOf(context).height < 500 ? 112 : 200,
         child: _TraceFrame(result: result),
@@ -269,7 +270,7 @@ class _BestMatch extends StatelessWidget {
     return Material(
       color: colors.surface,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(24),
+        borderRadius: BorderRadius.circular(KazumiGlass.radiusOf(context)),
         side: BorderSide(color: colors.outlineVariant),
       ),
       clipBehavior: Clip.antiAlias,
@@ -338,8 +339,8 @@ class _OtherMatch extends StatelessWidget {
     return Material(
       color: colors.surface,
       borderRadius: BorderRadius.vertical(
-          top: Radius.circular(first ? 20 : 8),
-          bottom: Radius.circular(last ? 20 : 8)),
+          top: Radius.circular(first ? KazumiGlass.radiusOf(context) : 8),
+          bottom: Radius.circular(last ? KazumiGlass.radiusOf(context) : 8)),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: () => onSelect(_title(result)),

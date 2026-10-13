@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:kazumi/bean/card/comments_card.dart';
+import 'package:kazumi/bean/liquid_glass/kazumi_glass.dart';
 import 'package:kazumi/bean/widget/empty_state_widget.dart';
 import 'package:kazumi/bean/widget/error_widget.dart';
 import 'package:kazumi/modules/bangumi/bangumi_interest.dart';
@@ -166,7 +167,8 @@ class InfoCommentsView extends StatelessWidget {
         padding: const EdgeInsets.all(16),
         backgroundColor: colors.surfaceContainerLow,
         foregroundColor: colors.onSurfaceVariant,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(KazumiGlass.radiusOf(context))),
       ),
       child: Row(children: [
         Expanded(child: Text(editing ? '编辑' : _writeReviewLabel)),

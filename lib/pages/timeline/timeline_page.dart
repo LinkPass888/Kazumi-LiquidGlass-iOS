@@ -313,7 +313,7 @@ class _TimelinePageState extends State<TimelinePage> {
         message: '切换放送季度',
         child: InkWell(
           onTap: loading ? null : () => _showSeasonBottomSheet(context),
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(KazumiGlass.radiusOf(context)),
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 8),
             child: Row(

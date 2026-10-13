@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:kazumi/bean/dialog/dialog_helper.dart';
+import 'package:kazumi/bean/liquid_glass/kazumi_glass.dart';
 import 'package:kazumi/bean/widget/loading_indicator.dart';
 import 'package:kazumi/pages/plugin_editor/rule_management_widgets.dart';
 import 'package:kazumi/plugins/plugins.dart';
@@ -59,7 +60,7 @@ Future<RuleAddSource?> showRuleAddDialog(BuildContext context) =>
                         ? colors.secondaryContainer
                         : colors.surfaceContainerLow,
                     borderRadius: BorderRadius.circular(
-                        option.$1 == RuleAddSource.catalog ? 20 : 12),
+                        KazumiGlass.radiusOf(context)),
                     clipBehavior: Clip.antiAlias,
                     child: ListTile(
                       minVerticalPadding: 14,
@@ -136,7 +137,8 @@ Future<void> showRuleShareDialog(BuildContext context, Plugin plugin) async {
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
                 color: Theme.of(context).colorScheme.surfaceContainerLow,
-                borderRadius: BorderRadius.circular(16)),
+                borderRadius:
+                    BorderRadius.circular(KazumiGlass.radiusOf(context))),
             constraints: const BoxConstraints(maxHeight: 180),
             child: SingleChildScrollView(
               child: SelectableText(link,
@@ -298,7 +300,8 @@ class _RuleDialog extends StatelessWidget {
     final colors = Theme.of(context).colorScheme;
     return AlertDialog(
       backgroundColor: colors.surfaceContainerHigh,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+      shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(KazumiGlass.radiusOf(context))),
       constraints: const BoxConstraints(maxWidth: 560),
       insetPadding: const EdgeInsets.all(24),
       scrollable: true,

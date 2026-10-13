@@ -121,7 +121,8 @@ class _VerifyDialogFrame extends StatelessWidget {
     return AlertDialog(
       scrollable: true,
       backgroundColor: colors.surfaceContainerHigh,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+      shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(KazumiGlass.radiusOf(context))),
       constraints: const BoxConstraints(maxWidth: 420),
       insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
       titlePadding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
@@ -303,7 +304,7 @@ class _CaptchaDialogState extends State<_CaptchaDialog> {
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
               color: colors.surfaceContainerHighest,
-              borderRadius: BorderRadius.circular(20),
+              borderRadius: BorderRadius.circular(KazumiGlass.radiusOf(context)),
             ),
             child: _buildImage(),
           ),
@@ -333,8 +334,9 @@ class _CaptchaDialogState extends State<_CaptchaDialog> {
                 floatingLabelBehavior: FloatingLabelBehavior.always,
                 errorText: _inputError,
                 errorMaxLines: 2,
-                border:
-                    OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                border: OutlineInputBorder(
+                    borderRadius:
+                        BorderRadius.circular(KazumiGlass.radiusOf(context))),
               ),
             ),
           ],

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:kazumi/bean/dialog/dialog_helper.dart';
+import 'package:kazumi/bean/liquid_glass/kazumi_glass.dart';
 import 'package:kazumi/bean/settings/settings_list.dart';
 import 'package:kazumi/bean/widget/split_list_row.dart';
 import 'package:kazumi/services/network/metered_network_service.dart';
@@ -73,7 +74,8 @@ class _LowMemoryModeDialogState extends State<_LowMemoryModeDialog> {
                     color: enabled
                         ? colors.secondaryContainer
                         : colors.surfaceContainerHighest,
-                    borderRadius: BorderRadius.circular(16),
+                    borderRadius: BorderRadius.circular(
+                        KazumiGlass.radiusOf(context)),
                   ),
                   child: Row(
                     children: [

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:kazumi/bean/liquid_glass/kazumi_glass.dart';
 import 'package:kazumi/pages/onboarding/onboarding_step_layout.dart';
 
 class UpdateSourceStep extends StatelessWidget {
@@ -82,7 +83,7 @@ class _OptionCard extends StatelessWidget {
       decoration: BoxDecoration(
         color:
             selected ? colors.secondaryContainer : colors.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(selected ? 20 : 28),
+        borderRadius: BorderRadius.circular(KazumiGlass.radiusOf(context)),
         border: Border.all(
           color: selected ? colors.secondary : Colors.transparent,
           width: 2,

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_modular/flutter_modular.dart';
 
+import 'package:kazumi/bean/liquid_glass/kazumi_glass.dart';
 import 'package:kazumi/bean/settings/settings_detail_scaffold.dart';
 import 'package:kazumi/bean/widget/loading_indicator.dart';
 import 'package:kazumi/pages/plugin_editor/rule_management_widgets.dart';
@@ -460,7 +461,8 @@ class _PluginEditorPageState extends State<PluginEditorPage> {
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
                             color: colors.errorContainer,
-                            borderRadius: BorderRadius.circular(20)),
+                            borderRadius: BorderRadius.circular(
+                                KazumiGlass.radiusOf(context))),
                         child: Text(_editorError!,
                             style: TextStyle(color: colors.onErrorContainer)),
                       ),

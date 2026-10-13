@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:kazumi/bean/liquid_glass/kazumi_glass.dart';
 
 enum ExitDialogAction { exit, minimizeToTray }
 
@@ -37,13 +38,11 @@ class _ExitConfirmationDialogState extends State<ExitConfirmationDialog> {
         EdgeInsets.symmetric(horizontal: 24, vertical: 12),
       ),
       animationDuration: _animationDuration,
-      shape: WidgetStateProperty.resolveWith((states) {
-        return RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(
-            states.contains(WidgetState.pressed) ? 12 : 24,
-          ),
-        );
-      }),
+      shape: WidgetStatePropertyAll(
+        RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(KazumiGlass.radiusOf(context)),
+        ),
+      ),
     );
 
     return AlertDialog(
@@ -51,7 +50,9 @@ class _ExitConfirmationDialogState extends State<ExitConfirmationDialog> {
       insetPadding: const EdgeInsets.all(24),
       backgroundColor: colors.surfaceContainerHigh,
       surfaceTintColor: Colors.transparent,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(KazumiGlass.radiusOf(context)),
+      ),
       clipBehavior: Clip.antiAlias,
       scrollable: true,
       iconPadding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
@@ -61,7 +62,7 @@ class _ExitConfirmationDialogState extends State<ExitConfirmationDialog> {
           height: 56,
           decoration: BoxDecoration(
             color: colors.primaryContainer,
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(KazumiGlass.radiusOf(context)),
           ),
           child: Icon(
             Icons.exit_to_app_rounded,
@@ -101,17 +102,17 @@ class _ExitConfirmationDialogState extends State<ExitConfirmationDialog> {
                 children: [
                   _buildOption(
                     ExitDialogAction.minimizeToTray,
-                    borderRadius: const BorderRadius.vertical(
-                      top: Radius.circular(20),
-                      bottom: Radius.circular(4),
+                    borderRadius: BorderRadius.vertical(
+                      top: Radius.circular(KazumiGlass.radiusOf(context)),
+                      bottom: const Radius.circular(4),
                     ),
                   ),
                   const SizedBox(height: 4),
                   _buildOption(
                     ExitDialogAction.exit,
-                    borderRadius: const BorderRadius.vertical(
-                      top: Radius.circular(4),
-                      bottom: Radius.circular(20),
+                    borderRadius: BorderRadius.vertical(
+                      top: const Radius.circular(4),
+                      bottom: Radius.circular(KazumiGlass.radiusOf(context)),
                     ),
                   ),
                 ],
@@ -126,7 +127,8 @@ class _ExitConfirmationDialogState extends State<ExitConfirmationDialog> {
               controlAffinity: ListTileControlAffinity.leading,
               contentPadding: const EdgeInsets.symmetric(horizontal: 4),
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
+                borderRadius:
+                    BorderRadius.circular(KazumiGlass.radiusOf(context)),
               ),
               title: Text('记住我的选择', style: theme.textTheme.bodyMedium),
               subtitle: Text(

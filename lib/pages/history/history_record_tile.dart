@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:kazumi/bean/card/network_img_layer.dart';
+import 'package:kazumi/bean/liquid_glass/kazumi_glass.dart';
 import 'package:kazumi/bean/widget/kazumi_menu.dart';
 import 'package:kazumi/bean/widget/loading_indicator.dart';
 import 'package:kazumi/modules/collect/collect_type.dart';
@@ -14,7 +15,7 @@ class HistoryRecordTile extends StatelessWidget {
     required this.onDelete,
     required this.collectType,
     required this.onChangeCollect,
-    this.borderRadius = const BorderRadius.all(Radius.circular(24)),
+    this.borderRadius,
     this.editing = false,
     this.busy = false,
   });
@@ -25,7 +26,9 @@ class HistoryRecordTile extends StatelessWidget {
   final Future<void> Function() onDelete;
   final CollectType collectType;
   final ValueChanged<CollectType>? onChangeCollect;
-  final BorderRadius borderRadius;
+
+  /// 卡片圆角；为 null 时用全局圆角。
+  final BorderRadius? borderRadius;
   final bool editing;
   final bool busy;
 
@@ -58,6 +61,8 @@ class HistoryRecordTile extends StatelessWidget {
         TimeOfDay.fromDateTime(history.lastWatchTime.toLocal()).format(context);
     final image = history.bangumiItem.images['large'] ?? '';
     final position = _position;
+    final borderRadius = this.borderRadius ??
+        BorderRadius.circular(KazumiGlass.radiusOf(context));
 
     return Dismissible(
       key: ValueKey(history.key),

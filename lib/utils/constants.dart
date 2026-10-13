@@ -5,6 +5,7 @@ import 'package:kazumi/request/config/api_endpoints.dart';
 class StyleString {
   static const double cardSpace = 8;
   static const double safeSpace = 12;
+  // 圆角: 此处无 context，暂留字面值（实际绘制走 KazumiGlass.radiusOf）
   static BorderRadius mdRadius = BorderRadius.circular(10);
   static const Radius imgRadius = Radius.circular(12);
   static const double aspectRatio = 16 / 10;

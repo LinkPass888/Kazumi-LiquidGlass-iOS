@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:kazumi/bean/liquid_glass/kazumi_glass.dart';
 
 class RuleCard extends StatelessWidget {
   const RuleCard({
@@ -51,7 +52,7 @@ class RuleCard extends StatelessWidget {
             color: selected
                 ? colors.secondaryContainer
                 : colors.surfaceContainerLow,
-            borderRadius: BorderRadius.circular(selected ? 20 : 28),
+            borderRadius: BorderRadius.circular(KazumiGlass.radiusOf(context)),
             border: Border.all(
               color: selected ? colors.secondary : Colors.transparent,
               width: 2,
@@ -59,7 +60,9 @@ class RuleCard extends StatelessWidget {
           ),
           child: Material(
             type: MaterialType.transparency,
-            borderRadius: BorderRadius.circular(selected ? 18 : 26),
+            // 同心圆角：内层比外层少 2，跟全局圆角一起变
+            borderRadius:
+                BorderRadius.circular(KazumiGlass.radiusOf(context) - 2),
             clipBehavior: Clip.antiAlias,
             child: InkWell(
               onTap: onTap,
@@ -80,8 +83,8 @@ class RuleCard extends StatelessWidget {
                           color: selected || installed
                               ? colors.secondaryContainer
                               : colors.primaryContainer,
-                          borderRadius:
-                              BorderRadius.circular(installed ? 24 : 16),
+                          borderRadius: BorderRadius.circular(
+                              KazumiGlass.radiusOf(context)),
                         ),
                         child: Icon(
                           selected

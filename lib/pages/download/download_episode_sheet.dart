@@ -6,6 +6,7 @@ import 'package:scrollview_observer/scrollview_observer.dart';
 
 import 'package:kazumi/bean/dialog/dialog_helper.dart';
 import 'package:kazumi/bean/dialog/material_bottom_sheet.dart';
+import 'package:kazumi/bean/liquid_glass/kazumi_glass.dart';
 import 'package:kazumi/modules/download/download_module.dart';
 import 'package:kazumi/modules/roads/road_module.dart';
 import 'package:kazumi/pages/download/download_controller.dart';
@@ -267,13 +268,13 @@ class _EpisodeTile extends StatelessWidget {
       curve: Curves.easeInOutCubic,
       decoration: BoxDecoration(
         color: backgroundColor,
-        borderRadius: BorderRadius.circular(isSelected ? 28 : 16),
+        borderRadius: BorderRadius.circular(KazumiGlass.radiusOf(context)),
       ),
       clipBehavior: Clip.antiAlias,
       child: Material(
         type: MaterialType.transparency,
         child: InkWell(
-          borderRadius: BorderRadius.circular(isSelected ? 28 : 16),
+          borderRadius: BorderRadius.circular(KazumiGlass.radiusOf(context)),
           onTap: onTap,
           child: Stack(
             children: [

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:kazumi/bbcode/bbcode_widget.dart';
+import 'package:kazumi/bean/liquid_glass/kazumi_glass.dart';
 import 'package:kazumi/bean/widget/bangumi_avatar.dart';
 import 'package:kazumi/modules/comments/comment_item.dart';
 import 'package:kazumi/utils/date_time.dart';
@@ -79,10 +80,15 @@ class _UserCommentsCardState extends State<UserCommentsCard> {
                       child: DecoratedBox(
                         decoration: BoxDecoration(
                           color: colors.surfaceContainerHighest,
+                          // 全局统一圆角：首尾两条跟整机的圆角走
                           borderRadius: BorderRadius.vertical(
-                            top: Radius.circular(index == 0 ? 16 : 4),
+                            top: Radius.circular(index == 0
+                                ? KazumiGlass.radiusOf(context)
+                                : 4),
                             bottom: Radius.circular(
-                                index == visibleCount - 1 ? 16 : 4),
+                                index == visibleCount - 1
+                                    ? KazumiGlass.radiusOf(context)
+                                    : 4),
                           ),
                         ),
                         child: Padding(
@@ -117,7 +123,8 @@ class _UserCommentsCardState extends State<UserCommentsCard> {
                       backgroundColor: colors.secondaryContainer,
                       foregroundColor: colors.onSecondaryContainer,
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
+                        borderRadius: BorderRadius.circular(
+                            KazumiGlass.radiusOf(context)),
                       ),
                     ),
                     icon: AnimatedRotation(
@@ -255,7 +262,7 @@ class _CommentSurface extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 12),
       child: Material(
         color: Theme.of(context).colorScheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(24),
+        borderRadius: BorderRadius.circular(KazumiGlass.radiusOf(context)),
         clipBehavior: Clip.antiAlias,
         child: Padding(padding: const EdgeInsets.all(16), child: child),
       ),

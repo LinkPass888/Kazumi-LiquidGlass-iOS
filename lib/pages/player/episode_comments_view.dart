@@ -2,6 +2,7 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:kazumi/bean/card/user_comments_card.dart';
+import 'package:kazumi/bean/liquid_glass/kazumi_glass.dart';
 import 'package:kazumi/bean/widget/error_widget.dart';
 import 'package:kazumi/bean/widget/empty_state_widget.dart';
 import 'package:kazumi/bean/widget/loading_indicator.dart';
@@ -90,7 +91,8 @@ class EpisodeCommentsView extends StatelessWidget {
                   sliver: SliverToBoxAdapter(
                     child: Material(
                       color: colors.errorContainer,
-                      borderRadius: BorderRadius.circular(16),
+                      borderRadius:
+                          BorderRadius.circular(KazumiGlass.radiusOf(context)),
                       child: Padding(
                         padding: const EdgeInsets.fromLTRB(16, 4, 8, 4),
                         child: Row(children: [
@@ -169,7 +171,8 @@ class EpisodeCommentsView extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
             decoration: BoxDecoration(
               color: colors.secondaryContainer,
-              borderRadius: BorderRadius.circular(20),
+              borderRadius:
+                  BorderRadius.circular(KazumiGlass.radiusOf(context)),
             ),
             child: Text('${comments.length}',
                 style: type.labelLarge
@@ -253,7 +256,7 @@ class _EpisodeHeader extends StatelessWidget {
 
     return Material(
       color: colors.primaryContainer,
-      borderRadius: BorderRadius.circular(28),
+      borderRadius: BorderRadius.circular(KazumiGlass.radiusOf(context)),
       clipBehavior: Clip.antiAlias,
       child: Padding(
         padding: const EdgeInsets.all(20),
@@ -273,7 +276,8 @@ class _EpisodeHeader extends StatelessWidget {
                         const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     decoration: BoxDecoration(
                       color: colors.primary,
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius:
+                          BorderRadius.circular(KazumiGlass.radiusOf(context)),
                     ),
                     child: Text('$episodeType $number'.trim(),
                         style: type.titleSmall?.copyWith(

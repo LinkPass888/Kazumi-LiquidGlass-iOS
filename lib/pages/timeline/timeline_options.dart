@@ -45,13 +45,16 @@ class _TimelineOptionsButton extends StatelessWidget {
       overflow: TextOverflow.ellipsis,
       style: Theme.of(context).textTheme.labelLarge,
     );
-    return Semantics(
-      label: _timelineOptionsTitle,
-      value: summary,
-      button: true,
-      onTap: onPressed,
-      excludeSemantics: true,
-      child: SysAppBarWideAction(
+    return SysAppBarWideAction(
+      // 注意：SysAppBarWideAction 必须在最外层 —— SysAppBar 是按「动作的类型」
+      // 判断要不要套 40×40 圆玻璃的，外面再包一层 Semantics，它就只看到 Semantics，
+      // 照旧套圆玻璃，文字就被压出界了。
+      child: Semantics(
+        label: _timelineOptionsTitle,
+        value: summary,
+        button: true,
+        onTap: onPressed,
+        excludeSemantics: true,
         child: Tooltip(
           message: '$_timelineOptionsTitle：$summary',
           child: KazumiGlass.barPill(

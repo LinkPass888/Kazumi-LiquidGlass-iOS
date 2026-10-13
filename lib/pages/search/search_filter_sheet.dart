@@ -169,7 +169,7 @@ class _SearchFilterSheetState extends State<_SearchFilterSheet> {
         fillColor: Theme.of(context).colorScheme.surfaceContainerLow,
         // Keep labels inside the fill to avoid ExpansionTile clipping.
         border: UnderlineInputBorder(
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(KazumiGlass.radiusOf(context)),
             borderSide: BorderSide.none),
       );
 

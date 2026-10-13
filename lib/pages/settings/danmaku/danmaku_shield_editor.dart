@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_mobx/flutter_mobx.dart';
 
+import 'package:kazumi/bean/liquid_glass/kazumi_glass.dart';
 import 'package:kazumi/bean/widget/content_section.dart';
 import 'package:kazumi/bean/widget/empty_state_widget.dart';
 import 'package:kazumi/pages/my/my_controller.dart';
@@ -51,8 +52,9 @@ class _DanmakuShieldEditorState extends State<DanmakuShieldEditor> {
               controller: textEditingController,
               decoration: InputDecoration(
                 hintText: '关键词或 /正则表达式/',
-                border:
-                    OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
+                border: OutlineInputBorder(
+                    borderRadius:
+                        BorderRadius.circular(KazumiGlass.radiusOf(context))),
                 suffixIcon: IconButton(
                   tooltip: '添加规则',
                   onPressed: _addRule,

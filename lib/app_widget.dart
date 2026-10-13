@@ -1,9 +1,11 @@
 import 'dart:io';
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_modular/flutter_modular.dart';
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:flutter_displaymode/flutter_displaymode.dart';
+import 'package:kazumi/bean/liquid_glass/kazumi_glass.dart';
 import 'package:kazumi/services/storage/storage.dart';
 import 'package:tray_manager/tray_manager.dart';
 import 'package:kazumi/services/logging/logger.dart';
@@ -141,6 +143,12 @@ class _AppWidgetState extends State<AppWidget>
     Color? color,
     ColorScheme? colorScheme,
   }) {
+    // 全局圆角：整个 App 的「一块面」都用同一个半径（见 KazumiGlass.radiusOf）。
+    // 这里按窗口短边算一次 —— 主题是脱离 BuildContext 构建的，拿不到 MediaQuery。
+    final double radius = KazumiGlass.radiusFor(_windowShortestSide());
+    final BorderRadius globalRadius = BorderRadius.circular(radius);
+    final RoundedRectangleBorder globalShape =
+        RoundedRectangleBorder(borderRadius: globalRadius);
     return ThemeData(
       useMaterial3: true,
       fontFamily: fontFamily,
@@ -150,7 +158,37 @@ class _AppWidgetState extends State<AppWidget>
       progressIndicatorTheme: progressIndicatorTheme2024,
       sliderTheme: sliderTheme2024,
       pageTransitionsTheme: pageTransitionsTheme2024,
+      // 下面这些是 Material 自带的「面板类」控件。以前各自用框架默认圆角
+      // （卡片 12、对话框 28、输入框 4/12……），彼此对不上；统一到全局半径后，
+      // 卡片、弹窗、底部弹层、输入框、标签、菜单、提示条看起来才是同一套。
+      cardTheme: CardThemeData(shape: globalShape, clipBehavior: Clip.antiAlias),
+      dialogTheme: DialogThemeData(shape: globalShape),
+      bottomSheetTheme: const BottomSheetThemeData().copyWith(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(radius)),
+        ),
+      ),
+      popupMenuTheme: PopupMenuThemeData(shape: globalShape),
+      menuTheme: MenuThemeData(
+        style: MenuStyle(shape: WidgetStatePropertyAll<OutlinedBorder>(globalShape)),
+      ),
+      chipTheme: ChipThemeData(shape: globalShape),
+      inputDecorationTheme: InputDecorationTheme(
+        border: OutlineInputBorder(borderRadius: globalRadius),
+        enabledBorder: OutlineInputBorder(borderRadius: globalRadius),
+        focusedBorder: OutlineInputBorder(borderRadius: globalRadius),
+        errorBorder: OutlineInputBorder(borderRadius: globalRadius),
+        focusedErrorBorder: OutlineInputBorder(borderRadius: globalRadius),
+      ),
     );
+  }
+
+  /// 当前窗口的短边（逻辑像素）。主题构建在 BuildContext 之外，用它估屏幕圆角。
+  double _windowShortestSide() {
+    final ui.FlutterView? view = ui.PlatformDispatcher.instance.implicitView;
+    if (view == null) return 393;
+    final Size size = view.physicalSize / view.devicePixelRatio;
+    return size.shortestSide;
   }
 
   void _syncWindowsTitleBarBrightness(ThemeProvider themeProvider) {

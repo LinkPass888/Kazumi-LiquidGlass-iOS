@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:kazumi/bean/dialog/dialog_helper.dart';
+import 'package:kazumi/bean/liquid_glass/kazumi_glass.dart';
 import 'package:kazumi/bean/settings/settings_detail_scaffold.dart';
 import 'package:kazumi/bean/widget/loading_indicator.dart';
 import 'package:kazumi/modules/roads/road_module.dart';
@@ -266,7 +267,7 @@ class _PluginTestPageState extends State<PluginTestPage> {
             : colors.onSurfaceVariant;
     return Material(
       color: colors.surfaceContainerLow,
-      borderRadius: BorderRadius.circular(28),
+      borderRadius: BorderRadius.circular(KazumiGlass.radiusOf(context)),
       clipBehavior: Clip.antiAlias,
       child: ExpansionTile(
         key: ValueKey('$number-$_hasRun-$completed'),
@@ -281,7 +282,8 @@ class _PluginTestPageState extends State<PluginTestPage> {
                   : failed
                       ? colors.errorContainer
                       : colors.surfaceContainerHighest,
-              borderRadius: BorderRadius.circular(completed ? 20 : 12)),
+              borderRadius:
+                  BorderRadius.circular(KazumiGlass.radiusOf(context))),
           child: Center(
               child: completed
                   ? Icon(Icons.check_rounded, color: foreground)
@@ -320,7 +322,7 @@ class _PluginTestPageState extends State<PluginTestPage> {
         padding: const EdgeInsets.all(12.0),
         decoration: BoxDecoration(
           color: theme.colorScheme.errorContainer,
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(KazumiGlass.radiusOf(context)),
         ),
         child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Icon(Icons.error_outline, color: theme.colorScheme.error, size: 20),
@@ -378,7 +380,7 @@ class _PluginTestPageState extends State<PluginTestPage> {
     return Container(
       decoration: BoxDecoration(
           color: theme.colorScheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(16)),
+          borderRadius: BorderRadius.circular(KazumiGlass.radiusOf(context))),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -467,7 +469,7 @@ class _PluginTestPageState extends State<PluginTestPage> {
       padding: const EdgeInsets.all(12.0),
       decoration: BoxDecoration(
         color: theme.colorScheme.errorContainer,
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(KazumiGlass.radiusOf(context)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -505,7 +507,8 @@ class _PluginTestPageState extends State<PluginTestPage> {
         margin: const EdgeInsets.only(bottom: 8.0),
         elevation: 0,
         color: theme.colorScheme.surfaceContainerHighest,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(KazumiGlass.radiusOf(context))),
         child: Padding(
           padding: const EdgeInsets.all(12.0),
           child:
@@ -601,7 +604,8 @@ class _PluginTestPageState extends State<PluginTestPage> {
         margin: const EdgeInsets.only(bottom: 8.0),
         elevation: 0,
         color: theme.colorScheme.surfaceContainerHighest,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(KazumiGlass.radiusOf(context))),
         child: Padding(
           padding: const EdgeInsets.all(12.0),
           child: Column(

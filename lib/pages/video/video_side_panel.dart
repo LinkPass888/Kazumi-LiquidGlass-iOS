@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:kazumi/bean/liquid_glass/kazumi_glass.dart';
 import 'package:kazumi/bean/widget/side_panel_transition.dart';
 
 class VideoSidePanel extends StatefulWidget {
@@ -111,9 +112,9 @@ class VideoSidePanelState extends State<VideoSidePanel>
             height: constraints.maxHeight,
             child: Material(
               color: Theme.of(context).colorScheme.surface,
-              borderRadius: const BorderRadiusDirectional.only(
-                topStart: Radius.circular(28),
-                bottomStart: Radius.circular(28),
+              borderRadius: BorderRadiusDirectional.only(
+                topStart: Radius.circular(KazumiGlass.radiusOf(context)),
+                bottomStart: Radius.circular(KazumiGlass.radiusOf(context)),
               ),
               clipBehavior: Clip.antiAlias,
               // Consume the hidden status-bar inset for the entire overlay.

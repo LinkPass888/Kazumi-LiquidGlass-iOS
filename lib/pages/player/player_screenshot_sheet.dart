@@ -6,6 +6,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_mobx/flutter_mobx.dart';
+import 'package:kazumi/bean/liquid_glass/kazumi_glass.dart';
 import 'package:kazumi/bean/widget/kazumi_menu.dart';
 import 'package:kazumi/pages/player/controller/player_screenshot_controller.dart';
 import 'package:kazumi/pages/player/player_screenshot_image.dart';
@@ -29,7 +30,9 @@ Future<void> showPlayerScreenshotSheet(
         clipBehavior: Clip.antiAlias,
         backgroundColor: Theme.of(context).colorScheme.surfaceContainerHigh,
         insetPadding: EdgeInsets.all(inset),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(KazumiGlass.radiusOf(context)),
+        ),
         child: SizedBox(
           width: 1120,
           child: ConstrainedBox(
@@ -311,7 +314,8 @@ class _PlayerScreenshotSheetState extends State<_PlayerScreenshotSheet> {
                             color: Theme.of(
                               context,
                             ).colorScheme.surfaceContainerLow,
-                            borderRadius: BorderRadius.circular(20),
+                            borderRadius: BorderRadius.circular(
+                                KazumiGlass.radiusOf(context)),
                             clipBehavior: Clip.antiAlias,
                             child: Column(
                               children: [
@@ -383,7 +387,8 @@ class _PlayerScreenshotSheetState extends State<_PlayerScreenshotSheet> {
                 const SizedBox(height: 8),
                 Material(
                   color: Theme.of(context).colorScheme.surfaceContainerLow,
-                  borderRadius: BorderRadius.circular(16),
+                  borderRadius:
+                      BorderRadius.circular(KazumiGlass.radiusOf(context)),
                   clipBehavior: Clip.antiAlias,
                   child: _thumbnails(compact: true),
                 ),
@@ -432,7 +437,10 @@ class _PlayerScreenshotSheetState extends State<_PlayerScreenshotSheet> {
   Widget _preview() => AspectRatio(
     key: _previewKey,
     aspectRatio: _aspectRatio,
-    child: ClipRRect(borderRadius: BorderRadius.circular(16), child: _stage()),
+    child: ClipRRect(
+      borderRadius: BorderRadius.circular(KazumiGlass.radiusOf(context)),
+      child: _stage(),
+    ),
   );
 
   Widget _navigation() => Row(
@@ -656,7 +664,7 @@ class _PlayerScreenshotSheetState extends State<_PlayerScreenshotSheet> {
       child: Material(
         color: colors.inverseSurface,
         elevation: 6,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(KazumiGlass.radiusOf(context)),
         child: Padding(
           padding: const EdgeInsets.only(left: 16, top: 4, bottom: 4),
           child: Row(
@@ -774,15 +782,9 @@ class _PlayerScreenshotSheetState extends State<_PlayerScreenshotSheet> {
       EdgeInsets.symmetric(horizontal: 20, vertical: 12),
     ),
     animationDuration: _motion,
-    shape: WidgetStateProperty.resolveWith(
-      (states) => RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(
-          states.contains(WidgetState.pressed)
-              ? 12
-              : selected
-              ? 16
-              : 24,
-        ),
+    shape: WidgetStatePropertyAll(
+      RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(KazumiGlass.radiusOf(context)),
       ),
     ),
   );
@@ -951,7 +953,7 @@ class _FrameThumbnail extends StatelessWidget {
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(KazumiGlass.radiusOf(context)),
           onTap: onTap,
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 4),
@@ -964,7 +966,8 @@ class _FrameThumbnail extends StatelessWidget {
                   color: active ? colors.primary : Colors.transparent,
                   width: 2,
                 ),
-                borderRadius: BorderRadius.circular(active ? 12 : 8),
+                borderRadius:
+                    BorderRadius.circular(KazumiGlass.radiusOf(context)),
               ),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(6),

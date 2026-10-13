@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:kazumi/bean/liquid_glass/kazumi_glass.dart';
 import 'package:kazumi/utils/format.dart';
 
 enum PlayerAdjustmentHudType {
@@ -150,7 +151,8 @@ class _PlayerAdjustmentHudState extends State<PlayerAdjustmentHud> {
             duration: duration,
             curve: Curves.easeOutBack,
             child: ClipRRect(
-              borderRadius: BorderRadius.circular(30),
+              borderRadius:
+                  BorderRadius.circular(KazumiGlass.radiusOf(context)),
               // Avoid BackdropFilter/ImageFilter.blur: it can trigger Impeller
               // native aborts when HUD saveLayers are drawn over video output.
               // See flutter/flutter#185506.
@@ -161,7 +163,8 @@ class _PlayerAdjustmentHudState extends State<PlayerAdjustmentHud> {
                 padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
                 decoration: BoxDecoration(
                   color: surface,
-                  borderRadius: BorderRadius.circular(30),
+                  borderRadius:
+                      BorderRadius.circular(KazumiGlass.radiusOf(context)),
                   border: Border.all(color: border),
                   boxShadow: [
                     BoxShadow(
@@ -188,7 +191,8 @@ class _PlayerAdjustmentHudState extends State<PlayerAdjustmentHud> {
                       height: 32,
                       decoration: BoxDecoration(
                         color: container,
-                        borderRadius: BorderRadius.circular(20),
+                        borderRadius: BorderRadius.circular(
+                            KazumiGlass.radiusOf(context)),
                       ),
                       child: AnimatedSwitcher(
                         duration: duration,
@@ -651,7 +655,8 @@ class _PlayerSeekHudState extends State<PlayerSeekHud> {
             duration: duration,
             curve: Curves.easeOutBack,
             child: ClipRRect(
-              borderRadius: BorderRadius.circular(30),
+              borderRadius:
+                  BorderRadius.circular(KazumiGlass.radiusOf(context)),
               // Avoid BackdropFilter/ImageFilter.blur: it can trigger Impeller
               // native aborts when HUD saveLayers are drawn over video output.
               // See flutter/flutter#185506.
@@ -661,7 +666,8 @@ class _PlayerSeekHudState extends State<PlayerSeekHud> {
                 width: 248,
                 decoration: BoxDecoration(
                   color: surface,
-                  borderRadius: BorderRadius.circular(30),
+                  borderRadius:
+                      BorderRadius.circular(KazumiGlass.radiusOf(context)),
                   border: Border.all(color: border),
                   boxShadow: [
                     BoxShadow(
@@ -709,7 +715,8 @@ class _PlayerSeekHudState extends State<PlayerSeekHud> {
                             height: 36,
                             decoration: BoxDecoration(
                               color: container,
-                              borderRadius: BorderRadius.circular(20),
+                              borderRadius: BorderRadius.circular(
+                                  KazumiGlass.radiusOf(context)),
                             ),
                             child: AnimatedSwitcher(
                               duration: duration,
@@ -867,7 +874,8 @@ class _PlayerSpeedHudState extends State<PlayerSpeedHud> {
             duration: duration,
             curve: Curves.easeOutCubic,
             child: ClipRRect(
-              borderRadius: BorderRadius.circular(18),
+              borderRadius:
+                  BorderRadius.circular(KazumiGlass.radiusOf(context)),
               // Avoid BackdropFilter/ImageFilter.blur: it can trigger Impeller
               // native aborts when HUD saveLayers are drawn over video output.
               // See flutter/flutter#185506.
@@ -878,7 +886,8 @@ class _PlayerSpeedHudState extends State<PlayerSpeedHud> {
                 padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
                 decoration: BoxDecoration(
                   color: surface,
-                  borderRadius: BorderRadius.circular(18),
+                  borderRadius:
+                      BorderRadius.circular(KazumiGlass.radiusOf(context)),
                   border: Border.all(color: border),
                   boxShadow: [
                     BoxShadow(
@@ -898,7 +907,8 @@ class _PlayerSpeedHudState extends State<PlayerSpeedHud> {
                       height: 22,
                       decoration: BoxDecoration(
                         color: container,
-                        borderRadius: BorderRadius.circular(12),
+                        borderRadius: BorderRadius.circular(
+                            KazumiGlass.radiusOf(context)),
                       ),
                       child: Icon(
                         Icons.speed_rounded,

@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 
+import 'package:kazumi/bean/liquid_glass/kazumi_glass.dart';
 import 'package:kazumi/bean/widget/tonal_card.dart';
 
+// 圆角: 这两个常量保留给拿不到 context 的调用方做估算；
+// 实际绘制一律走 KazumiGlass.radiusOf（全局统一圆角）。
 const double splitListOuterRadius = tonalCardRadius;
 const double splitListInnerRadius = 4;
 const double splitListRowGap = 4;
@@ -54,6 +57,8 @@ class _SplitListRowState extends State<SplitListRow> {
             child: widget.child,
           );
     // Animate color as well as shape; Material alone snaps color changes.
+    // 统一圆角：按下/选中时用全局圆角，否则用行自身（联合组决定）的圆角
+    final double groupRadius = KazumiGlass.radiusOf(context);
     return AnimatedContainer(
       duration: MediaQuery.disableAnimationsOf(context)
           ? Duration.zero
@@ -64,9 +69,9 @@ class _SplitListRowState extends State<SplitListRow> {
         color: colors.surfaceContainerLow,
         borderRadius: BorderRadius.vertical(
           top: Radius.circular(
-              _pressed ? widget.pressedRadius : widget.topRadius),
+              _pressed ? groupRadius : widget.topRadius),
           bottom: Radius.circular(
-              _pressed ? widget.pressedRadius : widget.bottomRadius),
+              _pressed ? groupRadius : widget.bottomRadius),
         ),
       ),
       child: Material(
@@ -110,16 +115,18 @@ class SplitListGroup extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // 全局统一圆角：组首/组尾的外圆角跟整机走
+    final double outer = KazumiGlass.radiusOf(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         for (int i = 0; i < children.length; i++) ...[
           if (i > 0) const SizedBox(height: splitListRowGap),
           SplitListRow(
-            topRadius: i == 0 ? outerRadius : splitListInnerRadius,
+            topRadius: i == 0 ? outer : splitListInnerRadius,
             bottomRadius:
-                i == children.length - 1 ? outerRadius : splitListInnerRadius,
-            pressedRadius: outerRadius,
+                i == children.length - 1 ? outer : splitListInnerRadius,
+            pressedRadius: outer,
             child: children[i],
           ),
         ],

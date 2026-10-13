@@ -151,13 +151,14 @@ class _SearchResultCard extends StatelessWidget {
     return Material(
       type: MaterialType.transparency,
       clipBehavior: Clip.antiAlias,
-      borderRadius: BorderRadius.circular(16),
+      borderRadius: BorderRadius.circular(KazumiGlass.radiusOf(context)),
       child: InkWell(
           onTap: () => context.pushNamed('/info/', arguments: item),
           child:
               Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
             ClipRRect(
-                borderRadius: BorderRadius.circular(16),
+                borderRadius:
+                    BorderRadius.circular(KazumiGlass.radiusOf(context)),
                 child: AspectRatio(
                   aspectRatio: coverAspectRatio,
                   child: LayoutBuilder(

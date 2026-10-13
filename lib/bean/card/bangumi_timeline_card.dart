@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:kazumi/bean/card/network_img_layer.dart';
+import 'package:kazumi/bean/liquid_glass/kazumi_glass.dart';
 import 'package:kazumi/modules/bangumi/bangumi_item.dart';
 
 class BangumiTimelineCard extends StatelessWidget {
@@ -24,7 +25,6 @@ class BangumiTimelineCard extends StatelessWidget {
       RegExp(r'^\s*([1-9]\d*)\s*[话話集](?=\s*(?:[/／]|$))');
 
   static const _contentPadding = 12.0;
-  static const _cornerRadius = 28.0;
   static const _titleFontSize = 16.0;
   static const _titleLineHeight = 1.5;
   static const _labelFontSize = 12.0;
@@ -74,8 +74,8 @@ class BangumiTimelineCard extends StatelessWidget {
         elevation: 0,
         margin: EdgeInsets.zero,
         color: Theme.of(context).colorScheme.surfaceContainerLow,
-        shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.all(Radius.circular(_cornerRadius)),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(KazumiGlass.radiusOf(context)),
         ),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
@@ -176,8 +176,9 @@ class BangumiTimelineCard extends StatelessWidget {
             transitionOnUserGestures: true,
             createRectTween: NetworkImgLayer.heroRectTween,
             child: ClipRRect(
-              borderRadius: const BorderRadius.all(
-                  Radius.circular(_cornerRadius - _contentPadding)),
+              // 同心圆角：封面和外层卡片同圆心
+              borderRadius: BorderRadius.circular(
+                  KazumiGlass.radiusOf(context) - _contentPadding),
               child: imageUrl.isEmpty
                   ? ColoredBox(
                       color: colors.surfaceContainerHighest,

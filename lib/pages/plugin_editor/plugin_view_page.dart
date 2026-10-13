@@ -9,6 +9,7 @@ import 'package:flutter_mobx/flutter_mobx.dart';
 import 'package:flutter_modular/flutter_modular.dart';
 import 'package:kazumi/bean/card/rule_card.dart';
 import 'package:kazumi/bean/dialog/dialog_helper.dart';
+import 'package:kazumi/bean/liquid_glass/kazumi_glass.dart';
 import 'package:kazumi/bean/settings/settings_detail_scaffold.dart';
 import 'package:kazumi/bean/widget/kazumi_menu.dart';
 import 'package:kazumi/bean/widget/loading_indicator.dart';
@@ -444,7 +445,9 @@ class _PluginViewPageState extends State<PluginViewPage> {
   Widget _menu(Plugin plugin, int index) => KazumiMenuButton(
         style: MenuStyle(
           shape: WidgetStatePropertyAll(
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20))),
+              RoundedRectangleBorder(
+                  borderRadius:
+                      BorderRadius.circular(KazumiGlass.radiusOf(context)))),
           padding: const WidgetStatePropertyAll(EdgeInsets.all(8)),
         ),
         builder: (context, toggle) => IconButton(

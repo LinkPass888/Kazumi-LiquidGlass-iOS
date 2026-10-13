@@ -1,7 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:kazumi/bean/liquid_glass/kazumi_glass.dart';
 import 'package:kazumi/services/logging/logger.dart';
-import 'package:kazumi/utils/constants.dart';
 import 'package:kazumi/utils/image_extension.dart';
 
 class NetworkImgLayer extends StatelessWidget {
@@ -34,6 +34,17 @@ class NetworkImgLayer extends StatelessWidget {
   final BlendMode? colorBlendMode;
   final BorderRadius? borderRadius;
 
+  /// Hero 飞行途中画什么。
+  ///
+  /// 用**目的地**那一端的 child（和框架默认一致）：飞行中画的这一份，和落地后
+  /// 接手的静态封面是同一个 widget —— 同一张图、同一个解码尺寸、同一个
+  /// [CachedNetworkImage] 状态。落地那一帧不需要重建、不需要换图、不需要重新
+  /// 解码，也就不会闪。
+  ///
+  /// （之前这里改用「出发卡片」那一端的 child 重建一份 0 淡入的图。问题在于卡片
+  /// 和封面的尺寸差很多：飞行时按卡片尺寸解码一份，落地又得按封面尺寸重解一次，
+  /// 尺寸比越大越明显 —— 首页大卡片进详情页能看出闪，时间表/收藏那种小封面几乎
+  /// 看不出。用目的地 child 就没有这次重解码。）
   static Widget heroFlightShuttleBuilder(
     BuildContext flightContext,
     Animation<double> animation,
@@ -41,56 +52,15 @@ class NetworkImgLayer extends StatelessWidget {
     BuildContext fromHeroContext,
     BuildContext toHeroContext,
   ) {
-    final fromHero = fromHeroContext.widget as Hero;
-    final toHero = toHeroContext.widget as Hero;
-    final heroContext = flightDirection == HeroFlightDirection.push
-        ? fromHeroContext
-        : toHeroContext;
-    final hero =
-        flightDirection == HeroFlightDirection.push ? fromHero : toHero;
-
+    // 只用目的地的 child，就顺手 capture 目的地的主题；不再做 MediaQuery
+    // padding 补间（框架默认会补，导致底部导航栏内边距不同时图片上下漂移）。
+    final Hero toHero = toHeroContext.widget as Hero;
     return InheritedTheme.captureAll(
-      heroContext,
+      toHeroContext,
       Material(
         type: MaterialType.transparency,
-        child: _noFade(hero.child),
+        child: toHero.child,
       ),
-    );
-  }
-
-  /// 飞行中用「不淡入」的版本来画这张图。
-  ///
-  /// shuttle 是**新构建**的一棵子树：源卡片的 [NetworkImgLayer] 默认带 120ms
-  /// 淡入，直接复用就等于飞行途中又淡入一次；而落地后接手的静态封面（详情页那
-  /// 张）是 0 淡入。两边不一致，落位那一帧就会看见封面「闪一下」——首页点进详情
-  /// 时能看出来（首页卡片、详情封面尺寸都大），时间表/收藏那种小封面几乎看不
-  /// 出来。这里把飞行这一份统一成 0 淡入，起飞、飞行、落地全程同一张图。
-  static Widget _noFade(Widget child) {
-    // 卡片有的把图片直接交给 Hero，有的套了一层 ClipRRect 出圆角
-    // （时间表卡片），两种都要能改到里面的图。
-    if (child is ClipRRect && child.child is NetworkImgLayer) {
-      return ClipRRect(
-        borderRadius: child.borderRadius,
-        clipBehavior: child.clipBehavior,
-        child: _noFade(child.child!),
-      );
-    }
-    if (child is! NetworkImgLayer) {
-      return child;
-    }
-    return NetworkImgLayer(
-      src: child.src,
-      width: child.width,
-      height: child.height,
-      fit: child.fit,
-      type: child.type,
-      origAspectRatio: child.origAspectRatio,
-      filterQuality: child.filterQuality,
-      color: child.color,
-      colorBlendMode: child.colorBlendMode,
-      borderRadius: child.borderRadius,
-      fadeInDuration: Duration.zero,
-      fadeOutDuration: Duration.zero,
     );
   }
 
@@ -113,7 +83,7 @@ class NetworkImgLayer extends StatelessWidget {
     final (memCacheWidth, memCacheHeight) = _cacheSize(context);
     return ClipRRect(
       clipBehavior: Clip.antiAlias,
-      borderRadius: _borderRadius,
+      borderRadius: _borderRadiusOf(context),
       child: CachedNetworkImage(
         imageUrl: imageUrl,
         width: width,
@@ -170,12 +140,14 @@ class NetworkImgLayer extends StatelessWidget {
     }
   }
 
-  BorderRadius get _borderRadius =>
+  BorderRadius _borderRadiusOf(BuildContext context) =>
       borderRadius ??
       BorderRadius.circular(switch (type) {
+        // 头像要正圆，不受全局圆角影响
         'avatar' => 50,
         'emote' => 0,
-        _ => StyleString.imgRadius.x,
+        // 缩略图 / 封面：跟全局统一圆角走
+        _ => KazumiGlass.radiusOf(context),
       });
 
   Widget _placeholder(BuildContext context) {
@@ -188,7 +160,7 @@ class NetworkImgLayer extends StatelessWidget {
             .colorScheme
             .onInverseSurface
             .withValues(alpha: 0.4),
-        borderRadius: _borderRadius,
+        borderRadius: _borderRadiusOf(context),
       ),
       child: type == 'bg'
           ? const SizedBox()

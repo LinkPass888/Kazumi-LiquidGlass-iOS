@@ -62,6 +62,7 @@ class _CollectLayoutSwitch extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    final surfaceRadius = KazumiGlass.radiusOf(context);
     return Row(
       mainAxisSize: MainAxisSize.min,
       spacing: 2,
@@ -90,12 +91,16 @@ class _CollectLayoutSwitch extends StatelessWidget {
                       borderRadius: states.contains(WidgetState.pressed)
                           ? BorderRadius.circular(12)
                           : states.contains(WidgetState.selected)
-                              ? BorderRadius.circular(24)
+                              ? BorderRadius.circular(surfaceRadius)
                               : BorderRadiusDirectional.horizontal(
                                   start: Radius.circular(
-                                      layout == CollectLayout.cards ? 24 : 8),
+                                      layout == CollectLayout.cards
+                                          ? surfaceRadius
+                                          : 8),
                                   end: Radius.circular(
-                                      layout == CollectLayout.list ? 24 : 8),
+                                      layout == CollectLayout.list
+                                          ? surfaceRadius
+                                          : 8),
                                 ),
                     )),
                 animationDuration: MediaQuery.disableAnimationsOf(context)

@@ -211,7 +211,8 @@ class _SourceSheetViewState extends State<_SourceSheetView> {
                   child: Material(
                     type: MaterialType.transparency,
                     child: InkWell(
-                      borderRadius: BorderRadius.circular(16),
+                      borderRadius:
+                          BorderRadius.circular(KazumiGlass.radiusOf(context)),
                       onTap: toggle,
                       child: ConstrainedBox(
                         constraints: const BoxConstraints(minHeight: 48),

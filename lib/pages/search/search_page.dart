@@ -181,8 +181,9 @@ class _SearchPageState extends State<SearchPage> {
       Material(
           type: MaterialType.transparency,
           child: ListTile(
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            shape: RoundedRectangleBorder(
+                borderRadius:
+                    BorderRadius.circular(KazumiGlass.radiusOf(context))),
             contentPadding:
                 const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
             leading: const Icon(Icons.tune_rounded),
@@ -226,7 +227,8 @@ class _SearchPageState extends State<SearchPage> {
                       contentPadding: const EdgeInsets.symmetric(
                           horizontal: 16, vertical: 4),
                       shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16)),
+                          borderRadius: BorderRadius.circular(
+                              KazumiGlass.radiusOf(context))),
                       leading: Icon(Icons.history_rounded,
                           color: theme.colorScheme.onSurfaceVariant, size: 22),
                       title: Text(_readableQuery(history.keyword),

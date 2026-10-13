@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:kazumi/bean/liquid_glass/kazumi_glass.dart';
 
 class RulePageIntro extends StatelessWidget {
   const RulePageIntro({
@@ -23,7 +24,7 @@ class RulePageIntro extends StatelessWidget {
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
         color: colors.primaryContainer,
-        borderRadius: BorderRadius.circular(32),
+        borderRadius: BorderRadius.circular(KazumiGlass.radiusOf(context)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -71,7 +72,7 @@ class RuleSection extends StatelessWidget {
     final theme = Theme.of(context);
     return Material(
       color: theme.colorScheme.surfaceContainerLow,
-      borderRadius: BorderRadius.circular(28),
+      borderRadius: BorderRadius.circular(KazumiGlass.radiusOf(context)),
       clipBehavior: Clip.antiAlias,
       child: Padding(
         padding: const EdgeInsets.all(20),
@@ -115,11 +116,13 @@ InputDecoration ruleInputDecoration(BuildContext context,
     fillColor: colors.surfaceContainerHighest,
     contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
     border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
+        borderRadius: BorderRadius.circular(KazumiGlass.radiusOf(context)),
+        borderSide: BorderSide.none),
     enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
+        borderRadius: BorderRadius.circular(KazumiGlass.radiusOf(context)),
+        borderSide: BorderSide.none),
     focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(KazumiGlass.radiusOf(context)),
         borderSide: BorderSide(color: colors.primary, width: 2)),
   );
 }

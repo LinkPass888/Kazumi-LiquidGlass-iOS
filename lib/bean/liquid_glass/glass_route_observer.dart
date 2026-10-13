@@ -64,16 +64,50 @@ class GlassRouteObserver extends NavigatorObserver {
   /// 恢复某条路由下的玻璃。
   void _show(Object route) => LiquidGlassVisibility.setRouteHidden(route, false);
 
+  /// 兜底用的转场时长（拿不到路由自己的 transitionDuration 时）。
+  static const Duration _fallbackTransitionDuration =
+      Duration(milliseconds: 400);
+
+  /// 动画走完到恢复玻璃之间再留一点余量，等最后一帧平台视图就位。
+  static const Duration _restoreMargin = Duration(milliseconds: 80);
+
+  /// 这条路由一次转场要花多久。
+  ///
+  /// 不能写死：本分支给 iOS/Android 配的是 [CupertinoPageTransitionsBuilder]，
+  /// 它一次转场是 **500ms**（`CupertinoRouteTransitionMixin.kTransitionDuration`），
+  /// 不是早先写死的 400ms。玻璃早恢复 100ms，就会在页面还在滑的那一帧突然出现，
+  /// 正好盖在顶栏标题上 —— 看上去就是「打开搜索/历史记录时标题闪了一下」。
+  /// 跟着路由自己的时长走，桌面端（FadeUpwards，300ms）也自动对上。
+  Duration _transitionDurationOf(Route<dynamic> route) {
+    if (route is TransitionRoute<dynamic>) {
+      // MaterialPageRoute.transitionDuration 会去读 `navigator!.context`：
+      // didRemove / didReplace 走到这里时 navigator 可能已经是空的了，读不到
+      // 就退回兜底值，绝不因为一次查询把转场恢复逻辑带崩。
+      try {
+        final Duration forward = route.transitionDuration;
+        final Duration reverse = route.reverseTransitionDuration;
+        final Duration longest = forward > reverse ? forward : reverse;
+        if (longest > Duration.zero) return longest;
+      } catch (_) {
+        // 用下面的兜底值。
+      }
+    }
+    return _fallbackTransitionDuration;
+  }
+
   /// 转场动画结束后恢复该路由的玻璃。
   ///
-  /// 平台视图在转场期间不跟随 Flutter 动画，转场结束（MaterialPageRoute
-  /// 动画约 300ms）后平台视图已经就位，可以安全恢复。这里用固定延时而不是
-  /// 动画监听：`didPush` 时 `route.animation` 的 ProxyAnimation 状态不稳，
-  /// 挂 listener 会误收到 completed 而提前恢复。侧滑返回的恢复不依赖这里
-  /// （取消回弹由 [didStopUserGesture] 直接恢复）。
+  /// 平台视图在转场期间不跟随 Flutter 动画，必须等动画真正结束、平台视图就位
+  /// 后再恢复，否则它会在页面还在滑动时突兀出现。这里用固定延时而不是动画监听：
+  /// `didPush` 时 `route.animation` 的 ProxyAnimation 状态不稳，挂 listener 会误
+  /// 收到 completed 而提前恢复。侧滑返回的恢复不依赖这里（取消回弹由
+  /// [didStopUserGesture] 直接恢复）。
   void _scheduleShow(Route<dynamic>? route) {
     if (route == null || !_needsTransitionHiding(route)) return;
-    Future<void>.delayed(const Duration(milliseconds: 400), () => _show(route));
+    Future<void>.delayed(
+      _transitionDurationOf(route) + _restoreMargin,
+      () => _show(route),
+    );
   }
 
   /// push：打开详情页 / 搜索页 / 历史记录页。隐藏这一页自己的玻璃

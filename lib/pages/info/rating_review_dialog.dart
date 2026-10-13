@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'package:kazumi/bean/dialog/dialog_helper.dart';
+import 'package:kazumi/bean/liquid_glass/kazumi_glass.dart';
 import 'package:kazumi/bean/widget/loading_indicator.dart';
 import 'package:kazumi/bean/widget/state_presentation.dart';
 import 'package:kazumi/modules/bangumi/bangumi_item.dart';
@@ -309,7 +310,8 @@ class _RatingReviewDialogState extends State<RatingReviewDialog> {
                   backgroundColor: colors.surfaceContainerHigh,
                   surfaceTintColor: Colors.transparent,
                   shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(28)),
+                      borderRadius: BorderRadius.circular(
+                          KazumiGlass.radiusOf(context))),
                   clipBehavior: Clip.antiAlias,
                   child: content,
                 ),
@@ -355,12 +357,13 @@ class _RatingReviewDialogState extends State<RatingReviewDialog> {
         fillColor: colors.surfaceContainerLowest,
         contentPadding: const EdgeInsets.all(20),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(KazumiGlass.radiusOf(context)),
           borderSide: BorderSide(color: colors.outlineVariant),
         ),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(20)),
+        border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(KazumiGlass.radiusOf(context))),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(KazumiGlass.radiusOf(context)),
           borderSide: BorderSide(color: colors.primary, width: 2),
         ),
       ),
@@ -374,7 +377,7 @@ class _RatingReviewDialogState extends State<RatingReviewDialog> {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: colors.secondaryContainer,
-        borderRadius: BorderRadius.circular(24),
+        borderRadius: BorderRadius.circular(KazumiGlass.radiusOf(context)),
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         Row(children: [
@@ -447,6 +450,7 @@ class _RatingReviewDialogState extends State<RatingReviewDialog> {
   Widget _buildScoreButton(int value, int index, int columns) {
     final colors = Theme.of(context).colorScheme;
     final selected = _score == value;
+    final surfaceRadius = KazumiGlass.radiusOf(context);
     return Semantics(
       selected: selected,
       label: '$value 分，${_scoreLabels[value]}',
@@ -469,14 +473,15 @@ class _RatingReviewDialogState extends State<RatingReviewDialog> {
             animationDuration: _duration,
             shape: WidgetStateProperty.resolveWith((states) {
               final radius = selected
-                  ? 24.0
+                  ? surfaceRadius
                   : states.contains(WidgetState.pressed)
                       ? 12.0
                       : 4.0;
               return RoundedRectangleBorder(
                   borderRadius: BorderRadius.horizontal(
-                left: Radius.circular(index == 0 ? 24 : radius),
-                right: Radius.circular(index == columns - 1 ? 24 : radius),
+                left: Radius.circular(index == 0 ? surfaceRadius : radius),
+                right: Radius.circular(
+                    index == columns - 1 ? surfaceRadius : radius),
               ));
             }),
           ),
@@ -574,7 +579,8 @@ class _RatingReviewDialogState extends State<RatingReviewDialog> {
                     filled: true,
                     fillColor: colors.surfaceContainerLowest,
                     border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(16)),
+                        borderRadius:
+                            BorderRadius.circular(KazumiGlass.radiusOf(context))),
                     suffixIcon: IconButton(
                       tooltip: '添加标签',
                       onPressed: _submitting ? null : _addCustomTag,
@@ -605,7 +611,7 @@ class _RatingReviewDialogState extends State<RatingReviewDialog> {
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
               color: colors.errorContainer,
-              borderRadius: BorderRadius.circular(16)),
+              borderRadius: BorderRadius.circular(KazumiGlass.radiusOf(context))),
           child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Icon(Icons.error_outline_rounded, color: colors.onErrorContainer),
             const SizedBox(width: 12),

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:kazumi/bean/liquid_glass/kazumi_glass.dart';
 import 'package:kazumi/pages/plugin_editor/rule_management_widgets.dart';
 
 class EditorTextField extends StatelessWidget {
@@ -67,8 +68,9 @@ class EditorChoiceGroup<T> extends StatelessWidget {
         Widget button(int index) {
           final segment = segments[index];
           final selected = segment.value == value;
-          final outer = const Radius.circular(24);
-          final inner = Radius.circular(selected ? 24 : 8);
+          final outer = Radius.circular(KazumiGlass.radiusOf(context));
+          final inner = Radius.circular(
+              selected ? KazumiGlass.radiusOf(context) : 8);
           return Semantics(
             selected: selected,
             inMutuallyExclusiveGroup: true,

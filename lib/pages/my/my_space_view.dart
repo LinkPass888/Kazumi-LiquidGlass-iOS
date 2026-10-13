@@ -17,8 +17,6 @@ enum MyDestination {
   about,
 }
 
-const _tileRadius = BorderRadius.all(Radius.circular(28));
-
 class MySpaceView extends StatelessWidget {
   const MySpaceView({
     super.key,
@@ -244,7 +242,8 @@ class _WatchStatsPanel extends StatelessWidget {
     final colors = Theme.of(context).colorScheme;
     return Material(
       color: compact ? colors.primaryContainer : colors.surfaceContainerHigh,
-      borderRadius: BorderRadius.circular(compact ? 28 : 48),
+      borderRadius:
+          BorderRadius.circular(compact ? KazumiGlass.radiusOf(context) : 48),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
         child: Column(
@@ -395,11 +394,12 @@ class _RulesTile extends StatelessWidget {
     return _ExpressiveAction(
       color: colors.primary,
       foreground: colors.onPrimary,
-      radius: const BorderRadius.only(
-        topLeft: Radius.circular(28),
-        topRight: Radius.circular(64),
-        bottomLeft: Radius.circular(28),
-        bottomRight: Radius.circular(28),
+      radius: BorderRadius.only(
+        topLeft: Radius.circular(KazumiGlass.radiusOf(context)),
+        // 右上角的 64 是这块异形卡片的装饰样式，不属于「一块面」的圆角。
+        topRight: const Radius.circular(64),
+        bottomLeft: Radius.circular(KazumiGlass.radiusOf(context)),
+        bottomRight: Radius.circular(KazumiGlass.radiusOf(context)),
       ),
       onTap: onTap,
       child: Padding(
@@ -510,7 +510,7 @@ class _PreferencesPanel extends StatelessWidget {
     final colors = Theme.of(context).colorScheme;
     return Material(
       color: colors.surfaceContainerLow,
-      borderRadius: _tileRadius,
+      borderRadius: BorderRadius.circular(KazumiGlass.radiusOf(context)),
       child: Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
@@ -575,8 +575,8 @@ class _PreferenceAction extends StatelessWidget {
       color: colors.secondaryContainer,
       foreground: colors.onSecondaryContainer,
       radius: BorderRadius.horizontal(
-        left: Radius.circular(first ? 24 : 8),
-        right: Radius.circular(last ? 24 : 8),
+        left: Radius.circular(first ? KazumiGlass.radiusOf(context) : 8),
+        right: Radius.circular(last ? KazumiGlass.radiusOf(context) : 8),
       ),
       onTap: onTap,
       child: Padding(
@@ -610,7 +610,8 @@ class _ArrowCue extends StatelessWidget {
           width: 52,
           height: 32,
           decoration: BoxDecoration(
-              color: color, borderRadius: BorderRadius.circular(20)),
+              color: color,
+              borderRadius: BorderRadius.circular(KazumiGlass.radiusOf(context))),
           child: Icon(Icons.arrow_forward_rounded, color: foreground, size: 20),
         ),
       );
@@ -671,14 +672,16 @@ class _ExpressiveAction extends StatefulWidget {
     required this.foreground,
     required this.onTap,
     required this.child,
-    this.radius = _tileRadius,
+    this.radius,
   });
 
   final Color color;
   final Color foreground;
   final VoidCallback onTap;
   final Widget child;
-  final BorderRadius radius;
+
+  /// 未按下时的圆角；为 null 时用全局圆角（外部不再传固定值）。
+  final BorderRadius? radius;
 
   @override
   State<_ExpressiveAction> createState() => _ExpressiveActionState();
@@ -693,6 +696,7 @@ class _ExpressiveActionState extends State<_ExpressiveAction> {
     final duration = reducedMotion
         ? Duration.zero
         : Duration(milliseconds: _pressed ? 150 : 300);
+    final globalRadius = BorderRadius.circular(KazumiGlass.radiusOf(context));
     return Semantics(
       button: true,
       child: AnimatedScale(
@@ -705,7 +709,8 @@ class _ExpressiveActionState extends State<_ExpressiveAction> {
           clipBehavior: Clip.antiAlias,
           decoration: BoxDecoration(
             color: widget.color,
-            borderRadius: _pressed ? BorderRadius.circular(16) : widget.radius,
+            borderRadius:
+                _pressed ? globalRadius : (widget.radius ?? globalRadius),
           ),
           child: Material(
             type: MaterialType.transparency,

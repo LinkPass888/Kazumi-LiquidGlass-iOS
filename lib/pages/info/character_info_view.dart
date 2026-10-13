@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:kazumi/bean/card/network_img_layer.dart';
 import 'package:kazumi/bean/dialog/material_bottom_sheet.dart';
+import 'package:kazumi/bean/liquid_glass/kazumi_glass.dart';
 import 'package:kazumi/bean/widget/content_section.dart';
 import 'package:kazumi/bean/widget/empty_state_widget.dart';
 import 'package:kazumi/bean/widget/image_preview.dart';
@@ -247,7 +248,7 @@ class _CharacterPortrait extends StatelessWidget {
       label: '查看人物原图',
       child: Material(
         color: colors.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(28),
+        borderRadius: BorderRadius.circular(KazumiGlass.radiusOf(context)),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
           onTap: () => ImageViewer.show(

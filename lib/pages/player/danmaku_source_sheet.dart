@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:kazumi/bean/dialog/adaptive_bottom_sheet.dart';
 import 'package:kazumi/bean/dialog/dialog_helper.dart';
 import 'package:kazumi/bean/dialog/material_bottom_sheet.dart';
+import 'package:kazumi/bean/liquid_glass/kazumi_glass.dart';
 import 'package:kazumi/bean/widget/empty_state_widget.dart';
 import 'package:kazumi/bean/widget/error_widget.dart';
 import 'package:kazumi/bean/widget/loading_indicator.dart';
@@ -65,8 +66,10 @@ Future<void> showDanmakuSourceSheet(
         height: double.infinity,
         child: Material(
           color: Theme.of(context).colorScheme.surface,
-          shape: const RoundedRectangleBorder(
-            borderRadius: BorderRadius.horizontal(left: Radius.circular(28)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.horizontal(
+              left: Radius.circular(KazumiGlass.radiusOf(context)),
+            ),
           ),
           clipBehavior: Clip.antiAlias,
           child: buildSheet(context),
@@ -301,10 +304,12 @@ class _DanmakuSourceSheetState extends State<_DanmakuSourceSheet> {
       child: SafeArea(
         top: false,
         child: InputDecorationTheme(
-          data: const InputDecorationThemeData(
+          data: InputDecorationThemeData(
             filled: true,
             border: OutlineInputBorder(
-              borderRadius: BorderRadius.all(Radius.circular(16)),
+              borderRadius: BorderRadius.circular(
+                KazumiGlass.radiusOf(context),
+              ),
               borderSide: BorderSide.none,
             ),
           ),

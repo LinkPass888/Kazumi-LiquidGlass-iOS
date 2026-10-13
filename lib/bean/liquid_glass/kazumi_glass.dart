@@ -56,19 +56,36 @@ abstract final class KazumiGlass {
   static const LiquidGlassShape pillShape =
       LiquidGlassShape.roundedRectangle(22);
 
-  /// 菜单、面板的圆角半径。
+  /// 全局统一的圆角半径 —— **整个 App 只有这一个圆角值**。
   ///
-  /// 不写死：跟着设备走。这个 Flutter 版本的 MediaQueryData 没有
-  /// displayCornerRadius（analyze 会报 undefined_getter），所以按屏幕短边
-  /// 换算——短边越大、机身圆角越大，菜单也跟着更圆，设备间是自适应的。
-  static double panelRadiusOf(BuildContext context) {
-    final double shortest = MediaQuery.of(context).size.shortestSide;
-    if (!shortest.isFinite || shortest <= 0) {
-      return 16;
+  /// 卡片、菜单面板、对话框、弹层、成排的标签/按钮……凡是「一块面」的圆角都
+  /// 从这里取，不再各处写 8 / 12 / 16 / 20 / 24 / 28，看上去才是同一套语言。
+  ///
+  /// 取值跟屏幕（机身）圆角走（见 [screenRadiusOf]）：短边越大、机身越圆，
+  /// 界面也跟着更圆，设备间自适应。上限定在 32：机身圆角本身约 55，直接拿来
+  /// 当菜单/按钮的圆角会把它们撑成胶囊 —— 收在 32 既是「一眼看去和机身同一套
+  /// 比例」，又不会失去矩形的观感。
+  ///
+  /// 例外（这些不是「一块面」的圆角，不参与统一）：
+  ///  * 纯圆形按钮（[circleShape]）—— 本来就是圆，没有「圆角」；
+  ///  * 贴着屏幕边浮起的玻璃条（[floatingBarRadiusOf]）—— 和屏幕圆角同心；
+  ///  * 图表柱头、进度条这类 ≤8 的装饰性小圆角。
+  static double radiusOf(BuildContext context) =>
+      radiusFor(MediaQuery.of(context).size.shortestSide);
+
+  /// 由屏幕短边算全局圆角。给拿不到 [BuildContext] 的地方用（如主题构建）。
+  static double radiusFor(double shortestSide) {
+    if (!shortestSide.isFinite || shortestSide <= 0) {
+      return 28;
     }
-    // iPhone 短边 393 时正好 16，小屏略小、大屏略大
-    return (shortest * 16.0 / 393.0).clamp(13.0, 22.0);
+    return (shortestSide * 55.0 / 393.0).clamp(24.0, 32.0);
   }
+
+  /// 菜单、面板的圆角半径。现在就是全局圆角 [radiusOf]。
+  ///
+  /// 保留这个名字是因为菜单/面板的调用点很多，语义也更清楚：它们和卡片用的是
+  /// 同一个值，改 [radiusOf] 就一起变。
+  static double panelRadiusOf(BuildContext context) => radiusOf(context);
 
   /// 菜单内容离面板内边的距离。
   ///
@@ -93,8 +110,11 @@ abstract final class KazumiGlass {
       EdgeInsets.symmetric(horizontal: 3, vertical: 3);
 
   /// 菜单条目的高亮/选中圆角：= 面板圆角 − [menuPanelInset]。
+  ///
+  /// 这不是「另一个圆角」，而是同心圆的必然结果：条目离面板内边 [menuPanelInset]，
+  /// 圆角跟着减掉同一个量，两个圆弧才是同一个圆心。所以全局圆角一改，这里跟着改。
   static double menuItemRadiusOf(BuildContext context) =>
-      (panelRadiusOf(context) - menuPanelInset).clamp(6.0, 18.0);
+      (panelRadiusOf(context) - menuPanelInset).clamp(6.0, 32.0);
 
   /// 菜单条目的样式：按下/选中的高亮形状用同心圆半径。
   ///

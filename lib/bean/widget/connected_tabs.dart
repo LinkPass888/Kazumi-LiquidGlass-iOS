@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:kazumi/bean/liquid_glass/kazumi_glass.dart';
 
 // Material 3 connected-button small tokens.
 
 const double _connectedGroupHeight = 40;
 const double _connectedGroupGap = 2;
-const double _connectedInnerCorner = 8;
 const double _connectedPressedInnerCorner = 4;
 
 class ConnectedTabs extends StatelessWidget {
@@ -97,8 +97,10 @@ class _ConnectedSegmentState extends State<_ConnectedSegment> {
         duration: const Duration(milliseconds: 180),
         curve: Curves.easeOutCubic,
         builder: (context, press, child) {
-          var inner = _connectedInnerCorner +
-              (outerCorner - _connectedInnerCorner) * selection;
+          // 同心的内圆角：和全局圆角一起缩放，选中时并到外圆角
+          final groupCorner = KazumiGlass.radiusOf(context);
+          var inner = _connectedPressedInnerCorner +
+              (groupCorner - _connectedPressedInnerCorner) * selection;
           inner +=
               (_connectedPressedInnerCorner - inner) * press * (1 - selection);
           final animated = Radius.circular(inner);

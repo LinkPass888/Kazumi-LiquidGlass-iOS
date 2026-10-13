@@ -442,8 +442,9 @@ class _ImageSearchPageState extends State<ImageSearchPage> {
               hintText: 'https://…',
               filled: true,
               fillColor: colors.surfaceContainerLow,
-              border:
-                  OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
+              border: OutlineInputBorder(
+                  borderRadius:
+                      BorderRadius.circular(KazumiGlass.radiusOf(context))),
               suffixIcon: IconButton(
                 onPressed: busy ? null : _pasteUrl,
                 tooltip: '粘贴图片链接',
@@ -551,7 +552,9 @@ class _ImageSearchPageState extends State<ImageSearchPage> {
         shape: WidgetStateProperty.resolveWith((states) =>
             RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(
-                    states.contains(WidgetState.pressed) ? 16 : 28))),
+                    states.contains(WidgetState.pressed)
+                        ? 16
+                        : KazumiGlass.radiusOf(context)))),
         animationDuration: _transition,
       ),
       icon: searching || _isPicking
@@ -587,7 +590,7 @@ class _ImageSearchPageState extends State<ImageSearchPage> {
         clipBehavior: Clip.antiAlias,
         decoration: BoxDecoration(
             color: colors.surfaceContainerLow,
-            borderRadius: BorderRadius.circular(24)),
+            borderRadius: BorderRadius.circular(KazumiGlass.radiusOf(context))),
         child: _useUrl
             ? Image.network(_previewUrl,
                 fit: BoxFit.contain,

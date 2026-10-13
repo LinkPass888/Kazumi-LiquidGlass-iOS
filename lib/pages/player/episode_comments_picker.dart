@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:kazumi/bean/liquid_glass/kazumi_glass.dart';
 import 'package:kazumi/modules/bangumi/episode_item.dart';
 
 class EpisodeCommentsPicker extends StatelessWidget {
@@ -18,7 +19,8 @@ class EpisodeCommentsPicker extends StatelessWidget {
     return Dialog(
       insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
       backgroundColor: colors.surfaceContainerLow,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+      shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(KazumiGlass.radiusOf(context))),
       clipBehavior: Clip.antiAlias,
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 480, maxHeight: 600),
@@ -57,9 +59,12 @@ class EpisodeCommentsPicker extends StatelessWidget {
                         ? colors.primaryContainer
                         : colors.surfaceContainerHighest,
                     borderRadius: BorderRadius.vertical(
-                      top: Radius.circular(index == 0 ? 20 : 4),
+                      top: Radius.circular(
+                          index == 0 ? KazumiGlass.radiusOf(context) : 4),
                       bottom: Radius.circular(
-                          index == episodes.length - 1 ? 20 : 4),
+                          index == episodes.length - 1
+                              ? KazumiGlass.radiusOf(context)
+                              : 4),
                     ),
                     clipBehavior: Clip.antiAlias,
                     child: ListTile(
