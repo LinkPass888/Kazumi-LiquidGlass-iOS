@@ -126,6 +126,9 @@ class _CollectSortMenu extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return KazumiMenuButton(
+      // 面板铺真玻璃：菜单是开在收藏海报上的，半透明底色在海报上一眼就是「一块
+      // 灰板」，和我们其它菜单不是一套。
+      glass: true,
       menuChildren: [
         for (final sort in CollectSort.values)
           KazumiMenuItem(

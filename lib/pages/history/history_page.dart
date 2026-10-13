@@ -3,6 +3,7 @@ import 'package:flutter_mobx/flutter_mobx.dart';
 import 'package:flutter_modular/flutter_modular.dart';
 import 'package:kazumi/bean/appbar/sys_app_bar.dart';
 import 'package:kazumi/bean/dialog/dialog_helper.dart';
+import 'package:kazumi/bean/liquid_glass/kazumi_glass.dart';
 import 'package:kazumi/modules/collect/collect_type.dart';
 import 'package:kazumi/modules/history/history_module.dart';
 import 'package:kazumi/pages/collect/collect_controller.dart';
@@ -102,26 +103,33 @@ class _HistoryPageState extends State<HistoryPage> {
         },
         child: Scaffold(
           appBar: SysAppBar(
-            title: Text('历史记录',
-                style: Theme.of(context)
-                    .textTheme
-                    .headlineSmall
-                    ?.copyWith(fontWeight: FontWeight.w700)),
+            title: Text('历史记录', style: appBarTitleStyle(context)),
             actions: [
               if (entries.isNotEmpty) ...[
                 Padding(
                   padding: const EdgeInsets.only(right: 8),
                   child: _editing
-                      ? FilledButton.tonal(
+                      // 「完成」是顶栏上的文字按钮：去掉 Material 的填充底色和
+                      // 自带内边距（否则会被 40×40 的动作槽挤偏），让它和旁边的
+                      // 玻璃图标按钮一样，只在玻璃正中显示文字。
+                      ? TextButton(
                           onPressed: _clearing
                               ? null
                               : () => setState(() => _editing = false),
+                          style: TextButton.styleFrom(
+                            minimumSize: const Size(
+                                KazumiGlass.barButtonSize,
+                                KazumiGlass.barButtonSize),
+                            padding: EdgeInsets.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            foregroundColor: Theme.of(context).colorScheme.primary,
+                          ),
                           child: const Text('完成'),
                         )
-                      : IconButton.filledTonal(
+                      : IconButton(
                           tooltip: '管理历史记录',
                           onPressed: () => setState(() => _editing = true),
-                          icon: const Icon(Icons.edit_outlined),
+                          icon: const Icon(Icons.edit_outlined, size: 22),
                         ),
                 ),
                 if (_editing)

@@ -38,6 +38,7 @@ class KazumiMenuButton extends StatelessWidget {
     this.onClose,
     this.style,
     this.alignmentOffset,
+    this.glass = false,
   });
 
   final KazumiMenuBuilder builder;
@@ -58,8 +59,45 @@ class KazumiMenuButton extends StatelessWidget {
   /// 会顶出屏幕，靠这个把它顶回来（竖屏不传，保持框架默认位置）。
   final Offset? alignmentOffset;
 
+  /// 面板用真玻璃，而不是 [KazumiGlass.submenuStyle] 那层半透明底色。
+  ///
+  /// 框架的菜单面板画在 Overlay 里，铺不了玻璃，所以这里把 [menuChildren] 整个
+  /// 包进一块 [KazumiGlass.glassSurface]，再把框架那层底色/阴影/内边距去掉 ——
+  /// 和播放器菜单（player_panel_hold.dart）是同一个做法。
+  ///
+  /// 默认关，而且**弹窗/底部弹层里的菜单不要开**：原生玻璃视图在弹窗里会渲染成
+  /// 一大块遮挡（见 material_bottom_sheet.dart 里的说明）。只有画在普通页面上的
+  /// 菜单才开它 —— 底下有内容可折射时才有意义（热门番组、追番分类这类）。
+  final bool glass;
+
   @override
   Widget build(BuildContext context) {
+    // 真玻璃面板：框架那层 Material 只剩透明外壳，玻璃由 menuChildren 自己带上。
+    MenuStyle panelStyle = _panelStyle(context).merge(style);
+    List<Widget> children = menuChildren;
+    if (glass && KazumiGlass.enabled) {
+      panelStyle = panelStyle.merge(
+        const MenuStyle(
+          backgroundColor: WidgetStatePropertyAll(Colors.transparent),
+          surfaceTintColor: WidgetStatePropertyAll(Colors.transparent),
+          shadowColor: WidgetStatePropertyAll(Colors.transparent),
+          elevation: WidgetStatePropertyAll(0),
+          padding: WidgetStatePropertyAll(EdgeInsets.zero),
+        ),
+      );
+      children = [
+        KazumiGlass.glassSurface(
+          shape: KazumiGlass.panelShapeOf(context),
+          // 上下留空 = 面板圆角 − 条目圆角，两个圆角同心
+          padding: KazumiGlass.menuPanelPadding,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: menuChildren,
+          ),
+        ),
+      ];
+    }
     return MenuButtonTheme(
       data: MenuButtonThemeData(
         // Submenu entries must use the same inset as ordinary menu items.
@@ -77,8 +115,8 @@ class KazumiMenuButton extends StatelessWidget {
         onOpen: onOpen,
         onClose: onClose,
         // 调用方传进来的 style 优先（例如推荐页只改 maximumSize）。
-        style: _panelStyle(context).merge(style),
-        menuChildren: menuChildren,
+        style: panelStyle,
+        menuChildren: children,
         builder: (context, controller, _) => builder(
           context,
           enabled && menuChildren.isNotEmpty

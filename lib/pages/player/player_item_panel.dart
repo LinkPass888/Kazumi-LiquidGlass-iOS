@@ -5,6 +5,7 @@ import 'package:canvas_danmaku/models/danmaku_content_item.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_mobx/flutter_mobx.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:kazumi/bean/liquid_glass/kazumi_glass.dart';
 import 'package:kazumi/bean/widget/kazumi_menu.dart';
 import 'package:kazumi/bean/widget/play_pause_icon.dart';
 import 'package:kazumi/pages/player/player_adjustment_hud.dart';
@@ -603,6 +604,41 @@ class _PlayerItemPanelState extends State<PlayerItemPanel> {
         menuChildren: items,
       );
 
+  /// 二级菜单（视频比例 / 倍速 / 超分辨率 / 定时关闭）的玻璃面板。
+  ///
+  /// 上游把二级菜单换成了 [SubmenuButton]，它的面板由框架自己画 Material：
+  /// 不带处理时是一块带阴影的 surface，既不是玻璃、又在玻璃底下多压了一层
+  /// 半透明底色（就是「玻璃菜单后面那层背景」）。这里和一级菜单
+  /// （player_panel_hold.dart 的 PlayerPanelHoldMenuAnchor）用同一套做法：
+  /// 先给子菜单一份透明面板样式（[KazumiGlass.submenuStyle] 去掉底色/阴影/
+  /// 内边距），再把内容整体包进一块 [KazumiGlass.glassSurface] —— 两级的玻璃
+  /// 才是同一块。条目仍交给 [KazumiMenuItem]，按下/选中的同心圆高亮由
+  /// KazumiMenuButton 铺下来的 MenuButtonTheme 提供，和一级条目完全一致。
+  Widget _glassSubmenu({required Widget child, required List<Widget> items}) {
+    return SubmenuButton(
+      // 面板透明：真玻璃画在 menuChildren 里，这里不能再压一层底色
+      menuStyle: KazumiGlass.submenuStyle(context).copyWith(
+        backgroundColor: const WidgetStatePropertyAll(Colors.transparent),
+        surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
+        shadowColor: const WidgetStatePropertyAll(Colors.transparent),
+        padding: const WidgetStatePropertyAll(EdgeInsets.zero),
+      ),
+      menuChildren: [
+        KazumiGlass.glassSurface(
+          shape: KazumiGlass.panelShapeOf(context),
+          // 上下留空 = 面板圆角 − 条目圆角，两个圆角同心
+          padding: KazumiGlass.menuPanelPadding,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: items,
+          ),
+        ),
+      ],
+      child: child,
+    );
+  }
+
   Widget get _danmakuSettingsButton => IconButton(
         onPressed: _showDanmakuSettings,
         color: Colors.white,
@@ -852,13 +888,13 @@ class _PlayerItemPanelState extends State<PlayerItemPanel> {
                 },
                 menuChildren: [
                   if (compact) ...[
-                    SubmenuButton(
-                        menuChildren: _aspectRatioItems,
+                    _glassSubmenu(
+                        items: _aspectRatioItems,
                         child: const Text('视频比例')),
-                    SubmenuButton(
-                        menuChildren: _speedItems, child: const Text('倍速')),
-                    SubmenuButton(
-                        menuChildren: _superResolutionItems,
+                    _glassSubmenu(
+                        items: _speedItems, child: const Text('倍速')),
+                    _glassSubmenu(
+                        items: _superResolutionItems,
                         child: const Text('超分辨率')),
                     _syncPlayMenuItem,
                   ],
@@ -890,8 +926,8 @@ class _PlayerItemPanelState extends State<PlayerItemPanel> {
                     onPressed: playerController.launchExternalPlayer,
                     label: '外部播放',
                   ),
-                  SubmenuButton(
-                    menuChildren: [
+                  _glassSubmenu(
+                    items: [
                       KazumiMenuItem(
                         onPressed: TimedShutdownService().cancel,
                         label: '不开启',

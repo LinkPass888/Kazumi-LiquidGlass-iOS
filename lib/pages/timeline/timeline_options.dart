@@ -23,11 +23,16 @@ class _TimelineOptionsButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
     final summary = '${sort.label}，'
         '${filterCount > 0 ? '已启用 $filterCount 项筛选' : '未启用筛选'}';
+    // Badge 默认用 error（很扎眼的大红点），这里换成应用自己的配色：
+    // 只是个「有筛选生效」的提示，用主色就够了。
     final icon = Badge(
       isLabelVisible: filterCount > 0,
       label: Text('$filterCount'),
+      backgroundColor: colors.primary,
+      textColor: colors.onPrimary,
       child: const Icon(Icons.tune_rounded, size: 22),
     );
     // 顶栏动作固定 40×40 并会被 SysAppBar 统一套一层玻璃，所以这里只出图标，

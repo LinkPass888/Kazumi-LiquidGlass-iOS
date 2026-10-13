@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_modular/flutter_modular.dart';
 import 'package:kazumi/bean/liquid_glass/kazumi_glass.dart';
 import 'package:kazumi/bean/widget/bangumi_mirror_error_widget.dart';
-import 'package:kazumi/bean/widget/kazumi_menu.dart';
+import 'package:kazumi/bean/widget/custom_dropdown_menu.dart';
 import 'package:kazumi/modules/bangumi/bangumi_item.dart';
 import 'package:kazumi/pages/popular/popular_controller.dart';
 import 'package:kazumi/bean/card/bangumi_card.dart';
@@ -29,6 +29,9 @@ class PopularPage extends StatefulWidget {
 class _PopularPageState extends State<PopularPage> {
   late final ScrollController scrollController;
   PopularController get popularController => widget.controller;
+
+  // 给分类选择器定位用：菜单是浮层，得先拿到标题按钮在屏幕上的位置。
+  final GlobalKey selectorKey = GlobalKey();
 
   @override
   void initState() {
@@ -191,37 +194,27 @@ class _PopularPageState extends State<PopularPage> {
                     child: Observer(
                       builder: (_) {
                         final bool isTrend = popularController.currentTag == '';
-                        return KazumiMenuButton(
-                          animated: true,
-                          style: const MenuStyle(
-                            maximumSize: WidgetStatePropertyAll(Size(240, 350)),
-                          ),
-                          menuChildren: [
-                            for (final tag in ['', ...defaultAnimeTags])
-                              KazumiMenuItem(
-                                label: tag.isEmpty ? '热门番组' : tag,
-                                selected: tag == popularController.currentTag,
-                                onPressed: () => _selectTag(tag),
-                              ),
-                          ],
-                          builder: (context, toggle) => InkWell(
-                            borderRadius: BorderRadius.circular(8),
-                            onTap: toggle,
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  isTrend ? '热门番组' : popularController.currentTag,
-                                  style: theme.textTheme.headlineMedium!.copyWith(
-                                    fontWeight: fontWeight,
-                                    fontSize: fontSize,
-                                  ),
+                        // 用我们自己的浮层菜单（CustomDropdownMenu），不用 MenuAnchor：
+                        // 框架的菜单面板画在 Overlay 里铺不了玻璃，开合动画也比我们
+                        // 这版慢（200ms 淡入 + 高度展开）。
+                        return InkWell(
+                          key: selectorKey,
+                          borderRadius: BorderRadius.circular(8),
+                          onTap: showTagMenu,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                isTrend ? '热门番组' : popularController.currentTag,
+                                style: theme.textTheme.headlineMedium!.copyWith(
+                                  fontWeight: fontWeight,
+                                  fontSize: fontSize,
                                 ),
-                                const SizedBox(width: 4),
-                                Icon(Icons.keyboard_arrow_down,
-                                    size: fontSize, color: theme.iconTheme.color),
-                              ],
-                            ),
+                              ),
+                              const SizedBox(width: 4),
+                              Icon(Icons.keyboard_arrow_down,
+                                  size: fontSize, color: theme.iconTheme.color),
+                            ],
                           ),
                         );
                       },
@@ -293,17 +286,52 @@ class _PopularPageState extends State<PopularPage> {
     return actions;
   }
 
-  Future<void> _selectTag(String selected) async {
-    if (!mounted || selected == popularController.currentTag) return;
-    scrollController.animateTo(0,
-        duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
-    popularController.setCurrentTag(selected);
-    if (selected.isEmpty) {
+  Future<void> showTagMenu() async {
+    // 手动算按钮的位置来摆放浮层菜单。
+    // 用 CustomDropdownMenu 而不是 PopupMenuButton / MenuAnchor：没有闪烁，
+    // 而且标题（28/w700）和菜单条目可以用各自的字号。
+    final RenderBox renderBox =
+        selectorKey.currentContext!.findRenderObject() as RenderBox;
+    final Offset offset = renderBox.localToGlobal(Offset.zero);
+    final Size size = renderBox.size;
+
+    final selected = await Navigator.push<String>(
+      context,
+      PageRouteBuilder(
+        opaque: false,
+        barrierDismissible: true,
+        barrierColor: Colors.transparent,
+        pageBuilder: (context, animation, secondaryAnimation) {
+          return CustomDropdownMenu(
+            offset: offset,
+            buttonSize: size,
+            animation: animation,
+            maxWidth: 80,
+            items: [
+              '',
+              ...defaultAnimeTags,
+            ],
+            itemBuilder: (item) => item.isEmpty ? '热门番组' : item,
+          );
+        },
+        transitionDuration: const Duration(milliseconds: 200),
+        reverseTransitionDuration: const Duration(milliseconds: 150),
+      ),
+    );
+
+    if (selected == null) return;
+    if (selected == '' && popularController.currentTag != '') {
+      scrollController.animateTo(0,
+          duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
+      popularController.setCurrentTag('');
       popularController.clearBangumiList();
       if (popularController.trendList.isEmpty) {
         await popularController.queryBangumiByTrend();
       }
-    } else {
+    } else if (selected != '' && selected != popularController.currentTag) {
+      scrollController.animateTo(0,
+          duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
+      popularController.setCurrentTag(selected);
       await popularController.queryBangumiByTag(type: 'init');
     }
   }
