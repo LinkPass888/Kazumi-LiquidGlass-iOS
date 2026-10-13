@@ -3,6 +3,7 @@ import 'package:flutter_modular/flutter_modular.dart';
 import 'package:kazumi/bean/card/network_img_layer.dart';
 import 'package:kazumi/bean/dialog/dialog_helper.dart';
 import 'package:kazumi/modules/bangumi/bangumi_item.dart';
+import 'package:kazumi/utils/constants.dart';
 
 // 视频卡片 - 垂直布局
 class BangumiCardV extends StatelessWidget {
@@ -23,6 +24,11 @@ class BangumiCardV extends StatelessWidget {
       elevation: 0,
       clipBehavior: Clip.antiAlias,
       margin: EdgeInsets.zero,
+      // 推荐页的番剧卡片保持原来的 R 角（Material 卡的默认 12），
+      // 不跟全局屏幕圆角走。
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.all(StyleString.imgRadius),
+      ),
       child: GestureDetector(
         child: InkWell(
           onTap: () {

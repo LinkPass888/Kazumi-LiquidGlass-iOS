@@ -37,37 +37,34 @@ class _TimelineOptionsButton extends StatelessWidget {
     );
     // 和原版一样：排序方式直接写在按钮上（图标 + 当前排序名），不再只出一个
     // 图标让人点进去才知道现在按什么排。顶栏的默认动作是 40×40 的圆玻璃，装不下
-    // 文字，所以这里用 [SysAppBarWideAction] + [KazumiGlass.barPill] 出一颗更宽
-    // 的玻璃药丸，圆角跟着全局走（panelRadiusOf）。
+    // 文字，所以用 [KazumiGlass.barPill] 出一颗更宽的玻璃药丸，圆角跟着全局走
+    // （panelRadiusOf）。让 SysAppBar 别套圆玻璃的那层 [SysAppBarWideAction]
+    // 必须包在**调用点**（timeline_page.dart 的 actions 里）——SysAppBar 判断的是
+    // 放进 actions 的那个值本身的类型，包在这一层里面它看不到。
     final label = Text(
       sort.label,
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
       style: Theme.of(context).textTheme.labelLarge,
     );
-    return SysAppBarWideAction(
-      // 注意：SysAppBarWideAction 必须在最外层 —— SysAppBar 是按「动作的类型」
-      // 判断要不要套 40×40 圆玻璃的，外面再包一层 Semantics，它就只看到 Semantics，
-      // 照旧套圆玻璃，文字就被压出界了。
-      child: Semantics(
-        label: _timelineOptionsTitle,
-        value: summary,
-        button: true,
-        onTap: onPressed,
-        excludeSemantics: true,
-        child: Tooltip(
-          message: '$_timelineOptionsTitle：$summary',
-          child: KazumiGlass.barPill(
-            context: context,
-            onPressed: onPressed,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                icon,
-                const SizedBox(width: 6),
-                label,
-              ],
-            ),
+    return Semantics(
+      label: _timelineOptionsTitle,
+      value: summary,
+      button: true,
+      onTap: onPressed,
+      excludeSemantics: true,
+      child: Tooltip(
+        message: '$_timelineOptionsTitle：$summary',
+        child: KazumiGlass.barPill(
+          context: context,
+          onPressed: onPressed,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              icon,
+              const SizedBox(width: 6),
+              label,
+            ],
           ),
         ),
       ),

@@ -615,27 +615,31 @@ class _PlayerItemPanelState extends State<PlayerItemPanel> {
   /// 才是同一块。条目仍交给 [KazumiMenuItem]，按下/选中的同心圆高亮由
   /// KazumiMenuButton 铺下来的 MenuButtonTheme 提供，和一级条目完全一致。
   Widget _glassSubmenu({required Widget child, required List<Widget> items}) {
-    return SubmenuButton(
-      // 面板透明：真玻璃画在 menuChildren 里，这里不能再压一层底色
-      menuStyle: KazumiGlass.submenuStyle(context).copyWith(
-        backgroundColor: const WidgetStatePropertyAll(Colors.transparent),
-        surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
-        shadowColor: const WidgetStatePropertyAll(Colors.transparent),
-        padding: const WidgetStatePropertyAll(EdgeInsets.zero),
-      ),
-      menuChildren: [
-        KazumiGlass.glassSurface(
-          shape: KazumiGlass.panelShapeOf(context),
-          // 上下留空 = 面板圆角 − 条目圆角，两个圆角同心
-          padding: KazumiGlass.menuPanelPadding,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: items,
-          ),
+    // 触发条目本身也要和同面板里的 KazumiMenuItem 一样留 3 的外边距，
+    // 否则它的高亮（以及展开时的选中态）离玻璃边框只有 3，比旁边的条目窄一半。
+    return KazumiGlass.menuItemSlot(
+      child: SubmenuButton(
+        // 面板透明：真玻璃画在 menuChildren 里，这里不能再压一层底色
+        menuStyle: KazumiGlass.submenuStyle(context).copyWith(
+          backgroundColor: const WidgetStatePropertyAll(Colors.transparent),
+          surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
+          shadowColor: const WidgetStatePropertyAll(Colors.transparent),
+          padding: const WidgetStatePropertyAll(EdgeInsets.zero),
         ),
-      ],
-      child: child,
+        menuChildren: [
+          KazumiGlass.glassSurface(
+            shape: KazumiGlass.panelShapeOf(context),
+            // 上下留空 = 面板圆角 − 条目圆角，两个圆角同心
+            padding: KazumiGlass.menuPanelPadding,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: items,
+            ),
+          ),
+        ],
+        child: child,
+      ),
     );
   }
 

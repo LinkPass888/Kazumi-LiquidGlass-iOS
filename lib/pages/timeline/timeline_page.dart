@@ -189,12 +189,16 @@ class _TimelinePageState extends State<TimelinePage> {
                     style: appBarTitleStyle(context),
                   ),
             actions: [
-              // 顶栏动作会被 SysAppBar 统一套一层 40×40 玻璃，所以这里只出
-              // 玻璃图标按钮（排序名放进 tooltip / 无障碍），不再自带 Padding。
-              _TimelineOptionsButton(
-                sort: _controller.sort,
-                filterCount: _controller.activeFilterCount,
-                onPressed: _showOptions,
+              // SysAppBar 是按「放进 actions 的那个值」的类型判断要不要套
+              // 40×40 圆玻璃的，所以 SysAppBarWideAction 必须是这里的直接子项；
+              // 放进 _TimelineOptionsButton 内部（它的 build 返回值）没用，
+              // SysAppBar 看到的是 _TimelineOptionsButton，照旧套圆玻璃把文字压出界。
+              SysAppBarWideAction(
+                child: _TimelineOptionsButton(
+                  sort: _controller.sort,
+                  filterCount: _controller.activeFilterCount,
+                  onPressed: _showOptions,
+                ),
               ),
             ],
           ),

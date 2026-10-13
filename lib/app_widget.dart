@@ -149,6 +149,19 @@ class _AppWidgetState extends State<AppWidget>
     final BorderRadius globalRadius = BorderRadius.circular(radius);
     final RoundedRectangleBorder globalShape =
         RoundedRectangleBorder(borderRadius: globalRadius);
+    // 下面两处是往 Apple 观感靠的最小改动（细节见各自注释）：
+    // 1) 压低 Material 3 的「表面着色」（surfaceTint）：M3 会给卡片 / 弹窗 /
+    //    菜单叠一层主题色的半透明覆盖，苹果的界面是中性灰面，不这么做白面上
+    //    会泛出一层莫名的绿/紫。
+    // 2) 点按反馈从 M3 的 InkSparkle（Android 上会溅出小星星）换成克制的
+    //    InkRipple，并且只留一点极淡的高亮 —— 苹果的按钮按下就是轻微压暗。
+    final ColorScheme scheme = colorScheme ??
+        ColorScheme.fromSeed(
+          seedColor: color ?? Colors.green,
+          brightness: brightness,
+        );
+    final Color splash = scheme.primary.withValues(alpha: 0.08);
+    final Color highlight = scheme.primary.withValues(alpha: 0.06);
     return ThemeData(
       useMaterial3: true,
       fontFamily: fontFamily,
@@ -157,22 +170,48 @@ class _AppWidgetState extends State<AppWidget>
       colorScheme: colorScheme,
       progressIndicatorTheme: progressIndicatorTheme2024,
       sliderTheme: sliderTheme2024,
+      // Apple 观感：克制的按下反馈，不要 Material 3 的星星水波。
+      splashFactory: InkRipple.splashFactory,
+      splashColor: splash,
+      highlightColor: highlight,
       pageTransitionsTheme: pageTransitionsTheme2024,
       // 下面这些是 Material 自带的「面板类」控件。以前各自用框架默认圆角
       // （卡片 12、对话框 28、输入框 4/12……），彼此对不上；统一到全局半径后，
       // 卡片、弹窗、底部弹层、输入框、标签、菜单、提示条看起来才是同一套。
-      cardTheme: CardThemeData(shape: globalShape, clipBehavior: Clip.antiAlias),
-      dialogTheme: DialogThemeData(shape: globalShape),
+      //
+      // 表面着色归零：M3 默认把主题色以低透明度叠在所有 surface 上（primary /
+      // secondary / surfaceContainer……），卡片和面板因此都泛着主题色的偏色。
+      // 苹果的中性面不这么做。主题里需要用的容器色仍是 ColorScheme 给的，只是
+      // 不再额外「染」一层。
+      cardTheme: CardThemeData(
+        shape: globalShape,
+        clipBehavior: Clip.antiAlias,
+        surfaceTintColor: Colors.transparent,
+      ),
+      dialogTheme: DialogThemeData(
+        shape: globalShape,
+        surfaceTintColor: Colors.transparent,
+      ),
       bottomSheetTheme: const BottomSheetThemeData().copyWith(
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(radius)),
         ),
+        surfaceTintColor: Colors.transparent,
       ),
-      popupMenuTheme: PopupMenuThemeData(shape: globalShape),
+      popupMenuTheme: PopupMenuThemeData(
+        shape: globalShape,
+        surfaceTintColor: Colors.transparent,
+      ),
       menuTheme: MenuThemeData(
-        style: MenuStyle(shape: WidgetStatePropertyAll<OutlinedBorder>(globalShape)),
+        style: MenuStyle(
+          shape: WidgetStatePropertyAll<OutlinedBorder>(globalShape),
+          surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
+        ),
       ),
-      chipTheme: ChipThemeData(shape: globalShape),
+      chipTheme: ChipThemeData(
+        shape: globalShape,
+        surfaceTintColor: Colors.transparent,
+      ),
       inputDecorationTheme: InputDecorationTheme(
         border: OutlineInputBorder(borderRadius: globalRadius),
         enabledBorder: OutlineInputBorder(borderRadius: globalRadius),

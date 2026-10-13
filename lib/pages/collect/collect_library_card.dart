@@ -180,7 +180,8 @@ class _CollectPosterCard extends StatelessWidget {
 
       return Material(
         color: colors.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(KazumiGlass.radiusOf(context)),
+        // 竖版卡片保持原来的圆角（紧凑 16 / 常规 20），不跟全局屏幕圆角走。
+        borderRadius: BorderRadius.circular(compact ? 16 : 20),
         clipBehavior: Clip.antiAlias,
         child: Semantics(
           button: true,
@@ -240,7 +241,8 @@ class _CollectListTile extends StatelessWidget {
 
     return Material(
       color: colors.surfaceContainerLow,
-      borderRadius: BorderRadius.circular(KazumiGlass.radiusOf(context)),
+      // 横向条目原来是 24，不跟全局屏幕圆角走。
+      borderRadius: BorderRadius.circular(24),
       clipBehavior: Clip.antiAlias,
       child: Stack(
         children: [
@@ -264,8 +266,8 @@ class _CollectListTile extends StatelessWidget {
                       height: 120,
                       child: _CollectCover(
                         item: item,
-                        borderRadius:
-                            BorderRadius.circular(KazumiGlass.radiusOf(context)),
+                        // 横向条目的封面原来是 16。
+                        borderRadius: BorderRadius.circular(16),
                       ),
                     ),
                   ),

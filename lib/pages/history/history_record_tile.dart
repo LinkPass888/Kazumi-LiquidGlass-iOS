@@ -238,18 +238,22 @@ class HistoryRecordTile extends StatelessWidget {
             onPressed: onDetails,
             label: '番剧详情',
           ),
-          SubmenuButton(
-            menuChildren: [
-              for (final type in CollectType.values)
-                KazumiMenuItem(
-                  selected: collectType == type,
-                  onPressed: onChangeCollect == null
-                      ? null
-                      : () => onChangeCollect!(type),
-                  label: type.label,
-                ),
-            ],
-            child: Text(collectType.label),
+          // 触发条目也要和同面板的 KazumiMenuItem 一样留 3 的外边距，
+          // 高亮离面板边框的间距才一致。
+          KazumiGlass.menuItemSlot(
+            child: SubmenuButton(
+              menuChildren: [
+                for (final type in CollectType.values)
+                  KazumiMenuItem(
+                    selected: collectType == type,
+                    onPressed: onChangeCollect == null
+                        ? null
+                        : () => onChangeCollect!(type),
+                    label: type.label,
+                  ),
+              ],
+              child: Text(collectType.label),
+            ),
           ),
           const Divider(),
           KazumiMenuItem(

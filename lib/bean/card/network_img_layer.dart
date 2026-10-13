@@ -1,7 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
-import 'package:kazumi/bean/liquid_glass/kazumi_glass.dart';
 import 'package:kazumi/services/logging/logger.dart';
+import 'package:kazumi/utils/constants.dart';
 import 'package:kazumi/utils/image_extension.dart';
 
 class NetworkImgLayer extends StatelessWidget {
@@ -143,11 +143,11 @@ class NetworkImgLayer extends StatelessWidget {
   BorderRadius _borderRadiusOf(BuildContext context) =>
       borderRadius ??
       BorderRadius.circular(switch (type) {
-        // 头像要正圆，不受全局圆角影响
+        // 头像要正圆，不受圆角设置影响
         'avatar' => 50,
         'emote' => 0,
-        // 缩略图 / 封面：跟全局统一圆角走
-        _ => KazumiGlass.radiusOf(context),
+        // 缩略图 / 封面：沿用原来的 12，不跟全局屏幕圆角走。
+        _ => StyleString.imgRadius.x,
       });
 
   Widget _placeholder(BuildContext context) {

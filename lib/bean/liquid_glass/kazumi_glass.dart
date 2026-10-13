@@ -109,6 +109,19 @@ abstract final class KazumiGlass {
   static const EdgeInsets menuItemMargin =
       EdgeInsets.symmetric(horizontal: 3, vertical: 3);
 
+  /// 把一个「不是 [menuItem] / [KazumiMenuItem] 的条目」放进玻璃面板。
+  ///
+  /// 玻璃面板给四周留 3（[menuPanelPadding]），条目自己再留 3
+  /// （[menuItemMargin]），合计 [menuPanelInset] = 6 —— 深色填充离玻璃边框、
+  /// 离相邻填充才会一样宽。
+  ///
+  /// [menuItem] 和 [KazumiMenuItem] 已经把这份外边距打包好了；但框架的
+  /// SubmenuButton / MenuItemButton 这类条目不会自己留，直接塞进面板的话
+  /// 高亮离玻璃只有 3，比旁边的条目窄一半。凡是往玻璃面板里放这类条目，
+  /// 都要套这一层。
+  static Widget menuItemSlot({required Widget child}) =>
+      Padding(padding: menuItemMargin, child: child);
+
   /// 菜单条目的高亮/选中圆角：= 面板圆角 − [menuPanelInset]。
   ///
   /// 这不是「另一个圆角」，而是同心圆的必然结果：条目离面板内边 [menuPanelInset]，
@@ -138,8 +151,10 @@ abstract final class KazumiGlass {
           ),
         ),
       ),
-      // 按下/悬停的深色
-      overlayColor: WidgetStatePropertyAll(primary.withValues(alpha: 0.18)),
+      // 按下/悬停的深色：和 _GlassTapTarget 的按下填充同一个值。
+      // 以前这里是 0.18，而别处（菜单条目的按下、子菜单触发条目）是 0.22 ——
+      // 同样是「按下」，同一块面板里的条目深浅却不一样。
+      overlayColor: WidgetStatePropertyAll(primary.withValues(alpha: 0.22)),
     );
   }
 
@@ -419,9 +434,8 @@ abstract final class KazumiGlass {
         const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
     double? radius,
   }) {
-    return Padding(
+    return menuItemSlot(
       // 3 + 面板的 3 = 6：四边留白等宽（相邻条目之间也是 3 + 3 = 6）
-      padding: menuItemMargin,
       // 必须用「条目自己的 context」找菜单，不能用传进来的 context：
       // 传进来的 context 属于构建菜单的那棵树（播放器面板 / Observer），
       // 它在菜单浮层外面 —— 在那里查 MenuController 和 KazumiMenuCloseScope
