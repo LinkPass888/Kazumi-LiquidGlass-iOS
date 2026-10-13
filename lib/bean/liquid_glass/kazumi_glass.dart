@@ -328,6 +328,10 @@ abstract final class KazumiGlass {
   }
 
   /// 一颗可点的小玻璃按钮（放送星期、追番分类这类标签）。
+  ///
+  /// [shape]/[radius] 默认是「全局面板圆角」（[panelShapeOf] /
+  /// [panelRadiusOf]）：这些成排的玻璃标签和菜单、卡片、顶栏宽按钮用的是同一套
+  /// 圆角，整机看上去才是一套语言。以前这里写死胶囊，和别处的玻璃对不上。
   static Widget glassButton({
     required BuildContext context,
     required Widget child,
@@ -335,12 +339,40 @@ abstract final class KazumiGlass {
     bool selected = false,
     EdgeInsetsGeometry padding =
         const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+    LiquidGlassShape? shape,
+    double? radius,
   }) {
     return _GlassTapTarget(
       onTap: onTap,
-      shape: circleShape,
+      shape: shape ?? panelShapeOf(context),
       padding: padding,
       selected: selected,
+      radius: radius ?? panelRadiusOf(context),
+      child: child,
+    );
+  }
+
+  /// 顶栏里带文字的宽玻璃按钮（时间表的排序、追番的同步）。
+  ///
+  /// 顶栏默认每个动作是一颗 40×40 的圆玻璃，图标居中 —— 那只适合纯图标按钮。
+  /// 带文字的按钮需要更宽，塞进圆里会溢出，所以走这颗：[height] 和圆按钮一样是
+  /// [barButtonSize]（同一行等高、垂直居中对齐），形状用全局面板圆角
+  /// （[panelShapeOf]），左右留白自己给。
+  ///
+  /// 直接放进 `SysAppBar.actions` 会被当成 40×40 的动作压扁，记得套一层
+  /// `SysAppBarWideAction`。
+  static Widget barPill({
+    required BuildContext context,
+    required Widget child,
+    required VoidCallback? onPressed,
+    EdgeInsetsGeometry padding = const EdgeInsets.symmetric(horizontal: 14),
+  }) {
+    return _GlassTapTarget(
+      onTap: onPressed,
+      shape: panelShapeOf(context),
+      padding: padding,
+      height: barButtonSize,
+      radius: panelRadiusOf(context),
       child: child,
     );
   }

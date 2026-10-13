@@ -22,8 +22,12 @@ class _TimelineWeekSelector extends StatelessWidget {
 
   static const _weekdays = ['一', '二', '三', '四', '五', '六', '日'];
 
+  /// 这一排按钮的总高。[_verticalTrim] 是从原来那版的 40 里收掉的量，
+  /// 同时会把下面那张表整体上移同样的距离（见 timeline_page.dart 的 weekHeight）。
+  static const double _verticalTrim = 8;
+
   static double heightFor(TextScaler scaler) =>
-      40 + scaler.scale(20) + scaler.scale(16);
+      40 - _verticalTrim + scaler.scale(20) + scaler.scale(16);
 
   @override
   Widget build(BuildContext context) {

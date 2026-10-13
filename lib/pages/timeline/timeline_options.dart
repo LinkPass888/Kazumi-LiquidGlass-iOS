@@ -33,19 +33,40 @@ class _TimelineOptionsButton extends StatelessWidget {
       label: Text('$filterCount'),
       backgroundColor: colors.primary,
       textColor: colors.onPrimary,
-      child: const Icon(Icons.tune_rounded, size: 22),
+      child: const Icon(Icons.tune_rounded, size: 20),
     );
-    // 顶栏动作固定 40×40 并会被 SysAppBar 统一套一层玻璃，所以这里只出图标，
-    // 不再用带文字的填充按钮（文字放进 tooltip 与无障碍标签里）。
+    // 和原版一样：排序方式直接写在按钮上（图标 + 当前排序名），不再只出一个
+    // 图标让人点进去才知道现在按什么排。顶栏的默认动作是 40×40 的圆玻璃，装不下
+    // 文字，所以这里用 [SysAppBarWideAction] + [KazumiGlass.barPill] 出一颗更宽
+    // 的玻璃药丸，圆角跟着全局走（panelRadiusOf）。
+    final label = Text(
+      sort.label,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: Theme.of(context).textTheme.labelLarge,
+    );
     return Semantics(
       label: _timelineOptionsTitle,
       value: summary,
       button: true,
       onTap: onPressed,
       excludeSemantics: true,
-      child: Tooltip(
-        message: '$_timelineOptionsTitle：$summary',
-        child: IconButton(onPressed: onPressed, icon: icon),
+      child: SysAppBarWideAction(
+        child: Tooltip(
+          message: '$_timelineOptionsTitle：$summary',
+          child: KazumiGlass.barPill(
+            context: context,
+            onPressed: onPressed,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                icon,
+                const SizedBox(width: 6),
+                label,
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

@@ -14,6 +14,21 @@ TextStyle appBarTitleStyle(BuildContext context) =>
           fontWeight: FontWeight.w700,
         );
 
+/// 顶栏里的「宽动作」：图标 + 文字的自带玻璃药丸。
+///
+/// [SysAppBar] 会把每个 action 统一套进一层 40×40 的圆玻璃（图标居中）。
+/// 带文字的按钮塞不进那个圆，所以用这个包一层放进 `actions`：SysAppBar 见到它会
+/// 原样透传（不再套圆玻璃、也不再量成 40×40），玻璃由调用方自己用
+/// [KazumiGlass.barPill] 出。
+class SysAppBarWideAction extends StatelessWidget {
+  const SysAppBarWideAction({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => child;
+}
+
 class SysAppBar extends StatelessWidget implements PreferredSizeWidget {
   final double? toolbarHeight;
 
@@ -94,7 +109,9 @@ class SysAppBar extends StatelessWidget implements PreferredSizeWidget {
     }
     final List<Widget> actionWidgets = <Widget>[];
     for (final Widget action in acs) {
-      if (action is SizedBox) {
+      // 宽动作（图标 + 文字的自带玻璃药丸）原样透传：它的高度已经和圆玻璃一致
+      // （KazumiGlass.barButtonSize），再套一层 40×40 会把文字压扁。
+      if (action is SysAppBarWideAction || action is SizedBox) {
         actionWidgets.add(action);
         continue;
       }

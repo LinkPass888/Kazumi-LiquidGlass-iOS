@@ -53,8 +53,44 @@ class NetworkImgLayer extends StatelessWidget {
       heroContext,
       Material(
         type: MaterialType.transparency,
-        child: hero.child,
+        child: _noFade(hero.child),
       ),
+    );
+  }
+
+  /// 飞行中用「不淡入」的版本来画这张图。
+  ///
+  /// shuttle 是**新构建**的一棵子树：源卡片的 [NetworkImgLayer] 默认带 120ms
+  /// 淡入，直接复用就等于飞行途中又淡入一次；而落地后接手的静态封面（详情页那
+  /// 张）是 0 淡入。两边不一致，落位那一帧就会看见封面「闪一下」——首页点进详情
+  /// 时能看出来（首页卡片、详情封面尺寸都大），时间表/收藏那种小封面几乎看不
+  /// 出来。这里把飞行这一份统一成 0 淡入，起飞、飞行、落地全程同一张图。
+  static Widget _noFade(Widget child) {
+    // 卡片有的把图片直接交给 Hero，有的套了一层 ClipRRect 出圆角
+    // （时间表卡片），两种都要能改到里面的图。
+    if (child is ClipRRect && child.child is NetworkImgLayer) {
+      return ClipRRect(
+        borderRadius: child.borderRadius,
+        clipBehavior: child.clipBehavior,
+        child: _noFade(child.child!),
+      );
+    }
+    if (child is! NetworkImgLayer) {
+      return child;
+    }
+    return NetworkImgLayer(
+      src: child.src,
+      width: child.width,
+      height: child.height,
+      fit: child.fit,
+      type: child.type,
+      origAspectRatio: child.origAspectRatio,
+      filterQuality: child.filterQuality,
+      color: child.color,
+      colorBlendMode: child.colorBlendMode,
+      borderRadius: child.borderRadius,
+      fadeInDuration: Duration.zero,
+      fadeOutDuration: Duration.zero,
     );
   }
 
