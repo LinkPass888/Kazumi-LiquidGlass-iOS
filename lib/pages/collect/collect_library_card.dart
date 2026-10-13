@@ -385,7 +385,11 @@ class _CollectEntryMenu extends StatelessWidget {
                 : () => onChanged!(status),
             label: status.label,
           ),
-        const Divider(indent: 16, endIndent: 16),
+        // 分隔线跟着条目一起让开面板留白：左右各 menuPanelInset。
+        const Divider(
+          indent: KazumiGlass.menuPanelInset,
+          endIndent: KazumiGlass.menuPanelInset,
+        ),
         KazumiMenuItem(
           onPressed:
               onChanged == null ? null : () => onChanged!(CollectType.none),

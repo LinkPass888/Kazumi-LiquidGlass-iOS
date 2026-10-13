@@ -94,33 +94,26 @@ abstract final class KazumiGlass {
   /// 不要各处自己写数字。
   static const double menuPanelInset = 6;
 
-  /// 条目自身还带了 3 的外边距（见 [menuItem]），面板再补 3 就正好 6。
+  /// 面板/玻璃四周给内容的留白 = [menuPanelInset]（6）。
   ///
-  /// 面板 3 + 条目 3 = 6，相邻两个条目之间是 3 + 3 = 6：高亮块离玻璃边框的
-  /// 距离、和离上下选项的距离完全一样宽。
-  static const EdgeInsets menuPanelPadding = EdgeInsets.all(3);
+  /// 深色填充离玻璃外框就是这一段（和热门番组菜单一个值，也是「玻璃圆角 −
+  /// 填充圆角」的同心距离）。条目自己不再额外留白（[menuItemMargin] 为 0），
+  /// 所以上下相邻两个填充之间正好是 0、严丝合缝。
+  static const EdgeInsets menuPanelPadding = EdgeInsets.all(menuPanelInset);
 
-  /// 条目给自己留的外边距。
+  /// 条目自己的外边距。现在是 0。
   ///
-  /// [menuPanelPadding] 的另一半：面板/玻璃 3 + 条目 3 = 6 = [menuPanelInset]，
-  /// 条目高亮（圆角 = 面板圆角 − 6）和面板才是同心圆。框架自己的
-  /// MenuItemButton 不带这个外边距，所以 [KazumiMenuItem] 要自己补上，
-  /// 和 [menuItem] 保持一致。
-  static const EdgeInsets menuItemMargin =
-      EdgeInsets.symmetric(horizontal: 3, vertical: 3);
+  /// 以前是 3：面板 3 + 条目 3 = 6 才是 [menuPanelInset]，相邻条目之间却是
+  /// 3 + 3 = 6 —— 上下两个填充之间留了一条 6 的缝，和「贴合」的观感不符。
+  /// 既然 [menuPanelPadding] 已经直接取满 6，这里归零，填充之间就贴在一起。
+  static const EdgeInsets menuItemMargin = EdgeInsets.zero;
 
   /// 把一个「不是 [menuItem] / [KazumiMenuItem] 的条目」放进玻璃面板。
   ///
-  /// 玻璃面板给四周留 3（[menuPanelPadding]），条目自己再留 3
-  /// （[menuItemMargin]），合计 [menuPanelInset] = 6 —— 深色填充离玻璃边框、
-  /// 离相邻填充才会一样宽。
-  ///
-  /// [menuItem] 和 [KazumiMenuItem] 已经把这份外边距打包好了；但框架的
-  /// SubmenuButton / MenuItemButton 这类条目不会自己留，直接塞进面板的话
-  /// 高亮离玻璃只有 3，比旁边的条目窄一半。凡是往玻璃面板里放这类条目，
-  /// 都要套这一层。
-  static Widget menuItemSlot({required Widget child}) =>
-      Padding(padding: menuItemMargin, child: child);
+  /// 留白已经由面板的 [menuPanelPadding] 一次性给足（6），条目无需再补，
+  /// 所以这里直接透传 —— 保留这个命名是为了让调用点读起来仍然是在「占一个
+  /// 条目槽位」，[menuItem] / [KazumiMenuItem] / 框架的 SubmenuButton 都用它。
+  static Widget menuItemSlot({required Widget child}) => child;
 
   /// 菜单条目的高亮/选中圆角：= 面板圆角 − [menuPanelInset]。
   ///
@@ -435,7 +428,7 @@ abstract final class KazumiGlass {
     double? radius,
   }) {
     return menuItemSlot(
-      // 3 + 面板的 3 = 6：四边留白等宽（相邻条目之间也是 3 + 3 = 6）
+      // 留白由面板的 menuPanelPadding（6）给足；条目之间贴合，不再各留 3。
       // 必须用「条目自己的 context」找菜单，不能用传进来的 context：
       // 传进来的 context 属于构建菜单的那棵树（播放器面板 / Observer），
       // 它在菜单浮层外面 —— 在那里查 MenuController 和 KazumiMenuCloseScope

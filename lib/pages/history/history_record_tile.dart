@@ -238,8 +238,8 @@ class HistoryRecordTile extends StatelessWidget {
             onPressed: onDetails,
             label: '番剧详情',
           ),
-          // 触发条目也要和同面板的 KazumiMenuItem 一样留 3 的外边距，
-          // 高亮离面板边框的间距才一致。
+          // 触发条目和同面板的 KazumiMenuItem 一样占一个条目槽位，
+          // 高亮的左右留白、和相邻条目的贴合方式才一致。
           KazumiGlass.menuItemSlot(
             child: SubmenuButton(
               menuChildren: [

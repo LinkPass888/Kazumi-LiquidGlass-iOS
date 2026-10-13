@@ -615,8 +615,8 @@ class _PlayerItemPanelState extends State<PlayerItemPanel> {
   /// 才是同一块。条目仍交给 [KazumiMenuItem]，按下/选中的同心圆高亮由
   /// KazumiMenuButton 铺下来的 MenuButtonTheme 提供，和一级条目完全一致。
   Widget _glassSubmenu({required Widget child, required List<Widget> items}) {
-    // 触发条目本身也要和同面板里的 KazumiMenuItem 一样留 3 的外边距，
-    // 否则它的高亮（以及展开时的选中态）离玻璃边框只有 3，比旁边的条目窄一半。
+    // 触发条目本身和同面板里的 KazumiMenuItem 一样占一个条目槽位，
+    // 按下高亮（以及展开时的选中态）的留白和相邻条目一致。
     return KazumiGlass.menuItemSlot(
       child: SubmenuButton(
         // 面板透明：真玻璃画在 menuChildren 里，这里不能再压一层底色

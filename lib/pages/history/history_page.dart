@@ -131,9 +131,12 @@ class _HistoryPageState extends State<HistoryPage> {
                     child: Text(
                       '完成',
                       style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                            // 跟顶栏的图标同一个颜色（AppBar 的动作图标用的是
+                            // colorScheme.onSurface），不要主题色 —— 深色下是白、
+                            // 浅色下是黑，才和旁边的图标融为一体。
                             color: _clearing
                                 ? Theme.of(context).disabledColor
-                                : Theme.of(context).colorScheme.primary,
+                                : Theme.of(context).colorScheme.onSurface,
                           ),
                     ),
                   )

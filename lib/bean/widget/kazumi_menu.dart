@@ -168,8 +168,8 @@ class KazumiMenuItem extends StatelessWidget {
             (states) => states.contains(WidgetState.disabled) ? null : color,
           );
     return KazumiGlass.menuItemSlot(
-      // 面板/玻璃给 3，条目再自己留 3，合计 6：高亮块离面板边框的距离和
-      // 相邻条目高亮之间的距离一样宽，高亮圆角（面板圆角 − 6）才是同心的。
+      // 留白全部由面板给（menuPanelPadding = 6）：高亮离玻璃外框 6、圆角
+      // （面板圆角 − 6）和玻璃同心；条目之间不再留缝。
       child: MenuItemButton(
         onPressed: onPressed,
         requestFocusOnHover: requestFocusOnHover,
