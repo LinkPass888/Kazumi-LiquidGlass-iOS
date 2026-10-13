@@ -83,6 +83,15 @@ abstract final class KazumiGlass {
   /// 距离、和离上下选项的距离完全一样宽。
   static const EdgeInsets menuPanelPadding = EdgeInsets.all(3);
 
+  /// 条目给自己留的外边距。
+  ///
+  /// [menuPanelPadding] 的另一半：面板/玻璃 3 + 条目 3 = 6 = [menuPanelInset]，
+  /// 条目高亮（圆角 = 面板圆角 − 6）和面板才是同心圆。框架自己的
+  /// MenuItemButton 不带这个外边距，所以 [KazumiMenuItem] 要自己补上，
+  /// 和 [menuItem] 保持一致。
+  static const EdgeInsets menuItemMargin =
+      EdgeInsets.symmetric(horizontal: 3, vertical: 3);
+
   /// 菜单条目的高亮/选中圆角：= 面板圆角 − [menuPanelInset]。
   static double menuItemRadiusOf(BuildContext context) =>
       (panelRadiusOf(context) - menuPanelInset).clamp(6.0, 18.0);
@@ -360,7 +369,7 @@ abstract final class KazumiGlass {
   }) {
     return Padding(
       // 3 + 面板的 3 = 6：四边留白等宽（相邻条目之间也是 3 + 3 = 6）
-      padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 3),
+      padding: menuItemMargin,
       // 必须用「条目自己的 context」找菜单，不能用传进来的 context：
       // 传进来的 context 属于构建菜单的那棵树（播放器面板 / Observer），
       // 它在菜单浮层外面 —— 在那里查 MenuController 和 KazumiMenuCloseScope

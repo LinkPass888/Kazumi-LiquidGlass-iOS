@@ -72,18 +72,24 @@ class KazumiMenuButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // 真玻璃面板：框架那层 Material 只剩透明外壳，玻璃由 menuChildren 自己带上。
-    MenuStyle panelStyle = _panelStyle(context).merge(style);
+    // 调用方传进来的 style 优先（例如推荐页只改 maximumSize）。注意
+    // [MenuStyle.merge] 是「自己优先」：panelStyle.merge(style) 会让默认面板
+    // 样式反过来盖住调用方的设置，所以必须把默认样式合到调用方后面。
+    // 顺序写反过，后果就是「面板整块变透明」这类调用方的设置全部失效 ——
+    // 玻璃菜单背后那层半透明 surface 就是这么冒出来的。
+    final MenuStyle panelStyle = _panelStyle(context);
+    MenuStyle resolvedStyle =
+        style == null ? panelStyle : style!.merge(panelStyle);
     List<Widget> children = menuChildren;
     if (glass && KazumiGlass.enabled) {
-      panelStyle = panelStyle.merge(
-        const MenuStyle(
-          backgroundColor: WidgetStatePropertyAll(Colors.transparent),
-          surfaceTintColor: WidgetStatePropertyAll(Colors.transparent),
-          shadowColor: WidgetStatePropertyAll(Colors.transparent),
-          elevation: WidgetStatePropertyAll(0),
-          padding: WidgetStatePropertyAll(EdgeInsets.zero),
-        ),
+      // 面板整块透明，玻璃由 children 自己带上。这里用 copyWith：不管调用方
+      // 传了什么，玻璃都得是唯一的那层表面，也不能再压一层底色/阴影/内边距。
+      resolvedStyle = resolvedStyle.copyWith(
+        backgroundColor: const WidgetStatePropertyAll(Colors.transparent),
+        surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
+        shadowColor: const WidgetStatePropertyAll(Colors.transparent),
+        elevation: const WidgetStatePropertyAll(0),
+        padding: const WidgetStatePropertyAll(EdgeInsets.zero),
       );
       children = [
         KazumiGlass.glassSurface(
@@ -115,7 +121,7 @@ class KazumiMenuButton extends StatelessWidget {
         onOpen: onOpen,
         onClose: onClose,
         // 调用方传进来的 style 优先（例如推荐页只改 maximumSize）。
-        style: panelStyle,
+        style: resolvedStyle,
         menuChildren: children,
         builder: (context, controller, _) => builder(
           context,
@@ -161,18 +167,23 @@ class KazumiMenuItem extends StatelessWidget {
         : WidgetStateProperty.resolveWith<Color?>(
             (states) => states.contains(WidgetState.disabled) ? null : color,
           );
-    return MenuItemButton(
-      onPressed: onPressed,
-      requestFocusOnHover: requestFocusOnHover,
-      style: ButtonStyle(
-        foregroundColor: foregroundColor,
-        iconColor: foregroundColor,
-      ),
-      leadingIcon: leadingIcon,
-      child: Semantics(
-        selected: selected,
-        inMutuallyExclusiveGroup: selected == null ? null : true,
-        child: Text(label, textAlign: TextAlign.start),
+    return Padding(
+      // 面板/玻璃给 3，条目再自己留 3，合计 6：高亮块离面板边框的距离和
+      // 相邻条目高亮之间的距离一样宽，高亮圆角（面板圆角 − 6）才是同心的。
+      padding: KazumiGlass.menuItemMargin,
+      child: MenuItemButton(
+        onPressed: onPressed,
+        requestFocusOnHover: requestFocusOnHover,
+        style: ButtonStyle(
+          foregroundColor: foregroundColor,
+          iconColor: foregroundColor,
+        ),
+        leadingIcon: leadingIcon,
+        child: Semantics(
+          selected: selected,
+          inMutuallyExclusiveGroup: selected == null ? null : true,
+          child: Text(label, textAlign: TextAlign.start),
+        ),
       ),
     );
   }

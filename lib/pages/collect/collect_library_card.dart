@@ -369,11 +369,9 @@ class _CollectEntryMenu extends StatelessWidget {
     final title = CollectLibraryQuery.titleOf(entry);
     return KazumiMenuButton(
       enabled: onChanged != null,
-      style: MenuStyle(
-        shape: WidgetStatePropertyAll(RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(showStatusLabel ? 16 : 20),
-        )),
-      ),
+      // 卡片上的收藏状态菜单也用真玻璃：卡片背后是网格封面，有东西可折射。
+      // 圆角不用自己给 —— 玻璃和条目高亮都走 KazumiGlass 那一套同心圆。
+      glass: true,
       menuChildren: [
         for (final status
             in CollectType.values.where((type) => type.isCollected))

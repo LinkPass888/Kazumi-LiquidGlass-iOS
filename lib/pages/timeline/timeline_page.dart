@@ -200,92 +200,70 @@ class _TimelinePageState extends State<TimelinePage> {
           ),
           body: SafeArea(
             top: false,
-            child: LayoutBuilder(builder: (context, viewport) {
-              // 竖屏时外层视口里除了「固定住的周选择器」没有任何要跟着滚的东西
-              // （季度标题在顶栏），NestedScrollView 就只剩下一层嵌套滚动：外层
-              // 是 ClampingPhysics、内层是 iOS 自己的 BouncingPhysics，两套混在
-              // 一起，滚动到底、回弹和上下切换的时候会一顿一顿的。这里直接
-              // Column 把周选择器钉住，让每天那张表格自己滚（原生手感），
-              // 效果和「pinned 的周选择器」完全一样。横向 / 宽屏仍然保留
-              // NestedScrollView：那种布局里季度标题是要跟着滚走的。
-              final nested = !narrowPortrait;
-              final noContent = loading && calendar.every((day) => day.isEmpty);
-              final Widget tabs = noContent
-                  // 加载态要在「整个 body」里居中：NestedScrollView 时内层视口比
-                  // 可见区域高，靠这两个数把差出来的表头高度让回去；Column 时
-                  // Expanded 已经是表头下方那块，直接按它居中。
-                  ? (nested
-                      ? _buildLoading(viewport.maxHeight, weekHeight)
-                      : _buildLoading(0, 0))
-                  : failed
-                      ? _TimelineScrollView(
-                          injectOverlap: nested,
-                          slivers: [
-                            SliverPadding(
-                              padding: const EdgeInsets.all(24),
-                              sliver: SliverToBoxAdapter(
-                                child: BangumiMirrorErrorWidget(
-                                  onRetry: () => _controller
-                                      .loadSeason(_controller.selectedDate),
-                                  onSettingsReturned: () {
-                                    if (mounted) setState(() {});
-                                  },
-                                ),
-                              ),
+            child: LayoutBuilder(
+                builder: (context, viewport) => NestedScrollView(
+                      // Keep the outer viewport clamped and unstretched so tabs stay fixed.
+                      physics: const ClampingScrollPhysics(),
+                      scrollBehavior: ScrollConfiguration.of(context).copyWith(
+                        overscroll: false,
+                        scrollbars: false,
+                      ),
+                      headerSliverBuilder: (context, innerBoxIsScrolled) => [
+                        if (seasonHeader != null)
+                          SliverToBoxAdapter(
+                            child: Padding(
+                              padding: EdgeInsets.fromLTRB(inset, 8, inset, 20),
+                              child: seasonHeader,
                             ),
-                          ],
-                        )
-                      : TabBarView(
-                          children: [
-                            for (var day = 0; day < 7; day++)
-                              _buildDay(
-                                context,
-                                day: day,
-                                items: calendar[day],
-                                watchingIds: watchingIds,
-                                columns: columns,
-                                inset: inset,
-                                compact: narrowPortrait,
-                                injectOverlap: nested,
-                              ),
-                          ],
-                        );
-              if (!nested) {
-                return Column(
-                  children: [weekSelector, Expanded(child: tabs)],
-                );
-              }
-              return NestedScrollView(
-                // Keep the outer viewport clamped and unstretched so tabs stay fixed.
-                physics: const ClampingScrollPhysics(),
-                scrollBehavior: ScrollConfiguration.of(context).copyWith(
-                  overscroll: false,
-                  scrollbars: false,
-                ),
-                headerSliverBuilder: (context, innerBoxIsScrolled) => [
-                  if (seasonHeader != null)
-                    SliverToBoxAdapter(
-                      child: Padding(
-                        padding: EdgeInsets.fromLTRB(inset, 8, inset, 20),
-                        child: seasonHeader,
-                      ),
-                    ),
-                  SliverOverlapAbsorber(
-                    handle: NestedScrollView.sliverOverlapAbsorberHandleFor(
-                        context),
-                    sliver: SliverPersistentHeader(
-                      pinned: true,
-                      delegate: _WeekHeaderDelegate(
-                        height: weekHeight,
-                        color: theme.scaffoldBackgroundColor,
-                        child: weekSelector,
-                      ),
-                    ),
-                  ),
-                ],
-                body: tabs,
-              );
-            }),
+                          ),
+                        SliverOverlapAbsorber(
+                          handle:
+                              NestedScrollView.sliverOverlapAbsorberHandleFor(
+                                  context),
+                          sliver: SliverPersistentHeader(
+                            pinned: true,
+                            delegate: _WeekHeaderDelegate(
+                              height: weekHeight,
+                              color: theme.scaffoldBackgroundColor,
+                              child: weekSelector,
+                            ),
+                          ),
+                        ),
+                      ],
+                      body: loading && calendar.every((day) => day.isEmpty)
+                          ? _buildLoading(viewport.maxHeight, weekHeight)
+                          : failed
+                              ? _TimelineScrollView(
+                                  slivers: [
+                                    SliverPadding(
+                                      padding: const EdgeInsets.all(24),
+                                      sliver: SliverToBoxAdapter(
+                                        child: BangumiMirrorErrorWidget(
+                                          onRetry: () => _controller.loadSeason(
+                                              _controller.selectedDate),
+                                          onSettingsReturned: () {
+                                            if (mounted) setState(() {});
+                                          },
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                )
+                              : TabBarView(
+                                  children: [
+                                    for (var day = 0; day < 7; day++)
+                                      _buildDay(
+                                        context,
+                                        day: day,
+                                        items: calendar[day],
+                                        watchingIds: watchingIds,
+                                        columns: columns,
+                                        inset: inset,
+                                        compact: narrowPortrait,
+                                      ),
+                                  ],
+                                ),
+                    )),
           ),
         );
       });
@@ -395,7 +373,6 @@ class _TimelinePageState extends State<TimelinePage> {
     required int columns,
     required double inset,
     required bool compact,
-    required bool injectOverlap,
   }) {
     final cardHeight = BangumiTimelineCard.heightFor(
         MediaQuery.textScalerOf(context),
@@ -404,7 +381,6 @@ class _TimelinePageState extends State<TimelinePage> {
     final filteredOut = day < rawCalendar.length && rawCalendar[day].isNotEmpty;
     return _TimelineScrollView(
       key: PageStorageKey('timeline-day-$day'),
-      injectOverlap: injectOverlap,
       slivers: [
         if (items.isEmpty)
           SliverFillRemaining(
@@ -460,29 +436,17 @@ class _TimelinePageState extends State<TimelinePage> {
 }
 
 class _TimelineScrollView extends StatelessWidget {
-  const _TimelineScrollView({
-    super.key,
-    required this.slivers,
-    this.injectOverlap = true,
-  });
+  const _TimelineScrollView({super.key, required this.slivers});
 
   final List<Widget> slivers;
-
-  /// 是否要给顶部补一段和固定表头等高的空白。
-  ///
-  /// 只有套在 NestedScrollView 里才需要（表头是 pinned 的 sliver，内容要能滚到
-  /// 它下面去）；竖屏改成 Column 之后表头和列表是并排的两块，不需要补这一段，
-  /// 也就没有 absorber 可以取 handle。
-  final bool injectOverlap;
 
   @override
   Widget build(BuildContext context) {
     return CustomScrollView(
       slivers: [
-        if (injectOverlap)
-          SliverOverlapInjector(
-            handle: NestedScrollView.sliverOverlapAbsorberHandleFor(context),
-          ),
+        SliverOverlapInjector(
+          handle: NestedScrollView.sliverOverlapAbsorberHandleFor(context),
+        ),
         ...slivers,
       ],
     );

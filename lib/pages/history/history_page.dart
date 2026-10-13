@@ -106,32 +106,8 @@ class _HistoryPageState extends State<HistoryPage> {
             title: Text('历史记录', style: appBarTitleStyle(context)),
             actions: [
               if (entries.isNotEmpty) ...[
-                Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: _editing
-                      // 「完成」是顶栏上的文字按钮：去掉 Material 的填充底色和
-                      // 自带内边距（否则会被 40×40 的动作槽挤偏），让它和旁边的
-                      // 玻璃图标按钮一样，只在玻璃正中显示文字。
-                      ? TextButton(
-                          onPressed: _clearing
-                              ? null
-                              : () => setState(() => _editing = false),
-                          style: TextButton.styleFrom(
-                            minimumSize: const Size(
-                                KazumiGlass.barButtonSize,
-                                KazumiGlass.barButtonSize),
-                            padding: EdgeInsets.zero,
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                            foregroundColor: Theme.of(context).colorScheme.primary,
-                          ),
-                          child: const Text('完成'),
-                        )
-                      : IconButton(
-                          tooltip: '管理历史记录',
-                          onPressed: () => setState(() => _editing = true),
-                          icon: const Icon(Icons.edit_outlined, size: 22),
-                        ),
-                ),
+                // 编辑中：「清空全部」在左，「完成」在最右（贴屏幕边，和返回键
+                // 左右对称）。
                 if (_editing)
                   IconButton(
                     tooltip: '清空全部历史记录',
@@ -139,6 +115,33 @@ class _HistoryPageState extends State<HistoryPage> {
                         ? null
                         : _clearHistory,
                     icon: const Icon(Icons.delete_sweep_outlined),
+                  ),
+                if (_editing)
+                  // 「完成」是顶栏上的文字按钮。这里不用 TextButton：Material
+                  // 按钮自己的最小尺寸/内边距会在 40×40 的动作槽里把文字挤偏。
+                  // 用和玻璃图标按钮同一套点按目标（整块玻璃居中、回弹一致），
+                  // 只把图标换成文字，位置就和旁边的图标按钮完全对齐。
+                  KazumiGlass.barSegment(
+                    context: context,
+                    onTap: _clearing
+                        ? null
+                        : () => setState(() => _editing = false),
+                    padding: EdgeInsets.zero,
+                    radius: KazumiGlass.barButtonSize / 2,
+                    child: Text(
+                      '完成',
+                      style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                            color: _clearing
+                                ? Theme.of(context).disabledColor
+                                : Theme.of(context).colorScheme.primary,
+                          ),
+                    ),
+                  )
+                else
+                  IconButton(
+                    tooltip: '管理历史记录',
+                    onPressed: () => setState(() => _editing = true),
+                    icon: const Icon(Icons.edit_outlined, size: 22),
                   ),
               ],
             ],

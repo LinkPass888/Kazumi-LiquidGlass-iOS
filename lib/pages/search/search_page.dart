@@ -369,8 +369,10 @@ class _SearchPageState extends State<SearchPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: const SysAppBar(
-          backgroundColor: Colors.transparent, title: Text('番剧搜索')),
+      appBar: SysAppBar(
+          backgroundColor: Colors.transparent,
+          // 和其它页面的大标题同一套字号字重（此前是框架默认的小标题）。
+          title: Text('番剧搜索', style: appBarTitleStyle(context))),
       body: SafeArea(
           top: false,
           child: LayoutBuilder(builder: (context, constraints) {
