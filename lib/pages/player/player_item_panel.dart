@@ -29,6 +29,15 @@ import 'package:kazumi/utils/format.dart';
 import 'package:kazumi/pages/player/player_transport_bar.dart';
 import 'package:kazumi/pages/player/player_screenshot_controls.dart';
 
+/// 播放器菜单一行的实际高度（= KazumiMenuItem 的 minimumSize 48 + 面板上下留白 6）。
+///
+/// 菜单的 [MenuAnchor.alignmentOffset] 要按整块面板的高度反推才能把菜单钉在按钮
+/// 上方，所以这里要知道一行有多高。
+const double _playMenuRowHeight = 48 + KazumiGlass.menuPanelInset;
+
+/// 菜单最下面一条离按钮顶边留的间隙（和 iOS 弹出菜单贴在控件边上一点点的观感）。
+const double _menuLiftAboveButton = 8;
+
 class PlayerItemPanel extends StatefulWidget {
   const PlayerItemPanel({
     super.key,
@@ -588,6 +597,29 @@ class _PlayerItemPanelState extends State<PlayerItemPanel> {
         onSelected: widget.handleSuperResolutionChange,
       );
 
+  /// 横屏时把菜单钉在按钮正上方几像素处。
+  ///
+  /// 以前这里是每个菜单各写死一个 dy（超分 -240、倍速和比例 -294），数字对不上
+  /// 行数和面板留白，超分菜单（3 项）就被顶到别人一两行以上，看着「弹得太高」。
+  /// 现在按 [itemCount] 反推整块面板的高度：不传 dy，让菜单贴住按钮上沿，
+  /// 再抬起 [_menuLiftAboveButton]，菜单最下面一条就落在按钮上方一点点的位置，
+  /// 三个菜单的观感才是同一套。
+  ///
+  /// [dx] 仍然各自保留（超分/倍速 -30、比例 -40）：三个按钮宽度不同，右对齐的
+  /// 位置要靠它对齐，和行高无关。
+  Offset? _landscapeMenuOffset(
+    BuildContext context,
+    int itemCount, {
+    double dx = -30,
+  }) =>
+      playerLandscapeOffset(
+        context,
+        Offset(
+          dx,
+          -(itemCount * _playMenuRowHeight + _menuLiftAboveButton),
+        ),
+      );
+
   Widget _menuButton(
           {required Widget child,
           required List<Widget> items,
@@ -694,7 +726,7 @@ class _PlayerItemPanelState extends State<PlayerItemPanel> {
         _menuButton(
           child: const Text('超分辨率', style: TextStyle(color: Colors.white)),
           items: _superResolutionItems,
-          alignmentOffset: playerLandscapeOffset(context, const Offset(-30, -240)),
+          alignmentOffset: _landscapeMenuOffset(context, _superResolutionItems.length),
         ),
         _menuButton(
           child: Text(
@@ -703,13 +735,14 @@ class _PlayerItemPanelState extends State<PlayerItemPanel> {
                   : '${playerController.playback.playerSpeed}x',
               style: const TextStyle(color: Colors.white)),
           items: _speedItems,
-          alignmentOffset: playerLandscapeOffset(context, const Offset(-30, -294)),
+          alignmentOffset: _landscapeMenuOffset(context, _speedItems.length),
         ),
         _menuButton(
           child: const Icon(Icons.aspect_ratio_rounded, color: Colors.white),
           tooltip: '视频比例',
           items: _aspectRatioItems,
-          alignmentOffset: playerLandscapeOffset(context, const Offset(-40, -294)),
+          alignmentOffset:
+              _landscapeMenuOffset(context, _aspectRatioItems.length, dx: -40),
         ),
         if (widget.onToggleSidePanel != null)
           IconButton(
