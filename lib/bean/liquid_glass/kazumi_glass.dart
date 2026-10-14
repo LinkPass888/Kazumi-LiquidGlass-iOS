@@ -87,26 +87,17 @@ abstract final class KazumiGlass {
   /// 同一个值，改 [radiusOf] 就一起变。
   static double panelRadiusOf(BuildContext context) => radiusOf(context);
 
-  /// 菜单条目高亮/选中填充的圆角。
-  ///
-  /// 苹果菜单里的选中高亮是**小圆角**，和面板外圈的大圆角本来就不同心，所以这里
-  /// 取一个固定的小圆角，不跟面板圆角走。之前的做法是「面板圆角 − 6」硬凑同心，
-  /// 但菜单行高只有 40——圆角不能超过行高的一半（20），26/24 这种值画不出来，
-  /// Skia 会把它退化成一个胶囊，看着就和面板的圆角完全不搭。
-  ///
-  /// 固定成 10 还有一个好处：它和 [KazumiGlass.menuPanelInset] 无关，面板圆角
-  /// 以后怎么调，条目高亮都不受影响。
-  static const double menuItemHighlightRadius = 10;
-
   /// 菜单内容离面板内边的距离。
   ///
-  /// 深色填充离玻璃外框就是这一段，所有菜单都从这里取，不要各处自己写数字。
-  /// 注意它**不再**用来反推条目的高亮圆角（见 [menuItemHighlightRadius]）。
+  /// 这是「同心圆」的关键：条目高亮圆角恒等于 面板圆角 − 这个值，两个圆角的
+  /// 圆心就落在同一点，看起来才是 iOS 那种同心圆。所有菜单都从这里取，
+  /// 不要各处自己写数字。
   static const double menuPanelInset = 6;
 
   /// 面板/玻璃四周给内容的留白 = [menuPanelInset]（6）。
   ///
-  /// 深色填充离玻璃外框就是这一段。条目自己不再额外留白（[menuItemMargin] 为 0），
+  /// 深色填充离玻璃外框就是这一段（和热门番组菜单一个值，也是「玻璃圆角 −
+  /// 填充圆角」的同心距离）。条目自己不再额外留白（[menuItemMargin] 为 0），
   /// 所以上下相邻两个填充之间正好是 0、严丝合缝。
   static const EdgeInsets menuPanelPadding = EdgeInsets.all(menuPanelInset);
 
@@ -124,28 +115,29 @@ abstract final class KazumiGlass {
   /// 条目槽位」，[menuItem] / [KazumiMenuItem] / 框架的 SubmenuButton 都用它。
   static Widget menuItemSlot({required Widget child}) => child;
 
-  /// 面板的轮廓：**苹果连续圆角**（squircle）。
+  /// 菜单条目的高亮/选中圆角：= 面板圆角 − [menuPanelInset]。
   ///
-  /// 面板本身是 UIKit 的原生玻璃，苹果画的就是连续圆角；Flutter 侧的面板裁剪
-  /// （非玻璃面板的 Material）也用同一族，形状才和原生玻璃对得上。
-  static OutlinedBorder panelOutline(BuildContext context) =>
+  /// 这不是「另一个圆角」，而是同心圆的必然结果：条目离面板内边 [menuPanelInset]，
+  /// 圆角跟着减掉同一个量，两个圆弧才是同一个圆心。所以全局圆角一改，这里跟着改。
+  static double menuItemRadiusOf(BuildContext context) =>
+      (panelRadiusOf(context) - menuPanelInset).clamp(6.0, 32.0);
+
+  /// 面板和条目填充共用的轮廓：**苹果连续圆角**（squircle）。
+  ///
+  /// 面板本身是 UIKit 的原生玻璃，苹果画的就是连续圆角；条目填充如果还用
+  /// Flutter 的 [RoundedRectangleBorder]（正圆弧），把 squircle 内缩 6 得到
+  /// 的并不是「平行内缩」的曲线 —— 直边上缝宽一样，**角上会变宽**，看着就是
+  /// 「不直、和面板不平行」。两边都用连续圆角，圆角才是同族的同心曲线。
+  ///
+  /// [item] 为 true 时取条目圆角（面板圆角 − [menuPanelInset]），否则取面板圆角。
+  static OutlinedBorder panelOutline(BuildContext context, {bool item = false}) =>
       RoundedSuperellipseBorder(
         borderRadius: BorderRadius.all(
-          Radius.circular(panelRadiusOf(context)),
+          Radius.circular(item ? menuItemRadiusOf(context) : panelRadiusOf(context)),
         ),
       );
 
-  /// 菜单条目高亮/选中填充的轮廓：固定小圆角（见 [menuItemHighlightRadius]）。
-  ///
-  /// 用 [RoundedSuperellipseBorder] 只是为了让「有圆角的填充」统一走一族形状，
-  /// 小圆角下它和正圆弧肉眼无差，重点是**不再**跟面板大圆角凑同心。
-  static OutlinedBorder menuItemOutline() => const RoundedSuperellipseBorder(
-        borderRadius: BorderRadius.all(
-          Radius.circular(menuItemHighlightRadius),
-        ),
-      );
-
-  /// 菜单条目的样式：按下/选中的高亮形状用 [menuItemOutline]（固定小圆角）。
+  /// 菜单条目的样式：按下/选中的高亮形状用同心圆半径。
   ///
   /// 播放器那几个菜单是 MenuItemButton/SubmenuButton，MenuTheme 在这条链路
   /// 上照不到，所以逐个显式给。
@@ -160,8 +152,8 @@ abstract final class KazumiGlass {
       backgroundColor: WidgetStatePropertyAll(
         selected ? primary.withValues(alpha: 0.30) : Colors.transparent,
       ),
-      // 高亮用固定小圆角（见 [menuItemOutline]），不跟面板的大圆角凑同心。
-      shape: WidgetStatePropertyAll(menuItemOutline()),
+      // 填充圆角用苹果连续圆角，和原生玻璃面板同族（见 [panelOutline]）。
+      shape: WidgetStatePropertyAll(panelOutline(context, item: true)),
       // 按下/悬停的深色：和 _GlassTapTarget 的按下填充同一个值。
       // 以前这里是 0.18，而别处（菜单条目的按下、子菜单触发条目）是 0.22 ——
       // 同样是「按下」，同一块面板里的条目深浅却不一样。
@@ -174,7 +166,7 @@ abstract final class KazumiGlass {
   /// 子菜单面板由框架自己画，铺不了玻璃，所以退一步用不透明的实色面板（M3 菜单
   /// 面板的默认底色 surfaceContainer）：这是「原来的」观感 —— 之前那层
   /// 半透明 surface 是玻璃化改造时引入的，隔着面板能看见背后内容，才显得脏。
-  /// 圆角用苹果连续圆角，和原生玻璃面板同族（见 [panelOutline]）。
+  /// 圆角用苹果连续圆角，和玻璃面板、条目填充同族（见 [panelOutline]）。
   static MenuStyle submenuStyle(BuildContext context) => MenuStyle(
         backgroundColor: WidgetStatePropertyAll(
           Theme.of(context).colorScheme.surfaceContainer,
@@ -493,9 +485,7 @@ abstract final class KazumiGlass {
             shape: panelShape,
             padding: padding,
             selected: selected,
-            // 高亮固定小圆角，不跟面板的大圆角凑同心（见 [menuItemHighlightRadius]）。
-            // 行高只有 40，跟面板走会得到 26 这种超过半高的值，被 Skia 退化成胶囊。
-            radius: radius ?? menuItemHighlightRadius,
+            radius: radius ?? menuItemRadiusOf(itemContext),
             wrapInGlass: false,
             // 同一块面板里的条目必须同一套字：菜单条目统一 labelLarge，
             // 免得「一起看」这类和「定时关闭」那类条目的字号字重不一样。
@@ -513,7 +503,7 @@ abstract final class KazumiGlass {
   /// 子菜单触发条目（视频比例、超分辨率、倍速、定时关闭）的按下底色。
   ///
   /// SubmenuButton 自带的是 M3 菜单按钮那层很淡的按下色，和玻璃条目的按下
-  /// 深色对不上，所以显式给一份：按下 0.22，圆角用和条目高亮同一个固定小圆角。
+  /// 深色对不上，所以显式给一份：按下 0.22，圆角用同心的条目圆角。
   static ButtonStyle submenuTriggerStyle(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
     return ButtonStyle(
@@ -524,8 +514,8 @@ abstract final class KazumiGlass {
       // （_MenuItemLabel 里的 submenuIcon 占位），文字就被顶偏了。
       // 内边距归零后，这类条目和普通条目一样是整块宽度里居中。
       padding: const WidgetStatePropertyAll(EdgeInsets.zero),
-      // 和普通条目高亮同一族、同一个固定小圆角。
-      shape: WidgetStatePropertyAll(menuItemOutline()),
+      // 和条目填充同一族连续圆角，触发条目的按下块才和面板平行。
+      shape: WidgetStatePropertyAll(panelOutline(context, item: true)),
     );
   }
 

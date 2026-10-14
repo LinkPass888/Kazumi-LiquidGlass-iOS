@@ -644,9 +644,8 @@ class _PlayerItemPanelState extends State<PlayerItemPanel> {
   /// （player_panel_hold.dart 的 PlayerPanelHoldMenuAnchor）用同一套做法：
   /// 先给子菜单一份透明面板样式（[KazumiGlass.submenuStyle] 去掉底色/阴影/
   /// 内边距），再把内容整体包进一块 [KazumiGlass.glassSurface] —— 两级的玻璃
-  /// 才是同一块。条目仍交给 [KazumiMenuItem]，按下/选中的高亮由
-  /// KazumiMenuButton 铺下来的 MenuButtonTheme 提供（固定小圆角），
-  /// 和一级条目完全一致。
+  /// 才是同一块。条目仍交给 [KazumiMenuItem]，按下/选中的同心圆高亮由
+  /// KazumiMenuButton 铺下来的 MenuButtonTheme 提供，和一级条目完全一致。
   Widget _glassSubmenu({required Widget child, required List<Widget> items}) {
     // 触发条目本身和同面板里的 KazumiMenuItem 一样占一个条目槽位，
     // 按下高亮（以及展开时的选中态）的留白和相邻条目一致。
@@ -662,7 +661,7 @@ class _PlayerItemPanelState extends State<PlayerItemPanel> {
         menuChildren: [
           KazumiGlass.glassSurface(
             shape: KazumiGlass.panelShapeOf(context),
-            // 面板四周给满 menuPanelInset（6），填充离玻璃外框就是这个距离
+            // 上下留空 = 面板圆角 − 条目圆角，两个圆角同心
             padding: KazumiGlass.menuPanelPadding,
             child: Column(
               mainAxisSize: MainAxisSize.min,
