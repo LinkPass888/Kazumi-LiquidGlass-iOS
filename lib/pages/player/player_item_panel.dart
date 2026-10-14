@@ -29,11 +29,19 @@ import 'package:kazumi/utils/format.dart';
 import 'package:kazumi/pages/player/player_transport_bar.dart';
 import 'package:kazumi/pages/player/player_screenshot_controls.dart';
 
-/// 播放器菜单一行的实际高度（= KazumiMenuItem 的 minimumSize 48 + 面板上下留白 6）。
+/// 播放器菜单一行的实际高度（= KazumiMenuItem 的 minimumSize 48）。
 ///
-/// 菜单的 [MenuAnchor.alignmentOffset] 要按整块面板的高度反推才能把菜单钉在按钮
-/// 上方，所以这里要知道一行有多高。
-const double _playMenuRowHeight = 48 + KazumiGlass.menuPanelInset;
+/// 注意面板的上下留白（[KazumiGlass.menuPanelInset]）**只在整块面板的两端各占
+/// 一份**，不是每行都摊一点 —— 把它算进行高，行数一多抬升量就被撑大、行数少时
+/// 又偏小，菜单下沿就会压到按钮上。
+const double _playMenuRowHeight = 48;
+
+/// 菜单锚点（超分辨率 / 倍速 / 视频比例这几个按钮）的高度。
+///
+/// [MenuAnchor.alignmentOffset] 的 dy 是相对**锚点**（按钮）本身算的，锚点默认
+/// 落在按钮的底边，所以要把整块面板抬到按钮上方，按钮自己的高度也得算进去，
+/// 否则抬升量不够，菜单会盖住按钮。
+const double _playMenuAnchorHeight = 48;
 
 /// 菜单最下面一条离按钮顶边留的间隙（和 iOS 弹出菜单贴在控件边上一点点的观感）。
 const double _menuLiftAboveButton = 8;
@@ -599,14 +607,17 @@ class _PlayerItemPanelState extends State<PlayerItemPanel> {
 
   /// 横屏时把菜单钉在按钮正上方几像素处。
   ///
-  /// 以前这里是每个菜单各写死一个 dy（超分 -240、倍速和比例 -294），数字对不上
-  /// 行数和面板留白，超分菜单（3 项）就被顶到别人一两行以上，看着「弹得太高」。
-  /// 现在按 [itemCount] 反推整块面板的高度：不传 dy，让菜单贴住按钮上沿，
-  /// 再抬起 [_menuLiftAboveButton]，菜单最下面一条就落在按钮上方一点点的位置，
-  /// 三个菜单的观感才是同一套。
+  /// [MenuAnchor.alignmentOffset] 的 dy 是相对**锚点矩形**算的，而锚点默认落在
+  /// 按钮的**底边**（`AlignmentDirectional.bottomStart`）。所以要让整块面板落在
+  /// 按钮上方，dy 必须等于「按钮高度 + 面板高度 + 想要的间隙」的负数：
   ///
-  /// [dx] 仍然各自保留（超分/倍速 -30、比例 -40）：三个按钮宽度不同，右对齐的
-  /// 位置要靠它对齐，和行高无关。
+  ///   dy = −( 按钮高 + (行数 × 行高 + 面板上下留白 × 2) + 间隙 )
+  ///
+  /// 之前只算了 `行数 × (行高 + 留白) + 间隙`：留白被按行重复计了，按钮高度整个
+  /// 没算 —— 行数越少抬得越不够，超分（3 项）就正好压在按钮上。
+  ///
+  /// [dx] 仍各自保留（超分/倍速 -30、比例 -40）：三个按钮宽度不同，横向位置要
+  /// 靠它对齐，和高度无关。
   Offset? _landscapeMenuOffset(
     BuildContext context,
     int itemCount, {
@@ -616,7 +627,10 @@ class _PlayerItemPanelState extends State<PlayerItemPanel> {
         context,
         Offset(
           dx,
-          -(itemCount * _playMenuRowHeight + _menuLiftAboveButton),
+          -(KazumiGlass.menuPanelInset * 2 +
+              itemCount * _playMenuRowHeight +
+              _playMenuAnchorHeight +
+              _menuLiftAboveButton),
         ),
       );
 
