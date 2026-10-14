@@ -204,7 +204,11 @@ class _AppWidgetState extends State<AppWidget>
       ),
       menuTheme: MenuThemeData(
         style: MenuStyle(
-          shape: WidgetStatePropertyAll<OutlinedBorder>(globalShape),
+          // 苹果连续圆角：裸 SubmenuButton 这类没有显式 menuStyle 的菜单面板会
+          // 落到这里，圆角得和原生玻璃面板同族，填充才和面板平行。
+          shape: WidgetStatePropertyAll<OutlinedBorder>(
+            RoundedSuperellipseBorder(borderRadius: globalRadius),
+          ),
           surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
         ),
       ),

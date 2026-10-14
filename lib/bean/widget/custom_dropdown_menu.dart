@@ -59,8 +59,9 @@ class CustomDropdownMenu extends StatelessWidget {
             child: KazumiGlass.glassSurface(shape: KazumiGlass.panelShapeOf(context), child: Material(
                 elevation: 0,
                 clipBehavior: Clip.antiAlias,
-                borderRadius:
-                    BorderRadius.circular(KazumiGlass.panelRadiusOf(context)),
+                // 面板裁剪用和玻璃同族的苹果连续圆角：圆形圆角会把首/末条
+                // 填充的角剪成另一族的曲线，看着和面板不平行。
+                shape: KazumiGlass.panelOutline(context),
                 color: KazumiGlass.enabled
                     ? Colors.transparent
                     : theme.colorScheme.surface,

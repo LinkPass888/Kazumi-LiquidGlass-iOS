@@ -14,8 +14,9 @@ const _menuItemStyle = ButtonStyle(
 /// 菜单面板的样式。
 ///
 /// 面板由 MenuAnchor 自己画在 Overlay 里，铺不了玻璃，所以退一步用
-/// [KazumiGlass.submenuStyle]：圆角和别的玻璃面板完全一致、去掉阴影和
-/// surfaceTint，底色用半透明的 surface，远看和玻璃面板是一套。内边距取
+/// [KazumiGlass.submenuStyle]：圆角（苹果连续圆角）和别的玻璃面板完全一致、
+/// 去掉阴影和 surfaceTint，底色用不透明的 surfaceContainer —— 这是「原来的」
+/// 观感，隔着面板不会看见背后内容。内边距取
 /// [KazumiGlass.menuPanelPadding]，条目的高亮圆角才是同心圆（见
 /// [KazumiGlass.menuItemButtonStyle]）。
 MenuStyle _panelStyle(BuildContext context) => KazumiGlass.submenuStyle(context)

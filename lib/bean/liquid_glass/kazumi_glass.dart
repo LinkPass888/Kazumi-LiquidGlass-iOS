@@ -122,6 +122,21 @@ abstract final class KazumiGlass {
   static double menuItemRadiusOf(BuildContext context) =>
       (panelRadiusOf(context) - menuPanelInset).clamp(6.0, 32.0);
 
+  /// 面板和条目填充共用的轮廓：**苹果连续圆角**（squircle）。
+  ///
+  /// 面板本身是 UIKit 的原生玻璃，苹果画的就是连续圆角；条目填充如果还用
+  /// Flutter 的 [RoundedRectangleBorder]（正圆弧），把 squircle 内缩 6 得到
+  /// 的并不是「平行内缩」的曲线 —— 直边上缝宽一样，**角上会变宽**，看着就是
+  /// 「不直、和面板不平行」。两边都用连续圆角，圆角才是同族的同心曲线。
+  ///
+  /// [item] 为 true 时取条目圆角（面板圆角 − [menuPanelInset]），否则取面板圆角。
+  static OutlinedBorder panelOutline(BuildContext context, {bool item = false}) =>
+      RoundedSuperellipseBorder(
+        borderRadius: BorderRadius.all(
+          Radius.circular(item ? menuItemRadiusOf(context) : panelRadiusOf(context)),
+        ),
+      );
+
   /// 菜单条目的样式：按下/选中的高亮形状用同心圆半径。
   ///
   /// 播放器那几个菜单是 MenuItemButton/SubmenuButton，MenuTheme 在这条链路
@@ -137,13 +152,8 @@ abstract final class KazumiGlass {
       backgroundColor: WidgetStatePropertyAll(
         selected ? primary.withValues(alpha: 0.30) : Colors.transparent,
       ),
-      shape: WidgetStatePropertyAll(
-        RoundedRectangleBorder(
-          borderRadius: BorderRadius.all(
-            Radius.circular(menuItemRadiusOf(context)),
-          ),
-        ),
-      ),
+      // 填充圆角用苹果连续圆角，和原生玻璃面板同族（见 [panelOutline]）。
+      shape: WidgetStatePropertyAll(panelOutline(context, item: true)),
       // 按下/悬停的深色：和 _GlassTapTarget 的按下填充同一个值。
       // 以前这里是 0.18，而别处（菜单条目的按下、子菜单触发条目）是 0.22 ——
       // 同样是「按下」，同一块面板里的条目深浅却不一样。
@@ -153,20 +163,16 @@ abstract final class KazumiGlass {
 
   /// 子菜单（SubmenuButton）的面板样式。
   ///
-  /// 子菜单面板由框架自己画，铺不了玻璃，所以退一步：圆角和别的菜单完全一致，
-  /// 底色用半透明的 surface，远看和玻璃面板是一套。
+  /// 子菜单面板由框架自己画，铺不了玻璃，所以退一步用不透明的实色面板（M3 菜单
+  /// 面板的默认底色 surfaceContainer）：这是「原来的」观感 —— 之前那层
+  /// 半透明 surface 是玻璃化改造时引入的，隔着面板能看见背后内容，才显得脏。
+  /// 圆角用苹果连续圆角，和玻璃面板、条目填充同族（见 [panelOutline]）。
   static MenuStyle submenuStyle(BuildContext context) => MenuStyle(
         backgroundColor: WidgetStatePropertyAll(
-          Theme.of(context).colorScheme.surface.withValues(alpha: 0.86),
+          Theme.of(context).colorScheme.surfaceContainer,
         ),
         elevation: const WidgetStatePropertyAll(0),
-        shape: WidgetStatePropertyAll(
-          RoundedRectangleBorder(
-            borderRadius: BorderRadius.all(
-              Radius.circular(panelRadiusOf(context)),
-            ),
-          ),
-        ),
+        shape: WidgetStatePropertyAll(panelOutline(context)),
       );
 
   /// 菜单、面板用的圆角形状。
@@ -508,13 +514,8 @@ abstract final class KazumiGlass {
       // （_MenuItemLabel 里的 submenuIcon 占位），文字就被顶偏了。
       // 内边距归零后，这类条目和普通条目一样是整块宽度里居中。
       padding: const WidgetStatePropertyAll(EdgeInsets.zero),
-      shape: WidgetStatePropertyAll(
-        RoundedRectangleBorder(
-          borderRadius: BorderRadius.all(
-            Radius.circular(menuItemRadiusOf(context)),
-          ),
-        ),
-      ),
+      // 和条目填充同一族连续圆角，触发条目的按下块才和面板平行。
+      shape: WidgetStatePropertyAll(panelOutline(context, item: true)),
     );
   }
 
@@ -608,14 +609,15 @@ class _GlassTapTargetState extends State<_GlassTapTarget> {
     final Color base = widget.selected
         ? scheme.primary.withValues(alpha: 0.30)
         : Colors.transparent;
-    // 按压高亮和选中填充画在同一个盒子上：形状、圆角、大小必然一致
+    // 按下高亮和选中填充画在同一个盒子上：形状、圆角、大小必然一致。
+    // 有圆角时用苹果连续圆角（和原生玻璃面板同族），胶囊（radius == null）不变。
     final Color color = _pressed
         ? scheme.primary
             .withValues(alpha: widget.selected ? 0.46 : 0.22)
         : base;
     final ShapeBorder border = widget.radius == null
         ? const StadiumBorder()
-        : RoundedRectangleBorder(
+        : RoundedSuperellipseBorder(
             borderRadius: BorderRadius.all(Radius.circular(widget.radius!)),
           );
     final Widget box = GestureDetector(
