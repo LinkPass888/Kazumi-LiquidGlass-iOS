@@ -191,7 +191,7 @@ class _PlayerPanelHoldMenuAnchorState extends State<PlayerPanelHoldMenuAnchor> {
     // 玻璃，所以先把面板整块变透明（下面的 style），再把 menuChildren 包进一块
     // KazumiGlass.glassSurface 顶上去 —— 和收藏状态菜单同一个做法。
     // 条目本身仍交给上游的 KazumiMenuItem / SubmenuButton 渲染，靠 kazumi_menu.dart
-    // 里统一的 MenuButtonTheme 拿到同心圆高亮，按下深色和别的玻璃菜单一致。
+    // 里统一的 MenuButtonTheme 拿到固定小圆角的高亮，按下深色和别的玻璃菜单一致。
     return KazumiMenuButton(
       animated: false,
       onOpen: _handleOpen,
@@ -219,7 +219,7 @@ class _PlayerPanelHoldMenuAnchorState extends State<PlayerPanelHoldMenuAnchor> {
       menuChildren: [
         KazumiGlass.glassSurface(
           shape: KazumiGlass.panelShapeOf(context),
-          // 上下留空 = 面板圆角 − 条目圆角，两个圆角同心
+          // 面板四周给满 menuPanelInset（6），填充离玻璃外框就是这个距离
           padding: KazumiGlass.menuPanelPadding,
           // 倍速那种长列表会把滚动条压在圆角上，藏掉
           child: ScrollbarTheme(

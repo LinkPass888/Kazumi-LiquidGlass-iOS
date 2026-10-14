@@ -17,8 +17,8 @@ const _menuItemStyle = ButtonStyle(
 /// [KazumiGlass.submenuStyle]：圆角（苹果连续圆角）和别的玻璃面板完全一致、
 /// 去掉阴影和 surfaceTint，底色用不透明的 surfaceContainer —— 这是「原来的」
 /// 观感，隔着面板不会看见背后内容。内边距取
-/// [KazumiGlass.menuPanelPadding]，条目的高亮圆角才是同心圆（见
-/// [KazumiGlass.menuItemButtonStyle]）。
+/// [KazumiGlass.menuPanelPadding]，条目填充离面板边缘才是 [menuPanelInset]
+/// （条目高亮是一族固定小圆角，见 [KazumiGlass.menuItemButtonStyle]）。
 MenuStyle _panelStyle(BuildContext context) => KazumiGlass.submenuStyle(context)
     .copyWith(
   padding: const WidgetStatePropertyAll(KazumiGlass.menuPanelPadding),
@@ -95,7 +95,7 @@ class KazumiMenuButton extends StatelessWidget {
       children = [
         KazumiGlass.glassSurface(
           shape: KazumiGlass.panelShapeOf(context),
-          // 上下留空 = 面板圆角 − 条目圆角，两个圆角同心
+          // 面板四周给满 menuPanelInset（6）：填充离玻璃外框就是这个距离
           padding: KazumiGlass.menuPanelPadding,
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -108,7 +108,8 @@ class KazumiMenuButton extends StatelessWidget {
     return MenuButtonTheme(
       data: MenuButtonThemeData(
         // Submenu entries must use the same inset as ordinary menu items.
-        // 最后一层是我们的玻璃样式，覆盖主题里的形状/底色，菜单条目统一是同心圆。
+        // 最后一层是我们的玻璃样式，覆盖主题里的形状/底色，菜单条目统一是
+        // 那套固定小圆角的高亮。
         style: _menuItemStyle
             .merge(MenuButtonTheme.of(context).style)
             .merge(KazumiGlass.menuItemButtonStyle(context)),
@@ -169,8 +170,9 @@ class KazumiMenuItem extends StatelessWidget {
             (states) => states.contains(WidgetState.disabled) ? null : color,
           );
     return KazumiGlass.menuItemSlot(
-      // 留白全部由面板给（menuPanelPadding = 6）：高亮离玻璃外框 6、圆角
-      // （面板圆角 − 6）和玻璃同心；条目之间不再留缝。
+      // 留白全部由面板给（menuPanelPadding = 6）：高亮离玻璃外框就是 6；
+      // 高亮本身用固定小圆角（见 KazumiGlass.menuItemHighlightRadius），
+      // 不跟面板的大圆角凑同心；条目之间不再留缝。
       child: MenuItemButton(
         onPressed: onPressed,
         requestFocusOnHover: requestFocusOnHover,
