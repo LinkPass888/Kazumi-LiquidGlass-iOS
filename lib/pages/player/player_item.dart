@@ -8,6 +8,7 @@ import 'package:kazumi/pages/player/player_pointer_interaction.dart';
 import 'package:kazumi/pages/player/player_gesture_detector.dart';
 import 'package:kazumi/pages/player/player_screenshot_feedback_overlay.dart';
 import 'package:kazumi/pages/player/player_screenshot_sheet.dart';
+import 'package:kazumi/pages/player/skip_segment_pill.dart';
 import 'package:kazumi/pages/player/controller/player_screenshot_controller.dart';
 import 'package:kazumi/pages/player/syncplay_sheet.dart';
 import 'package:kazumi/utils/constants.dart';
@@ -1650,6 +1651,12 @@ class _PlayerItemState extends State<PlayerItem>
                                 _finishAdjustmentGesture();
                               },
                             ),
+                    ),
+                    Positioned.fill(
+                      child: SkipSegmentPill(
+                        playerController: playerController,
+                        onNextEpisode: () => handlePreNextEpisode('next'),
+                      ),
                     ),
                   ]),
                 ),

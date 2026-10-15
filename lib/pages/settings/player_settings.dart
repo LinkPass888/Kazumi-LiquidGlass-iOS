@@ -40,6 +40,7 @@ class _PlayerSettingsPageState extends State<PlayerSettingsPage> {
   late bool autoPlayNext;
   late bool backgroundPlayback;
   late bool brightnessVolumeGesture;
+  late bool aniSkipLookup;
   late int playerButtonSkipTime;
   late int playerArrowKeySkipTime;
   late int playerLogLevel;
@@ -78,6 +79,7 @@ class _PlayerSettingsPageState extends State<PlayerSettingsPage> {
 
     brightnessVolumeGesture =
         GStorage.getSetting<bool>(SettingsKeys.brightnessVolumeGesture);
+    aniSkipLookup = GStorage.getSetting<bool>(SettingsKeys.aniSkipLookup);
 
     playerButtonSkipTime =
         GStorage.getSetting<int>(SettingsKeys.buttonSkipTime);
@@ -406,6 +408,23 @@ class _PlayerSettingsPageState extends State<PlayerSettingsPage> {
                 title: Text('隐身模式'),
                 description: Text('不保留观看记录'),
                 initialValue: privateMode,
+              ),
+            ],
+          ),
+          SettingsSection(
+            title: Text('片头片尾'),
+            tiles: [
+              SettingsTile.switchTile(
+                leading: Icons.fast_forward_rounded,
+                onToggle: (value) async {
+                  aniSkipLookup = value ?? !aniSkipLookup;
+                  await GStorage.putSetting<bool>(
+                      SettingsKeys.aniSkipLookup, aniSkipLookup);
+                  setState(() {});
+                },
+                title: Text('AniSkip 片头片尾'),
+                description: Text('在线查询 AniSkip 社区时间轴，进入片头/片尾时提示跳过'),
+                initialValue: aniSkipLookup,
               ),
             ],
           ),

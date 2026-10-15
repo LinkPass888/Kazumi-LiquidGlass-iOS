@@ -156,6 +156,8 @@ class _BangumiSyncPageState extends State<BangumiSyncPage> {
               GStorage.getSetting(SettingsKeys.bangumiSyncPriority));
           final showToast =
               GStorage.getSetting(SettingsKeys.bangumiImmediateSyncToastEnable);
+          final autoMarkWatched =
+              GStorage.getSetting(SettingsKeys.bangumiAutoMarkWatched);
           final message =
               _message ?? (_tokenError == null ? _bangumi.lastError : null);
           return PopScope(
@@ -238,6 +240,21 @@ class _BangumiSyncPageState extends State<BangumiSyncPage> {
                                   await GStorage.putSetting(
                                     SettingsKeys
                                         .bangumiImmediateSyncToastEnable,
+                                    value,
+                                  );
+                                  if (mounted) setState(() {});
+                                },
+                        ),
+                        const Divider(indent: 16, endIndent: 16),
+                        SwitchListTile(
+                          title: const Text('自动标记看过'),
+                          subtitle: const Text('看到 90% 时在 Bangumi 标记该集为看过（需配置令牌）'),
+                          value: autoMarkWatched,
+                          onChanged: _busy
+                              ? null
+                              : (value) async {
+                                  await GStorage.putSetting(
+                                    SettingsKeys.bangumiAutoMarkWatched,
                                     value,
                                   );
                                   if (mounted) setState(() {});

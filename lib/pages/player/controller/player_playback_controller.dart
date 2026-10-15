@@ -61,12 +61,19 @@ abstract class _PlayerPlaybackController with Store {
     required this.debug,
     required this.videoUrl,
     required this.isLocalPlayback,
+    // PlayerPlaybackController 只是本类的 mixin application 别名，分析器看不到
+    // 别处的构造调用，会误报 unused_element_parameter。
+    // ignore: unused_element_parameter
+    this.onProgress,
   });
 
   final ShaderAssetService shaderAssetService;
   final PlayerDebugController debug;
   final String Function() videoUrl;
   final bool Function() isLocalPlayback;
+
+  /// 播放进度回调，用于超分之外的旁路功能（片头片尾跳过、追番进度同步）。
+  final void Function(Duration position, Duration duration)? onProgress;
   late final PlaybackCachePolicy cachePolicy = PlaybackCachePolicy(
     isLocalPlayback: isLocalPlayback,
     currentPlayer: () => mediaPlayer,
@@ -591,12 +598,17 @@ abstract class _PlayerPlaybackController with Store {
     }
     if (currentPosition != state.position) {
       currentPosition = state.position;
+      onProgress?.call(currentPosition, state.duration);
     }
     if (buffer != state.buffer) {
       buffer = state.buffer;
     }
-    if (duration != state.duration) {
+    final durationChanged = duration != state.duration;
+    if (durationChanged) {
       duration = state.duration;
+    }
+    if (durationChanged && state.position == currentPosition) {
+      onProgress?.call(currentPosition, duration);
     }
     if (completed != state.completed) {
       completed = state.completed;

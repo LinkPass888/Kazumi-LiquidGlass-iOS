@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:kazumi/bean/dialog/dialog_helper.dart';
 import 'package:kazumi/pages/my/my_controller.dart';
+import 'package:kazumi/services/bangumi_progress/bangumi_progress_service.dart';
 import 'package:kazumi/services/sync/bangumi_sync_service.dart';
 import 'package:kazumi/services/sync/danmaku_shield_sync_service.dart';
 import 'package:kazumi/services/sync/webdav.dart';
@@ -182,6 +183,8 @@ class _InitPageState extends State<InitPage> {
   }
 
   Future<void> _bangumiInit() async {
+    BangumiProgressService.attachLifecycle();
+    unawaited(BangumiProgressService.instance.flush());
     final bangumiEnable = GStorage.getSetting(SettingsKeys.bangumiSyncEnable);
     if (bangumiEnable) {
       final bangumi = BangumiSyncService();

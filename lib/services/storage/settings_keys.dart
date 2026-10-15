@@ -512,6 +512,21 @@ class SettingsKeys {
     false,
     group: SettingGroup.misc,
   );
+  static const aniSkipLookup = SettingKey<bool>(
+    'aniSkipLookup',
+    true,
+    group: SettingGroup.player,
+  );
+  static const bangumiAutoMarkWatched = SettingKey<bool>(
+    'bangumiAutoMarkWatched',
+    false,
+    group: SettingGroup.bangumi,
+  );
+  static const bangumiProgressQueue = SettingKey<String>(
+    'bangumiProgressQueue',
+    '',
+    group: SettingGroup.bangumi,
+  );
   static const bangumiSyncEnable = SettingKey<bool>(
     _SettingBoxKey.bangumiSyncEnable,
     false,
@@ -662,6 +677,9 @@ class SettingsKeys {
     downloadDirectoryBookmark,
     shortcutDialogShown,
     onboardingCompleted,
+    aniSkipLookup,
+    bangumiAutoMarkWatched,
+    bangumiProgressQueue,
     bangumiSyncEnable,
     bangumiAccessToken,
     bangumiSyncPriority,

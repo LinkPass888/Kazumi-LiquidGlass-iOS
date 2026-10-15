@@ -17,6 +17,9 @@ import 'package:kazumi/pages/player/controller/player_syncplay_controller.dart';
 import 'package:kazumi/pages/player/controller/player_screenshot_controller.dart';
 import 'package:kazumi/services/storage/storage.dart';
 import 'package:kazumi/services/logging/logger.dart';
+import 'package:kazumi/services/skip/aniskip_client.dart';
+import 'package:kazumi/services/skip/skip_segments.dart';
+import 'package:kazumi/services/bangumi_progress/bangumi_progress_service.dart';
 import 'package:kazumi/services/shaders/shader_asset_service.dart';
 import 'package:kazumi/pages/download/download_controller.dart';
 import 'package:kazumi/services/player/audio_controller.dart';
@@ -51,6 +54,7 @@ class PlayerController implements Disposable {
     debug: debug,
     videoUrl: () => videoUrl,
     isLocalPlayback: () => isLocalPlayback,
+    onProgress: _onPlaybackProgress,
   );
   late final PlayerSyncPlayController syncplay = PlayerSyncPlayController(
     bangumiId: () => bangumiId,
@@ -85,6 +89,11 @@ class PlayerController implements Disposable {
   String? coverUrl;
   String videoUrl = '';
   bool isLocalPlayback = false;
+
+  /// AniSkip 查询到的片头片尾时间。
+  SkipSegments skipSegments = SkipSegments.empty;
+  String _skipSegmentsUrl = '';
+  bool _playbackContextReady = false;
   Timer? hideVolumeUITimer;
   Timer? _volumeGestureSyncTimer;
   double? _pendingGestureVolume;
@@ -163,6 +172,56 @@ class PlayerController implements Disposable {
     unawaited(GStorage.putSetting<double>(SettingsKeys.defaultVolume, clamped));
   }
 
+  /// 播放进度旁路：追番进度同步与片头片尾查询都在这里发起。
+  void _onPlaybackProgress(Duration position, Duration duration) {
+    if (!_playbackContextReady || duration <= Duration.zero) {
+      return;
+    }
+    BangumiProgressService.instance.onPosition(
+      subjectId: bangumiId,
+      episodeNumber: currentEpisode,
+      position: position,
+      duration: duration,
+    );
+    _maybeLoadSkipSegments(duration);
+  }
+
+  void _maybeLoadSkipSegments(Duration duration) {
+    if (!GStorage.getSetting(SettingsKeys.aniSkipLookup)) {
+      return;
+    }
+    // AniSkip 的时间轴是按在线片源测的，本地文件不查。
+    if (isLocalPlayback) {
+      return;
+    }
+    if (videoUrl.isEmpty || _skipSegmentsUrl == videoUrl) {
+      return;
+    }
+    if (bangumiId <= 0 || currentEpisode <= 0) {
+      return;
+    }
+    // AniSkip 匹配依赖片长，等播放器拿到时长再查一次就够。
+    if (duration < const Duration(seconds: 30)) {
+      return;
+    }
+    _skipSegmentsUrl = videoUrl;
+    final url = videoUrl;
+    unawaited(() async {
+      try {
+        final segments = await AniSkipClient.instance.lookup(
+          bangumiId,
+          currentEpisode,
+          duration.inMilliseconds / 1000,
+        );
+        if (videoUrl == url) {
+          skipSegments = segments;
+        }
+      } catch (e) {
+        KazumiLogger().w('PlayerController: AniSkip lookup failed', error: e);
+      }
+    }());
+  }
+
   Future<bool> init(PlaybackInitParams params) async {
     if (_initializations.isClosed) {
       return false;
@@ -176,6 +235,9 @@ class PlayerController implements Disposable {
     currentDanmakuEpisodeNumber = params.danmakuEpisodeNumber;
     currentRoad = params.currentRoad;
     referer = params.referer;
+    skipSegments = SkipSegments.empty;
+    _skipSegmentsUrl = '';
+    _playbackContextReady = true;
 
     KazumiLogger().i(
         'PlayerController: ${params.isLocalPlayback ? "local" : "online"} playback, url: ${params.videoUrl}');

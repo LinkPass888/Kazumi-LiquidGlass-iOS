@@ -749,6 +749,29 @@ class BangumiApi {
     return await updateBangumiById(id, {'type': type.value});
   }
 
+  /// 标记单集为看过。返回 HTTP 状态码，没有拿到响应时返回 null。
+  static Future<int?> markEpisodeWatched(int episodeId) async {
+    await _writeRateLimiter.acquire();
+    try {
+      await _client.put(
+        ApiEndpoints.formatUrl(
+            ApiEndpoints.bangumiAuthAPIMirrorDomain +
+                ApiEndpoints.bangumiSetEpisode,
+            [episodeId]),
+        data: {'type': 2},
+        requiresAuth: true,
+      );
+      KazumiLogger().d('Mark Bangumi episode watched: Id: $episodeId');
+      return 200;
+    } on NetworkException catch (e) {
+      return e.statusCode;
+    } catch (e) {
+      KazumiLogger()
+          .e('Network: mark bangumi episode watched failed', error: e);
+      return null;
+    }
+  }
+
   static Future<bool> addOrUpdateBangumiEvaluationBySubjectID(
     int subjectID,
     int localType, {

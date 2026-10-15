@@ -72,6 +72,10 @@ class ApiEndpoints {
   /// 新增或修改用户单个条目收藏
   static const String bangumiSetCollection = '/v0/users/-/collections/{0}';
 
+  /// 修改用户单集收藏（标记看过 / 看到）
+  static const String bangumiSetEpisode =
+      '/v0/users/-/collections/-/episodes/{0}';
+
   /// 获取用户全部收藏（不限类型）。用户名，分页参数1(limit)，分页参数2(offset)
   static const String bangumiGetAllCollections =
       '/v0/users/{0}/collections?subject_type=2&limit={1}&offset={2}';
