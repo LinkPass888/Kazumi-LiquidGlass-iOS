@@ -40,9 +40,10 @@
 
 ## 本仓库新增
 
-- [X]  iOS液态玻璃界面
-- [X]  液态玻璃效果跟随系统
+- [X]  iOS原生液态玻璃界面
 - [X]  自定义放送星期（在时间表展示）
+- [X]  自动跳过片头片尾(由[AniSkip](https://github.com/aniskip)提供时间,[BangumiExtLinker](https://github.com/Rhilip/BangumiExtLinker)提供条目映射)
+- [X]  Bangumi自动标记集看过
 - [X]  针对原版部分界面优化
 
 ## 下载
