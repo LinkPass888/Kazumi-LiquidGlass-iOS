@@ -519,7 +519,7 @@ class SettingsKeys {
   );
   static const bangumiAutoMarkWatched = SettingKey<bool>(
     'bangumiAutoMarkWatched',
-    false,
+    true,
     group: SettingGroup.bangumi,
   );
   static const bangumiProgressQueue = SettingKey<String>(
