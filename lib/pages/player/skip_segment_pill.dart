@@ -351,9 +351,9 @@ class _CountdownPill extends StatelessWidget {
             children: [
               const Icon(Icons.fast_forward_rounded,
                   size: 16, color: foreground),
-              const SizedBox(width: 8),
+              const SizedBox(width: 2),
               Text('即将跳过$name', style: titleStyle),
-              const SizedBox(width: 6),
+              const SizedBox(width: 2),
               _CountdownRing(
                 secondsLeft: secondsLeft,
                 totalSeconds: totalSeconds,
@@ -424,9 +424,9 @@ class _NextEpisodePill extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               const Icon(Icons.skip_next_rounded, size: 16, color: foreground),
-              const SizedBox(width: 8),
+              const SizedBox(width: 2),
               Text('即将到结尾', style: titleStyle),
-              const SizedBox(width: 6),
+              const SizedBox(width: 2),
               _CountdownRing(
                 secondsLeft: secondsLeft,
                 totalSeconds: totalSeconds,
@@ -493,7 +493,7 @@ class _UndoPill extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               const Icon(Icons.replay_rounded, size: 16, color: foreground),
-              const SizedBox(width: 8),
+              const SizedBox(width: 2),
               Text(label, style: textStyle),
             ],
           ),

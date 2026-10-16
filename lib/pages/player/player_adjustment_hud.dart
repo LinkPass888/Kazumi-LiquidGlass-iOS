@@ -177,21 +177,19 @@ class _PlayerAdjustmentHudState extends State<PlayerAdjustmentHud> {
                       child: SliderTheme(
                         data: SliderThemeData(
                           trackHeight: 32,
-                          activeTrackColor: _activeTraker(colorScheme),
-                          inactiveTrackColor: _inactiveTraker(colorScheme),
-                          thumbColor: _activeTraker(colorScheme),
+                          activeTrackColor:
+                              _activeTraker(colorScheme).withValues(alpha: 0.8),
+                          inactiveTrackColor: _inactiveTraker(colorScheme)
+                              .withValues(alpha: 0.4),
+                          thumbColor: Colors.transparent,
                           overlayShape: SliderComponentShape.noOverlay,
+                          // 两端粗、中间细的轨道；无滑块竖条，活动/非活动两色
+                          // 在细腰处直接拼接。
                           trackShape: const _HudSliderTrackShape(
-                            outerRadius: 12,
-                            innerRadius: 2,
-                            thumbGap: 12,
+                            innerHeight: 10,
                             edgeInset: 6,
                           ),
-                          thumbShape: const _HudSliderThumbShape(
-                            width: 4,
-                            height: 40,
-                            cornerRadius: 2,
-                          ),
+                          thumbShape: const _NoThumbShape(),
                           tickMarkShape: SliderTickMarkShape.noTickMark,
                           padding: EdgeInsets.zero,
                         ),
@@ -221,35 +219,20 @@ class _PlayerAdjustmentHudState extends State<PlayerAdjustmentHud> {
   }
 }
 
+/// 两端粗、中间细的轨道（iOS 音量条观感）：活动段从左端满高一路收窄到
+/// 滑块处的细腰，非活动段再从细腰展开回右端满高；两段在细腰处直接拼色，
+/// 不再画中间的滑块竖条。
 class _HudSliderTrackShape extends SliderTrackShape {
   const _HudSliderTrackShape({
-    required this.outerRadius,
-    required this.innerRadius,
-    this.thumbGap = 10,
+    required this.innerHeight,
     this.edgeInset = 6,
   });
 
-  final double outerRadius;
-  final double innerRadius;
-  final double thumbGap;
-  final double edgeInset;
+  /// 细腰（滑块所在处）的高度。
+  final double innerHeight;
 
-  Rect _baseTrackRect({
-    required RenderBox parentBox,
-    required Offset offset,
-    required SliderThemeData sliderTheme,
-    required bool isEnabled,
-    required bool isDiscrete,
-  }) {
-    final thumbWidth =
-        sliderTheme.thumbShape?.getPreferredSize(isEnabled, isDiscrete).width ??
-            0;
-    final trackHeight = sliderTheme.trackHeight ?? 0;
-    final trackLeft = offset.dx + thumbWidth / 2;
-    final trackTop = offset.dy + (parentBox.size.height - trackHeight) / 2;
-    final trackWidth = parentBox.size.width - thumbWidth;
-    return Rect.fromLTWH(trackLeft, trackTop, trackWidth, trackHeight);
-  }
+  /// 轨道两端相对可用宽度的内缩。
+  final double edgeInset;
 
   @override
   Rect getPreferredRect({
@@ -259,20 +242,20 @@ class _HudSliderTrackShape extends SliderTrackShape {
     bool isEnabled = false,
     bool isDiscrete = false,
   }) {
-    final baseTrackRect = _baseTrackRect(
-      parentBox: parentBox,
-      offset: offset,
-      sliderTheme: sliderTheme,
-      isEnabled: isEnabled,
-      isDiscrete: isDiscrete,
-    );
-
-    final safeInset = edgeInset.clamp(0.0, baseTrackRect.width / 2).toDouble();
+    final thumbWidth =
+        sliderTheme.thumbShape?.getPreferredSize(isEnabled, isDiscrete).width ??
+            0;
+    final trackHeight = sliderTheme.trackHeight ?? 0;
+    final trackLeft = offset.dx + thumbWidth / 2;
+    final trackTop = offset.dy + (parentBox.size.height - trackHeight) / 2;
+    final trackWidth = parentBox.size.width - thumbWidth;
+    final base = Rect.fromLTWH(trackLeft, trackTop, trackWidth, trackHeight);
+    final safeInset = edgeInset.clamp(0.0, base.width / 2).toDouble();
     return Rect.fromLTRB(
-      baseTrackRect.left + safeInset,
-      baseTrackRect.top,
-      baseTrackRect.right - safeInset,
-      baseTrackRect.bottom,
+      base.left + safeInset,
+      base.top,
+      base.right - safeInset,
+      base.bottom,
     );
   }
 
@@ -290,20 +273,16 @@ class _HudSliderTrackShape extends SliderTrackShape {
     required TextDirection textDirection,
   }) {
     final canvas = context.canvas;
-    final baseTrackRect = _baseTrackRect(
+    final rect = getPreferredRect(
       parentBox: parentBox,
       offset: offset,
       sliderTheme: sliderTheme,
       isEnabled: isEnabled,
       isDiscrete: isDiscrete,
     );
-    final effectiveTrackRect = getPreferredRect(
-      parentBox: parentBox,
-      offset: offset,
-      sliderTheme: sliderTheme,
-      isEnabled: isEnabled,
-      isDiscrete: isDiscrete,
-    );
+    if (rect.width <= 0 || rect.height <= 0) {
+      return;
+    }
 
     final activeColor = ColorTween(
           begin: sliderTheme.disabledActiveTrackColor,
@@ -316,133 +295,93 @@ class _HudSliderTrackShape extends SliderTrackShape {
         ).evaluate(enableAnimation) ??
         Colors.transparent;
 
-    final thumbX = thumbCenter.dx.clamp(
-      effectiveTrackRect.left,
-      effectiveTrackRect.right,
-    );
-    var halfGap = thumbGap / 2;
-    final leftRoom = thumbX - baseTrackRect.left;
-    final rightRoom = baseTrackRect.right - thumbX;
-    if (halfGap > leftRoom) {
-      halfGap = leftRoom;
-    }
-    if (halfGap > rightRoom) {
-      halfGap = rightRoom;
-    }
-
-    final leftEnd = (thumbX - halfGap).clamp(
-      baseTrackRect.left,
-      baseTrackRect.right,
-    );
-    final rightStart = (thumbX + halfGap).clamp(
-      baseTrackRect.left,
-      baseTrackRect.right,
-    );
-
-    final leftRect = Rect.fromLTRB(
-      baseTrackRect.left,
-      baseTrackRect.top,
-      leftEnd,
-      baseTrackRect.bottom,
-    );
-    final rightRect = Rect.fromLTRB(
-      rightStart,
-      baseTrackRect.top,
-      baseTrackRect.right,
-      baseTrackRect.bottom,
-    );
-
+    final mid = thumbCenter.dx.clamp(rect.left, rect.right);
     final leftColor =
         textDirection == TextDirection.ltr ? activeColor : inactiveColor;
     final rightColor =
         textDirection == TextDirection.ltr ? inactiveColor : activeColor;
-    final hasLeftSegment = leftRect.width > 0;
-    final hasRightSegment = rightRect.width > 0;
 
-    if (hasLeftSegment) {
-      _paintSegment(
-        canvas: canvas,
-        segmentRect: leftRect,
-        color: leftColor,
-        startRadius: outerRadius,
-        endRadius: innerRadius,
-        anchorToStart: true,
-      );
-    }
-
-    if (hasRightSegment) {
-      _paintSegment(
-        canvas: canvas,
-        segmentRect: rightRect,
-        color: rightColor,
-        startRadius: innerRadius,
-        endRadius: outerRadius,
-        anchorToStart: false,
-      );
-    }
+    // 左段：左端满高收窄到细腰，左端为半圆收头。
+    _paintSegment(
+      canvas: canvas,
+      left: rect.left,
+      right: mid,
+      cy: rect.center.dy,
+      leftHalf: rect.height / 2,
+      rightHalf: innerHeight / 2,
+      color: leftColor,
+      capLeft: true,
+    );
+    // 右段：细腰展开到右端满高，右端为半圆收头。
+    _paintSegment(
+      canvas: canvas,
+      left: mid,
+      right: rect.right,
+      cy: rect.center.dy,
+      leftHalf: innerHeight / 2,
+      rightHalf: rect.height / 2,
+      color: rightColor,
+      capLeft: false,
+    );
   }
 
+  /// 画一段「左高 [leftHalf]、右高 [rightHalf]」的梯形；[capLeft] 指定半圆
+  /// 收头在左端还是右端，另一端保持直角，好和相邻段在细腰处严丝合缝。
   void _paintSegment({
     required Canvas canvas,
-    required Rect segmentRect,
+    required double left,
+    required double right,
+    required double cy,
+    required double leftHalf,
+    required double rightHalf,
     required Color color,
-    required double startRadius,
-    required double endRadius,
-    required bool anchorToStart,
+    required bool capLeft,
   }) {
-    if (segmentRect.width <= 0) {
+    if (right - left <= 0.5) {
       return;
     }
 
-    final minTemplateWidth = startRadius + endRadius;
-    final templateWidth = segmentRect.width < minTemplateWidth
-        ? minTemplateWidth
-        : segmentRect.width;
-    final templateRect = anchorToStart
-        ? Rect.fromLTWH(
-            segmentRect.left,
-            segmentRect.top,
-            templateWidth,
-            segmentRect.height,
-          )
-        : Rect.fromLTWH(
-            segmentRect.right - templateWidth,
-            segmentRect.top,
-            templateWidth,
-            segmentRect.height,
-          );
+    final topL = cy - leftHalf;
+    final botL = cy + leftHalf;
+    final topR = cy - rightHalf;
+    final botR = cy + rightHalf;
+    final leftR = capLeft ? leftHalf : 0.0;
+    final rightR = capLeft ? 0.0 : rightHalf;
 
-    canvas.save();
-    canvas.clipRect(segmentRect);
-    canvas.drawRRect(
-      RRect.fromRectAndCorners(
-        templateRect,
-        topLeft: Radius.circular(startRadius),
-        bottomLeft: Radius.circular(startRadius),
-        topRight: Radius.circular(endRadius),
-        bottomRight: Radius.circular(endRadius),
-      ),
-      Paint()..color = color,
+    final path = Path()..moveTo(left, topL + leftR);
+    if (leftR > 0) {
+      path.quadraticBezierTo(left, topL, left + leftR, topL);
+    }
+    path.lineTo(right - rightR, topR);
+    if (rightR > 0) {
+      path.quadraticBezierTo(right, topR, right, topR + rightR);
+    }
+    path.lineTo(right, botR - rightR);
+    if (rightR > 0) {
+      path.quadraticBezierTo(right, botR, right - rightR, botR);
+    }
+    path.lineTo(left + leftR, botL);
+    if (leftR > 0) {
+      path.quadraticBezierTo(left, botL, left, botL - leftR);
+    }
+    path.close();
+
+    canvas.drawPath(
+      path,
+      Paint()
+        ..isAntiAlias = true
+        ..color = color,
     );
-    canvas.restore();
   }
 }
 
-class _HudSliderThumbShape extends SliderComponentShape {
-  const _HudSliderThumbShape({
-    required this.width,
-    required this.height,
-    required this.cornerRadius,
-  });
-
-  final double width;
-  final double height;
-  final double cornerRadius;
+/// 不绘制任何东西的滑块：轨道两端已自带圆头，中间的竖条要去掉，让活动段
+/// 与非活动段两种颜色直接拼接。
+class _NoThumbShape extends SliderComponentShape {
+  const _NoThumbShape();
 
   @override
-  Size getPreferredSize(bool isEnabled, bool isDiscrete) {
-    return Size(width, height);
-  }
+  Size getPreferredSize(bool isEnabled, bool isDiscrete) => Size.zero;
 
   @override
   void paint(
@@ -458,28 +397,7 @@ class _HudSliderThumbShape extends SliderComponentShape {
     required double value,
     required double textScaleFactor,
     required Size sizeWithOverflow,
-  }) {
-    final thumbColor = ColorTween(
-          begin: sliderTheme.disabledThumbColor,
-          end: sliderTheme.thumbColor,
-        ).evaluate(enableAnimation) ??
-        Colors.transparent;
-    final canvas = context.canvas;
-
-    final thumbRect = Rect.fromCenter(
-      center: center,
-      width: width,
-      height: height,
-    );
-
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        thumbRect,
-        Radius.circular(cornerRadius),
-      ),
-      Paint()..color = thumbColor,
-    );
-  }
+  }) {}
 }
 
 class PlayerSeekHud extends StatefulWidget {
@@ -678,8 +596,13 @@ class _PlayerSeekHudState extends State<PlayerSeekHud> {
                                         fontWeight: FontWeight.w700,
                                         shadows: const [
                                           Shadow(
-                                            color: Color(0x66000000),
-                                            blurRadius: 4,
+                                            color: Color(0xA6000000),
+                                            blurRadius: 6,
+                                            offset: Offset(0, 1),
+                                          ),
+                                          Shadow(
+                                            color: Color(0x73000000),
+                                            blurRadius: 2,
                                             offset: Offset(0, 1),
                                           ),
                                         ],
@@ -697,11 +620,16 @@ class _PlayerSeekHudState extends State<PlayerSeekHud> {
                                       .bodySmall
                                       ?.copyWith(
                                         color: Colors.white,
-                                        fontWeight: FontWeight.w600,
+                                        fontWeight: FontWeight.w700,
                                         shadows: const [
                                           Shadow(
-                                            color: Color(0x66000000),
-                                            blurRadius: 4,
+                                            color: Color(0xA6000000),
+                                            blurRadius: 6,
+                                            offset: Offset(0, 1),
+                                          ),
+                                          Shadow(
+                                            color: Color(0x73000000),
+                                            blurRadius: 2,
                                             offset: Offset(0, 1),
                                           ),
                                         ],
