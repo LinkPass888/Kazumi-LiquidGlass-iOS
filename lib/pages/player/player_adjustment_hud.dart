@@ -176,19 +176,16 @@ class _PlayerAdjustmentHudState extends State<PlayerAdjustmentHud> {
                     Expanded(
                       child: SliderTheme(
                         data: SliderThemeData(
-                          trackHeight: 32,
+                          trackHeight: 6,
                           activeTrackColor:
                               _activeTraker(colorScheme).withValues(alpha: 0.8),
                           inactiveTrackColor: _inactiveTraker(colorScheme)
                               .withValues(alpha: 0.4),
                           thumbColor: Colors.transparent,
                           overlayShape: SliderComponentShape.noOverlay,
-                          // 两端粗、中间细的轨道；无滑块竖条，活动/非活动两色
-                          // 在细腰处直接拼接。
-                          trackShape: const _HudSliderTrackShape(
-                            innerHeight: 10,
-                            edgeInset: 6,
-                          ),
+                          // 前后一样细的轨道；无滑块竖条，活动/非活动两色
+                          // 在滑块处直接拼接。
+                          trackShape: const _HudSliderTrackShape(edgeInset: 6),
                           thumbShape: const _NoThumbShape(),
                           tickMarkShape: SliderTickMarkShape.noTickMark,
                           padding: EdgeInsets.zero,
@@ -219,17 +216,10 @@ class _PlayerAdjustmentHudState extends State<PlayerAdjustmentHud> {
   }
 }
 
-/// 两端粗、中间细的轨道（iOS 音量条观感）：活动段从左端满高一路收窄到
-/// 滑块处的细腰，非活动段再从细腰展开回右端满高；两段在细腰处直接拼色，
-/// 不再画中间的滑块竖条。
+/// 均匀细的轨道（iOS 播放器音量条观感）：整条前后一样细、两端圆角，活动
+/// 段与非活动段两种颜色在滑块处直接拼接，不画中间的滑块竖条。
 class _HudSliderTrackShape extends SliderTrackShape {
-  const _HudSliderTrackShape({
-    required this.innerHeight,
-    this.edgeInset = 6,
-  });
-
-  /// 细腰（滑块所在处）的高度。
-  final double innerHeight;
+  const _HudSliderTrackShape({this.edgeInset = 6});
 
   /// 轨道两端相对可用宽度的内缩。
   final double edgeInset;
@@ -301,77 +291,24 @@ class _HudSliderTrackShape extends SliderTrackShape {
     final rightColor =
         textDirection == TextDirection.ltr ? inactiveColor : activeColor;
 
-    // 左段：左端满高收窄到细腰，左端为半圆收头。
-    _paintSegment(
-      canvas: canvas,
-      left: rect.left,
-      right: mid,
-      cy: rect.center.dy,
-      leftHalf: rect.height / 2,
-      rightHalf: innerHeight / 2,
-      color: leftColor,
-      capLeft: true,
+    // 整条是两端圆角的细条，高度前后一致；两种颜色在滑块处直接拼接。
+    canvas.save();
+    canvas.clipRRect(
+      RRect.fromRectAndRadius(rect, Radius.circular(rect.height / 2)),
     );
-    // 右段：细腰展开到右端满高，右端为半圆收头。
-    _paintSegment(
-      canvas: canvas,
-      left: mid,
-      right: rect.right,
-      cy: rect.center.dy,
-      leftHalf: innerHeight / 2,
-      rightHalf: rect.height / 2,
-      color: rightColor,
-      capLeft: false,
-    );
-  }
-
-  /// 画一段「左高 [leftHalf]、右高 [rightHalf]」的梯形；[capLeft] 指定半圆
-  /// 收头在左端还是右端，另一端保持直角，好和相邻段在细腰处严丝合缝。
-  void _paintSegment({
-    required Canvas canvas,
-    required double left,
-    required double right,
-    required double cy,
-    required double leftHalf,
-    required double rightHalf,
-    required Color color,
-    required bool capLeft,
-  }) {
-    if (right - left <= 0.5) {
-      return;
-    }
-
-    final topL = cy - leftHalf;
-    final botL = cy + leftHalf;
-    final topR = cy - rightHalf;
-    final botR = cy + rightHalf;
-    final leftR = capLeft ? leftHalf : 0.0;
-    final rightR = capLeft ? 0.0 : rightHalf;
-
-    final path = Path()..moveTo(left, topL + leftR);
-    if (leftR > 0) {
-      path.quadraticBezierTo(left, topL, left + leftR, topL);
-    }
-    path.lineTo(right - rightR, topR);
-    if (rightR > 0) {
-      path.quadraticBezierTo(right, topR, right, topR + rightR);
-    }
-    path.lineTo(right, botR - rightR);
-    if (rightR > 0) {
-      path.quadraticBezierTo(right, botR, right - rightR, botR);
-    }
-    path.lineTo(left + leftR, botL);
-    if (leftR > 0) {
-      path.quadraticBezierTo(left, botL, left, botL - leftR);
-    }
-    path.close();
-
-    canvas.drawPath(
-      path,
+    canvas.drawRect(
+      Rect.fromLTRB(rect.left, rect.top, mid, rect.bottom),
       Paint()
         ..isAntiAlias = true
-        ..color = color,
+        ..color = leftColor,
     );
+    canvas.drawRect(
+      Rect.fromLTRB(mid, rect.top, rect.right, rect.bottom),
+      Paint()
+        ..isAntiAlias = true
+        ..color = rightColor,
+    );
+    canvas.restore();
   }
 }
 
