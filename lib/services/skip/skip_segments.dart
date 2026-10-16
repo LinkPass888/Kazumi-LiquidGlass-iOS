@@ -65,6 +65,15 @@ class SkipSegments {
     return null;
   }
 
+  /// The segment about to start within [lead] seconds after [seconds], if any.
+  (SkipKind, SkipRange)? upcomingAt(double seconds, double lead) {
+    bool startsSoon(SkipRange? range) =>
+        range != null && seconds < range.start && range.start - seconds <= lead;
+    if (startsSoon(opening)) return (SkipKind.opening, opening!);
+    if (startsSoon(ending)) return (SkipKind.ending, ending!);
+    return null;
+  }
+
   factory SkipSegments.fromJson(Map<String, dynamic> json) => SkipSegments(
     opening: json['op'] is Map
         ? SkipRange.fromJson((json['op'] as Map).cast<String, dynamic>())
