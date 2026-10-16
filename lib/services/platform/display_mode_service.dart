@@ -21,14 +21,16 @@ class DisplayModeService {
         return;
       }
 
-      // Restore system orientation on exit, including an existing landscape.
+      // 退出全屏时**显式锁竖屏**：传空数组在 iOS/Android 上是「恢复系统默认
+      // 方向」，系统屏幕方向锁定关闭时设备物理横着就保持横屏，点小屏按钮看
+      // 起来像失效。改为显式 portraitUp，播放器才能真的切回竖屏。
       await _attempt(() => SystemChrome.setPreferredOrientations(
             fullscreen
                 ? [
                     DeviceOrientation.landscapeLeft,
                     DeviceOrientation.landscapeRight
                   ]
-                : [],
+                : [DeviceOrientation.portraitUp],
           ));
     });
   }

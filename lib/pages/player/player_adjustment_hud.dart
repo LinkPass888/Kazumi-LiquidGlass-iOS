@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:kazumi/bean/liquid_glass/kazumi_glass.dart';
 import 'package:kazumi/utils/format.dart';
+import 'package:real_liquid_glass/real_liquid_glass.dart';
 
 enum PlayerAdjustmentHudType {
   brightness,
@@ -79,13 +80,6 @@ class _PlayerAdjustmentHudState extends State<PlayerAdjustmentHud> {
     return Icons.volume_up_rounded;
   }
 
-  Color _accent(ColorScheme colorScheme) {
-    return switch (_displayType) {
-      PlayerAdjustmentHudType.brightness => colorScheme.tertiaryContainer,
-      PlayerAdjustmentHudType.volume => colorScheme.primaryContainer,
-    };
-  }
-
   Color _container(ColorScheme colorScheme) {
     return switch (_displayType) {
       PlayerAdjustmentHudType.brightness => colorScheme.tertiary,
@@ -117,11 +111,8 @@ class _PlayerAdjustmentHudState extends State<PlayerAdjustmentHud> {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final accent = _accent(colorScheme);
     final container = _container(colorScheme);
     final onContainer = _onContainer(colorScheme);
-    final surface = colorScheme.surfaceContainerHighest;
-    final border = colorScheme.outlineVariant.withValues(alpha: 0.34);
     final duration = widget.disableAnimations
         ? Duration.zero
         : const Duration(milliseconds: 200);
@@ -150,37 +141,16 @@ class _PlayerAdjustmentHudState extends State<PlayerAdjustmentHud> {
             scale: widget.visible ? 1 : 0.92,
             duration: duration,
             curve: Curves.easeOutBack,
-            child: ClipRRect(
-              borderRadius:
-                  BorderRadius.circular(KazumiGlass.radiusOf(context)),
-              // Avoid BackdropFilter/ImageFilter.blur: it can trigger Impeller
-              // native aborts when HUD saveLayers are drawn over video output.
-              // See flutter/flutter#185506.
+            child: LiquidGlassContainer(
+              shape: KazumiGlass.panelShapeOf(context),
+              style: LiquidGlassStyle.clear,
+              interactive: false,
               child: AnimatedContainer(
                 duration: duration,
                 curve: Curves.easeOutCubic,
                 width: 200,
-                padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
-                decoration: BoxDecoration(
-                  color: surface,
-                  borderRadius:
-                      BorderRadius.circular(KazumiGlass.radiusOf(context)),
-                  border: Border.all(color: border),
-                  boxShadow: [
-                    BoxShadow(
-                      color: accent.withValues(
-                        alpha: widget.visible ? 0.24 : 0,
-                      ),
-                      blurRadius: 32,
-                      spreadRadius: 1,
-                    ),
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.28),
-                      blurRadius: 24,
-                      offset: const Offset(0, 12),
-                    ),
-                  ],
-                ),
+                padding:
+                    const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -614,12 +584,9 @@ class _PlayerSeekHudState extends State<PlayerSeekHud> {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final accent = colorScheme.secondaryContainer;
     final container = colorScheme.secondary;
     final onContainer = colorScheme.onSecondary;
     final progressFill = colorScheme.secondaryContainer;
-    final surface = colorScheme.surfaceContainerHighest;
-    final border = colorScheme.outlineVariant.withValues(alpha: 0.34);
     final duration = widget.disableAnimations
         ? Duration.zero
         : const Duration(milliseconds: 200);
@@ -654,36 +621,14 @@ class _PlayerSeekHudState extends State<PlayerSeekHud> {
             scale: widget.visible ? 1 : 0.92,
             duration: duration,
             curve: Curves.easeOutBack,
-            child: ClipRRect(
-              borderRadius:
-                  BorderRadius.circular(KazumiGlass.radiusOf(context)),
-              // Avoid BackdropFilter/ImageFilter.blur: it can trigger Impeller
-              // native aborts when HUD saveLayers are drawn over video output.
-              // See flutter/flutter#185506.
+            child: LiquidGlassContainer(
+              shape: KazumiGlass.panelShapeOf(context),
+              style: LiquidGlassStyle.clear,
+              interactive: false,
               child: AnimatedContainer(
                 duration: duration,
                 curve: Curves.easeOutCubic,
                 width: 248,
-                decoration: BoxDecoration(
-                  color: surface,
-                  borderRadius:
-                      BorderRadius.circular(KazumiGlass.radiusOf(context)),
-                  border: Border.all(color: border),
-                  boxShadow: [
-                    BoxShadow(
-                      color: accent.withValues(
-                        alpha: widget.visible ? 0.24 : 0,
-                      ),
-                      blurRadius: 32,
-                      spreadRadius: 1,
-                    ),
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.28),
-                      blurRadius: 24,
-                      offset: const Offset(0, 12),
-                    ),
-                  ],
-                ),
                 child: Stack(
                   children: [
                     Positioned.fill(
@@ -854,8 +799,6 @@ class _PlayerSpeedHudState extends State<PlayerSpeedHud> {
     final colorScheme = Theme.of(context).colorScheme;
     final container = colorScheme.inverseSurface;
     final onContainer = colorScheme.onInverseSurface;
-    final surface = colorScheme.surfaceContainerHighest;
-    final border = colorScheme.outlineVariant.withValues(alpha: 0.22);
     final duration = widget.disableAnimations
         ? Duration.zero
         : const Duration(milliseconds: 160);
@@ -873,30 +816,16 @@ class _PlayerSpeedHudState extends State<PlayerSpeedHud> {
             scale: widget.visible ? 1 : 0.96,
             duration: duration,
             curve: Curves.easeOutCubic,
-            child: ClipRRect(
-              borderRadius:
-                  BorderRadius.circular(KazumiGlass.radiusOf(context)),
-              // Avoid BackdropFilter/ImageFilter.blur: it can trigger Impeller
-              // native aborts when HUD saveLayers are drawn over video output.
-              // See flutter/flutter#185506.
+            child: LiquidGlassContainer(
+              shape: KazumiGlass.panelShapeOf(context),
+              style: LiquidGlassStyle.clear,
+              interactive: false,
               child: AnimatedContainer(
                 duration: duration,
                 curve: Curves.easeOutCubic,
                 width: 94,
-                padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
-                decoration: BoxDecoration(
-                  color: surface,
-                  borderRadius:
-                      BorderRadius.circular(KazumiGlass.radiusOf(context)),
-                  border: Border.all(color: border),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.18),
-                      blurRadius: 12,
-                      offset: const Offset(0, 5),
-                    ),
-                  ],
-                ),
+                padding:
+                    const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
