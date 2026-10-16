@@ -80,39 +80,18 @@ class _PlayerAdjustmentHudState extends State<PlayerAdjustmentHud> {
     return Icons.volume_up_rounded;
   }
 
-  Color _container(ColorScheme colorScheme) {
-    return switch (_displayType) {
-      PlayerAdjustmentHudType.brightness => colorScheme.tertiary,
-      PlayerAdjustmentHudType.volume => colorScheme.primary,
-    };
-  }
-
-  Color _onContainer(ColorScheme colorScheme) {
-    return switch (_displayType) {
-      PlayerAdjustmentHudType.brightness => colorScheme.onTertiary,
-      PlayerAdjustmentHudType.volume => colorScheme.onPrimary,
-    };
-  }
-
   Color _activeTraker(ColorScheme colorScheme) {
-    return switch (_displayType) {
-      PlayerAdjustmentHudType.brightness => colorScheme.tertiary,
-      PlayerAdjustmentHudType.volume => colorScheme.primary,
-    };
+    // 玻璃上的进度条只用灰阶，避免被玻璃滤镜染色。
+    return Colors.white;
   }
 
   Color _inactiveTraker(ColorScheme colorScheme) {
-    return switch (_displayType) {
-      PlayerAdjustmentHudType.brightness => colorScheme.tertiaryContainer,
-      PlayerAdjustmentHudType.volume => colorScheme.secondaryContainer,
-    };
+    return Colors.white.withValues(alpha: 0.28);
   }
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final container = _container(colorScheme);
-    final onContainer = _onContainer(colorScheme);
     final duration = widget.disableAnimations
         ? Duration.zero
         : const Duration(milliseconds: 200);
@@ -141,9 +120,12 @@ class _PlayerAdjustmentHudState extends State<PlayerAdjustmentHud> {
             scale: widget.visible ? 1 : 0.92,
             duration: duration,
             curve: Curves.easeOutBack,
+            // 给玻璃加一层很淡的黑色 tint，减弱视频帧的穿透干扰；同时让
+            // 玻璃表面形状与原 clip 的圆角一致。
             child: LiquidGlassContainer(
               shape: KazumiGlass.panelShapeOf(context),
               style: LiquidGlassStyle.clear,
+              tint: const Color(0x14000000),
               interactive: false,
               child: AnimatedContainer(
                 duration: duration,
@@ -154,35 +136,26 @@ class _PlayerAdjustmentHudState extends State<PlayerAdjustmentHud> {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    AnimatedContainer(
+                    // 玻璃上不再叠一块深色填充盒：图标直接画在玻璃上，
+                    // 玻璃形状被盖住的观感才一致。
+                    AnimatedSwitcher(
                       duration: duration,
-                      curve: Curves.easeOutCubic,
-                      width: 32,
-                      height: 32,
-                      decoration: BoxDecoration(
-                        color: container,
-                        borderRadius: BorderRadius.circular(
-                            KazumiGlass.radiusOf(context)),
-                      ),
-                      child: AnimatedSwitcher(
-                        duration: duration,
-                        switchInCurve: Curves.easeOutBack,
-                        switchOutCurve: Curves.easeInCubic,
-                        transitionBuilder: (child, animation) {
-                          return ScaleTransition(
-                            scale: animation,
-                            child: FadeTransition(
-                              opacity: animation,
-                              child: child,
-                            ),
-                          );
-                        },
-                        child: Icon(
-                          _icon,
-                          key: ValueKey(_icon),
-                          color: onContainer,
-                          size: 20,
-                        ),
+                      switchInCurve: Curves.easeOutBack,
+                      switchOutCurve: Curves.easeInCubic,
+                      transitionBuilder: (child, animation) {
+                        return ScaleTransition(
+                          scale: animation,
+                          child: FadeTransition(
+                            opacity: animation,
+                            child: child,
+                          ),
+                        );
+                      },
+                      child: Icon(
+                        _icon,
+                        key: ValueKey(_icon),
+                        color: Colors.white,
+                        size: 20,
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -583,10 +556,6 @@ class _PlayerSeekHudState extends State<PlayerSeekHud> {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final container = colorScheme.secondary;
-    final onContainer = colorScheme.onSecondary;
-    final progressFill = colorScheme.secondaryContainer;
     final duration = widget.disableAnimations
         ? Duration.zero
         : const Duration(milliseconds: 200);
@@ -621,9 +590,12 @@ class _PlayerSeekHudState extends State<PlayerSeekHud> {
             scale: widget.visible ? 1 : 0.92,
             duration: duration,
             curve: Curves.easeOutBack,
+            // 玻璃上不叠深色盒；进度填充用白低透明度；加一点黑色 tint 减弱
+            // 视频穿透。文字走灰阶（白 95% / 70%）而不是主题色。
             child: LiquidGlassContainer(
               shape: KazumiGlass.panelShapeOf(context),
               style: LiquidGlassStyle.clear,
+              tint: const Color(0x14000000),
               interactive: false,
               child: AnimatedContainer(
                 duration: duration,
@@ -641,7 +613,7 @@ class _PlayerSeekHudState extends State<PlayerSeekHud> {
                         builder: (context, animatedProgress, child) {
                           return _SeekProgressBackground(
                             progress: animatedProgress,
-                            color: progressFill,
+                            color: Colors.white.withValues(alpha: 0.20),
                           );
                         },
                       ),
@@ -653,35 +625,24 @@ class _PlayerSeekHudState extends State<PlayerSeekHud> {
                       ),
                       child: Row(
                         children: [
-                          AnimatedContainer(
+                          AnimatedSwitcher(
                             duration: duration,
-                            curve: Curves.easeOutCubic,
-                            width: 36,
-                            height: 36,
-                            decoration: BoxDecoration(
-                              color: container,
-                              borderRadius: BorderRadius.circular(
-                                  KazumiGlass.radiusOf(context)),
-                            ),
-                            child: AnimatedSwitcher(
-                              duration: duration,
-                              switchInCurve: Curves.easeOutBack,
-                              switchOutCurve: Curves.easeInCubic,
-                              transitionBuilder: (child, animation) {
-                                return ScaleTransition(
-                                  scale: animation,
-                                  child: FadeTransition(
-                                    opacity: animation,
-                                    child: child,
-                                  ),
-                                );
-                              },
-                              child: Icon(
-                                icon,
-                                key: ValueKey(icon),
-                                color: onContainer,
-                                size: 22,
-                              ),
+                            switchInCurve: Curves.easeOutBack,
+                            switchOutCurve: Curves.easeInCubic,
+                            transitionBuilder: (child, animation) {
+                              return ScaleTransition(
+                                scale: animation,
+                                child: FadeTransition(
+                                  opacity: animation,
+                                  child: child,
+                                ),
+                              );
+                            },
+                            child: Icon(
+                              icon,
+                              key: ValueKey(icon),
+                              color: Colors.white,
+                              size: 22,
                             ),
                           ),
                           const SizedBox(width: 10),
@@ -698,8 +659,15 @@ class _PlayerSeekHudState extends State<PlayerSeekHud> {
                                       .textTheme
                                       .labelLarge
                                       ?.copyWith(
-                                        color: colorScheme.onSurface,
-                                        fontWeight: FontWeight.w600,
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w700,
+                                        shadows: const [
+                                          Shadow(
+                                            color: Color(0x66000000),
+                                            blurRadius: 4,
+                                            offset: Offset(0, 1),
+                                          ),
+                                        ],
                                       ),
                                 ),
                                 const SizedBox(height: 1),
@@ -713,7 +681,16 @@ class _PlayerSeekHudState extends State<PlayerSeekHud> {
                                       .textTheme
                                       .bodySmall
                                       ?.copyWith(
-                                        color: colorScheme.onSurfaceVariant,
+                                        color:
+                                            Colors.white.withValues(alpha: 0.72),
+                                        fontWeight: FontWeight.w600,
+                                        shadows: const [
+                                          Shadow(
+                                            color: Color(0x66000000),
+                                            blurRadius: 4,
+                                            offset: Offset(0, 1),
+                                          ),
+                                        ],
                                       ),
                                 ),
                               ],
@@ -796,9 +773,6 @@ class _PlayerSpeedHudState extends State<PlayerSpeedHud> {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final container = colorScheme.inverseSurface;
-    final onContainer = colorScheme.onInverseSurface;
     final duration = widget.disableAnimations
         ? Duration.zero
         : const Duration(milliseconds: 160);
@@ -816,9 +790,11 @@ class _PlayerSpeedHudState extends State<PlayerSpeedHud> {
             scale: widget.visible ? 1 : 0.96,
             duration: duration,
             curve: Curves.easeOutCubic,
+            // 倍速 HUD 也是灰阶：图标 + 数字白/70% 白；玻璃加黑色 tint 减弱视频穿透。
             child: LiquidGlassContainer(
               shape: KazumiGlass.panelShapeOf(context),
               style: LiquidGlassStyle.clear,
+              tint: const Color(0x14000000),
               interactive: false,
               child: AnimatedContainer(
                 duration: duration,
@@ -829,21 +805,10 @@ class _PlayerSpeedHudState extends State<PlayerSpeedHud> {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    AnimatedContainer(
-                      duration: duration,
-                      curve: Curves.easeOutCubic,
-                      width: 22,
-                      height: 22,
-                      decoration: BoxDecoration(
-                        color: container,
-                        borderRadius: BorderRadius.circular(
-                            KazumiGlass.radiusOf(context)),
-                      ),
-                      child: Icon(
-                        Icons.speed_rounded,
-                        color: onContainer,
-                        size: 15,
-                      ),
+                    const Icon(
+                      Icons.speed_rounded,
+                      color: Colors.white,
+                      size: 18,
                     ),
                     const SizedBox(width: 6),
                     Expanded(
@@ -853,8 +818,15 @@ class _PlayerSpeedHudState extends State<PlayerSpeedHud> {
                         overflow: TextOverflow.ellipsis,
                         style:
                             Theme.of(context).textTheme.labelMedium?.copyWith(
-                                  color: colorScheme.onSurface,
+                                  color: Colors.white,
                                   fontWeight: FontWeight.w700,
+                                  shadows: const [
+                                    Shadow(
+                                      color: Color(0x66000000),
+                                      blurRadius: 4,
+                                      offset: Offset(0, 1),
+                                    ),
+                                  ],
                                 ),
                       ),
                     ),
