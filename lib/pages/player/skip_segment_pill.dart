@@ -249,13 +249,14 @@ class _SkipSegmentPillState extends State<SkipSegmentPill> {
         final visible = _kind != null;
         final controlsUp = _player.panel.showVideoController &&
             !_player.panel.lockPanel;
-        // 横屏时弹窗往屏幕中间挪、再上抬一点；竖屏保持原来位置。
+        // 横屏：固定位置，不随控制栏显隐变化——以控制栏可见时的基准再往下
+        // 14、往屏幕中间 26（right 64→90，bottom 含 +24 基准后 -14）。
         final size = MediaQuery.sizeOf(context);
         final landscape = size.width > size.height;
-        final rightInset = landscape ? 64.0 : 20.0;
-        final bottomOffset = safeBottom +
-            (controlsUp ? 48 : 28) +
-            (landscape ? 24 : 0);
+        final rightInset = landscape ? 90.0 : 20.0;
+        final bottomOffset = landscape
+            ? safeBottom + 58
+            : safeBottom + (controlsUp ? 48 : 28);
         final Widget pill;
         if (!visible) {
           pill = const SizedBox.shrink();
@@ -329,6 +330,7 @@ class _CountdownPill extends StatelessWidget {
   Widget build(BuildContext context) {
     const foreground = Color(0xF2FFFFFF);
     final name = kind == SkipKind.opening ? '片头' : '片尾';
+    final primary = Theme.of(context).colorScheme.primary;
     final titleStyle = Theme.of(context).textTheme.labelLarge?.copyWith(
           color: foreground,
           fontSize: 13,
@@ -342,7 +344,7 @@ class _CountdownPill extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
       child: Column(
         mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Row(
             mainAxisSize: MainAxisSize.min,
@@ -351,7 +353,7 @@ class _CountdownPill extends StatelessWidget {
                   size: 16, color: foreground),
               const SizedBox(width: 8),
               Text('即将跳过$name', style: titleStyle),
-              const SizedBox(width: 10),
+              const SizedBox(width: 6),
               _CountdownRing(
                 secondsLeft: secondsLeft,
                 totalSeconds: totalSeconds,
@@ -366,14 +368,14 @@ class _CountdownPill extends StatelessWidget {
               _PillAction(
                 label: '跳过',
                 filled: true,
-                fillColor: Colors.white.withValues(alpha: 0.22),
+                fillColor: primary.withValues(alpha: 0.28),
                 onTap: onSkipNow,
               ),
               const SizedBox(width: 12),
               _PillAction(
                 label: '取消',
                 filled: true,
-                fillColor: Colors.black.withValues(alpha: 0.22),
+                fillColor: foreground.withValues(alpha: 0.12),
                 onTap: onCancel,
               ),
             ],
@@ -402,6 +404,7 @@ class _NextEpisodePill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const foreground = Color(0xF2FFFFFF);
+    final primary = Theme.of(context).colorScheme.primary;
     final titleStyle = Theme.of(context).textTheme.labelLarge?.copyWith(
           color: foreground,
           fontSize: 13,
@@ -415,7 +418,7 @@ class _NextEpisodePill extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
       child: Column(
         mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Row(
             mainAxisSize: MainAxisSize.min,
@@ -423,7 +426,7 @@ class _NextEpisodePill extends StatelessWidget {
               const Icon(Icons.skip_next_rounded, size: 16, color: foreground),
               const SizedBox(width: 8),
               Text('即将到结尾', style: titleStyle),
-              const SizedBox(width: 10),
+              const SizedBox(width: 6),
               _CountdownRing(
                 secondsLeft: secondsLeft,
                 totalSeconds: totalSeconds,
@@ -438,14 +441,14 @@ class _NextEpisodePill extends StatelessWidget {
               _PillAction(
                 label: '下一集',
                 filled: true,
-                fillColor: Colors.white.withValues(alpha: 0.22),
+                fillColor: primary.withValues(alpha: 0.28),
                 onTap: onNextEpisode,
               ),
               const SizedBox(width: 12),
               _PillAction(
                 label: '取消',
                 filled: true,
-                fillColor: Colors.black.withValues(alpha: 0.22),
+                fillColor: foreground.withValues(alpha: 0.12),
                 onTap: onCancel,
               ),
             ],
@@ -470,6 +473,7 @@ class _UndoPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const foreground = Color(0xF2FFFFFF);
+    final primary = Theme.of(context).colorScheme.primary;
     final textStyle = Theme.of(context).textTheme.labelLarge?.copyWith(
           color: foreground,
           fontSize: 13,
@@ -483,7 +487,7 @@ class _UndoPill extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
       child: Column(
         mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Row(
             mainAxisSize: MainAxisSize.min,
@@ -501,7 +505,7 @@ class _UndoPill extends StatelessWidget {
               _PillAction(
                 label: '撤销',
                 filled: true,
-                fillColor: Colors.white.withValues(alpha: 0.22),
+                fillColor: primary.withValues(alpha: 0.28),
                 onTap: onTap,
               ),
             ],

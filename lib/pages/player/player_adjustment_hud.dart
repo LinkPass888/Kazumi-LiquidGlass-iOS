@@ -80,13 +80,27 @@ class _PlayerAdjustmentHudState extends State<PlayerAdjustmentHud> {
     return Icons.volume_up_rounded;
   }
 
+  Color _container(ColorScheme colorScheme) {
+    return switch (_displayType) {
+      PlayerAdjustmentHudType.brightness => colorScheme.tertiary,
+      PlayerAdjustmentHudType.volume => colorScheme.primary,
+    };
+  }
+
+  // 亮度/音量走 iOS 音量条观感：轨道活动段用主题色、非活动段用对应
+  // container 色，中间（滑块处）收窄成细腰（见 _HudSliderTrackShape）。
   Color _activeTraker(ColorScheme colorScheme) {
-    // 玻璃上的进度条只用灰阶，避免被玻璃滤镜染色。
-    return Colors.white;
+    return switch (_displayType) {
+      PlayerAdjustmentHudType.brightness => colorScheme.tertiary,
+      PlayerAdjustmentHudType.volume => colorScheme.primary,
+    };
   }
 
   Color _inactiveTraker(ColorScheme colorScheme) {
-    return Colors.white.withValues(alpha: 0.28);
+    return switch (_displayType) {
+      PlayerAdjustmentHudType.brightness => colorScheme.tertiaryContainer,
+      PlayerAdjustmentHudType.volume => colorScheme.secondaryContainer,
+    };
   }
 
   @override
@@ -154,7 +168,7 @@ class _PlayerAdjustmentHudState extends State<PlayerAdjustmentHud> {
                       child: Icon(
                         _icon,
                         key: ValueKey(_icon),
-                        color: Colors.white,
+                        color: _container(colorScheme),
                         size: 20,
                       ),
                     ),
@@ -560,6 +574,7 @@ class _PlayerSeekHudState extends State<PlayerSeekHud> {
         ? Duration.zero
         : const Duration(milliseconds: 200);
     final snapProgress = _snapProgressOnNextBuild;
+    final colorScheme = Theme.of(context).colorScheme;
     final icon = _displayCancelPending
         ? Icons.close_rounded
         : _isForward
@@ -590,8 +605,8 @@ class _PlayerSeekHudState extends State<PlayerSeekHud> {
             scale: widget.visible ? 1 : 0.92,
             duration: duration,
             curve: Curves.easeOutBack,
-            // 玻璃上不叠深色盒；进度填充用白低透明度；加一点黑色 tint 减弱
-            // 视频穿透。文字走灰阶（白 95% / 70%）而不是主题色。
+            // 玻璃上不叠深色盒；进度填充用主题 container 色并裁成玻璃圆角；
+            // 加一点黑色 tint 减弱视频穿透。两行文字统一纯白，不用主题色。
             child: LiquidGlassContainer(
               shape: KazumiGlass.panelShapeOf(context),
               style: LiquidGlassStyle.clear,
@@ -613,7 +628,7 @@ class _PlayerSeekHudState extends State<PlayerSeekHud> {
                         builder: (context, animatedProgress, child) {
                           return _SeekProgressBackground(
                             progress: animatedProgress,
-                            color: Colors.white.withValues(alpha: 0.20),
+                            color: colorScheme.secondaryContainer,
                           );
                         },
                       ),
@@ -641,7 +656,7 @@ class _PlayerSeekHudState extends State<PlayerSeekHud> {
                             child: Icon(
                               icon,
                               key: ValueKey(icon),
-                              color: Colors.white,
+                              color: colorScheme.secondary,
                               size: 22,
                             ),
                           ),
@@ -681,8 +696,7 @@ class _PlayerSeekHudState extends State<PlayerSeekHud> {
                                       .textTheme
                                       .bodySmall
                                       ?.copyWith(
-                                        color:
-                                            Colors.white.withValues(alpha: 0.72),
+                                        color: Colors.white,
                                         fontWeight: FontWeight.w600,
                                         shadows: const [
                                           Shadow(
@@ -724,11 +738,15 @@ class _SeekProgressBackground extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final width = constraints.maxWidth * progress.clamp(0.0, 1.0);
-        return Align(
-          alignment: Alignment.centerLeft,
-          child: Container(
-            width: width,
-            color: color,
+        // 裁成玻璃圆角：否则进度填充是直角矩形，四角会顶出玻璃边框。
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(KazumiGlass.radiusOf(context)),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: Container(
+              width: width,
+              color: color,
+            ),
           ),
         );
       },
@@ -773,6 +791,7 @@ class _PlayerSpeedHudState extends State<PlayerSpeedHud> {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
     final duration = widget.disableAnimations
         ? Duration.zero
         : const Duration(milliseconds: 160);
@@ -790,7 +809,7 @@ class _PlayerSpeedHudState extends State<PlayerSpeedHud> {
             scale: widget.visible ? 1 : 0.96,
             duration: duration,
             curve: Curves.easeOutCubic,
-            // 倍速 HUD 也是灰阶：图标 + 数字白/70% 白；玻璃加黑色 tint 减弱视频穿透。
+            // 倍速 HUD：图标恢复主题色，数字保持纯白；玻璃加黑色 tint 减弱视频穿透。
             child: LiquidGlassContainer(
               shape: KazumiGlass.panelShapeOf(context),
               style: LiquidGlassStyle.clear,
@@ -805,9 +824,9 @@ class _PlayerSpeedHudState extends State<PlayerSpeedHud> {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(
+                    Icon(
                       Icons.speed_rounded,
-                      color: Colors.white,
+                      color: colorScheme.inverseSurface,
                       size: 18,
                     ),
                     const SizedBox(width: 6),
