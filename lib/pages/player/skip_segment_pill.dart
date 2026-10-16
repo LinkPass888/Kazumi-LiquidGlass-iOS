@@ -249,13 +249,13 @@ class _SkipSegmentPillState extends State<SkipSegmentPill> {
         final visible = _kind != null;
         final controlsUp = _player.panel.showVideoController &&
             !_player.panel.lockPanel;
-        // 横屏：固定位置，不随控制栏显隐变化——以控制栏可见时的基准再往下
-        // 14、往屏幕中间 26（right 64→90，bottom 含 +24 基准后 -14）。
+        // 横屏：固定位置，不随控制栏显隐变化——以控制栏可见时的基准微调：
+        // 往屏幕中间 26（right 64→90）、下移 9（bottom 含 +24 基准后 -9）。
         final size = MediaQuery.sizeOf(context);
         final landscape = size.width > size.height;
         final rightInset = landscape ? 90.0 : 20.0;
         final bottomOffset = landscape
-            ? safeBottom + 58
+            ? safeBottom + 63
             : safeBottom + (controlsUp ? 48 : 28);
         final Widget pill;
         if (!visible) {
