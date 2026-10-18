@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
+import 'package:kazumi/bean/dialog/dialog_helper.dart';
 import 'package:kazumi/modules/bangumi/bangumi_item.dart';
 import 'package:kazumi/modules/collect/collect_module.dart';
 import 'package:kazumi/request/core/dio_factory.dart';
@@ -46,6 +47,19 @@ class BangumiUpdateTimesService {
   /// 重复调用共享一次下载。抛错不会被保留，下次调用会重试。
   Future<void> ensureLoaded() => _loading ??= _load();
 
+  /// 数据可用（更新时间表非空）时回调；设置在 main 初始化，供通知重排。
+  /// 这里额外在「彻底拿不到数据」时弹 toast —— 时间表时间和更新提醒都依赖
+  /// 这张表，空了下发端全无反馈，用户根本不知道是下载失败了。
+  void _notifyRefreshed() {
+    if (updates.isEmpty) {
+      KazumiLogger().w('BangumiUpdateTimes: no update data available');
+      KazumiDialog.showToast(message: '更新时间数据加载失败，请检查网络后重进时间表');
+      return;
+    }
+    KazumiLogger().i('BangumiUpdateTimes: loaded ${updates.length} entries');
+    onRefreshed?.call();
+  }
+
   Future<void> _load() async {
     final cache = File(
       path.join(
@@ -84,27 +98,36 @@ class BangumiUpdateTimesService {
               for (final e in updates.entries)
                 '${e.key}': [e.value.firstEpochMs, e.value.periodMs],
             },
-            'mal': malIds,
+            // JSON 对象的 key 必须是字符串：malIds 是 Map<int, int>，直接塞进去
+            // jsonEncode 会抛「Converting object to an encodable object failed」，
+            // 于是解析成功的数据也写不进缓存、updates 一直是空表（直连失败的根因）。
+            'mal': {for (final e in malIds.entries) '${e.key}': e.value},
           }),
           flush: true,
         );
         this.updates = updates;
         this.malIds = malIds;
-        onRefreshed?.call();
+        _notifyRefreshed();
         return;
       } catch (e) {
         KazumiLogger().w('BangumiUpdateTimes: season download failed',
             error: e);
       }
     }
-    if (!await cache.exists()) return;
+    if (!await cache.exists()) {
+      _notifyRefreshed();
+      return;
+    }
     // 下载失败时回退到旧缓存（哪怕已过期），offline 也有数据可用。
     try {
       final raw =
           jsonDecode(await cache.readAsString()) as Map<String, dynamic>;
       final rawUpdates = raw['updates'];
       final rawMal = raw['mal'];
-      if (rawUpdates is! Map) return;
+      if (rawUpdates is! Map) {
+        _notifyRefreshed();
+        return;
+      }
       final updates = <int, BangumiUpdateEntry>{};
       rawUpdates.forEach((key, value) {
         final int? id = int.tryParse(key.toString());
@@ -124,9 +147,10 @@ class BangumiUpdateTimesService {
       }
       this.updates = updates;
       this.malIds = malIds;
-      onRefreshed?.call();
+      _notifyRefreshed();
     } on Object {
       // 缓存损坏则保持空表，各页面走「无数据」排序分支。
+      _notifyRefreshed();
     }
   }
 
@@ -189,11 +213,11 @@ String bangumiDataSeasonUrl(
   BangumiAcceleration? acceleration,
 }) {
   final monthPart = month.toString().padLeft(2, '0');
-  final filePath = 'bangumi-data/bangumi-data/master/data/items/$year/$monthPart.json';
+  final relativePath = 'data/items/$year/$monthPart.json';
   return switch (acceleration ?? BangumiAcceleration.current) {
     BangumiAcceleration.direct =>
-      'https://raw.githubusercontent.com/$filePath',
-    _ => 'https://cdn.jsdelivr.net/gh/$filePath',
+      'https://raw.githubusercontent.com/bangumi-data/bangumi-data/master/$relativePath',
+    _ => 'https://cdn.jsdelivr.net/gh/bangumi-data/bangumi-data@master/$relativePath',
   };
 }
 

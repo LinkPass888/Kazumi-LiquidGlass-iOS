@@ -397,8 +397,10 @@ class _InfoPageState extends State<InfoPage>
                 expandedHeight: BangumiInfoCardV.heightFor(
                       context,
                       infoController.bangumiItem,
+                      showRating: showRating,
+                      isLoading: _isShowingBangumiInfoSkeleton,
                     ) +
-                    8 + // 卡片下缘留白
+                    10 + // 卡片下缘到「概览/吐槽」标签的固定留白
                     tabBand +
                     kToolbarHeight,
                 // collapsedHeight 只写「工具栏」那一截。Flutter 自己还会

@@ -62,7 +62,7 @@ void main() {
       expect(bangumiDataSeasonUrl(2026, 1, acceleration: BangumiAcceleration.direct),
           'https://raw.githubusercontent.com/bangumi-data/bangumi-data/master/data/items/2026/01.json');
       expect(bangumiDataSeasonUrl(2026, 10, acceleration: BangumiAcceleration.mirror),
-          'https://cdn.jsdelivr.net/gh/bangumi-data/bangumi-data/master/data/items/2026/10.json');
+          'https://cdn.jsdelivr.net/gh/bangumi-data/bangumi-data@master/data/items/2026/10.json');
       expect(bangumiDataSeasonUrl(2026, 7, acceleration: BangumiAcceleration.ech),
           contains('cdn.jsdelivr.net'));
     });
