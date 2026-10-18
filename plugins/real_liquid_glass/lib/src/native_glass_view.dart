@@ -7,7 +7,7 @@ import 'glass_style.dart';
 
 /// 全局玻璃可见性控制（按路由作用域）。
 ///
-/// 平台视图（UiKitView/AppKitView）是叠加在 Flutter 表面之上的原生层，不参与
+/// 平台视图（UiKitView）是叠加在 Flutter 表面之上的原生层，不参与
 /// Flutter 的路由转场 / Hero 飞行动画 —— 转场期间**正在动画的那一页**的玻璃会
 /// 以「截屏残留」留在原位，盖住滑动的 Flutter 内容（如详情页 Hero 飞行的封面、
 /// push 滑入时详情页的顶栏按钮先就位）。所以这里按**路由**精确隐藏：只隐藏
@@ -45,9 +45,8 @@ class LiquidGlassVisibility {
 
 /// Embeds the native effect view that carries the glass material.
 ///
-/// On iOS 26+ / macOS 26+ this is real UIGlassEffect / NSGlassEffectView
-/// Liquid Glass. The effect samples the content rendered beneath it —
-/// Flutter widgets included.
+/// On iOS 26+ this is real UIGlassEffect Liquid Glass. The effect samples
+/// the content rendered beneath it — Flutter widgets included.
 class NativeGlassView extends StatefulWidget {
   const NativeGlassView({
     super.key,
@@ -133,22 +132,14 @@ class _NativeGlassViewState extends State<NativeGlassView> {
     final hitTestBehavior = widget.interactive
         ? PlatformViewHitTestBehavior.opaque
         : PlatformViewHitTestBehavior.transparent;
-    // Kazumi 本地版：只保留 iOS/macOS（Apple 全平台）。
-    final Widget view = defaultTargetPlatform == TargetPlatform.macOS
-        ? AppKitView(
-            viewType: 'real_liquid_glass/glass_view',
-            creationParams: _params,
-            creationParamsCodec: const StandardMessageCodec(),
-            hitTestBehavior: hitTestBehavior,
-            onPlatformViewCreated: _onViewCreated,
-          )
-        : UiKitView(
-            viewType: 'real_liquid_glass/glass_view',
-            creationParams: _params,
-            creationParamsCodec: const StandardMessageCodec(),
-            hitTestBehavior: hitTestBehavior,
-            onPlatformViewCreated: _onViewCreated,
-          );
+    // Kazumi 本地版：仅 iOS。
+    final Widget view = UiKitView(
+      viewType: 'real_liquid_glass/glass_view',
+      creationParams: _params,
+      creationParamsCodec: const StandardMessageCodec(),
+      hitTestBehavior: hitTestBehavior,
+      onPlatformViewCreated: _onViewCreated,
+    );
     // 转场期间平台视图不跟随 Flutter 动画，直接隐藏（Offstage）避免截屏残留盖住内容。
     return IgnorePointer(
       ignoring: !widget.interactive,
