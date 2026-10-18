@@ -31,6 +31,54 @@ class BangumiInfoCardV extends StatefulWidget {
   final bool isLoading;
   final bool showRating;
 
+  /// 详情页顶栏给卡片留的最大宽度，与页面里的 Padding 和卡片的
+  /// [BoxConstraints.maxWidth] 一致。
+  static const double _maxWidth = 950;
+
+  /// 页面给卡片的左右内边距（info_page.dart 的 EdgeInsets.fromLTRB）。
+  static const double horizontalInset = 16;
+
+  static String _titleOf(BangumiItem item) =>
+      item.nameCn.trim().isEmpty ? item.name.trim() : item.nameCn.trim();
+
+  /// 标题在给定宽度、指定行数下的高度。
+  static double _measureTitle(
+    BuildContext context,
+    BangumiItem item,
+    int maxLines,
+  ) {
+    final width = math.min(
+      MediaQuery.sizeOf(context).width - horizontalInset * 2,
+      _maxWidth,
+    );
+    final text = _titleOf(item);
+    return (TextPainter(
+      text: TextSpan(
+        text: text.isEmpty ? ' ' : text,
+        style: Theme.of(context).textTheme.headlineSmall,
+      ),
+      maxLines: maxLines,
+      textDirection: Directionality.of(context),
+      textScaler: MediaQuery.textScalerOf(context),
+    )..layout(maxWidth: width))
+        .height;
+  }
+
+  /// 卡片总高度。标题换行时整体加高，封面、条目信息、概览吐槽按钮跟着一起
+  /// 下移，与标题始终隔着 [_verticalGap]。详情页的 SliverAppBar 用同一函数
+  /// 算 expandedHeight，两边始终一致。
+  static double heightFor(BuildContext context, BangumiItem item) {
+    final grown =
+        _measureTitle(context, item, 2) - _measureTitle(context, item, 1);
+    return _baseHeight + (grown > 0 ? grown : 0);
+  }
+
+  /// 标题一行时卡片的高度。
+  static const double _baseHeight = 356;
+
+  /// 标题、内容块之间的竖向间距。
+  static const double _verticalGap = 20;
+
   @override
   State<BangumiInfoCardV> createState() => _BangumiInfoCardVState();
 }
@@ -306,8 +354,10 @@ class _BangumiInfoCardVState extends State<BangumiInfoCardV> {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 356,
-      constraints: BoxConstraints(maxWidth: 950),
+      height: BangumiInfoCardV.heightFor(context, widget.bangumiItem),
+      constraints: const BoxConstraints(
+        maxWidth: BangumiInfoCardV._maxWidth,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -319,7 +369,7 @@ class _BangumiInfoCardVState extends State<BangumiInfoCardV> {
             overflow: TextOverflow.ellipsis,
             style: Theme.of(context).textTheme.headlineSmall,
           ),
-          SizedBox(height: 16),
+          const SizedBox(height: BangumiInfoCardV._verticalGap),
           Expanded(
             child: LayoutBuilder(builder: (context, rowConstraints) {
               // 封面是「宽高比 0.65」定尺寸的：行里除了 16 的间距，其余都是弹性

@@ -397,11 +397,19 @@ class _InfoPageState extends State<InfoPage>
                 toolbarHeight: kToolbarHeight + topOffset,
                 stretch: true,
                 centerTitle: false,
-                // 364 = 卡片的 356 + 8 余量。状态栏内边距不要自己加：
-                // Flutter 的 _SliverAppBarDelegate.maxExtent 已经把它算在
-                // 上面了（maxExtent = topPadding + expandedHeight），
+                // 卡片高度跟着标题换行增长（见 BangumiInfoCardV.heightFor），
+                // 这里用同一函数，标签栏才能跟着一起下移。
+                // 状态栏内边距不要自己加：Flutter 的 _SliverAppBarDelegate.maxExtent
+                // 已经把它算在上面了（maxExtent = topPadding + expandedHeight），
                 // 这里再加一次顶栏就会白高出一截。
-                expandedHeight: 364 + tabBand + kToolbarHeight + topOffset,
+                expandedHeight: BangumiInfoCardV.heightFor(
+                      context,
+                      infoController.bangumiItem,
+                    ) +
+                    8 + // 卡片下缘留白
+                    tabBand +
+                    kToolbarHeight +
+                    topOffset,
                 // collapsedHeight 只写「工具栏」那一截。Flutter 自己还会
                 // 加上底部标签栏和状态栏内边距 —— app_bar.dart:
                 //   collapsedHeight = (widget.collapsedHeight

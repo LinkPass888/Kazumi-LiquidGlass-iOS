@@ -14,6 +14,7 @@ import 'package:kazumi/bean/widget/loading_indicator.dart';
 import 'package:kazumi/bean/widget/state_presentation.dart';
 import 'package:kazumi/modules/bangumi/bangumi_item.dart';
 import 'package:kazumi/pages/timeline/timeline_controller.dart';
+import 'package:kazumi/services/bangumi_update_times.dart';
 import 'package:kazumi/services/storage/storage.dart';
 import 'package:kazumi/utils/anime_season.dart';
 
@@ -69,7 +70,7 @@ class _TimelinePageState extends State<TimelinePage> {
               padding: materialBottomSheetContentPadding.add(
                   EdgeInsets.only(bottom: KazumiGlass.bottomInset(context))),
               itemCount: years.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 24),
+              separatorBuilder: (_, _) => const SizedBox(height: 24),
               itemBuilder: (context, index) {
                 final year = years[index];
                 return ContentSection(
@@ -427,6 +428,9 @@ class _TimelinePageState extends State<TimelinePage> {
                     compact: compact,
                     showRating: _showRating,
                     isWatching: watchingIds.contains(item.id),
+                    updateText: _controller.nextUpdateEpoch(item.id) == null
+                        ? null
+                        : '${formatUpdateTime(_controller.nextUpdateEpoch(item.id))} 更新',
                     onTap: () => context.pushNamed('/info/', arguments: item),
                   );
                 },

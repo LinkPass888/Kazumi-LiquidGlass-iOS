@@ -475,6 +475,11 @@ class SettingsKeys {
     'list',
     group: SettingGroup.interface,
   );
+  static const defaultCollectSort = SettingKey<String>(
+    'defaultCollectSort',
+    'updateTime',
+    group: SettingGroup.collect,
+  );
   static const downloadParallelEpisodes = SettingKey<int>(
     _SettingBoxKey.downloadParallelEpisodes,
     2,
@@ -545,6 +550,11 @@ class SettingsKeys {
   static const bangumiImmediateSyncToastEnable = SettingKey<bool>(
     _SettingBoxKey.bangumiImmediateSyncToastEnable,
     true,
+    group: SettingGroup.bangumi,
+  );
+  static const bangumiUpdateNotifyEnable = SettingKey<bool>(
+    'bangumiUpdateNotifyEnable',
+    false,
     group: SettingGroup.bangumi,
   );
   static const brightnessVolumeGesture = SettingKey<bool>(
@@ -670,6 +680,7 @@ class SettingsKeys {
     proxyTestUrl,
     showRating,
     defaultCollectLayout,
+    defaultCollectSort,
     downloadParallelEpisodes,
     downloadParallelSegments,
     downloadDanmaku,
@@ -684,6 +695,7 @@ class SettingsKeys {
     bangumiAccessToken,
     bangumiSyncPriority,
     bangumiImmediateSyncToastEnable,
+    bangumiUpdateNotifyEnable,
     brightnessVolumeGesture,
     historySyncDeviceId,
     historySyncSequence,

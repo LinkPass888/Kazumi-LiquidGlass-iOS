@@ -12,13 +12,18 @@ class BangumiTimelineCard extends StatelessWidget {
     required this.onTap,
     this.isWatching = false,
     this.compact = false,
+    this.updateText,
   });
 
   final BangumiItem bangumiItem;
   final bool showRating;
+  final VoidCallback onTap;
   final bool isWatching;
   final bool compact;
-  final VoidCallback onTap;
+
+  /// 下次更新时间文案（如「18:30 更新」），null 时整行留白占位，
+  /// 保证有/无数据的卡片在同一网格里高度一致。
+  final String? updateText;
 
   static final _episodePattern =
       RegExp(r'^\s*([1-9]\d*)\s*[话話集](?=\s*(?:[/／]|$))');
@@ -30,6 +35,8 @@ class BangumiTimelineCard extends StatelessWidget {
   static const _titleLineHeight = 1.5;
   static const _labelFontSize = 12.0;
   static const _labelLineHeight = 4 / 3;
+  static const _updateFontSize = 11.0;
+  static const _updateGap = 4.0;
   static const _metadataGap = 8.0;
   static const _footerGap = 12.0;
   static const _ratingIconSize = 16.0;
@@ -40,11 +47,18 @@ class BangumiTimelineCard extends StatelessWidget {
   static double heightFor(TextScaler scaler, {bool compact = false}) {
     final titleHeight = scaler.scale(_titleFontSize) * _titleLineHeight * 2;
     final labelHeight = scaler.scale(_labelFontSize) * _labelLineHeight;
+    final updateHeight =
+        _updateGap + scaler.scale(_updateFontSize) * _labelLineHeight;
     final footerHeight =
         math.max(_ratingIconSize, labelHeight) + _ratingPadding.vertical;
     final contentHeight = math.max(
       compact ? 120.0 : 136.0,
-      titleHeight + _metadataGap + labelHeight + _footerGap + footerHeight,
+      titleHeight +
+          _metadataGap +
+          labelHeight +
+          updateHeight +
+          _footerGap +
+          footerHeight,
     );
     return _contentPadding * 2 + contentHeight;
   }
@@ -136,6 +150,18 @@ class BangumiTimelineCard extends StatelessWidget {
             ),
           ),
         ],
+        // 更新时间行：占位行常驻，无数据时留白，网格高度保持一致。
+        SizedBox(height: _updateGap),
+        Text(
+          updateText ?? '',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: colors.outline,
+            fontSize: _updateFontSize,
+            height: _labelLineHeight,
+          ),
+        ),
         if (showRating || isWatching) ...[
           const Spacer(),
           const SizedBox(height: _footerGap),

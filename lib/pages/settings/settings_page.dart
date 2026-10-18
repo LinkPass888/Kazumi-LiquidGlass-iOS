@@ -87,6 +87,12 @@ const List<_SettingsGroup> _settingsGroups = [
         path: '/settings/interface',
       ),
       _SettingsCategory(
+        label: '通知设置',
+        description: '追番更新提醒',
+        icon: Icons.notifications_rounded,
+        path: '/settings/notification',
+      ),
+      _SettingsCategory(
         label: '同步设置',
         description: '追番状态与多设备同步',
         icon: Icons.cloud_rounded,

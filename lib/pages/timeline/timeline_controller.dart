@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:kazumi/modules/bangumi/bangumi_item.dart';
 import 'package:kazumi/request/apis/bangumi_api.dart';
+import 'package:kazumi/services/bangumi_update_times.dart';
 import 'package:kazumi/utils/anime_season.dart';
 import 'package:kazumi/repositories/collect_repository.dart';
 import 'package:kazumi/modules/collect/collect_type.dart';
@@ -73,6 +76,10 @@ abstract class _TimelineController with Store {
       if (!isTimeOut) {
         _applyCustomTimelineEntries();
         changeSort(_sort);
+        // 更新时间数据异步到达后按当前排序方式重排一次（含卡片更新时间文案）。
+        unawaited(BangumiUpdateTimesService.instance.ensureLoaded().then((_) {
+          if (_sort == TimelineSort.defaultOrder) changeSort(_sort);
+        }));
       }
     } catch (error, stackTrace) {
       isTimeOut = true;
@@ -113,7 +120,13 @@ abstract class _TimelineController with Store {
     final Comparator<BangumiItem> compare = switch (sort) {
       TimelineSort.popularity => (a, b) => b.votes.compareTo(a.votes),
       TimelineSort.rating => (a, b) => b.ratingScore.compareTo(a.ratingScore),
-      TimelineSort.defaultOrder => (a, b) => a.id.compareTo(b.id),
+      // 默认顺序即按更新时间从早到晚，无更新时间的排当日最后。
+      TimelineSort.defaultOrder => (a, b) => compareTimelineUpdateTime(
+          a,
+          b,
+          BangumiUpdateTimesService.instance.updates,
+          DateTime.now(),
+        ),
     };
     final resBangumiCalendar = bangumiCalendar.toList();
     for (final dayList in resBangumiCalendar) {
@@ -203,6 +216,10 @@ abstract class _TimelineController with Store {
   Set<int> loadWatchingBangumiIds() {
     return _collectRepository.getBangumiIdsByType(CollectType.watching);
   }
+
+  /// 单部番剧的下一次更新时间（epoch ms），卡片文案与排序共用。
+  int? nextUpdateEpoch(int bangumiId) =>
+      BangumiUpdateTimesService.instance.nextUpdateEpoch(bangumiId);
 
   int get activeFilterCount => [
         onlyShowWatchingBangumis,

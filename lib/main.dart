@@ -22,7 +22,10 @@ import 'package:kazumi/services/platform/desktop_window_config.dart';
 import 'package:kazumi/services/platform/webview_feature_service.dart';
 import 'package:kazumi/bean/dialog/dialog_helper.dart';
 import 'package:kazumi/bean/liquid_glass/glass_route_observer.dart';
+import 'package:kazumi/modules/collect/collect_type.dart';
 import 'package:kazumi/navigation.dart';
+import 'package:kazumi/services/bangumi_update_notification_service.dart';
+import 'package:kazumi/services/bangumi_update_times.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -97,6 +100,12 @@ void main() async {
   }
   await MeteredNetworkService.refresh();
   ProxyManager.applyProxy();
+  // 通知服务通过回调取「正在追」列表，避免反向依赖存储层。
+  BangumiUpdateNotificationService.instance.watchingProvider =
+      _watchingBangumis;
+  // 更新时间数据刷新成功后，重排更新提醒。
+  BangumiUpdateTimesService.instance.onRefreshed =
+      BangumiUpdateNotificationService.instance.rescheduleNow;
   runApp(
     ModularApp(
       module: appModule,
@@ -109,4 +118,15 @@ void main() async {
       child: const AppWidget(),
     ),
   );
+}
+
+/// 「正在追」的番剧（id -> 名称），供更新提醒使用。
+Future<Map<int, String>> _watchingBangumis() async {
+  final watching = <int, String>{};
+  for (final collectible in GStorage.collectibles.values) {
+    if (collectible.type != CollectType.watching.value) continue;
+    final item = collectible.bangumiItem;
+    watching[item.id] = item.nameCn.isNotEmpty ? item.nameCn : item.name;
+  }
+  return watching;
 }

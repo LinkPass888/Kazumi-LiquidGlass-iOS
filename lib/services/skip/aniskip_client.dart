@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:dio/dio.dart';
 import 'package:kazumi/request/core/dio_factory.dart';
+import 'package:kazumi/services/bangumi_update_times.dart';
 import 'package:kazumi/services/logging/logger.dart';
 import 'package:kazumi/services/skip/skip_segments.dart';
 import 'package:path/path.dart' as path;
@@ -80,6 +81,13 @@ class AniSkipClient {
           options: Options(responseType: ResponseType.plain),
         );
         final compact = compactBangumiMalMap(response.data ?? '[]');
+        // 并入最近两季 bangumi-data 的 mal 映射（新番覆盖更快）；
+        // ExtLinker 为主，冲突不覆盖。拿不到季节数据就只用 ExtLinker。
+        try {
+          await BangumiUpdateTimesService.instance.ensureLoaded();
+          BangumiUpdateTimesService.instance.malIds
+              .forEach((bgm, mal) => compact.putIfAbsent(bgm, () => mal));
+        } catch (_) {}
         await cache.parent.create(recursive: true);
         await cache.writeAsString(
           jsonEncode(compact.map((k, v) => MapEntry('$k', v))),
