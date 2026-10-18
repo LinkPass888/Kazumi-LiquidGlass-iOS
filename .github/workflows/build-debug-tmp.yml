@@ -1,0 +1,53 @@
+---
+name: "build-debug"
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - "feat/update-times-notifications"
+    paths:
+      - ".github/workflows/build-debug-tmp.yml"
+
+jobs:
+  debug:
+    runs-on: "macos-26"
+    permissions: write-all
+    env:
+      TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Clone repository
+        uses: actions/checkout@v4
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2.16.0
+        with:
+          channel: stable
+          flutter-version-file: pubspec.yaml
+      - name: Get Flutter dependencies
+        run: flutter pub get
+      - name: Build iOS (capture log)
+        run: |
+          flutter build ios --release --no-codesign \
+            --dart-define=DANDANAPI_APPID=x \
+            --dart-define=DANDANAPI_KEY=x \
+            --dart-define=KAZUMI_APPID=x \
+            --dart-define=KAZUMI_KEY=x \
+            > build.log 2>&1 || true
+          tail -100 build.log
+      - name: Post build log to PR
+        run: |
+          python3 - <<'EOF'
+          import json, os, urllib.request
+          REPO = 'LinkPass888/Kazumi-LiquidGlass-iOS'
+          TOKEN = os.environ['TOKEN']
+          LIMIT = 58000
+          body = open('build.log', encoding='utf-8', errors='replace').read()[-LIMIT:]
+          request = urllib.request.Request(
+              'https://api.github.com/repos/%s/issues/17/comments' % REPO,
+              data=json.dumps({'body': '## build.log\n```\n%s\n```' % body}).encode(),
+              method='POST')
+          request.add_header('Authorization', 'token ' + TOKEN)
+          request.add_header('Accept', 'application/vnd.github+json')
+          with urllib.request.urlopen(request, timeout=60) as r:
+              print(json.loads(r.read().decode())['id'])
+          EOF
