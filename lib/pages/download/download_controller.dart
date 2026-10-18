@@ -6,9 +6,7 @@ import 'package:kazumi/modules/danmaku/danmaku_module.dart';
 import 'package:kazumi/plugins/plugins.dart';
 import 'package:kazumi/plugins/plugins_controller.dart';
 import 'package:kazumi/repositories/download_repository.dart';
-import 'package:kazumi/services/download/background_download_service.dart';
 import 'package:kazumi/services/download/download_manager.dart';
-import 'package:kazumi/utils/format.dart';
 import 'package:kazumi/services/logging/logger.dart';
 import 'package:kazumi/services/storage/storage.dart';
 import 'package:kazumi/services/video_source/services.dart';
@@ -29,7 +27,6 @@ abstract class _DownloadController with Store {
   final IDownloadRepository _repository;
   final IDownloadManager _downloadManager;
   final PluginsController _pluginsController;
-  final _backgroundService = BackgroundDownloadService();
   final _resolverPool = VideoSourceResolverPool();
 
   @observable
@@ -40,7 +37,6 @@ abstract class _DownloadController with Store {
 
   final List<_ResolveRequest> _resolveQueue = [];
   final Map<String, VideoSourceResolverLease> _activeResolveLeases = {};
-  bool _isBackgroundServiceInitialized = false;
 
   Future<void> init() async {
     _replaceRecords(_repository.getAllRecords());
@@ -71,7 +67,6 @@ abstract class _DownloadController with Store {
     await _migrateDanmakuDataToFiles();
 
     _downloadManager.onProgress = _onDownloadProgress;
-    await _initBackgroundService();
   }
 
   /// 启动时将所有旧 Hive danmakuData 迁移到独立文件并清空 Hive 字段
@@ -109,29 +104,7 @@ abstract class _DownloadController with Store {
     }
   }
 
-  Future<void> _initBackgroundService() async {
-    if (!_backgroundService.isSupported) return;
-    if (_isBackgroundServiceInitialized) return;
-
-    await _backgroundService.init();
-    _backgroundService.onPauseAll = pauseAllDownloads;
-    _backgroundService.addTaskDataCallback(_onTaskData);
-    _isBackgroundServiceInitialized = true;
-  }
-
-  void _onTaskData(Object data) {
-    if (data is Map) {
-      final action = data['action'];
-      if (action == 'button_pressed') {
-        _backgroundService.handleNotificationAction(data['id'] as String);
-      } else if (action == 'navigate_to_download') {
-        _backgroundService.handleNavigateToDownload();
-      }
-    }
-  }
-
   final Map<String, double> _speeds = {};
-  final _backgroundNotificationUpdater = _LatestAsyncRunner();
   DateTime _lastUiUpdateTime = DateTime.now();
   static const _uiUpdateInterval = Duration(milliseconds: 500);
 
@@ -159,84 +132,7 @@ abstract class _DownloadController with Store {
         now.difference(_lastUiUpdateTime) >= _uiUpdateInterval) {
       _lastUiUpdateTime = now;
       _refreshRecord(recordKey);
-      _queueBackgroundNotificationUpdate();
     }
-  }
-
-  void _queueBackgroundNotificationUpdate() {
-    _backgroundNotificationUpdater.schedule(() async {
-      try {
-        await _updateBackgroundNotification();
-      } catch (e) {
-        KazumiLogger().w(
-          'DownloadController: background notification update failed',
-          error: e,
-        );
-      }
-    });
-  }
-
-  Future<void> _updateBackgroundNotification() async {
-    if (!_backgroundService.isRunning) return;
-
-    final stats = _getDownloadStats();
-    if (!stats.hasWork) {
-      await _backgroundService.stopService();
-      return;
-    }
-
-    var totalSpeed = 0.0;
-    for (final key in stats.activeKeys) {
-      totalSpeed += _speeds[key] ?? 0;
-    }
-
-    await _backgroundService.updateProgress(
-      activeCount: stats.activeCount,
-      totalCount: stats.totalCount,
-      overallProgress: stats.overallProgress,
-      speedText: formatSpeed(totalSpeed),
-    );
-  }
-
-  Future<void> _startBackgroundServiceIfNeeded() async {
-    if (!_backgroundService.isSupported || _backgroundService.isRunning) return;
-
-    final started = await _backgroundService.startService();
-    if (started) {
-      KazumiLogger().i('DownloadController: background service started');
-    }
-  }
-
-  _DownloadStats _getDownloadStats() {
-    var activeCount = 0;
-    var pendingCount = 0;
-    var totalCount = 0;
-    var totalProgress = 0.0;
-    final activeKeys = <String>{};
-
-    for (final record in _repository.getAllRecords()) {
-      for (final entry in record.episodes.entries) {
-        final episode = entry.value;
-        if (episode.status == DownloadStatus.downloading) {
-          activeCount++;
-          totalCount++;
-          totalProgress += episode.progressPercent;
-          activeKeys.add('${record.key}_${entry.key}');
-        } else if (episode.status == DownloadStatus.resolving ||
-            episode.status == DownloadStatus.pending) {
-          pendingCount++;
-          totalCount++;
-        }
-      }
-    }
-
-    return _DownloadStats(
-      activeCount: activeCount,
-      pendingCount: pendingCount,
-      totalCount: totalCount,
-      overallProgress: totalCount > 0 ? totalProgress / totalCount : 0.0,
-      activeKeys: activeKeys,
-    );
   }
 
   double getSpeed(int bangumiId, String pluginName, int episodeNumber) {
@@ -626,8 +522,6 @@ abstract class _DownloadController with Store {
           request.recordKey, request.episodeNumber, freshEpisode);
       _refreshRecord(request.recordKey);
 
-      await _startBackgroundServiceIfNeeded();
-
       final httpHeaders = plugin.buildHttpHeaders();
       bool adBlockerEnabled =
           _repository.getForceAdBlocker() || plugin.adBlocker;
@@ -785,7 +679,6 @@ abstract class _DownloadController with Store {
         episode.status = DownloadStatus.paused;
         await _repository.updateEpisode(recordKey, episodeNumber, episode);
         _refreshRecord(recordKey);
-        _queueBackgroundNotificationUpdate();
       }
     }
   }
@@ -810,8 +703,6 @@ abstract class _DownloadController with Store {
     }
 
     refreshRecords();
-
-    await _backgroundService.stopService();
   }
 
   Future<void> retryDownload({
@@ -838,8 +729,6 @@ abstract class _DownloadController with Store {
       episode.downloadedSegments = 0;
       await _repository.updateEpisode(recordKey, episodeNumber, episode);
       _refreshRecord(recordKey);
-
-      await _startBackgroundServiceIfNeeded();
 
       final httpHeaders = plugin.buildHttpHeaders();
       bool adBlockerEnabled =
@@ -890,7 +779,6 @@ abstract class _DownloadController with Store {
       await _repository.deleteRecord(recordKey);
     } finally {
       _refreshRecord(recordKey);
-      _queueBackgroundNotificationUpdate();
     }
   }
 
@@ -911,7 +799,6 @@ abstract class _DownloadController with Store {
       await _repository.deleteEpisode(recordKey, episodeNumber);
     } finally {
       _refreshRecord(recordKey);
-      _queueBackgroundNotificationUpdate();
     }
   }
 
@@ -958,8 +845,6 @@ abstract class _DownloadController with Store {
       episode.errorMessage = '';
       await _repository.updateEpisode(recordKey, episodeNumber, episode);
       _refreshRecord(recordKey);
-
-      await _startBackgroundServiceIfNeeded();
 
       final httpHeaders = plugin.buildHttpHeaders();
       bool adBlockerEnabled =
@@ -1045,45 +930,3 @@ class _ResolveRequest {
   });
 }
 
-class _DownloadStats {
-  final int activeCount;
-  final int pendingCount;
-  final int totalCount;
-  final double overallProgress;
-  final Set<String> activeKeys;
-
-  const _DownloadStats({
-    required this.activeCount,
-    required this.pendingCount,
-    required this.totalCount,
-    required this.overallProgress,
-    required this.activeKeys,
-  });
-
-  bool get hasWork => activeCount > 0 || pendingCount > 0;
-}
-
-class _LatestAsyncRunner {
-  bool _isRunning = false;
-  bool _needsRun = false;
-
-  void schedule(Future<void> Function() task) {
-    if (_isRunning) {
-      _needsRun = true;
-      return;
-    }
-    unawaited(_run(task));
-  }
-
-  Future<void> _run(Future<void> Function() task) async {
-    _isRunning = true;
-    try {
-      do {
-        _needsRun = false;
-        await task();
-      } while (_needsRun);
-    } finally {
-      _isRunning = false;
-    }
-  }
-}

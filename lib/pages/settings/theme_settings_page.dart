@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_modular/flutter_modular.dart';
 import 'package:kazumi/bean/card/palette_card.dart';
@@ -10,8 +9,6 @@ import 'package:kazumi/bean/settings/color_type.dart';
 import 'package:kazumi/bean/settings/settings_detail_scaffold.dart';
 import 'package:kazumi/bean/settings/settings_dropdown_tile.dart';
 import 'package:kazumi/bean/settings/settings_list.dart';
-import 'package:window_manager/window_manager.dart';
-import 'package:kazumi/utils/device.dart';
 import 'package:kazumi/utils/theme.dart';
 
 class ThemeSettingsPage extends StatefulWidget {
@@ -26,7 +23,6 @@ class _ThemeSettingsPageState extends State<ThemeSettingsPage> {
   late dynamic defaultThemeColor;
   late bool oledEnhance;
   late bool useDynamicColor;
-  late bool showWindowButton;
   late bool useSystemFont;
   late final ThemeProvider themeProvider;
 
@@ -37,7 +33,6 @@ class _ThemeSettingsPageState extends State<ThemeSettingsPage> {
     defaultThemeColor = GStorage.getSetting(SettingsKeys.themeColor);
     oledEnhance = GStorage.getSetting(SettingsKeys.oledEnhance);
     useDynamicColor = GStorage.getSetting(SettingsKeys.useDynamicColor);
-    showWindowButton = GStorage.getSetting(SettingsKeys.showWindowButton);
     useSystemFont = GStorage.getSetting(SettingsKeys.useSystemFont);
     themeProvider = context.read<ThemeProvider>();
   }
@@ -106,12 +101,6 @@ class _ThemeSettingsPageState extends State<ThemeSettingsPage> {
     setState(() {
       defaultThemeMode = theme;
     });
-
-    // Update Windows title bar theme
-    if (Platform.isWindows) {
-      await windowManager.setBrightness(
-          themeProvider.isEffectiveDark() ? Brightness.dark : Brightness.light);
-    }
   }
 
   void updateOledEnhance() {
@@ -156,7 +145,6 @@ class _ThemeSettingsPageState extends State<ThemeSettingsPage> {
                         return Wrap(
                           alignment: WrapAlignment.center,
                           spacing: 8,
-                          runSpacing: isDesktop() ? 8 : 0,
                           children: [
                             ...colorThemes.map(
                               (e) {
@@ -195,7 +183,7 @@ class _ThemeSettingsPageState extends State<ThemeSettingsPage> {
               ),
               SettingsTile.switchTile(
                 leading: Icons.colorize_rounded,
-                enabled: !Platform.isIOS,
+                enabled: false,
                 onToggle: (value) async {
                   useDynamicColor = value ?? !useDynamicColor;
                   await GStorage.putSetting(
@@ -247,37 +235,6 @@ class _ThemeSettingsPageState extends State<ThemeSettingsPage> {
               ),
             ],
           ),
-          if (isDesktop())
-            SettingsSection(
-              title: Text('窗口'),
-              tiles: [
-                SettingsTile.switchTile(
-                  leading: Icons.web_asset_rounded,
-                  onToggle: (value) async {
-                    showWindowButton = value ?? !showWindowButton;
-                    await GStorage.putSetting(
-                        SettingsKeys.showWindowButton, showWindowButton);
-                    setState(() {});
-                  },
-                  title: Text('使用系统标题栏'),
-                  description: Text('重启应用生效'),
-                  initialValue: showWindowButton,
-                ),
-              ],
-            ),
-          if (Platform.isAndroid)
-            SettingsSection(
-              title: Text('屏幕'),
-              tiles: [
-                SettingsTile(
-                  leading: Icons.sixty_fps_rounded,
-                  onPressed: (_) async {
-                    context.pushNamed('/settings/theme/display');
-                  },
-                  title: Text('屏幕帧率'),
-                ),
-              ],
-            ),
         ],
       ),
     );

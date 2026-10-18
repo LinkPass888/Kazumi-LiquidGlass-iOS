@@ -3,9 +3,7 @@ import 'dart:async';
 import 'package:canvas_danmaku/models/danmaku_content_item.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_mobx/flutter_mobx.dart';
-import 'package:mobx/mobx.dart' as mobx;
 import 'package:screen_brightness_platform_interface/screen_brightness_platform_interface.dart';
-import 'package:window_manager/window_manager.dart';
 
 import 'package:kazumi/bean/appbar/drag_to_move_bar.dart' as dtb;
 import 'package:kazumi/bean/dialog/adaptive_bottom_sheet.dart';
@@ -26,10 +24,8 @@ import 'package:kazumi/pages/video/video_playback_args.dart';
 import 'package:kazumi/pages/video/video_page_layout.dart';
 import 'package:kazumi/pages/video/video_side_panel.dart';
 import 'package:kazumi/pages/video/video_system_bars.dart';
-import 'package:kazumi/services/player/pip_utils.dart';
 import 'package:kazumi/services/player/timed_shutdown_service.dart';
 import 'package:kazumi/services/storage/storage.dart';
-import 'package:kazumi/utils/device.dart';
 
 class VideoPage extends StatefulWidget {
   const VideoPage({
@@ -52,7 +48,7 @@ class VideoPage extends StatefulWidget {
 }
 
 class _VideoPageState extends State<VideoPage>
-    with SingleTickerProviderStateMixin, WindowListener {
+    with SingleTickerProviderStateMixin {
   PlayerController get playerController => widget.playerController;
   VideoPageController get videoPageController => widget.videoPageController;
   bool _didInitializePlayback = false;
@@ -73,8 +69,6 @@ class _VideoPageState extends State<VideoPage>
   late final bool disableAnimations;
 
   StreamSubscription<SyncPlayChatMessage>? _syncChatSubscription;
-  late final mobx.ReactionDisposer _pipModeListener;
-  LocalHistoryEntry? _desktopPipEntry;
 
   static const Duration _offlinePlayerInitDelay = Duration(milliseconds: 400);
 
@@ -82,17 +76,12 @@ class _VideoPageState extends State<VideoPage>
   void initState() {
     super.initState();
     videoPageController.applyPlaybackArgs(widget.args);
-    windowManager.addListener(this);
 
     tabController = TabController(length: 2, vsync: this);
 
     playResume = GStorage.getSetting(SettingsKeys.playResume);
     disableAnimations =
         GStorage.getSetting(SettingsKeys.playerDisableAnimations);
-    _pipModeListener = mobx.reaction<bool>(
-      (_) => videoPageController.isPip,
-      _syncDesktopPipHistory,
-    );
   }
 
   @override
@@ -103,10 +92,6 @@ class _VideoPageState extends State<VideoPage>
     }
     _didInitializePlayback = true;
     videoPageController.fullscreen.attach(ModalRoute.of(context)!);
-    if (isDesktop()) {
-      unawaited(videoPageController.fullscreen
-          .initializeDesktop(windowManager.isFullScreen));
-    }
     _initializePlayback();
   }
 
@@ -206,37 +191,19 @@ class _VideoPageState extends State<VideoPage>
   @override
   void dispose() {
     try {
-      windowManager.removeListener(this);
-    } catch (_) {}
-    try {
       _syncChatSubscription?.cancel();
     } catch (_) {}
     try {
       _logSubscription?.cancel();
     } catch (_) {}
-    _pipModeListener();
-    _desktopPipEntry?.remove();
-    _desktopPipEntry = null;
-    if (!isDesktop()) {
-      try {
-        ScreenBrightnessPlatform.instance.resetApplicationScreenBrightness();
-      } catch (_) {}
-    }
+    try {
+      ScreenBrightnessPlatform.instance.resetApplicationScreenBrightness();
+    } catch (_) {}
     unawaited(videoPageController.fullscreen.close());
     keyboardFocus.dispose();
     tabController.dispose();
     TimedShutdownService().cancel();
     super.dispose();
-  }
-
-  @override
-  void onWindowEnterFullScreen() {
-    videoPageController.fullscreen.onDesktopFullscreenChanged(true);
-  }
-
-  @override
-  void onWindowLeaveFullScreen() {
-    videoPageController.fullscreen.onDesktopFullscreenChanged(false);
   }
 
   void _toggleDebugConsole() {
@@ -269,27 +236,6 @@ class _VideoPageState extends State<VideoPage>
   void _toggleSidePanel() => _sidePanelKey.currentState?.toggle();
 
   void _closeSidePanel() => _sidePanelKey.currentState?.close();
-
-  // Only desktop PiP participates in local navigation.
-  void _syncDesktopPipHistory(bool isPip) {
-    if (!isDesktop()) return;
-    if (isPip && _desktopPipEntry == null) {
-      _desktopPipEntry = LocalHistoryEntry(
-        impliesAppBarDismissal: false,
-        onRemove: () {
-          _desktopPipEntry = null;
-          if (videoPageController.isPip) {
-            videoPageController.isPip = false;
-            unawaited(PipUtils.exitDesktopPIPWindow());
-          }
-        },
-      );
-      ModalRoute.of(context)!.addLocalHistoryEntry(_desktopPipEntry!);
-    } else if (!isPip) {
-      _desktopPipEntry?.remove();
-      _desktopPipEntry = null;
-    }
-  }
 
   void _onBackPressed() {
     unawaited(Navigator.of(context).maybePop());
