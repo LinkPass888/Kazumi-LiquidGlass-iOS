@@ -1,12 +1,9 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:kazumi/services/logging/logger.dart';
-import 'package:window_manager/window_manager.dart';
 
 class DisplayModeService {
   DisplayModeService._();
 
-  static const _intentChannel = MethodChannel('com.predidit.kazumi/intent');
   static Future<void> _pendingFullscreen = Future.value();
   static Future<void>? _pendingSystemBars;
   static Object? _systemBarsOwner;
@@ -14,16 +11,9 @@ class DisplayModeService {
 
   static Future<void> applyVideoFullscreen(bool fullscreen) {
     return _pendingFullscreen = _pendingFullscreen.then((_) async {
-      if (defaultTargetPlatform == TargetPlatform.linux ||
-          defaultTargetPlatform == TargetPlatform.macOS ||
-          defaultTargetPlatform == TargetPlatform.windows) {
-        await _attempt(() => windowManager.setFullScreen(fullscreen));
-        return;
-      }
-
-      // 退出全屏时**显式锁竖屏**：传空数组在 iOS/Android 上是「恢复系统默认
-      // 方向」，系统屏幕方向锁定关闭时设备物理横着就保持横屏，点小屏按钮看
-      // 起来像失效。改为显式 portraitUp，播放器才能真的切回竖屏。
+      // 退出全屏时**显式锁竖屏**：传空数组是「恢复系统默认方向」，系统屏幕
+      // 方向锁定关闭时设备物理横着就保持横屏，点小屏按钮看起来像失效。
+      // 改为显式 portraitUp，播放器才能真的切回竖屏。
       await _attempt(() => SystemChrome.setPreferredOrientations(
             fullscreen
                 ? [
@@ -60,18 +50,9 @@ class DisplayModeService {
     // Rotation acknowledgements must not delay immersion or route cleanup.
     late final Future<void> request;
     request = (_pendingSystemBars ?? Future<void>.value())
-        .then((_) => _attempt(() async {
-              if (defaultTargetPlatform == TargetPlatform.android) {
-                await _intentChannel.invokeMethod(
-                    'setSystemBarsHidden', hidden);
-              } else if (defaultTargetPlatform == TargetPlatform.iOS) {
-                await SystemChrome.setEnabledSystemUIMode(
-                  hidden
-                      ? SystemUiMode.immersiveSticky
-                      : SystemUiMode.edgeToEdge,
-                );
-              }
-            }))
+        .then((_) => _attempt(() => SystemChrome.setEnabledSystemUIMode(
+              hidden ? SystemUiMode.immersiveSticky : SystemUiMode.edgeToEdge,
+            )))
         .whenComplete(() {
       if (identical(_pendingSystemBars, request)) _pendingSystemBars = null;
     });

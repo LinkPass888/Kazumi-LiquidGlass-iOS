@@ -24,9 +24,8 @@ class LiquidGlassCapabilities {
   /// Major OS version (e.g. 26, 27), or 0 when unknown.
   final int osMajorVersion;
 
-  /// Capabilities assumed on platforms without the native plugin
-  /// (Android, web, desktop): no native glass, no known accessibility
-  /// override.
+  /// Capabilities assumed where the plugin has no native side: no native
+  /// glass, no known accessibility override.
   static const LiquidGlassCapabilities none = LiquidGlassCapabilities(
     nativeGlass: false,
     reduceTransparency: false,
@@ -41,12 +40,9 @@ abstract final class LiquidGlass {
 
   /// Whether this platform hosts the native glass platform view.
   ///
-  /// Kazumi 本地版保留 Apple 全平台（iOS + macOS）：iOS 26+ / macOS 26+ 是真玻璃，
-  /// 旧系统不再提供模糊兜底（项目最低目标系统为 iOS 26 / macOS 26）。
-  static bool get isNativePlatform =>
-      !kIsWeb &&
-      (defaultTargetPlatform == TargetPlatform.iOS ||
-          defaultTargetPlatform == TargetPlatform.macOS);
+  /// Kazumi 本地版：仅 iOS。iOS 26+ 是真玻璃，旧系统不再提供模糊兜底
+  /// （项目最低目标系统为 iOS 26）。
+  static bool get isNativePlatform => !kIsWeb;
 
   /// Device capabilities, fetched once and cached.
   ///

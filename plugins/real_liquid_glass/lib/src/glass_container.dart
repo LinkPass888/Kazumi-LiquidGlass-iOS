@@ -9,8 +9,8 @@ import 'native_glass_view.dart';
 /// On iOS 26+ this hosts Apple's real glass material (UIGlassEffect), so it
 /// refracts the content behind it and automatically follows system
 /// appearance — the iOS 27 transparency slider, Reduce Transparency, and
-/// Increase Contrast all just work. Non-iOS platforms render an empty
-/// placeholder (no Flutter-drawn fallback).
+/// Increase Contrast all just work. Where native glass is unavailable this
+/// renders an empty placeholder (no Flutter-drawn fallback).
 ///
 /// Use it like a [Container]:
 ///

@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show FilteringTextInputFormatter;
 import 'package:flutter_modular/flutter_modular.dart';
@@ -9,9 +8,7 @@ import 'package:kazumi/pages/player/controller/player_aspect_ratio.dart';
 import 'package:kazumi/pages/settings/low_memory_mode_settings.dart';
 import 'package:kazumi/utils/constants.dart';
 import 'package:kazumi/services/storage/storage.dart';
-import 'package:kazumi/services/player/pip_utils.dart';
 import 'package:kazumi/bean/settings/settings_list.dart';
-import 'package:kazumi/utils/device.dart';
 
 class PlayerSettingsPage extends StatefulWidget {
   const PlayerSettingsPage({super.key});
@@ -29,8 +26,6 @@ class _PlayerSettingsPageState extends State<PlayerSettingsPage> {
   late double defaultShortcutForwardPlaySpeed;
   late PlayerAspectRatio defaultAspectRatioMode;
   late bool hAenable;
-  late bool androidEnableOpenSLES;
-  late bool androidAutoEnterPIP;
   late bool playResume;
   late bool showPlayerError;
   late bool privateMode;
@@ -61,10 +56,6 @@ class _PlayerSettingsPageState extends State<PlayerSettingsPage> {
       GStorage.getSetting<int>(SettingsKeys.defaultAspectRatioType),
     );
     hAenable = GStorage.getSetting<bool>(SettingsKeys.hAenable);
-    androidEnableOpenSLES =
-        GStorage.getSetting<bool>(SettingsKeys.androidEnableOpenSLES);
-    androidAutoEnterPIP =
-        GStorage.getSetting<bool>(SettingsKeys.androidAutoEnterPIP);
     playResume = GStorage.getSetting<bool>(SettingsKeys.playResume);
     privateMode = GStorage.getSetting<bool>(SettingsKeys.privateMode);
     showPlayerError = GStorage.getSetting<bool>(SettingsKeys.showPlayerError);
@@ -111,9 +102,6 @@ class _PlayerSettingsPageState extends State<PlayerSettingsPage> {
     if (!shouldReset) return;
 
     await GStorage.resetPlayerSettings();
-    if (Platform.isAndroid) {
-      await PipUtils.setAndroidAutoEnterPIPEnabled(false);
-    }
     if (!mounted) return;
     setState(_loadSettingsFromStorage);
     KazumiDialog.showToast(message: '已恢复默认播放设置');
@@ -269,32 +257,7 @@ class _PlayerSettingsPageState extends State<PlayerSettingsPage> {
                 title: Text('硬件解码器'),
                 description: Text('仅在硬件解码启用时生效'),
               ),
-              if (Platform.isAndroid) ...[
-                SettingsTile(
-                  leading: Icons.tv_rounded,
-                  onPressed: (_) async {
-                    await context.pushNamed('/settings/player/renderer');
-                  },
-                  title: Text('视频渲染器'),
-                  description: Text('选择视频输出方式'),
-                ),
-              ],
               const LowMemoryModeSettingsTile(),
-              if (Platform.isAndroid) ...[
-                SettingsTile.switchTile(
-                  leading: Icons.graphic_eq_rounded,
-                  onToggle: (value) async {
-                    androidEnableOpenSLES = value ?? !androidEnableOpenSLES;
-                    await GStorage.putSetting<bool>(
-                        SettingsKeys.androidEnableOpenSLES,
-                        androidEnableOpenSLES);
-                    setState(() {});
-                  },
-                  title: Text('低延迟音频'),
-                  description: Text('启用OpenSLES音频输出以降低延时'),
-                  initialValue: androidEnableOpenSLES,
-                ),
-              ],
               SettingsTile(
                 leading: Icons.auto_awesome_rounded,
                 onPressed: (_) async {
@@ -343,21 +306,6 @@ class _PlayerSettingsPageState extends State<PlayerSettingsPage> {
                 description: Text('当前视频播放完毕后自动播放下一集'),
                 initialValue: autoPlayNext,
               ),
-              if (Platform.isAndroid)
-                SettingsTile.switchTile(
-                  leading: Icons.picture_in_picture_alt_rounded,
-                  onToggle: (value) async {
-                    androidAutoEnterPIP = value ?? !androidAutoEnterPIP;
-                    await GStorage.putSetting<bool>(
-                        SettingsKeys.androidAutoEnterPIP, androidAutoEnterPIP);
-                    await PipUtils.setAndroidAutoEnterPIPEnabled(
-                        androidAutoEnterPIP);
-                    setState(() {});
-                  },
-                  title: Text('自动进入画中画'),
-                  description: Text('切到后台时，自动进入画中画'),
-                  initialValue: androidAutoEnterPIP,
-                ),
               SettingsTile.switchTile(
                 leading: Icons.block_rounded,
                 onToggle: (value) async {
@@ -383,8 +331,7 @@ class _PlayerSettingsPageState extends State<PlayerSettingsPage> {
                 description: Text('禁用播放器内的过渡动画'),
                 initialValue: playerDisableAnimations,
               ),
-              if (!isDesktop())
-                SettingsTile.switchTile(
+              SettingsTile.switchTile(
                   leading: Icons.swipe_vertical_rounded,
                   onToggle: (value) async {
                     brightnessVolumeGesture = value ?? !brightnessVolumeGesture;

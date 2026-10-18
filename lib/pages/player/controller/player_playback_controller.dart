@@ -1,6 +1,5 @@
 // ignore_for_file: library_private_types_in_public_api
 
-import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_volume_controller/flutter_volume_controller.dart';
@@ -11,18 +10,14 @@ import 'package:kazumi/services/shaders/shader_asset_service.dart';
 import 'package:kazumi/utils/constants.dart';
 import 'package:kazumi/services/logging/logger.dart';
 import 'package:kazumi/services/network/proxy_utils.dart';
-import 'package:kazumi/services/network/system_proxy_service.dart';
 import 'package:kazumi/services/player/playback_cache_policy.dart';
 import 'package:kazumi/services/player/player_error_mapper.dart';
 import 'package:kazumi/services/storage/storage.dart';
 import 'package:kazumi/services/video_source/video_source_format.dart';
-import 'package:kazumi/utils/async_serial_queue.dart';
+import 'package:kazumi/utils/media.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:mobx/mobx.dart';
-import 'package:kazumi/utils/device.dart';
-import 'package:kazumi/utils/media.dart';
-import 'package:kazumi/services/platform/platform_environment_service.dart';
 
 part 'player_playback_controller.g.dart';
 
@@ -83,12 +78,8 @@ abstract class _PlayerPlaybackController with Store {
   Player? get mediaPlayer => _ownedPlayer?.player;
   VideoController? videoController;
 
-  final AsyncSerialQueue _prefetchWrites = AsyncSerialQueue();
-  bool _prefetchSuspendWanted = false;
-
   bool hAenable = true;
   late String hardwareDecoder;
-  bool androidEnableOpenSLES = true;
   bool autoPlay = true;
   bool playerDebugMode = false;
   int buttonSkipTime = 80;
@@ -239,40 +230,6 @@ abstract class _PlayerPlaybackController with Store {
     }
   }
 
-  /// Android blocks network access for backgrounded apps; a prefetching
-  /// demuxer then burns through ffmpeg's reconnect/segment retries and marks
-  /// the stream EOF, leaving playback permanently stuck once foregrounded.
-  /// Suspending zeroes the readahead window so no new requests are issued
-  /// while buffered data stays available; restore values are mpv defaults,
-  /// which media_kit leaves untouched. Writes are serialized and apply the
-  /// latest requested state, so rapid lifecycle flips cannot reorder.
-  Future<void> setPrefetchSuspended(bool suspended) async {
-    if (!Platform.isAndroid) {
-      return;
-    }
-    _prefetchSuspendWanted = suspended;
-    await _prefetchWrites.run(() async {
-      final wanted = _prefetchSuspendWanted;
-      final player = mediaPlayer;
-      if (player == null) {
-        return;
-      }
-      try {
-        final pp = player.platform as NativePlayer;
-        await pp.setProperty('cache-secs', wanted ? '0' : '36000');
-        if (!isCurrentPlayer(player)) {
-          return;
-        }
-        await pp.setProperty('demuxer-readahead-secs', wanted ? '0' : '1');
-      } catch (e) {
-        KazumiLogger().w(
-          'PlayerController: failed to ${wanted ? 'suspend' : 'resume'} demuxer prefetch',
-          error: e,
-        );
-      }
-    });
-  }
-
   Future<Player?> createVideoController(
     Map<String, String> httpHeaders,
     bool adBlockerEnabled, {
@@ -285,8 +242,6 @@ abstract class _PlayerPlaybackController with Store {
       GStorage.getSetting(SettingsKeys.defaultSuperResolutionMode),
     );
     hAenable = GStorage.getSetting(SettingsKeys.hAenable);
-    androidEnableOpenSLES =
-        GStorage.getSetting(SettingsKeys.androidEnableOpenSLES);
     hardwareDecoder = GStorage.getSetting(SettingsKeys.hardwareDecoder);
     autoPlay = GStorage.getSetting(SettingsKeys.autoPlay);
     playerDebugMode = GStorage.getSetting(SettingsKeys.playerDebugMode);
@@ -339,20 +294,6 @@ abstract class _PlayerPlaybackController with Store {
       if (!isCurrentPlayer(player)) {
         return await _discardIfNotCurrent(candidate);
       }
-      if (Platform.isAndroid) {
-        await pp.setProperty("volume-max", "100");
-        if (!isCurrentPlayer(player)) {
-          return await _discardIfNotCurrent(candidate);
-        }
-        if (androidEnableOpenSLES) {
-          await pp.setProperty("ao", "opensles");
-        } else {
-          await pp.setProperty("ao", "audiotrack");
-        }
-        if (!isCurrentPlayer(player)) {
-          return await _discardIfNotCurrent(candidate);
-        }
-      }
 
       final bool proxyEnable = GStorage.getSetting(SettingsKeys.proxyEnable);
       if (proxyEnable) {
@@ -365,15 +306,6 @@ abstract class _PlayerPlaybackController with Store {
           }
           KazumiLogger().i('Player: HTTP 代理设置成功 $formattedProxy');
         }
-      } else if (SystemProxyService.isActive) {
-        final proxy = SystemProxyService.proxyFor('https');
-        if (proxy != null) {
-          await pp.setProperty("http-proxy", 'http://${proxy.$1}:${proxy.$2}');
-          if (!isCurrentPlayer(player)) {
-            return await _discardIfNotCurrent(candidate);
-          }
-          KazumiLogger().i('Player: 跟随系统代理 http://${proxy.$1}:${proxy.$2}');
-        }
       }
 
       await player.setAudioTrack(
@@ -383,44 +315,11 @@ abstract class _PlayerPlaybackController with Store {
         return await _discardIfNotCurrent(candidate);
       }
 
-      String? videoRenderer;
-      if (Platform.isAndroid) {
-        final String androidVideoRenderer =
-            GStorage.getSetting(SettingsKeys.androidVideoRenderer);
-
-        if (androidVideoRenderer == 'auto') {
-          // Android 14 及以上使用基于 Vulkan 的 MPV GPU-NEXT 视频输出，着色器性能更好
-          // GPU-NEXT 需要 Vulkan 1.2 支持
-          // 避免 Android 13 及以下设备上部分机型 Vulkan 支持不佳导致的黑屏问题
-          final int androidSdkVersion =
-              await PlatformEnvironmentService.getAndroidSdkVersion();
-          if (!isCurrentPlayer(player)) {
-            return await _discardIfNotCurrent(candidate);
-          }
-          if (androidSdkVersion >= 34) {
-            videoRenderer = 'gpu-next';
-          } else {
-            videoRenderer = 'gpu';
-          }
-        } else {
-          videoRenderer = androidVideoRenderer;
-        }
-      }
-
-      if (videoRenderer == 'mediacodec_embed') {
-        hAenable = true;
-        hardwareDecoder = 'mediacodec';
-        superResolutionMode = SuperResolutionMode.off;
-      }
-
       videoController ??= VideoController(
         player,
         configuration: VideoControllerConfiguration(
-          vo: videoRenderer,
           enableHardwareAcceleration: hAenable,
-          enableAndroidSurfaceProducer: false,
           hwdec: hAenable ? hardwareDecoder : 'no',
-          androidAttachSurfaceAfterVideoParameters: false,
         ),
       );
       player.setPlaylistMode(PlaylistMode.none);
@@ -571,11 +470,7 @@ abstract class _PlayerPlaybackController with Store {
   Future<void> syncVolumeToDevice([double? value]) async {
     final vol = (value ?? volume).clamp(0.0, 100.0);
     try {
-      if (isDesktop()) {
-        await mediaPlayer!.setVolume(vol);
-      } else {
-        await FlutterVolumeController.setVolume(vol / 100);
-      }
+      await FlutterVolumeController.setVolume(vol / 100);
     } catch (_) {}
   }
 

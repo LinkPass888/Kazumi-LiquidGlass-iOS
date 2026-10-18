@@ -5,7 +5,6 @@ import 'package:kazumi/bean/settings/settings_dropdown_tile.dart';
 import 'package:kazumi/bean/settings/settings_list.dart';
 import 'package:kazumi/modules/collect/collect_layout.dart';
 import 'package:kazumi/services/storage/storage.dart';
-import 'package:kazumi/utils/device.dart';
 
 class InterfaceSettingsPage extends StatefulWidget {
   const InterfaceSettingsPage({super.key});
@@ -19,10 +18,6 @@ class _InterfaceSettingsPageState extends State<InterfaceSettingsPage> {
   late String defaultPage;
   late CollectLayout _defaultCollectLayout;
   bool _savingCollectLayout = false;
-  static const _exitBehaviorTitles = ['退出 Kazumi', '最小化至托盘', '每次都询问'];
-  int _exitBehavior = GStorage.getSetting(SettingsKeys.exitBehavior)
-      .clamp(0, _exitBehaviorTitles.length - 1);
-
   static const Map<String, String> defaultPageMap = {
     '/tab/popular/': '推荐',
     '/tab/timeline/': '时间表',
@@ -101,26 +96,6 @@ class _InterfaceSettingsPageState extends State<InterfaceSettingsPage> {
               initialValue: showRating,
             ),
           ]),
-          if (isDesktop())
-            SettingsSection(
-              title: const Text('窗口行为'),
-              tiles: [
-                SettingsDropdownTile<int>(
-                  leading: Icons.exit_to_app_rounded,
-                  title: const Text('关闭窗口时'),
-                  description: const Text('设置点击窗口关闭按钮后的行为'),
-                  value: _exitBehavior,
-                  options: {
-                    for (var i = 0; i < _exitBehaviorTitles.length; i++)
-                      i: _exitBehaviorTitles[i],
-                  },
-                  onChanged: (value) {
-                    setState(() => _exitBehavior = value);
-                    GStorage.putSetting(SettingsKeys.exitBehavior, value);
-                  },
-                ),
-              ],
-            ),
         ],
       ),
     );
