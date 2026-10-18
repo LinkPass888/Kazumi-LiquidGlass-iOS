@@ -90,10 +90,12 @@ void main() {
 
   group('季节 JSON 解析', () {
     test('国内平台优先，缺 bangumi id 的条目跳过', () {
+      // type 用真实格式：bangumi-data 里是字符串 "tv"/"web"/"movie"，
+      // 不是数字（写成数字会全部被跳过，时间表和排程都拿不到数据）。
       const source = '''
       [
         {
-          "title": "A", "type": 2, "begin": "2026-10-01T15:00:00.000Z",
+          "title": "A", "type": "tv", "begin": "2026-10-01T15:00:00.000Z",
           "broadcast": "R/2026-10-01T15:00:00.000Z/P7D",
           "sites": [
             {"site": "bangumi", "id": "100"},
@@ -104,13 +106,15 @@ void main() {
           ]
         },
         {
-          "title": "B", "type": 2, "begin": "2026-10-01T15:00:00.000Z",
+          "title": "B", "type": "web", "begin": "2026-10-01T15:00:00.000Z",
           "sites": [{"site": "mal", "id": "201"}]
         },
-        {"title": "C", "type": 1, "sites": [{"site": "bangumi", "id": "300"}]}
+        {"title": "C", "type": "movie", "sites": [{"site": "bangumi", "id": "300"}]},
+        {"title": "D", "type": "ova", "sites": [{"site": "bangumi", "id": "400"}]}
       ]
       ''';
       final data = parseBangumiDataSeason(source);
+      // movie / ova 一次性放送不参与更新时间。
       expect(data.updates.keys, [100]);
       // 国内平台 (gamer) 的 begin 优先于条目 begin。
       expect(data.updates[100]!.firstEpochMs,
@@ -127,7 +131,7 @@ void main() {
 
     test('日期只有 date 无时刻时周期为 null', () {
       const source = '''
-      [{"title": "A", "type": 2, "begin": "2026-10-01",
+      [{"title": "A", "type": "tv", "begin": "2026-10-01",
         "sites": [{"site": "bangumi", "id": "1"}]}]
       ''';
       final data = parseBangumiDataSeason(source);

@@ -211,7 +211,9 @@ BangumiSeasonData parseBangumiDataSeason(String source) {
   if (decoded is! List) return BangumiSeasonData(updates, malIds);
   for (final item in decoded) {
     if (item is! Map) continue;
-    if (item['type'] != 2) continue; // 2 = tv 动画
+    // bangumi-data 里 type 是字符串（"tv" / "web" / "movie"），TV 与 Web
+    // 配信的番剧才有更新时间，movie / ova 一次性放送不参与时间表。
+    if (item['type'] != 'tv' && item['type'] != 'web') continue;
     int? bangumiId;
     int? malId;
     for (final site in item['sites'] as List? ?? const []) {
