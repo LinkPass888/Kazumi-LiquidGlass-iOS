@@ -76,9 +76,11 @@ abstract class _TimelineController with Store {
       if (!isTimeOut) {
         _applyCustomTimelineEntries();
         changeSort(_sort);
-        // 更新时间数据异步到达后按当前排序方式重排一次（含卡片更新时间文案）。
+        // 更新时间数据异步到达后必须重排一次：changeSort 会改写
+        // bangumiCalendar，Observer 随之重建，卡片的更新时间文案才能从
+        // 初始空值刷新出来。数据为空时重排无副作用。
         unawaited(BangumiUpdateTimesService.instance.ensureLoaded().then((_) {
-          if (_sort == TimelineSort.defaultOrder) changeSort(_sort);
+          changeSort(_sort);
         }));
       }
     } catch (error, stackTrace) {

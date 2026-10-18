@@ -91,6 +91,9 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage>
       // 生命周期回调在返回时刷新状态）。
       if (mounted && action == PermissionAction.asked) {
         KazumiDialog.showToast(message: '未获得通知权限，请在系统设置中允许通知');
+      } else if (mounted && action == PermissionAction.openSettings) {
+        // 跳设置前给个提示，否则切走前那一下点击看起来毫无反应。
+        KazumiDialog.showToast(message: '已跳转系统设置，请开启通知权限后返回');
       }
       return;
     }

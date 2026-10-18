@@ -77,7 +77,7 @@ class BangumiInfoCardV extends StatefulWidget {
   static const double _baseHeight = 356;
 
   /// 标题、内容块之间的竖向间距。
-  static const double _verticalGap = 20;
+  static const double _verticalGap = 10;
 
   @override
   State<BangumiInfoCardV> createState() => _BangumiInfoCardVState();

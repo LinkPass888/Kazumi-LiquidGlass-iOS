@@ -61,7 +61,13 @@ class BangumiUpdateNotificationService {
   Future<void> _ensureInitialized() async {
     if (_initialized) return;
     tz_data.initializeTimeZones();
-    tz.setLocalLocation(tz.getLocation(DateTime.now().timeZoneName));
+    try {
+      tz.setLocalLocation(tz.getLocation(DateTime.now().timeZoneName));
+    } on Object {
+      // iOS 的 timeZoneName 是 "GMT+8" 这类非 IANA 名，getLocation 会抛。
+      // 保持默认时区即可：TZDateTime.from 换算的是绝对时刻，local 指向
+      // 哪个时区都不影响排定的触发时间。
+    }
     const settings = InitializationSettings(
       iOS: DarwinInitializationSettings(),
     );
