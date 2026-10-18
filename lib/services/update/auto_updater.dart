@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io' show File;
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:kazumi/bean/dialog/dialog_helper.dart';
