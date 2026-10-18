@@ -15,8 +15,7 @@ import 'package:path_provider/path_provider.dart';
 /// （https://github.com/bangumi-data/bangumi-data，CC BY 4.0）。
 ///
 /// 每季一个文件 `data/items/{年}/{季首月}.json`，包含条目的开播时间、
-/// 各平台的播出周期（`broadcast: "R/<起始>/P7D"`）以及 bangumi / MAL
-/// 站点 id。由此推导下一次/上一次更新时间，供时间表排序与展示、追番页
+/// 播出周期（`broadcast: "R/<起始>/P7D"`）以及 bangumi / MAL 站点 id。由此推导下一次/上一次更新时间，供时间表排序与展示、追番页
 /// 排序使用；同一份数据还提供 mal id 映射，供 AniSkip 并入。
 class BangumiUpdateTimesService {
   BangumiUpdateTimesService._();
@@ -232,52 +231,12 @@ BangumiSeasonData parseBangumiDataSeason(String source) {
   return BangumiSeasonData(updates, malIds);
 }
 
-/// 国内平台优先（更新时间对用户最有意义），其次任一带 begin 的平台，
-/// 最后退回条目本身的 begin。
-const _cnOnairSites = [
-  'bilibili',
-  'bilibili_hk_mo_tw',
-  'gamer',
-  'acfun',
-  'iqiyi',
-  'qq',
-  'youku',
-  'mgtv',
-];
-
+/// 直接取条目自身的 begin / broadcast（日本首播时刻）推算更新时间，
+/// 不读站点级时间：国内平台不会上，站点 begin 对用户没有意义。
 BangumiUpdateEntry deriveUpdateEntry(Map item) {
-  final sites = item['sites'] as List? ?? const [];
-  String? sourceBegin;
-  String? sourceBroadcast;
-  // 第一轮找国内平台，第二轮才接受其它平台的播出时间。
-  for (final site in sites) {
-    if (site is! Map) continue;
-    if (_cnOnairSites.contains(site['site']) &&
-        (site['begin'] ?? '') is String &&
-        '${site['begin']}'.isNotEmpty) {
-      sourceBegin = '${site['begin']}';
-      sourceBroadcast =
-          '${site['broadcast']}' != 'null' ? '${site['broadcast']}' : null;
-      break;
-    }
-  }
-  if (sourceBegin == null) {
-    for (final site in sites) {
-      if (site is! Map) continue;
-      if ('${site['begin']}'.isNotEmpty && '${site['begin']}' != 'null') {
-        sourceBegin = '${site['begin']}';
-        sourceBroadcast =
-            '${site['broadcast']}' != 'null' ? '${site['broadcast']}' : null;
-        break;
-      }
-    }
-  }
-  final topBegin = '${item['begin']}';
-  if (sourceBegin == null || sourceBegin == 'null' || sourceBegin.isEmpty) {
-    sourceBegin = topBegin != 'null' ? topBegin : '';
-    sourceBroadcast ??=
-        '${item['broadcast']}' != 'null' ? '${item['broadcast']}' : null;
-  }
+  final sourceBegin = '${item['begin']}' != 'null' ? '${item['begin']}' : '';
+  final sourceBroadcast =
+      '${item['broadcast']}' != 'null' ? '${item['broadcast']}' : null;
 
   final begin = DateTime.tryParse(sourceBegin)?.toUtc();
   final broadcast = parseIsoBroadcast(sourceBroadcast);

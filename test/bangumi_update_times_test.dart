@@ -89,7 +89,7 @@ void main() {
   });
 
   group('季节 JSON 解析', () {
-    test('国内平台优先，缺 bangumi id 的条目跳过', () {
+    test('用条目自身 begin/broadcast，站点时间不参与', () {
       // type 用真实格式：bangumi-data 里是字符串 "tv"/"web"/"movie"，
       // 不是数字（写成数字会全部被跳过，时间表和排程都拿不到数据）。
       const source = '''
@@ -116,9 +116,9 @@ void main() {
       final data = parseBangumiDataSeason(source);
       // movie / ova 一次性放送不参与更新时间。
       expect(data.updates.keys, [100]);
-      // 国内平台 (gamer) 的 begin 优先于条目 begin。
+      // 只看条目自身的 begin，gamer 的站点 begin（晚一天）不参与。
       expect(data.updates[100]!.firstEpochMs,
-          DateTime.parse('2026-10-02T16:00:00.000Z').millisecondsSinceEpoch);
+          DateTime.parse('2026-10-01T15:00:00.000Z').millisecondsSinceEpoch);
       expect(data.updates[100]!.periodMs, 7 * 86400000);
       expect(data.malIds[100], 200);
     });

@@ -10,7 +10,6 @@ import 'package:kazumi/pages/settings/decoder_settings.dart';
 import 'package:kazumi/pages/settings/displaymode_settings.dart';
 import 'package:kazumi/pages/settings/download_settings.dart';
 import 'package:kazumi/pages/settings/interface_settings.dart';
-import 'package:kazumi/pages/settings/keyboard_settings.dart';
 import 'package:kazumi/pages/settings/notification_settings.dart';
 import 'package:kazumi/pages/settings/player_settings.dart';
 import 'package:kazumi/pages/settings/proxy/proxy_module.dart';
@@ -57,10 +56,6 @@ final settingsModule = createModule(
           ..route(
             '/theme/display',
             child: (context, state) => const SetDisplayMode(),
-          )
-          ..route(
-            '/keyboard',
-            child: (context, state) => const KeyboardSettingsPage(),
           )
           ..route('/player',
               child: (context, state) => const PlayerSettingsPage())

@@ -46,12 +46,6 @@ const List<_SettingsGroup> _settingsGroups = [
         icon: Icons.subtitles_rounded,
         path: '/settings/danmaku',
       ),
-      _SettingsCategory(
-        label: '操作设置',
-        description: '播放器按键映射',
-        icon: Icons.keyboard_rounded,
-        path: '/settings/keyboard',
-      ),
     ],
   ),
   _SettingsGroup(
