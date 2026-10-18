@@ -26,19 +26,6 @@ body:
     validations:
       required: true
 
-  - type: dropdown
-    id: platform
-    attributes:
-      label: 你所使用的平台
-      options:
-        - macOS
-        - Android
-        - Windows
-        - Linux
-        - iOS
-    validations:
-      required: true
-
   - type: input
     id: os-version
     attributes:
@@ -46,14 +33,6 @@ body:
       description: '所使用的系统版本，例如 “Windows 11 25H2”, “Android 15”, “iOS 26.5”'
     validations:
       required: true
-
-  - type: textarea
-    id: hardware
-    attributes:
-      label: 硬件信息
-      description: 如果你使用独立显卡或核显，请提供显卡、 CPU 型号、显卡驱动版本等信息。手机设备无需提供。例如 “NVIDIA RTX 2070 Super 驱动版本 610.47”, “Apple M4”, “AMD RX 6500 XT”
-    validations:
-      required: false
 
   - type: textarea
     id: steps
