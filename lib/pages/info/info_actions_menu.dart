@@ -1,14 +1,12 @@
 import 'dart:ui' as ui;
 
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:kazumi/bean/dialog/dialog.dart';
 import 'package:kazumi/bean/widget/kazumi_menu.dart';
 import 'package:kazumi/modules/bangumi/bangumi_item.dart';
 import 'package:kazumi/services/logging/logger.dart';
-import 'package:kazumi/utils/device.dart';
 import 'package:saver_gallery/saver_gallery.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -71,19 +69,6 @@ class _InfoActionsMenuState extends State<InfoActionsMenu> {
     try {
       final bytes = await _loadCoverPng(imageUrl);
       if (!mounted) return;
-
-      if (isDesktop()) {
-        final path = await FilePicker.platform.saveFile(
-          dialogTitle: '保存封面',
-          fileName: fileName,
-          type: FileType.custom,
-          allowedExtensions: const ['png'],
-          bytes: bytes,
-          lockParentWindow: true,
-        );
-        if (path != null) _notify('封面已保存');
-        return;
-      }
 
       final result = await SaverGallery.saveImage(
         bytes,

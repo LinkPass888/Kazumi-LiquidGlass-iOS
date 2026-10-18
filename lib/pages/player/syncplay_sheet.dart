@@ -13,7 +13,6 @@ import 'package:kazumi/bean/widget/tonal_card.dart';
 import 'package:kazumi/pages/player/player_controller.dart';
 import 'package:kazumi/services/player/syncplay_endpoint.dart';
 import 'package:kazumi/services/storage/storage.dart';
-import 'package:kazumi/utils/device.dart';
 
 // Close each step before opening the next to avoid stacked modal routes.
 enum _SyncPlayDestination { create, join, server }
@@ -105,7 +104,7 @@ class _SyncPlaySheetScaffold extends StatelessWidget {
     final double keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
 
     final bool compact =
-        size.width > size.height && !isDesktop() && size.shortestSide < 600;
+        size.width > size.height && size.shortestSide < 600;
     final bool showDescription = !(compact && keyboardInset > 0);
 
     return Padding(

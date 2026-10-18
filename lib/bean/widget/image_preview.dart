@@ -8,7 +8,6 @@ import 'package:photo_view/photo_view_gallery.dart';
 import 'package:kazumi/bean/liquid_glass/kazumi_glass.dart';
 import 'package:kazumi/bean/widget/loading_indicator.dart';
 import 'package:kazumi/bean/widget/media_error_widget.dart';
-import 'package:kazumi/utils/device.dart';
 
 class ImageViewerRouteArgs {
   ImageViewerRouteArgs({
@@ -157,42 +156,6 @@ class _ImageViewerState extends State<ImageViewer> {
     return ImageViewer.heroTagFor(widget.imageUrls[index], index);
   }
 
-  void _goToPreviousImage() {
-    if (_currentIndex <= 0) return;
-    _pageController.previousPage(
-      duration: const Duration(milliseconds: 250),
-      curve: Curves.easeInOut,
-    );
-  }
-
-  void _goToNextImage() {
-    if (_currentIndex >= widget.imageUrls.length - 1) return;
-    _pageController.nextPage(
-      duration: const Duration(milliseconds: 250),
-      curve: Curves.easeInOut,
-    );
-  }
-
-  Widget _buildNavButton({
-    required IconData icon,
-    required VoidCallback? onPressed,
-  }) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.5),
-        shape: BoxShape.circle,
-      ),
-      child: IconButton(
-        onPressed: onPressed,
-        icon: Icon(
-          icon,
-          color: onPressed != null ? Colors.white : Colors.white38,
-          size: 32,
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -235,32 +198,6 @@ class _ImageViewerState extends State<ImageViewer> {
                 ),
               ),
             ),
-          if (isDesktop() && _isMultiImage) ...[
-            Positioned(
-              left: 16,
-              top: 0,
-              bottom: 0,
-              child: Center(
-                child: _buildNavButton(
-                  icon: Icons.chevron_left,
-                  onPressed: _currentIndex > 0 ? _goToPreviousImage : null,
-                ),
-              ),
-            ),
-            Positioned(
-              right: 16,
-              top: 0,
-              bottom: 0,
-              child: Center(
-                child: _buildNavButton(
-                  icon: Icons.chevron_right,
-                  onPressed: _currentIndex < widget.imageUrls.length - 1
-                      ? _goToNextImage
-                      : null,
-                ),
-              ),
-            ),
-          ],
         ],
       ),
     );

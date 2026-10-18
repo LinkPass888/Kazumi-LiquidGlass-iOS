@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_modular/flutter_modular.dart';
@@ -44,7 +43,6 @@ class _OnboardingPageState extends State<OnboardingPage> {
   final _pageController = PageController();
   final _steps = [
     _OnboardingStep.welcome,
-    if (Platform.isAndroid) _OnboardingStep.updates,
     _OnboardingStep.mirrors,
     _OnboardingStep.rules,
   ];

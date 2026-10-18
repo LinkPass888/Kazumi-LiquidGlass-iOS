@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 import 'package:kazumi/pages/player/player_item_panel.dart';
 import 'package:kazumi/pages/player/player_keyboard_shortcuts.dart';
 import 'package:kazumi/pages/player/controller/player_super_resolution.dart';
@@ -563,31 +562,6 @@ class _PlayerItemState extends State<PlayerItem>
   Future<void> handleSuperResolutionChange(SuperResolutionMode mode) async {
     if (!mounted) return;
 
-    // The mediacodec_embed renderer cannot apply super-resolution shaders.
-    if (Platform.isAndroid && mode != SuperResolutionMode.off) {
-      final String androidVideoRenderer =
-          GStorage.getSetting(SettingsKeys.androidVideoRenderer);
-
-      if (androidVideoRenderer == 'mediacodec_embed') {
-        await KazumiDialog.show(builder: (context) {
-          return AlertDialog(
-            title: const Text('兼容性提示'),
-            content: const Text('MediaCodec 渲染器不支持超分辨率功能。\n\n'
-                '如需使用超分辨率，请在播放设置中将视频渲染器切换为 gpu 或 gpu-next。'),
-            actions: [
-              TextButton(
-                onPressed: () {
-                  KazumiDialog.dismiss(context: context);
-                },
-                child: const Text('确定'),
-              ),
-            ],
-          );
-        });
-        return;
-      }
-    }
-
     final bool requiresPerformanceWarning = mode == SuperResolutionMode.quality;
     final bool warningDisabled = GStorage.getSetting(
       SettingsKeys.disableSuperResolutionWarning,
@@ -1038,21 +1012,7 @@ class _PlayerItemState extends State<PlayerItem>
                       !playerController.panel.showVideoController)
                   ? SystemMouseCursors.none
                   : SystemMouseCursors.basic,
-              onHover: (PointerEvent pointerEvent) {
-                // Android taps can emit hover events.
-                if (isDesktop()) {
-                  if (pointerEvent.position.dy > 50 &&
-                      pointerEvent.position.dy <
-                          MediaQuery.of(context).size.height - 70) {
-                    showVideoController();
-                  } else {
-                    if (!playerController.panel.showVideoController) {
-                      _panelVisibilityController.forward();
-                      playerController.panel.showVideoController = true;
-                    }
-                  }
-                }
-              },
+              onHover: (PointerEvent pointerEvent) {},
               child: Listener(
                 onPointerSignal: (pointerSignal) {
                   if (pointerSignal is PointerScrollEvent) {
@@ -1204,7 +1164,7 @@ class _PlayerItemState extends State<PlayerItem>
                       top: 25,
                       right: 15,
                       bottom: 15,
-                      child: (isDesktop() || playerController.panel.lockPanel)
+                      child: playerController.panel.lockPanel
                           ? Container()
                           : PlayerGestureDetector(
                               onSeekStart: () {

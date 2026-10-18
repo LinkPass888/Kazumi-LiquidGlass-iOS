@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter_volume_controller/flutter_volume_controller.dart';
 import 'package:media_kit/media_kit.dart';
@@ -24,7 +23,6 @@ import 'package:kazumi/services/shaders/shader_asset_service.dart';
 import 'package:kazumi/pages/download/download_controller.dart';
 import 'package:kazumi/services/player/audio_controller.dart';
 import 'package:kazumi/utils/async_session.dart';
-import 'package:kazumi/utils/device.dart';
 
 export 'package:kazumi/pages/player/controller/player_models.dart';
 
@@ -115,9 +113,6 @@ class PlayerController implements Disposable {
   }
 
   void _persistMuteState() {
-    if (!isDesktop()) {
-      return;
-    }
     unawaited(GStorage.putSetting<bool>(SettingsKeys.playerMuted, muted));
   }
 
@@ -158,9 +153,6 @@ class PlayerController implements Disposable {
   }
 
   void _persistDesktopVolume(double value) {
-    if (!isDesktop()) {
-      return;
-    }
     if (muted) {
       return;
     }
@@ -281,52 +273,36 @@ class PlayerController implements Disposable {
       return false;
     }
 
-    if (isDesktop()) {
-      final freshStart = playback.volume == -1;
-      if (freshStart) {
-        muted = GStorage.getSetting(SettingsKeys.playerMuted);
-        final remembered = GStorage.getSetting(SettingsKeys.defaultVolume);
-        _preMuteVolume = remembered > 0 ? remembered : 100;
-        playback.volume = muted ? 0 : remembered;
+    await FlutterVolumeController.getVolume().then((value) {
+      playback.volume = (value ?? 0.0) * 100;
+    });
+    if (!_ownsInitialization(initialization, player)) {
+      return false;
+    }
+
+    await FlutterVolumeController.updateShowSystemUI(false);
+    if (!_ownsInitialization(initialization, player)) {
+      await FlutterVolumeController.updateShowSystemUI(true);
+      return false;
+    }
+
+    FlutterVolumeController.addListener((volume) {
+      if (player == null || !_ownsInitialization(initialization, player)) {
+        return;
       }
-      await setVolume(playback.volume);
-      if (!_ownsInitialization(initialization, player)) {
-        return false;
+      if (panel.volumeSeeking) {
+        return;
       }
-    } else {
-      await FlutterVolumeController.getVolume().then((value) {
-        playback.volume = (value ?? 0.0) * 100;
+      playback.applyExternalVolume(volume * 100);
+      panel.showVolume = true;
+      hideVolumeUITimer?.cancel();
+      hideVolumeUITimer = Timer(const Duration(seconds: 1), () {
+        panel.showVolume = false;
+        hideVolumeUITimer = null;
       });
-      if (!_ownsInitialization(initialization, player)) {
-        return false;
-      }
-
-      await FlutterVolumeController.updateShowSystemUI(false);
-      if (!_ownsInitialization(initialization, player)) {
-        await FlutterVolumeController.updateShowSystemUI(true);
-        return false;
-      }
-
-      FlutterVolumeController.addListener((volume) {
-        if (player == null || !_ownsInitialization(initialization, player)) {
-          return;
-        }
-        if (panel.volumeSeeking) {
-          return;
-        }
-        playback.applyExternalVolume(volume * 100);
-        if (!Platform.isAndroid && !panel.volumeSeeking) {
-          panel.showVolume = true;
-          hideVolumeUITimer?.cancel();
-          hideVolumeUITimer = Timer(const Duration(seconds: 1), () {
-            panel.showVolume = false;
-            hideVolumeUITimer = null;
-          });
-        }
-      }, category: AudioSessionCategory.playback, emitOnStart: false);
-      if (!_ownsInitialization(initialization, player)) {
-        return false;
-      }
+    }, category: AudioSessionCategory.playback, emitOnStart: false);
+    if (!_ownsInitialization(initialization, player)) {
+      return false;
     }
     await setPlaybackSpeed(playback.playerSpeed);
     if (!_ownsInitialization(initialization, player)) {

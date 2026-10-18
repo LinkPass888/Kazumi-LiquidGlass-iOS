@@ -159,9 +159,7 @@ class GStorage {
     shieldList = await _openBoxSafe<String>('shieldList');
     searchHistory = await _openBoxSafe<SearchHistory>('searchHistory');
     downloads = await _openBoxSafe<DownloadRecord>('downloads');
-    if (Platform.isIOS) {
-      await rebaseIosDownloadPaths(downloads);
-    }
+    await rebaseIosDownloadPaths(downloads);
   }
 
   /// Open a Hive box with automatic recovery on corruption.

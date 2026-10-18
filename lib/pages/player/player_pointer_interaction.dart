@@ -6,11 +6,12 @@ bool isTouchLikePointer(PointerDeviceKind? pointerKind) {
       pointerKind == PointerDeviceKind.invertedStylus;
 }
 
+/// Kazumi 本地版仅 iOS：主点击即切换控制层；双击全屏由移动端手势层处理。
 bool shouldToggleControllerOnPrimaryTap({
   required bool isDesktop,
   required PointerDeviceKind? pointerKind,
 }) {
-  return !isDesktop || isTouchLikePointer(pointerKind);
+  return isTouchLikePointer(pointerKind);
 }
 
 bool shouldToggleFullscreenOnDoubleTap({
@@ -18,5 +19,5 @@ bool shouldToggleFullscreenOnDoubleTap({
   required bool isPip,
   required PointerDeviceKind? pointerKind,
 }) {
-  return isDesktop && !isPip && !isTouchLikePointer(pointerKind);
+  return false;
 }
