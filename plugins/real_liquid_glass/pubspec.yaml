@@ -1,8 +1,8 @@
 name: real_liquid_glass
 description: >-
-  Kazumi 本地插件：Apple 全平台（iOS/macOS）原生 UIGlassEffect 液态玻璃容器
-  与底部标签栏。从 real_liquid_glass 0.3.0 fork，剔除了旧系统模糊兜底与
-  Android/Desktop 的 Flutter fallback。
+  Kazumi 本地插件：iOS 原生 UIGlassEffect 液态玻璃容器与底部标签栏。从
+  real_liquid_glass 0.3.0 fork，剔除了旧系统模糊兜底与 Android/Desktop 的
+  Flutter fallback，现仅支持 iOS。
 version: 0.4.0-kazumi.1
 publish_to: none
 
@@ -23,7 +23,5 @@ flutter:
   plugin:
     platforms:
       ios:
-        pluginClass: LiquidGlassContainerPlugin
-      macos:
         pluginClass: LiquidGlassContainerPlugin
 

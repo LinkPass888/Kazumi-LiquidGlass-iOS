@@ -1,10 +1,8 @@
-import 'dart:io';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_mobx/flutter_mobx.dart';
 import 'package:flutter_modular/flutter_modular.dart';
-import 'package:window_manager/window_manager.dart';
 
 import 'package:kazumi/bean/appbar/drag_to_move_bar.dart' as dtb;
 import 'package:kazumi/bean/liquid_glass/glass_tab_bar.dart';
@@ -22,9 +20,7 @@ import 'package:kazumi/pages/info/rating_review_dialog.dart';
 import 'package:kazumi/pages/info/source_sheet.dart';
 import 'package:kazumi/plugins/plugins_controller.dart';
 import 'package:kazumi/services/logging/logger.dart';
-import 'package:kazumi/services/platform/desktop_window_config.dart';
 import 'package:kazumi/services/storage/storage.dart';
-import 'package:kazumi/utils/device.dart';
 
 class InfoPage extends StatefulWidget {
   const InfoPage({
@@ -332,8 +328,6 @@ class _InfoPageState extends State<InfoPage>
 
   @override
   Widget build(BuildContext context) {
-    final showWindowButton = DesktopWindowConfig.showWindowButton;
-    final topOffset = Platform.isMacOS && showWindowButton ? 22.0 : 0.0;
     return Scaffold(
       body: NestedScrollView(
         headerSliverBuilder: (BuildContext context, bool innerBoxIsScrolled) {
@@ -385,8 +379,6 @@ class _InfoPageState extends State<InfoPage>
                       bangumiItem: infoController.bangumiItem,
                     ),
                   ),
-                  if (isDesktop() && !showWindowButton)
-                    CloseButton(onPressed: () => windowManager.close()),
                   // 每个按钮左右各留 barButtonGap / 2，这里减掉自己那一半，
                   // 最后一个按钮离屏幕边才是 barEdgeInset（与推荐页右上角一致）
                   const SizedBox(
@@ -394,7 +386,7 @@ class _InfoPageState extends State<InfoPage>
                         KazumiGlass.barButtonGap / 2,
                   ),
                 ],
-                toolbarHeight: kToolbarHeight + topOffset,
+                toolbarHeight: kToolbarHeight,
                 stretch: true,
                 centerTitle: false,
                 // 卡片高度跟着标题换行增长（见 BangumiInfoCardV.heightFor），
@@ -408,15 +400,14 @@ class _InfoPageState extends State<InfoPage>
                     ) +
                     8 + // 卡片下缘留白
                     tabBand +
-                    kToolbarHeight +
-                    topOffset,
+                    kToolbarHeight,
                 // collapsedHeight 只写「工具栏」那一截。Flutter 自己还会
                 // 加上底部标签栏和状态栏内边距 —— app_bar.dart:
                 //   collapsedHeight = (widget.collapsedHeight
                 //       ?? widget.toolbarHeight) + bottomHeight + topPadding
                 // 这里之前把状态栏和标签栏也写了进去，于是收起后顶栏白白多出
                 // 107（= 59 状态栏 + 48 标签栏）的空档，标签条停在半路上不去。
-                collapsedHeight: kToolbarHeight + topOffset,
+                collapsedHeight: kToolbarHeight,
                 flexibleSpace: FlexibleSpaceBar(
                   collapseMode: CollapseMode.pin,
                   background: Observer(builder: (context) {

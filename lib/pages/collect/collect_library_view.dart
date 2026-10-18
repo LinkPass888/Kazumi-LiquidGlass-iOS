@@ -164,9 +164,6 @@ class _CollectLibraryViewState extends State<CollectLibraryView>
   @override
   Widget build(BuildContext context) {
     final query = CollectLibraryQuery(widget.entries, _query);
-    final platform = Theme.of(context).platform;
-    final mobile =
-        platform == TargetPlatform.android || platform == TargetPlatform.iOS;
 
     return CallbackShortcuts(
       bindings: {
@@ -181,7 +178,7 @@ class _CollectLibraryViewState extends State<CollectLibraryView>
         autofocus: true,
         child: LayoutBuilder(builder: (context, constraints) {
           final compact = constraints.maxWidth < 600;
-          final paged = mobile &&
+          final paged =
               MediaQuery.orientationOf(context) == Orientation.portrait &&
               constraints.maxHeight > 320;
           final width = constraints.maxWidth.clamp(0.0, 1560.0);

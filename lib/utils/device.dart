@@ -1,14 +1,4 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
-
-Future<bool> isLowResolution() async {
-  if (Platform.isMacOS) {
-    return false;
-  }
-  final screenInfo = await getScreenInfo();
-  return screenInfo['height']! / screenInfo['ratio']! < 900;
-}
 
 Future<Map<String, double>> getScreenInfo() async {
   final mediaQuery = MediaQueryData.fromView(
@@ -23,6 +13,6 @@ Future<Map<String, double>> getScreenInfo() async {
   };
 }
 
-bool isDesktop() {
-  return Platform.isWindows || Platform.isMacOS || Platform.isLinux;
-}
+// Kazumi 本地版仅 iOS；桌面分支已随平台收窄删除。
+// 保留此函数让历史调用点语义不变。
+bool isDesktop() => false;

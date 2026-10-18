@@ -1,25 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:window_manager/window_manager.dart';
-import 'package:kazumi/utils/device.dart';
 
 /// A widget for drag to move window.
 ///
-/// When you have hidden the title bar, you can add this widget to move the window position.
-///
-/// {@tool snippet}
-///
-/// The sample creates a red box, drag the box to move the window.
-///
-/// ```dart
-/// DragToMoveArea(
-///   child: Container(
-///     width: 300,
-///     height: 32,
-///     color: Colors.red,
-///   ),
-/// )
-/// ```
-/// {@end-tool}
+/// Kazumi 本地版仅 iOS：窗口拖动是桌面概念，这里保留 API（各页面调用处
+/// 不变），直接原样返回 child。
 class DragToMoveArea extends StatelessWidget {
   const DragToMoveArea({
     super.key,
@@ -29,11 +13,5 @@ class DragToMoveArea extends StatelessWidget {
   final Widget child;
 
   @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      behavior: HitTestBehavior.translucent,
-      onPanStart: (_) => (isDesktop()) ? windowManager.startDragging() : null,
-      child: child,
-    );
-  }
+  Widget build(BuildContext context) => child;
 }

@@ -15,7 +15,6 @@ import 'package:kazumi/modules/comments/comment_item.dart';
 import 'package:kazumi/modules/characters/character_item.dart';
 import 'package:kazumi/modules/staff/staff_item.dart';
 import 'package:kazumi/utils/constants.dart';
-import 'package:kazumi/utils/device.dart';
 
 class InfoTabView extends StatefulWidget {
   const InfoTabView({
@@ -138,7 +137,7 @@ class _InfoTabViewState extends State<InfoTabView> {
               const SizedBox(height: 8),
               Wrap(
                 spacing: 8.0,
-                runSpacing: isDesktop() ? 8 : 0,
+                runSpacing: 0,
                 children: List<Widget>.generate(
                     fullTag || widget.bangumiItem.tags.length < 13
                         ? widget.bangumiItem.tags.length

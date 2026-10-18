@@ -26,7 +26,6 @@ import 'package:kazumi/services/plugin/captcha_verification_service.dart';
 import 'package:kazumi/services/plugin/plugin_search_service.dart';
 import 'package:kazumi/services/plugin/rule_engine_models.dart'
     show RuleCancelToken;
-import 'package:kazumi/utils/device.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 part 'source_alias_dialog.dart';
@@ -126,7 +125,7 @@ class _SourceSheetState extends State<SourceSheet> with KazumiDialogOwner {
       final cancelToken = RuleCancelToken();
       final roads = await task.loading(
         message: '正在获取播放列表',
-        barrierDismissible: isDesktop(),
+        barrierDismissible: false,
         onCancel: cancelToken.cancel,
         action: () =>
             plugin.queryChapterRoads(searchItem.src, cancelToken: cancelToken),

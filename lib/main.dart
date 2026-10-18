@@ -1,4 +1,4 @@
-import 'dart:io';
+import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:kazumi/app_module.dart';
 import 'package:kazumi/app_widget.dart';
@@ -11,15 +11,9 @@ import 'package:hive_ce_flutter/hive_flutter.dart';
 import 'package:kazumi/services/network/metered_network_service.dart';
 import 'package:kazumi/services/network/ech_http_licenses.dart';
 import 'package:kazumi/services/network/proxy_manager.dart';
-import 'package:kazumi/services/network/system_proxy_service.dart';
-import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart';
-import 'package:window_manager/window_manager.dart';
 import 'package:kazumi/pages/error/storage_error_page.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
-import 'package:kazumi/utils/device.dart';
-import 'package:kazumi/services/platform/desktop_window_config.dart';
-import 'package:kazumi/services/platform/webview_feature_service.dart';
 import 'package:kazumi/bean/dialog/dialog_helper.dart';
 import 'package:kazumi/bean/liquid_glass/glass_route_observer.dart';
 import 'package:kazumi/modules/collect/collect_type.dart';
@@ -31,18 +25,10 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   registerEchHttpLicenses();
   MediaKit.ensureInitialized();
-  if (Platform.isAndroid || Platform.isIOS) {
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-    SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
-      systemNavigationBarColor: Colors.transparent,
-      systemNavigationBarDividerColor: Colors.transparent,
-      statusBarColor: Colors.transparent,
-    ));
-  }
-
-  if (Platform.isAndroid) {
-    await WebViewFeatureService.initialize();
-  }
+  SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+    statusBarColor: Colors.transparent,
+  ));
 
   try {
     final hivePath = '${(await getApplicationSupportDirectory()).path}/hive';
@@ -50,15 +36,6 @@ void main() async {
     await GStorage.init();
   } catch (e) {
     debugPrint('Storage initialization failed: $e');
-
-    if (isDesktop()) {
-      await windowManager.ensureInitialized();
-      windowManager.waitUntilReadyToShow(null, () async {
-        // window_manager controls desktop visibility to avoid startup flicker.
-        await windowManager.show();
-        await windowManager.focus();
-      });
-    }
     runApp(MaterialApp(
         title: '初始化失败',
         localizationsDelegates: GlobalMaterialLocalizations.delegates,
@@ -74,30 +51,6 @@ void main() async {
     return;
   }
   await DownloadDirectoryService().restoreAccess();
-  final showWindowButton = DesktopWindowConfig.showWindowButton;
-  if (isDesktop()) {
-    await windowManager.ensureInitialized();
-    final lowResolution = await isLowResolution();
-    final windowOptions = WindowOptions(
-      size: lowResolution ? const Size(840, 600) : const Size(1280, 860),
-      center: true,
-      skipTaskbar: false,
-      // macOS embeds native buttons in the Flutter view.
-      titleBarStyle: (Platform.isMacOS || !showWindowButton)
-          ? TitleBarStyle.hidden
-          : TitleBarStyle.normal,
-      windowButtonVisibility: showWindowButton,
-      title: 'Kazumi',
-    );
-    windowManager.waitUntilReadyToShow(windowOptions, () async {
-      // window_manager controls desktop visibility to avoid startup flicker.
-      await windowManager.show();
-      await windowManager.focus();
-    });
-  }
-  if (Platform.isWindows) {
-    SystemProxyService.init();
-  }
   await MeteredNetworkService.refresh();
   ProxyManager.applyProxy();
   // 通知服务通过回调取「正在追」列表，避免反向依赖存储层。

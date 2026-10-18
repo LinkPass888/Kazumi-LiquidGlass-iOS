@@ -28,11 +28,7 @@ const SliderThemeData sliderTheme2024 = SliderThemeData(
 );
 
 const _pageTransitionBuilders = <TargetPlatform, PageTransitionsBuilder>{
-  TargetPlatform.android: CupertinoPageTransitionsBuilder(),
   TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
-  TargetPlatform.linux: FadeUpwardsPageTransitionsBuilder(),
-  TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
-  TargetPlatform.windows: FadeUpwardsPageTransitionsBuilder(),
 };
 
 const PageTransitionsTheme pageTransitionsTheme2024 =
@@ -40,11 +36,7 @@ const PageTransitionsTheme pageTransitionsTheme2024 =
 
 // Applied only to the settings navigator; fullscreen routes use the app theme.
 final PageTransitionsTheme settingsPageTransitionsTheme = PageTransitionsTheme(
-  builders: {
-    ..._pageTransitionBuilders,
-    TargetPlatform.linux: const FadeForwardsPageTransitionsBuilder(),
-    TargetPlatform.windows: const FadeForwardsPageTransitionsBuilder(),
-  },
+  builders: _pageTransitionBuilders,
 );
 
 /// Layout breakpoint according to google:

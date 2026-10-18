@@ -1,13 +1,8 @@
-import 'dart:io';
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
-import 'package:kazumi/webview/video/impl/video_webview_android_impl.dart';
-import 'package:kazumi/webview/video/impl/video_webview_impl.dart';
-import 'package:kazumi/webview/video/impl/video_webview_windows_impl.dart';
-import 'package:kazumi/webview/video/impl/video_webview_linux_impl.dart';
+
 import 'package:kazumi/webview/video/impl/video_webview_apple_impl.dart';
-import 'package:kazumi/services/platform/webview_feature_service.dart';
 import 'package:kazumi/services/video_source/video_source_format.dart';
 
 typedef VideoParserEvent = ({
@@ -95,19 +90,6 @@ abstract class VideoWebviewController<T> {
 
 class VideoWebviewControllerFactory {
   static VideoWebviewController getController() {
-    if (Platform.isWindows) {
-      return VideoWebviewWindowsImpl();
-    }
-    if (Platform.isLinux) {
-      return VideoWebviewLinuxImpl();
-    }
-    if (Platform.isMacOS || Platform.isIOS) {
-      return VideoWebviewAppleImpl();
-    }
-    if (Platform.isAndroid &&
-        WebViewFeatureService.isDocumentStartScriptSupported) {
-      return VideoWebviewAndroidImpl();
-    }
-    return VideoWebviewImpl();
+    return VideoWebviewAppleImpl();
   }
 }

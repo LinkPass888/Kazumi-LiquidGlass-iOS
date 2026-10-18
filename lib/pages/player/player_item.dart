@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 import 'package:kazumi/pages/player/player_item_panel.dart';
 import 'package:kazumi/pages/player/player_keyboard_shortcuts.dart';
 import 'package:kazumi/pages/player/controller/player_super_resolution.dart';
@@ -7,13 +6,10 @@ import 'package:kazumi/pages/player/player_panel_hold.dart';
 import 'package:kazumi/pages/player/player_pointer_interaction.dart';
 import 'package:kazumi/pages/player/player_gesture_detector.dart';
 import 'package:kazumi/pages/player/player_screenshot_feedback_overlay.dart';
-import 'package:kazumi/pages/player/player_screenshot_sheet.dart';
 import 'package:kazumi/pages/player/skip_segment_pill.dart';
-import 'package:kazumi/pages/player/controller/player_screenshot_controller.dart';
 import 'package:kazumi/pages/player/syncplay_sheet.dart';
 import 'package:kazumi/utils/constants.dart';
 import 'package:kazumi/services/logging/logger.dart';
-import 'package:kazumi/services/player/pip_utils.dart';
 import 'package:kazumi/services/sync/webdav.dart';
 import 'package:flutter/gestures.dart';
 import 'package:kazumi/pages/player/player_controller.dart';
@@ -21,7 +17,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_mobx/flutter_mobx.dart';
 import 'package:flutter_modular/flutter_modular.dart';
 import 'package:kazumi/pages/video/video_controller.dart';
-import 'package:window_manager/window_manager.dart';
 import 'package:canvas_danmaku/canvas_danmaku.dart';
 import 'package:kazumi/bean/dialog/dialog_helper.dart';
 import 'package:kazumi/pages/player/video_details_sheet.dart';
@@ -36,9 +31,7 @@ import 'package:mobx/mobx.dart' as mobx;
 import 'package:kazumi/pages/my/my_controller.dart';
 import 'package:saver_gallery/saver_gallery.dart';
 import 'package:kazumi/services/player/audio_controller.dart';
-import 'package:kazumi/services/player/timed_shutdown_service.dart';
 import 'package:kazumi/utils/device.dart';
-import 'package:kazumi/services/platform/player_menu_service.dart';
 
 class PlayerItem extends StatefulWidget {
   const PlayerItem({
@@ -71,7 +64,6 @@ class PlayerItem extends StatefulWidget {
 
 class _PlayerItemState extends State<PlayerItem>
     with
-        WindowListener,
         WidgetsBindingObserver,
         TickerProviderStateMixin,
         KazumiDialogOwner {
@@ -133,225 +125,28 @@ class _PlayerItemState extends State<PlayerItem>
   late final AnimationController _panelVisibilityController;
   late final AnimationController _screenshotFeedbackController;
   late final Animation<double> _screenshotFeedbackAnimation;
-  late final PlayerScreenshotController _screenshots =
-      playerController.screenshots;
-  bool _screenshotSheetOpen = false;
 
   double lastPlayerSpeed = 1.0;
   late double longPressPlaySpeed;
-  bool? _lastPipPlaying;
-  bool? _lastPipDanmakuEnabled;
-  Rect? _lastPipSourceRect;
-  bool _pipSourceRectSyncScheduled = false;
-  bool _pipEnterRequested = false;
-  late mobx.ReactionDisposer _playerSizeListener;
-
   late mobx.ReactionDisposer _fullscreenListener;
-
-  @override
-  void didChangeMetrics() {
-    super.didChangeMetrics();
-    _scheduleAndroidPIPSourceRectSync();
-  }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) async {
     super.didChangeAppLifecycleState(state);
     if (state == AppLifecycleState.paused && !backgroundPlayback) {
-      // Suspend before awaiting pause so a later resume wins; pause alone keeps prefetching.
-      final suspend = playerController.playback.setPrefetchSuspended(true);
       if (playerController.playback.mediaPlayer != null &&
           playerController.playback.playerPlaying) {
         try {
           await playerController.pause(enableSync: false);
         } catch (_) {}
       }
-      await suspend;
       return;
-    }
-    if (state == AppLifecycleState.resumed) {
-      await playerController.playback.setPrefetchSuspended(false);
     }
     try {
       if (playerController.playback.playerPlaying) {
         playerController.danmaku.canvasController.resume();
       }
     } catch (_) {}
-  }
-
-  Future<void> _syncAndroidAutoEnterPIPSetting() async {
-    if (!Platform.isAndroid) {
-      return;
-    }
-    final bool autoEnterPIPEnabled =
-        GStorage.getSetting(SettingsKeys.androidAutoEnterPIP);
-    try {
-      await PipUtils.setAndroidAutoEnterPIPEnabled(autoEnterPIPEnabled);
-    } catch (e) {
-      KazumiLogger().w(
-        'PlayerItem: failed to sync android auto enter pip setting',
-        error: e,
-      );
-    }
-  }
-
-  Future<void> _syncAndroidPIPPlayerPageState(bool inPlayerPage) async {
-    if (!Platform.isAndroid) {
-      return;
-    }
-    try {
-      await PipUtils.setAndroidPIPInPlayerPage(inPlayerPage);
-    } catch (e) {
-      KazumiLogger().w(
-        'PlayerItem: failed to sync android pip player page state',
-        error: e,
-      );
-    }
-  }
-
-  Future<void> _updateAndroidPIPActions({bool force = false}) async {
-    if (!Platform.isAndroid) {
-      return;
-    }
-    final bool playing = playerController.playback.playing;
-    final bool danmakuEnabled = playerController.danmaku.danmakuOn;
-    // In picture in picture the measured rect is the small window itself.
-    final Rect? sourceRect = videoPageController.isPip
-        ? _lastPipSourceRect
-        : _androidPIPSourceRect();
-    if (!force &&
-        _lastPipPlaying == playing &&
-        _lastPipDanmakuEnabled == danmakuEnabled &&
-        _lastPipSourceRect == sourceRect) {
-      return;
-    }
-
-    _lastPipPlaying = playing;
-    _lastPipDanmakuEnabled = danmakuEnabled;
-    _lastPipSourceRect = sourceRect;
-    await PipUtils.updateAndroidPIPActions(
-      playing: playing,
-      danmakuEnabled: danmakuEnabled,
-      width: playerController.debug.playerWidth,
-      height: playerController.debug.playerHeight,
-      sourceRect: sourceRect,
-    );
-  }
-
-  // Android PiP expects the letterboxed video bounds in physical pixels.
-  Rect? _androidPIPSourceRect() {
-    if (!mounted) {
-      return null;
-    }
-    final renderObject = _videoSurfaceKey.currentContext?.findRenderObject();
-    if (renderObject is! RenderBox || !renderObject.hasSize) {
-      return null;
-    }
-    final Size size = renderObject.size;
-    if (size.isEmpty) {
-      return null;
-    }
-    Rect rect = Offset.zero & size;
-    final int videoWidth = playerController.debug.playerWidth;
-    final int videoHeight = playerController.debug.playerHeight;
-    if (videoWidth > 0 && videoHeight > 0) {
-      final double scale =
-          (rect.width / videoWidth) < (rect.height / videoHeight)
-              ? rect.width / videoWidth
-              : rect.height / videoHeight;
-      rect = Rect.fromCenter(
-        center: rect.center,
-        width: videoWidth * scale,
-        height: videoHeight * scale,
-      );
-    }
-    // Convert the fitted video rectangle to window coordinates for native PiP.
-    rect = MatrixUtils.transformRect(renderObject.getTransformTo(null), rect);
-    final double ratio = MediaQuery.devicePixelRatioOf(context);
-    return Rect.fromLTRB(
-      rect.left * ratio,
-      rect.top * ratio,
-      rect.right * ratio,
-      rect.bottom * ratio,
-    );
-  }
-
-  // Remove controls before PiP entry to avoid rebuilding during the resize animation.
-  Future<void> enterAndroidPictureInPicture() async {
-    if (!Platform.isAndroid || !mounted) {
-      return;
-    }
-    final bool supported = await PipUtils.isAndroidPIPSupported();
-    if (!mounted) {
-      return;
-    }
-    if (!supported) {
-      KazumiDialog.showToast(message: '当前设备不支持画中画');
-      return;
-    }
-    setState(() {
-      _pipEnterRequested = true;
-    });
-    await WidgetsBinding.instance.endOfFrame;
-    if (!mounted) {
-      return;
-    }
-    await _updateAndroidPIPActions(force: true);
-    final bool entered = await PipUtils.enterAndroidPIPWindow(
-      width: playerController.debug.playerWidth,
-      height: playerController.debug.playerHeight,
-    );
-    if (entered || !mounted) {
-      return;
-    }
-    KazumiDialog.showToast(message: '进入画中画失败');
-    setState(() {
-      _pipEnterRequested = false;
-    });
-  }
-
-  void _handleAndroidPIPModeChanged(bool inPipMode) {
-    if (!mounted || videoPageController.isPip == inPipMode) {
-      return;
-    }
-    setState(() {
-      videoPageController.isPip = inPipMode;
-    });
-    if (!inPipMode) {
-      _pipEnterRequested = false;
-      _scheduleAndroidPIPSourceRectSync();
-    }
-  }
-
-  void _scheduleAndroidPIPSourceRectSync() {
-    if (!Platform.isAndroid || _pipSourceRectSyncScheduled) {
-      return;
-    }
-    _pipSourceRectSyncScheduled = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _pipSourceRectSyncScheduled = false;
-      if (!mounted) {
-        return;
-      }
-      unawaited(_updateAndroidPIPActions());
-    });
-  }
-
-  Future<void> _syncPIPAspectWhenVideoSizeReady() async {
-    if (playerController.debug.playerWidth <= 0 ||
-        playerController.debug.playerHeight <= 0) {
-      return;
-    }
-    if (Platform.isAndroid) {
-      await _updateAndroidPIPActions(force: true);
-      return;
-    }
-    if (isDesktop() && videoPageController.isPip) {
-      await PipUtils.enterDesktopPIPWindow(
-        width: playerController.debug.playerWidth,
-        height: playerController.debug.playerHeight,
-      );
-    }
   }
 
   void _initKeyboardActions() {
@@ -381,14 +176,6 @@ class _PlayerItemState extends State<PlayerItem>
         onRelease: handleShortcutForwardUp,
       ),
     };
-  }
-
-  void _initPlayerMenu() {
-    unawaited(PlayerMenuService.initialize(keyboardActions));
-  }
-
-  void _disposePlayerMenu() {
-    unawaited(PlayerMenuService.dispose());
   }
 
   Future<void> handlePreNextEpisode(String direction) async {
@@ -475,9 +262,6 @@ class _PlayerItemState extends State<PlayerItem>
   void handleShortcutExitFullscreen() {
     if (videoPageController.isFullscreen) {
       unawaited(videoPageController.fullscreen.setFullscreen(false));
-    } else if (isDesktop() && !Platform.isMacOS) {
-      playerController.pause();
-      windowManager.hide();
     }
   }
 
@@ -578,17 +362,14 @@ class _PlayerItemState extends State<PlayerItem>
     if (playerController.danmaku.danmakuOn) {
       playerController.danmaku.setDanmakuEnabled(false);
       GStorage.putSetting(SettingsKeys.danmakuEnabledByDefault, false);
-      unawaited(_updateAndroidPIPActions(force: true));
       return;
     }
     if (playerController.danmaku.danDanmakus.isEmpty) {
       showDanmakuSwitch();
-      unawaited(_updateAndroidPIPActions(force: true));
       return;
     }
     playerController.danmaku.setDanmakuEnabled(true);
     GStorage.putSetting(SettingsKeys.danmakuEnabledByDefault, true);
-    unawaited(_updateAndroidPIPActions(force: true));
   }
 
   Future<void> _syncHistoryWithWebDav() async {
@@ -674,7 +455,6 @@ class _PlayerItemState extends State<PlayerItem>
     playerController.panel.lockPanel = false;
     _releasePlayerPanelHolds();
     playerController.danmaku.canvasController.clear();
-    _scheduleAndroidPIPSourceRectSync();
 
     await _syncHistoryWithWebDav();
   }
@@ -740,47 +520,7 @@ class _PlayerItemState extends State<PlayerItem>
 
   Future<void> handleScreenshot() async {
     if (!mounted) return;
-    if (!isDesktop()) {
-      await _saveScreenshotToGallery();
-      return;
-    }
-    if (_screenshots.busy || _screenshotSheetOpen) return;
-    final episode = videoPageController.playbackEpisode;
-    final source = videoPageController.src;
-    final player = playerController.playback.mediaPlayer;
-    if (videoPageController.loading || player == null) {
-      KazumiDialog.showToast(message: '暂未获取到画面，请等视频显示后重试');
-      return;
-    }
-    final added = await _screenshots.capture(
-      capturePng: playerController.screenshotPng,
-      title: videoPageController.title,
-      episode:
-          videoPageController.resolveEpisode(episode)?.displayTitle ??
-          '第 ${episode.episode} 集',
-      position: player.state.position,
-      isCurrent: () =>
-          mounted &&
-          !videoPageController.loading &&
-          videoPageController.playbackEpisode == episode &&
-          videoPageController.src == source &&
-          identical(playerController.playback.mediaPlayer, player),
-    );
-    if (!mounted) return;
-    if (added) _playScreenshotFeedback();
-    if (!_screenshotSheetOpen) {
-      showVideoController();
-      if (!added || _screenshots.candidates.length == 1) {
-        KazumiDialog.showToast(
-          message: added
-              ? '已截取画面，点击右上角图库挑选保存'
-              : _screenshots.message ?? '截图失败，请重试',
-          showActionButton: _screenshots.candidates.isNotEmpty,
-          actionLabel: '挑选截图',
-          onActionPressed: showScreenshotCandidates,
-        );
-      }
-    }
+    await _saveScreenshotToGallery();
   }
 
   Future<void> _saveScreenshotToGallery() async {
@@ -807,46 +547,7 @@ class _PlayerItemState extends State<PlayerItem>
   }
 
   Future<void> showScreenshotCandidates() async {
-    if (!isDesktop() || !mounted || _screenshotSheetOpen || _screenshots.busy) {
-      return;
-    }
-    _screenshotSheetOpen = true;
-    final hold = acquirePlayerPanelHold();
-    final player = playerController.playback.mediaPlayer;
-    final episode = videoPageController.playbackEpisode;
-    final source = videoPageController.src;
-    final resume =
-        playerController.playback.playing &&
-        !playerController.syncplay.hasSession;
-    final sleepRemaining = TimedShutdownService().remainingSecondsNotifier.value;
-    final sleepDeadline = sleepRemaining > 0
-        ? DateTime.now().add(Duration(seconds: sleepRemaining))
-        : null;
-    try {
-      if (resume) await playerController.pause(enableSync: false);
-      if (!mounted) return;
-      await showPlayerScreenshotSheet(context, controller: _screenshots);
-    } finally {
-      _screenshotSheetOpen = false;
-      if (mounted) {
-        hold.release();
-        widget.keyboardFocus.requestFocus();
-        // Resume only the same local playback, respecting the sleep timer.
-        if (resume &&
-            identical(player, playerController.playback.mediaPlayer) &&
-            videoPageController.playbackEpisode == episode &&
-            videoPageController.src == source &&
-            !videoPageController.loading &&
-            !playerController.syncplay.hasSession &&
-            (sleepDeadline == null || DateTime.now().isBefore(sleepDeadline)) &&
-            WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed &&
-            (ModalRoute.of(context)?.isCurrent ?? false)) {
-          await playerController.play(enableSync: false);
-        }
-      } else {
-        hold.releaseSilently();
-      }
-    }
+    // 仅桌面面板会调用截图候选列表；仅 iOS 后此入口不再可达。
   }
 
   void _playScreenshotFeedback() {
@@ -860,31 +561,6 @@ class _PlayerItemState extends State<PlayerItem>
 
   Future<void> handleSuperResolutionChange(SuperResolutionMode mode) async {
     if (!mounted) return;
-
-    // The mediacodec_embed renderer cannot apply super-resolution shaders.
-    if (Platform.isAndroid && mode != SuperResolutionMode.off) {
-      final String androidVideoRenderer =
-          GStorage.getSetting(SettingsKeys.androidVideoRenderer);
-
-      if (androidVideoRenderer == 'mediacodec_embed') {
-        await KazumiDialog.show(builder: (context) {
-          return AlertDialog(
-            title: const Text('兼容性提示'),
-            content: const Text('MediaCodec 渲染器不支持超分辨率功能。\n\n'
-                '如需使用超分辨率，请在播放设置中将视频渲染器切换为 gpu 或 gpu-next。'),
-            actions: [
-              TextButton(
-                onPressed: () {
-                  KazumiDialog.dismiss(context: context);
-                },
-                child: const Text('确定'),
-              ),
-            ],
-          );
-        });
-        return;
-      }
-    }
 
     final bool requiresPerformanceWarning = mode == SuperResolutionMode.quality;
     final bool warningDisabled = GStorage.getSetting(
@@ -1178,19 +854,9 @@ class _PlayerItemState extends State<PlayerItem>
   Timer getPlayerTimer() {
     return Timer.periodic(const Duration(seconds: 1), (timer) {
       playerController.syncPlaybackState();
-      unawaited(_updateAndroidPIPActions());
       _syncAudioServiceState();
       _emitDanmakusForCurrentPosition();
-      if (!playerController.panel.volumeSeeking) {
-        if (isDesktop()) {
-          playerController.playback
-              .applyExternalVolume(playerController.playback.playerVolume);
-        }
-      }
-      if (!Platform.isWindows &&
-          !Platform.isMacOS &&
-          !Platform.isLinux &&
-          !playerController.panel.brightnessSeeking) {
+      if (!playerController.panel.brightnessSeeking) {
         ScreenBrightnessPlatform.instance.application.then((value) {
           if (!mounted) return;
           playerController.panel.brightness = value;
@@ -1259,57 +925,16 @@ class _PlayerItemState extends State<PlayerItem>
   }
 
   @override
-  void onWindowRestore() {
-    playerController.danmaku.canvasController.clear();
-  }
-
-  @override
   void initState() {
     super.initState();
     playerController = widget.playerController;
     _initKeyboardActions();
-    _initPlayerMenu();
     _fullscreenListener = mobx.reaction<bool>(
       (_) => videoPageController.isFullscreen,
       (_) {
         _handleFullscreenChange();
       },
     );
-    _playerSizeListener = mobx.reaction<String>(
-      (_) =>
-          '${playerController.debug.playerWidth}:${playerController.debug.playerHeight}',
-      (_) {
-        unawaited(_syncPIPAspectWhenVideoSizeReady());
-      },
-    );
-    if (Platform.isAndroid) {
-      PipUtils.initPipHandler(
-        onAction: (action) async {
-          if (!mounted) return;
-
-          switch (action) {
-            case 'play_pause':
-              playerController.playOrPause();
-              break;
-
-            case 'toggle_danmaku':
-              handleDanmaku();
-              break;
-
-            case 'forward':
-              await skipOP();
-              break;
-          }
-
-          await _updateAndroidPIPActions(force: true);
-        },
-        onModeChanged: _handleAndroidPIPModeChanged,
-      );
-      unawaited(_syncAndroidAutoEnterPIPSetting());
-      unawaited(_syncAndroidPIPPlayerPageState(true));
-      unawaited(_updateAndroidPIPActions(force: true));
-      _scheduleAndroidPIPSourceRectSync();
-    }
     WidgetsBinding.instance.addObserver(this);
     _panelVisibilityController = AnimationController(
       duration: const Duration(milliseconds: 300),
@@ -1356,7 +981,6 @@ class _PlayerItemState extends State<PlayerItem>
         GStorage.getSetting(SettingsKeys.defaultShortcutForwardPlaySpeed);
     unawaited(_bindAudioService());
     playerTimer = getPlayerTimer();
-    windowManager.addListener(this);
     showVideoController();
   }
 
@@ -1364,9 +988,7 @@ class _PlayerItemState extends State<PlayerItem>
   void dispose() {
     // The route-scoped PlayerController owns playback disposal.
     _fullscreenListener();
-    _playerSizeListener();
     WidgetsBinding.instance.removeObserver(this);
-    windowManager.removeListener(this);
     playerController.seeking.invalidateInteractiveSeek();
     playerTimer?.cancel();
     hideTimer?.cancel();
@@ -1374,11 +996,6 @@ class _PlayerItemState extends State<PlayerItem>
     _adjustmentHudHideTimer?.cancel();
     _panelVisibilityController.dispose();
     _screenshotFeedbackController.dispose();
-    _disposePlayerMenu();
-    if (Platform.isAndroid) {
-      unawaited(_syncAndroidPIPPlayerPageState(false));
-      PipUtils.disposePipHandler();
-    }
     playerController.panel.reset();
     super.dispose();
   }
@@ -1395,21 +1012,7 @@ class _PlayerItemState extends State<PlayerItem>
                       !playerController.panel.showVideoController)
                   ? SystemMouseCursors.none
                   : SystemMouseCursors.basic,
-              onHover: (PointerEvent pointerEvent) {
-                // Android taps can emit hover events.
-                if (isDesktop()) {
-                  if (pointerEvent.position.dy > 50 &&
-                      pointerEvent.position.dy <
-                          MediaQuery.of(context).size.height - 70) {
-                    showVideoController();
-                  } else {
-                    if (!playerController.panel.showVideoController) {
-                      _panelVisibilityController.forward();
-                      playerController.panel.showVideoController = true;
-                    }
-                  }
-                }
-              },
+              onHover: (PointerEvent pointerEvent) {},
               child: Listener(
                 onPointerSignal: (pointerSignal) {
                   if (pointerSignal is PointerScrollEvent) {
@@ -1526,10 +1129,7 @@ class _PlayerItemState extends State<PlayerItem>
                         animation: _screenshotFeedbackAnimation,
                       ),
                     ),
-                    (Platform.isAndroid &&
-                            (videoPageController.isPip || _pipEnterRequested))
-                        ? const SizedBox.shrink()
-                        : PlayerItemPanel(
+                    PlayerItemPanel(
                             fillsWindow: widget.fillsWindow,
                             playerController: playerController,
                             videoPageController: videoPageController,
@@ -1538,8 +1138,6 @@ class _PlayerItemState extends State<PlayerItem>
                             showDanmakuSwitch: showDanmakuSwitch,
                             onToggleSidePanel: widget.onToggleSidePanel,
                             handleFullscreen: handleFullscreen,
-                            enterAndroidPictureInPicture:
-                                enterAndroidPictureInPicture,
                             handleProgressBarDragStart:
                                 handleProgressBarDragStart,
                             handleProgressBarSeek: handleProgressBarSeek,
@@ -1566,7 +1164,7 @@ class _PlayerItemState extends State<PlayerItem>
                       top: 25,
                       right: 15,
                       bottom: 15,
-                      child: (isDesktop() || playerController.panel.lockPanel)
+                      child: playerController.panel.lockPanel
                           ? Container()
                           : PlayerGestureDetector(
                               onSeekStart: () {

@@ -8,11 +8,8 @@ import 'package:kazumi/pages/popular/popular_controller.dart';
 import 'package:kazumi/bean/card/bangumi_card.dart';
 import 'package:kazumi/utils/constants.dart';
 import 'package:flutter_mobx/flutter_mobx.dart';
-import 'package:window_manager/window_manager.dart';
 import 'package:kazumi/services/logging/logger.dart';
-import 'package:kazumi/services/platform/desktop_window_config.dart';
 import 'package:kazumi/bean/appbar/drag_to_move_bar.dart' as dtb;
-import 'package:kazumi/utils/device.dart';
 
 class PopularPage extends StatefulWidget {
   const PopularPage({
@@ -266,17 +263,6 @@ class _PopularPageState extends State<PopularPage> {
         icon: const Icon(Icons.history, size: 22),
       ),
     );
-    if (isDesktop()) {
-      if (!DesktopWindowConfig.showWindowButton) {
-        actions.add(
-          _glassBarButton(
-            tooltip: '退出',
-            onPressed: () => windowManager.close(),
-            icon: const Icon(Icons.close, size: 22),
-          ),
-        );
-      }
-    }
     if (KazumiGlass.enabled) {
       actions.add(
         const SizedBox(

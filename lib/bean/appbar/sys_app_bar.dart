@@ -1,11 +1,7 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_modular/flutter_modular.dart';
 import 'package:kazumi/bean/liquid_glass/kazumi_glass.dart';
 import 'package:kazumi/bean/widget/embedded_native_control_area.dart';
-import 'package:kazumi/services/storage/storage.dart';
-import 'package:window_manager/window_manager.dart';
-import 'package:kazumi/utils/device.dart';
 
 /// 顶栏大标题的样式：字号与字重和推荐页的「热门番组」保持一致。
 TextStyle appBarTitleStyle(BuildContext context) =>
@@ -63,22 +59,11 @@ class SysAppBar extends StatelessWidget implements PreferredSizeWidget {
       this.bottom,
       this.needTopOffset = true});
 
-  bool showWindowButton() {
-    return GStorage.getSetting(SettingsKeys.showWindowButton);
-  }
-
   @override
   Widget build(BuildContext context) {
     List<Widget> acs = [];
     if (actions != null) {
       acs.addAll(actions!);
-    }
-    if (isDesktop()) {
-      // acs.add(IconButton(onPressed: () => windowManager.minimize(), icon: const Icon(Icons.minimize)));
-      if (!showWindowButton()) {
-        acs.add(CloseButton(onPressed: () => windowManager.close()));
-      }
-      acs.add(const SizedBox(width: 8));
     }
     // 顶栏不再整条铺玻璃（那会在别的页面盖过来时透出一道光边），改成
     // iOS 26 的软渐进模糊，按钮各自带一层玻璃。
@@ -134,43 +119,30 @@ class SysAppBar extends StatelessWidget implements PreferredSizeWidget {
     if (actionWidgets.isNotEmpty) {
       actionWidgets.add(const SizedBox(width: KazumiGlass.barEdgeInset));
     }
-    return GestureDetector(
-      onPanStart: (_) => (isDesktop()) ? windowManager.startDragging() : null,
-      child: AppBar(
-        toolbarHeight: preferredSize.height,
-        scrolledUnderElevation: 0.0,
-        title: title != null
-            ? EmbeddedNativeControlArea(
-                requireOffset: needTopOffset,
-                child: title!,
-              )
-            : null,
-        centerTitle: false,
-        actions: actionWidgets,
-        leading: leadingWidget,
-        leadingWidth: leadingWidth ?? KazumiGlass.barLeadingWidth,
-        backgroundColor: backgroundColor,
-        elevation: elevation,
-        shape: shape,
-        bottom: bottom,
-        automaticallyImplyLeading: false,
-        systemOverlayStyle: KazumiGlass.overlayStyle(context),
-      ),
+    return AppBar(
+      toolbarHeight: preferredSize.height,
+      scrolledUnderElevation: 0.0,
+      title: title != null
+          ? EmbeddedNativeControlArea(
+              requireOffset: needTopOffset,
+              child: title!,
+            )
+          : null,
+      centerTitle: false,
+      actions: actionWidgets,
+      leading: leadingWidget,
+      leadingWidth: leadingWidth ?? KazumiGlass.barLeadingWidth,
+      backgroundColor: backgroundColor,
+      elevation: elevation,
+      shape: shape,
+      bottom: bottom,
+      automaticallyImplyLeading: false,
+      systemOverlayStyle: KazumiGlass.overlayStyle(context),
     );
   }
 
   @override
   Size get preferredSize {
-    // macOS needs to add 22(macOS title bar height)
-    // to default toolbar height to build appbar like normal
-    if (Platform.isMacOS && needTopOffset && showWindowButton()) {
-      if (toolbarHeight != null) {
-        return Size.fromHeight(toolbarHeight! + 22);
-      } else {
-        return const Size.fromHeight(kToolbarHeight + 22);
-      }
-    } else {
-      return Size.fromHeight(toolbarHeight ?? kToolbarHeight);
-    }
+    return Size.fromHeight(toolbarHeight ?? kToolbarHeight);
   }
 }

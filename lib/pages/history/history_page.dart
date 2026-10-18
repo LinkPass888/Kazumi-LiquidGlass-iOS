@@ -13,7 +13,6 @@ import 'package:kazumi/pages/history/history_record_tile.dart';
 import 'package:kazumi/services/player/history_playback_service.dart';
 import 'package:kazumi/services/plugin/rule_engine_models.dart'
     show RuleCancelToken;
-import 'package:kazumi/utils/device.dart';
 
 class HistoryPage extends StatefulWidget {
   const HistoryPage({super.key, required this.controller});
@@ -201,7 +200,7 @@ class _HistoryCardState extends State<_HistoryCard> with KazumiDialogOwner {
       final cancelToken = RuleCancelToken();
       final result = await task.loading(
         message: '获取中',
-        barrierDismissible: isDesktop(),
+        barrierDismissible: false,
         onCancel: cancelToken.cancel,
         action: () =>
             _playbackService.open(widget.history, cancelToken: cancelToken),

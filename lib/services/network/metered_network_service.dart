@@ -12,7 +12,6 @@ class MeteredNetworkService {
   static int _revision = 0;
 
   static bool get _supported =>
-      defaultTargetPlatform == TargetPlatform.android ||
       defaultTargetPlatform == TargetPlatform.iOS;
 
   static bool get isMetered => _metered.value;

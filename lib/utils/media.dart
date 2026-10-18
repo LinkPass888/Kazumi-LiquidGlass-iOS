@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 
@@ -44,8 +42,6 @@ String buildShadersAbsolutePath(String baseDirectory, List<String> shaders) {
   final absolutePaths = shaders.map((shader) {
     return path.join(baseDirectory, shader);
   }).toList();
-  if (Platform.isWindows) {
-    return absolutePaths.join(';');
-  }
+  // iOS 走 POSIX 分隔符；桌面平台的 ';' 列表已随平台收窄删除。
   return absolutePaths.join(':');
 }
