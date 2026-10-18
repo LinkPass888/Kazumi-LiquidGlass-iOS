@@ -183,10 +183,15 @@ class BangumiSeasonData {
 
 /// 季节文件的下载地址。番剧条目加速为直连时走 raw.githubusercontent，
 /// 镜像/ECH 走 jsDelivr（该源无 ECH 支持，ECH 也按镜像处理）。
-String bangumiDataSeasonUrl(int year, int month) {
+/// [acceleration] 供测试注入；省略时读全局设置。
+String bangumiDataSeasonUrl(
+  int year,
+  int month, {
+  BangumiAcceleration? acceleration,
+}) {
   final monthPart = month.toString().padLeft(2, '0');
   final filePath = 'bangumi-data/bangumi-data/master/data/items/$year/$monthPart.json';
-  return switch (BangumiAcceleration.current) {
+  return switch (acceleration ?? BangumiAcceleration.current) {
     BangumiAcceleration.direct =>
       'https://raw.githubusercontent.com/$filePath',
     _ => 'https://cdn.jsdelivr.net/gh/$filePath',

@@ -3,6 +3,7 @@ import 'package:kazumi/modules/bangumi/bangumi_item.dart';
 import 'package:kazumi/modules/bangumi/bangumi_tag.dart';
 import 'package:kazumi/modules/collect/collect_module.dart';
 import 'package:kazumi/services/bangumi_update_times.dart';
+import 'package:kazumi/services/network/bangumi_acceleration.dart';
 
 BangumiUpdateEntry _entry(int? first, int? period) =>
     BangumiUpdateEntry(first, period);
@@ -57,12 +58,13 @@ void main() {
     });
 
     test('季节文件 URL 月份补零 + 按直连/镜像选源', () {
-      // URL 依赖 BangumiAcceleration.current 的全局设置，这里只验证
-      // 月份补零逻辑在两种 URL 中都不产生 1.json。
-      final url = bangumiDataSeasonUrl(2026, 1);
-      expect(url.contains('/2026/01.json'), isTrue);
-      expect(url.startsWith('https://raw.githubusercontent.com/') ||
-          url.startsWith('https://cdn.jsdelivr.net/gh/'), isTrue);
+      // 加速模式显式注入，不触碰 GStorage（测试环境没有 Hive box）。
+      expect(bangumiDataSeasonUrl(2026, 1, acceleration: BangumiAcceleration.direct),
+          'https://raw.githubusercontent.com/bangumi-data/bangumi-data/master/data/items/2026/01.json');
+      expect(bangumiDataSeasonUrl(2026, 10, acceleration: BangumiAcceleration.mirror),
+          'https://cdn.jsdelivr.net/gh/bangumi-data/bangumi-data/master/data/items/2026/10.json');
+      expect(bangumiDataSeasonUrl(2026, 7, acceleration: BangumiAcceleration.ech),
+          contains('cdn.jsdelivr.net'));
     });
   });
 
@@ -175,7 +177,8 @@ void main() {
   });
 
   group('排序比较器', () {
-    final now = DateTime(2026, 10, 18);
+    // 固定 UTC 时刻，测试结果不随运行时区漂移。
+    final now = DateTime.utc(2026, 10, 18, 8);
     final first = DateTime.utc(2026, 10, 7, 15).millisecondsSinceEpoch;
     const week = 7 * 86400000;
 
@@ -221,9 +224,10 @@ void main() {
     });
 
     test('追番页：最近更新的在前', () {
+      // 相位错开一个周期的一半，两条目的「上次更新」不会打平。
       final updates = _updates({
         1: _entry(first, week),
-        2: _entry(first + week, week),
+        2: _entry(first + week ~/ 2, week),
       });
       // 2 的上次更新更晚 -> 排前面。
       expect(
