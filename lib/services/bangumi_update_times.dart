@@ -43,7 +43,7 @@ class BangumiUpdateTimesService {
   int? nextUpdateEpoch(int bangumiId, {DateTime? now}) {
     final current = now ?? DateTime.now();
     final anilist = AniListClient.instance.cached(bangumiId, now: current) ??
-        AniListClient.instance.staleCached(bangumiId);
+        AniListClient.instance.staleCached(bangumiId, now: current);
     // 过期的缓存只知道「上一集的播出时刻」，回推一个周期即下一次。
     if (anilist != null) {
       if (anilist.isFreshAt(current)) return anilist.airingAt;
@@ -59,7 +59,7 @@ class BangumiUpdateTimesService {
   int? lastUpdateEpoch(int bangumiId, {DateTime? now}) {
     final current = now ?? DateTime.now();
     final anilist = AniListClient.instance.cached(bangumiId, now: current) ??
-        AniListClient.instance.staleCached(bangumiId);
+        AniListClient.instance.staleCached(bangumiId, now: current);
     if (anilist != null) {
       final entry = updates[bangumiId];
       final period = entry?.periodMs;
@@ -77,7 +77,8 @@ class BangumiUpdateTimesService {
     final current = now ?? DateTime.now();
     final anilist = AniListClient.instance.cached(bangumiId, now: current);
     if (anilist != null) return anilist.currentEpisode;
-    final stale = AniListClient.instance.staleCached(bangumiId);
+    final stale =
+        AniListClient.instance.staleCached(bangumiId, now: current);
     if (stale != null) return stale.currentEpisode;
     final entry = updates[bangumiId];
     final first = entry?.firstEpochMs;
@@ -100,9 +101,10 @@ class BangumiUpdateTimesService {
   }
 
   /// 总集数，仅 AniList 提供；没有数据返回 null。
-  int? totalEpisodes(int bangumiId) {
-    final anilist = AniListClient.instance.cached(bangumiId) ??
-        AniListClient.instance.staleCached(bangumiId);
+  int? totalEpisodes(int bangumiId, {DateTime? now}) {
+    final current = now ?? DateTime.now();
+    final anilist = AniListClient.instance.cached(bangumiId, now: current) ??
+        AniListClient.instance.staleCached(bangumiId, now: current);
     return anilist?.totalEpisodes;
   }
 
@@ -416,7 +418,7 @@ int? _resolveLastEpoch(
   DateTime now,
 ) {
   final anilist = AniListClient.instance.cached(bangumiId, now: now) ??
-      AniListClient.instance.staleCached(bangumiId);
+      AniListClient.instance.staleCached(bangumiId, now: now);
   final period = updates[bangumiId]?.periodMs;
   if (anilist != null && period != null) {
     return anilist.airingAt - period;
