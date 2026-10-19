@@ -348,6 +348,15 @@ class GStorage {
     return _setting.watch().where((event) => names.contains(event.key)).map((_) {});
   }
 
+  /// 设置箱的原始快照（只含实际写入过的键），供设置备份导出。
+  static Map<Object?, Object?> rawSettingsSnapshot() => _setting.toMap();
+
+  /// 批量写入设置（键名即 [SettingKey.name]），供设置备份恢复。
+  static Future<void> putRawSettings(Map<String, Object?> values) async {
+    await _setting.putAll(values);
+    await _setting.flush();
+  }
+
   static List<String> getStringListSettingByName(
     String key, {
     List<String> defaultValue = const [],

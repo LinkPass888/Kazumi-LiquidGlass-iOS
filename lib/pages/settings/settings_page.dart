@@ -116,6 +116,12 @@ const List<_SettingsGroup> _settingsGroups = [
         path: '/settings/storage',
       ),
       _SettingsCategory(
+        label: '设置备份',
+        description: '导出导入设置，重装后恢复',
+        icon: Icons.settings_backup_restore_rounded,
+        path: '/settings/backup',
+      ),
+      _SettingsCategory(
         label: '关于',
         description: '版本与开源信息',
         icon: Icons.info_outline_rounded,
