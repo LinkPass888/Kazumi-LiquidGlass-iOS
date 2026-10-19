@@ -194,6 +194,55 @@ void main() {
       );
     });
 
+    test('时间表：同一天内按当天时刻排，不按「下一次」的绝对时刻', () {
+      // 周日 00:00 档和周日 10:00 档。
+      final midnight = DateTime(2026, 10, 4, 0, 0).millisecondsSinceEpoch;
+      final morning = DateTime(2026, 10, 4, 10, 0).millisecondsSinceEpoch;
+      final updates = _updates({
+        1: _entry(midnight, week),
+        2: _entry(morning, week),
+      });
+      // 周日凌晨 5 点加载：0 点档已经过了、下一次在下周日，10 点档就在
+      // 今天 —— 直接比绝对时刻会把 10 点档排到 0 点档前面。按当天时刻则
+      // 0 点档在前，和加载时刻无关。
+      final sundayDawn = DateTime(2026, 10, 4, 5);
+      expect(
+        compareTimelineUpdateTime(_item(1), _item(2), updates, sundayDawn),
+        isNegative,
+      );
+      expect(
+        compareTimelineUpdateTime(_item(2), _item(1), updates, sundayDawn),
+        isPositive,
+      );
+    });
+
+    test('时间表：跨星期按星期几从周一到周日', () {
+      // 只在「无更新时间的番留在原分组」这种混排时才会比较到跨星期。
+      final monday = DateTime(2026, 10, 5, 22, 30).millisecondsSinceEpoch;
+      final friday = DateTime(2026, 10, 9, 22, 30).millisecondsSinceEpoch;
+      final updates = _updates({
+        1: _entry(monday, week),
+        2: _entry(friday, week),
+      });
+      expect(
+        compareTimelineUpdateTime(_item(1), _item(2), updates, now),
+        isNegative,
+      );
+    });
+
+    test('时间表：同一星期几按当天时刻从早到晚', () {
+      final early = DateTime(2026, 10, 9, 18).millisecondsSinceEpoch;
+      final late = DateTime(2026, 10, 9, 23, 30).millisecondsSinceEpoch;
+      final updates = _updates({
+        1: _entry(early, week),
+        2: _entry(late, week),
+      });
+      expect(
+        compareTimelineUpdateTime(_item(1), _item(2), updates, now),
+        isNegative,
+      );
+    });
+
     test('追番页：不在最近两季的排最下面', () {
       final updates = _updates({
         1: _entry(first, week),

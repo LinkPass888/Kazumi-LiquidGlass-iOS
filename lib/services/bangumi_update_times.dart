@@ -90,12 +90,15 @@ class BangumiUpdateTimesService {
   }
 
   /// 单部番的放送星期（1 = 周一 ... 7 = 周日，本地时区）。
-  /// 优先 AniList 的下一次播出时刻，其次 bangumi-mal 的推算值；
-  /// 都没有时返回 null（调用方保留 bangumi 日历原分组）。
-  int? updateWeekday(int bangumiId, {DateTime? now}) {
+  /// 默认用 bangumi-mal 的推算值：它周一的日子就是条目页的「放送星期」，
+  /// 同一时段（比如深夜档跨零点）的番会落在同一天，按时间排序也才连得上。
+  /// AniList 只在调用方明确要求时使用：它的 `airingAt` 是新一轮播出
+  /// （首播日 / 先行配信日），和条目页的放送星期可能差一两天。
+  int? updateWeekday(int bangumiId, {DateTime? now, bool preferAniList = false}) {
     final current = now ?? DateTime.now();
-    final epoch = nextUpdateEpoch(bangumiId, now: current) ??
-        lastUpdateEpoch(bangumiId, now: current);
+    final epoch = preferAniList
+        ? nextUpdateEpoch(bangumiId, now: current)
+        : nextUpdateEpochFrom(updates[bangumiId], current);
     if (epoch == null) return null;
     return DateTime.fromMillisecondsSinceEpoch(epoch).weekday;
   }
@@ -377,6 +380,11 @@ String? formatUpdateTime(int? epochMs) {
 }
 
 /// 时间表排序：按下一次更新时间从早到晚，无数据的排最后，同序回退 id。
+///
+/// 时间表是按星期分组展示的，而「下一次」是相对现在滚动的：周一晚上
+/// 加载时，周日档的番下一次在下周、周五档的在周五，直接比绝对时刻会让
+/// 同一列里的先后随加载时间变化。所以先比「星期几 + 当天时刻」，再比
+/// 绝对时刻兜底（同一相位但周期不同的条目）。
 int compareTimelineUpdateTime(
   BangumiItem a,
   BangumiItem b,
@@ -388,8 +396,19 @@ int compareTimelineUpdateTime(
   if (aNext == null && bNext == null) return a.id.compareTo(b.id);
   if (aNext == null) return 1;
   if (bNext == null) return -1;
-  final comparison = aNext.compareTo(bNext);
+  final comparison = compareWeeklyPhase(aNext, bNext);
   return comparison != 0 ? comparison : a.id.compareTo(b.id);
+}
+
+/// 按「本地星期几、再按当天时刻」比较两个播出时刻；同一相位再比绝对时刻。
+int compareWeeklyPhase(int aEpochMs, int bEpochMs) {
+  final a = DateTime.fromMillisecondsSinceEpoch(aEpochMs);
+  final b = DateTime.fromMillisecondsSinceEpoch(bEpochMs);
+  final weekday = a.weekday.compareTo(b.weekday);
+  if (weekday != 0) return weekday;
+  final minute = (a.hour * 60 + a.minute).compareTo(b.hour * 60 + b.minute);
+  if (minute != 0) return minute;
+  return aEpochMs.compareTo(bEpochMs);
 }
 
 /// 追番页排序：有更新时间的按上一次更新时间从新到旧；无更新时间的排底部。

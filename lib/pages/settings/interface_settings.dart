@@ -16,6 +16,7 @@ class InterfaceSettingsPage extends StatefulWidget {
 class _InterfaceSettingsPageState extends State<InterfaceSettingsPage> {
   late bool showRating;
   late String defaultPage;
+  late String _timelinePreferredSource;
   late CollectLayout _defaultCollectLayout;
   bool _savingCollectLayout = false;
   static const Map<String, String> defaultPageMap = {
@@ -25,14 +26,30 @@ class _InterfaceSettingsPageState extends State<InterfaceSettingsPage> {
     '/tab/my/': '我的',
   };
 
+  /// 时间表的星期分组来源。
+  /// - bangumi：条目自身的播出星期（放送星期），同一时段的排在一起。
+  /// - anilist：实测的下一次播出时刻。首播日和正片播出日不一致（先行配信、
+  ///   流媒体提前上线）时按它分组。
+  static const Map<String, String> timelineSourceMap = {
+    'bangumi': 'Bangumi 放送星期',
+    'anilist': 'AniList 播出时间',
+  };
+
   @override
   void initState() {
     super.initState();
     showRating = GStorage.getSetting(SettingsKeys.showRating);
     defaultPage = GStorage.getSetting(SettingsKeys.defaultStartupPage);
+    _timelinePreferredSource =
+        GStorage.getSetting(SettingsKeys.timelinePreferredSource);
     _defaultCollectLayout = CollectLayout.fromValue(
       GStorage.getSetting(SettingsKeys.defaultCollectLayout),
     );
+  }
+
+  void _updateTimelineSource(String source) {
+    GStorage.putSetting(SettingsKeys.timelinePreferredSource, source);
+    setState(() => _timelinePreferredSource = source);
   }
 
   void updateDefaultPage(String page) {
@@ -73,6 +90,18 @@ class _InterfaceSettingsPageState extends State<InterfaceSettingsPage> {
             ),
           ]),
           SettingsSection(title: Text('展示信息'), tiles: [
+            SettingsDropdownTile<String>(
+              leading: Icons.calendar_view_week_rounded,
+              title: const Text('时间表星期来源'),
+              description: const Text(
+                '按放送星期分组时，同一时段的番剧会排在一起；'
+                '按 AniList 播出时间分组时跟随最新一次的播出时刻',
+              ),
+              value: _timelinePreferredSource,
+              options: timelineSourceMap,
+              fallbackLabel: 'Bangumi 放送星期',
+              onChanged: _updateTimelineSource,
+            ),
             SettingsDropdownTile<CollectLayout>(
               leading: Icons.view_agenda_rounded,
               title: const Text('追番默认布局'),
