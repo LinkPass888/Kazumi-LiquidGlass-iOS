@@ -7,7 +7,7 @@ import 'package:kazumi/services/storage/storage.dart';
 import 'package:kazumi/utils/constants.dart';
 import 'package:kazumi/utils/theme.dart';
 
-/// 按已保存的设置应用主题：深色模式、主题色、OLED 纯黑、动态取色与字体。
+/// 按已保存的设置应用主题：深色模式、主题色与 OLED 纯黑。
 ///
 /// [AppWidget] 在启动时调用（此时页面还在构建，[notify] 保持 false）；
 /// 导入设置备份后以 `notify: true` 再调用一次，界面立即换上新主题。
@@ -16,27 +16,17 @@ void applyStoredThemeSettings(
   bool notify = false,
 }) {
   themeProvider.setThemeMode(_storedThemeMode(), notify: notify);
-  themeProvider.setDynamic(
-    GStorage.getSetting(SettingsKeys.useDynamicColor),
-    notify: notify,
-  );
-  themeProvider.setFontFamily(
-    GStorage.getSetting(SettingsKeys.useSystemFont),
-    notify: notify,
-  );
 
   final color = _storedThemeColor();
   final oledEnhance = GStorage.getSetting(SettingsKeys.oledEnhance);
   final defaultDarkTheme = appTheme(
     brightness: Brightness.dark,
     color: color,
-    fontFamily: themeProvider.currentFontFamily,
   );
   themeProvider.setTheme(
     appTheme(
       brightness: Brightness.light,
       color: color,
-      fontFamily: themeProvider.currentFontFamily,
     ),
     oledEnhance ? oledDarkTheme(defaultDarkTheme) : defaultDarkTheme,
     notify: notify,
@@ -61,9 +51,7 @@ Color _storedThemeColor() {
 
 ThemeData appTheme({
   required Brightness brightness,
-  required String? fontFamily,
   Color? color,
-  ColorScheme? colorScheme,
 }) {
   // 全局圆角：整个 App 的「一块面」都用同一个半径（见 KazumiGlass.radiusOf）。
   // 这里按窗口短边算一次 —— 主题是脱离 BuildContext 构建的，拿不到 MediaQuery。
@@ -77,19 +65,17 @@ ThemeData appTheme({
   //    会泛出一层莫名的绿/紫。
   // 2) 点按反馈从 M3 的 InkSparkle（Android 上会溅出小星星）换成克制的
   //    InkRipple，并且只留一点极淡的高亮 —— 苹果的按钮按下就是轻微压暗。
-  final ColorScheme scheme = colorScheme ??
-      ColorScheme.fromSeed(
-        seedColor: color ?? Colors.green,
-        brightness: brightness,
-      );
+  final ColorScheme scheme = ColorScheme.fromSeed(
+    seedColor: color ?? Colors.green,
+    brightness: brightness,
+  );
   final Color splash = scheme.primary.withValues(alpha: 0.08);
   final Color highlight = scheme.primary.withValues(alpha: 0.06);
   return ThemeData(
     useMaterial3: true,
-    fontFamily: fontFamily,
     brightness: brightness,
     colorSchemeSeed: color,
-    colorScheme: colorScheme,
+    colorScheme: scheme,
     progressIndicatorTheme: progressIndicatorTheme2024,
     sliderTheme: sliderTheme2024,
     // Apple 观感：克制的按下反馈，不要 Material 3 的星星水波。

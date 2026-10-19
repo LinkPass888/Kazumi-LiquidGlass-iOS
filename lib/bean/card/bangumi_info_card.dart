@@ -141,22 +141,15 @@ class _BangumiInfoCardVState extends State<BangumiInfoCardV> {
   }
 
   /// 更新时间数据异步到达后重建一次，让放送时间/进度显示出来。
+  /// ensureLoaded 是共享的，已加载过时立即返回，不会重复下载。
   void _loadUpdateInfo() {
     final service = BangumiUpdateTimesService.instance;
     final id = widget.bangumiItem.id;
-    if (service.updates.isNotEmpty) {
-      // 已有两季数据：只为这一部补 AniList 实测值（总集数/准确进度）。
-      service.ensureAniListLoaded([id]).then((_) {
-        if (mounted) setState(() {});
-      });
-      return;
-    }
-    service.ensureLoaded().then((_) {
-      if (!mounted) return;
-      setState(() {});
-      service.ensureAniListLoaded([id]).then((_) {
-        if (mounted) setState(() {});
-      });
+    service.ensureLoaded().then((_) async {
+      if (mounted) setState(() {});
+      // 两季数据就绪后只为这一部补 AniList 实测值（总集数/准确进度）。
+      await service.ensureAniListLoaded([id]);
+      if (mounted) setState(() {});
     });
   }
 

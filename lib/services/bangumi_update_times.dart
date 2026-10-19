@@ -114,8 +114,18 @@ class BangumiUpdateTimesService {
   /// 番剧是否在最近两季的数据范围内（不在就没有更新时间可展示）。
   bool isRecentSeason(int bangumiId) => updates.containsKey(bangumiId);
 
-  /// 重复调用共享一次下载。抛错不会被保留，下次调用会重试。
-  Future<void> ensureLoaded() => _loading ??= _load();
+  /// 重复调用共享一次下载。拿到数据后沿用；空表说明这次失败了（网络或
+  /// 缓存都不可用），丢掉这次结果，下次调用重新下载。
+  Future<void> ensureLoaded() {
+    final running = _loading;
+    if (running != null) return running;
+    late final Future<void> future;
+    future = _load().whenComplete(() {
+      if (identical(_loading, future) && updates.isEmpty) _loading = null;
+    });
+    _loading = future;
+    return future;
+  }
 
   /// 为当季番批量补齐 AniList 播出状态（失败静默回退到 bangumi-mal）。
   Future<void> ensureAniListLoaded(Iterable<int> bangumiIds) async {
@@ -129,14 +139,32 @@ class BangumiUpdateTimesService {
   void _notifyRefreshed() {
     if (updates.isEmpty) {
       KazumiLogger().w('BangumiUpdateTimes: no update data available');
-      KazumiDialog.showToast(message: '更新时间数据加载失败，请检查网络后重进时间表');
+      // 一次会话只提示一次：时间表、追番页、详情页都会调用 ensureLoaded，
+      // 失败重试时不该反复弹同一个 toast。
+      if (!_warnedEmpty) {
+        _warnedEmpty = true;
+        KazumiDialog.showToast(message: '更新时间数据加载失败，请检查网络后重进时间表');
+      }
       return;
     }
     KazumiLogger().i('BangumiUpdateTimes: loaded ${updates.length} entries');
     onRefreshed?.call();
   }
 
+  bool _warnedEmpty = false;
+
   Future<void> _load() async {
+    try {
+      await _loadData();
+    } catch (error, stackTrace) {
+      // 兜底：调用方（时间表、追番页、详情页）都只 await，不处理异常。
+      KazumiLogger().e('BangumiUpdateTimes: load failed',
+          error: error, stackTrace: stackTrace);
+      _notifyRefreshed();
+    }
+  }
+
+  Future<void> _loadData() async {
     final cache = File(
       path.join(
         (await getApplicationSupportDirectory()).path,

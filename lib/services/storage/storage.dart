@@ -159,7 +159,13 @@ class GStorage {
     shieldList = await _openBoxSafe<String>('shieldList');
     searchHistory = await _openBoxSafe<SearchHistory>('searchHistory');
     downloads = await _openBoxSafe<DownloadRecord>('downloads');
-    await rebaseIosDownloadPaths(downloads);
+    // Custom download folders (iOS) live outside the app container and do
+    // not move on update; only sandbox paths are rebased.
+    await rebaseIosDownloadPaths(
+      downloads,
+      customDownloadRoot:
+          GStorage.getSetting(SettingsKeys.downloadDirectory),
+    );
   }
 
   /// Open a Hive box with automatic recovery on corruption.

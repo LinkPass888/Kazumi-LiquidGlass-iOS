@@ -350,11 +350,6 @@ class SettingsKeys {
     false,
     group: SettingGroup.theme,
   );
-  static const useDynamicColor = SettingKey<bool>(
-    _SettingBoxKey.useDynamicColor,
-    false,
-    group: SettingGroup.theme,
-  );
   static const exitBehavior = SettingKey<int>(
     _SettingBoxKey.exitBehavior,
     2,
@@ -424,11 +419,6 @@ class SettingsKeys {
     _SettingBoxKey.timelineOnlyShowWatchingBangumis,
     false,
     group: SettingGroup.collect,
-  );
-  static const useSystemFont = SettingKey<bool>(
-    _SettingBoxKey.useSystemFont,
-    false,
-    group: SettingGroup.theme,
   );
   static const forceAdBlocker = SettingKey<bool>(
     _SettingBoxKey.forceAdBlocker,
@@ -500,8 +490,8 @@ class SettingsKeys {
     '',
     group: SettingGroup.download,
   );
-  // macOS only: security-scoped bookmark that keeps downloadDirectory
-  // writable across app restarts under the sandbox.
+  // iOS: security-scoped bookmark that keeps downloadDirectory writable
+  // across app restarts. The path alone is not enough outside the sandbox.
   static const downloadDirectoryBookmark = SettingKey<String>(
     'downloadDirectoryBookmark',
     '',
@@ -655,7 +645,6 @@ class SettingsKeys {
     lowMemoryMode,
     lowMemoryPolicy,
     showWindowButton,
-    useDynamicColor,
     exitBehavior,
     playerDebugMode,
     syncPlayEndPoint,
@@ -670,7 +659,6 @@ class SettingsKeys {
     timelineNotShowAbandonedBangumis,
     timelineNotShowWatchedBangumis,
     timelineOnlyShowWatchingBangumis,
-    useSystemFont,
     forceAdBlocker,
     backgroundPlayback,
     proxyEnable,
@@ -772,7 +760,6 @@ class _SettingBoxKey {
       webDavPassword = 'webDavPasswd',
       lowMemoryMode = 'lowMemoryMode',
       showWindowButton = 'showWindowButton',
-      useDynamicColor = 'useDynamicColor',
       exitBehavior = 'exitBehavior',
       playerDebugMode = 'playerDebugMode',
       syncPlayEndPoint = 'syncPlayEndPoint',
@@ -786,7 +773,6 @@ class _SettingBoxKey {
       timelineNotShowAbandonedBangumis = 'timelineNotShowAbandonedBangumis',
       timelineNotShowWatchedBangumis = 'timelineNotShowWatchedBangumis',
       timelineOnlyShowWatchingBangumis = 'timelineOnlyShowWatchingBangumis',
-      useSystemFont = 'useSystemFont',
       forceAdBlocker = 'forceAdBlocker',
       backgroundPlayback = 'backgroundPlayback',
       proxyEnable = 'proxyEnable',

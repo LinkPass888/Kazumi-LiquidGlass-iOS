@@ -58,6 +58,34 @@ void main() {
       directory,
     );
   });
+
+  test('paths inside the custom download folder are left alone', () async {
+    final customRoot = path.join('on-my-iphone', 'Kazumi');
+    final customDirectory = path.join(customRoot, '123_source', '1');
+    final sandboxDirectory = path.join('old', 'downloads', '123_source', '2');
+    final record = _record({
+      1: _episode(customDirectory, path.join(customDirectory, 'video.mp4')),
+      2: _episode(sandboxDirectory, ''),
+    });
+    final downloads = _MemoryDownloads({record.key: record});
+
+    await rebaseIosDownloadPaths(
+      downloads,
+      downloadDirectory: () async => path.join('new', 'downloads'),
+      customDownloadRoot: customRoot,
+    );
+
+    final episodes = downloads.get(record.key)!.episodes;
+    expect(episodes[1]!.downloadDirectory, customDirectory);
+    expect(
+      episodes[1]!.localM3u8Path,
+      path.join(customDirectory, 'video.mp4'),
+    );
+    expect(
+      episodes[2]!.downloadDirectory,
+      path.join('new', 'downloads', '123_source', '2'),
+    );
+  });
 }
 
 DownloadRecord _record(Map<int, DownloadEpisode> episodes) =>

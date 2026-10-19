@@ -69,8 +69,14 @@ const List<_SettingsGroup> _settingsGroups = [
     title: '应用',
     categories: [
       _SettingsCategory(
+        label: '通知设置',
+        description: '追番更新提醒',
+        icon: Icons.notifications_rounded,
+        path: '/settings/notification',
+      ),
+      _SettingsCategory(
         label: '外观设置',
-        description: '主题、配色与字体',
+        description: '主题与配色',
         icon: Icons.palette_rounded,
         path: '/settings/theme',
       ),
@@ -79,12 +85,6 @@ const List<_SettingsGroup> _settingsGroups = [
         description: '启动、窗口行为与展示信息',
         icon: Icons.pages_rounded,
         path: '/settings/interface',
-      ),
-      _SettingsCategory(
-        label: '通知设置',
-        description: '追番更新提醒',
-        icon: Icons.notifications_rounded,
-        path: '/settings/notification',
       ),
       _SettingsCategory(
         label: '同步设置',
@@ -104,6 +104,12 @@ const List<_SettingsGroup> _settingsGroups = [
     title: '其他',
     categories: [
       _SettingsCategory(
+        label: '设置备份',
+        description: '导出导入设置，重装后恢复',
+        icon: Icons.settings_backup_restore_rounded,
+        path: '/settings/backup',
+      ),
+      _SettingsCategory(
         label: '更新设置',
         description: '应用与规则更新',
         icon: Icons.update_rounded,
@@ -114,12 +120,6 @@ const List<_SettingsGroup> _settingsGroups = [
         description: '图片缓存与错误日志',
         icon: Icons.storage_rounded,
         path: '/settings/storage',
-      ),
-      _SettingsCategory(
-        label: '设置备份',
-        description: '导出导入设置，重装后恢复',
-        icon: Icons.settings_backup_restore_rounded,
-        path: '/settings/backup',
       ),
       _SettingsCategory(
         label: '关于',

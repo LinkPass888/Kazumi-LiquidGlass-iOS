@@ -22,8 +22,6 @@ class _ThemeSettingsPageState extends State<ThemeSettingsPage> {
   late dynamic defaultThemeMode;
   late dynamic defaultThemeColor;
   late bool oledEnhance;
-  late bool useDynamicColor;
-  late bool useSystemFont;
   late final ThemeProvider themeProvider;
 
   @override
@@ -32,15 +30,12 @@ class _ThemeSettingsPageState extends State<ThemeSettingsPage> {
     defaultThemeMode = GStorage.getSetting(SettingsKeys.themeMode);
     defaultThemeColor = GStorage.getSetting(SettingsKeys.themeColor);
     oledEnhance = GStorage.getSetting(SettingsKeys.oledEnhance);
-    useDynamicColor = GStorage.getSetting(SettingsKeys.useDynamicColor);
-    useSystemFont = GStorage.getSetting(SettingsKeys.useSystemFont);
     themeProvider = context.read<ThemeProvider>();
   }
 
   void setTheme(Color? color) {
     var defaultDarkTheme = ThemeData(
         useMaterial3: true,
-        fontFamily: themeProvider.currentFontFamily,
         brightness: Brightness.dark,
         colorSchemeSeed: color,
         progressIndicatorTheme: progressIndicatorTheme2024,
@@ -50,7 +45,6 @@ class _ThemeSettingsPageState extends State<ThemeSettingsPage> {
     themeProvider.setTheme(
       ThemeData(
           useMaterial3: true,
-          fontFamily: themeProvider.currentFontFamily,
           brightness: Brightness.light,
           colorSchemeSeed: color,
           progressIndicatorTheme: progressIndicatorTheme2024,
@@ -65,7 +59,6 @@ class _ThemeSettingsPageState extends State<ThemeSettingsPage> {
   void resetTheme() {
     var defaultDarkTheme = ThemeData(
         useMaterial3: true,
-        fontFamily: themeProvider.currentFontFamily,
         brightness: Brightness.dark,
         colorSchemeSeed: Colors.green,
         progressIndicatorTheme: progressIndicatorTheme2024,
@@ -75,7 +68,6 @@ class _ThemeSettingsPageState extends State<ThemeSettingsPage> {
     themeProvider.setTheme(
       ThemeData(
           useMaterial3: true,
-          fontFamily: themeProvider.currentFontFamily,
           brightness: Brightness.light,
           colorSchemeSeed: Colors.green,
           progressIndicatorTheme: progressIndicatorTheme2024,
@@ -133,7 +125,6 @@ class _ThemeSettingsPageState extends State<ThemeSettingsPage> {
               ),
               SettingsTile(
                 leading: Icons.palette_rounded,
-                enabled: !useDynamicColor,
                 onPressed: (_) async {
                   KazumiDialog.show(builder: (context) {
                     return AlertDialog(
@@ -181,41 +172,7 @@ class _ThemeSettingsPageState extends State<ThemeSettingsPage> {
                 },
                 title: Text('配色方案'),
               ),
-              SettingsTile.switchTile(
-                leading: Icons.colorize_rounded,
-                enabled: false,
-                onToggle: (value) async {
-                  useDynamicColor = value ?? !useDynamicColor;
-                  await GStorage.putSetting(
-                      SettingsKeys.useDynamicColor, useDynamicColor);
-                  themeProvider.setDynamic(useDynamicColor);
-                  setState(() {});
-                },
-                title: Text('动态配色'),
-                initialValue: useDynamicColor,
-              ),
-              SettingsTile.switchTile(
-                leading: Icons.font_download_rounded,
-                onToggle: (value) async {
-                  useSystemFont = value ?? !useSystemFont;
-                  await GStorage.putSetting(
-                      SettingsKeys.useSystemFont, useSystemFont);
-                  themeProvider.setFontFamily(useSystemFont);
-                  dynamic color;
-                  if (defaultThemeColor == 'default') {
-                    color = Colors.green;
-                  } else {
-                    color = Color(int.parse(defaultThemeColor, radix: 16));
-                  }
-                  setTheme(color);
-                  setState(() {});
-                },
-                title: Text('使用系统字体'),
-                description: Text('关闭后使用 MI Sans 字体'),
-                initialValue: useSystemFont,
-              ),
             ],
-            bottomInfo: Text('动态配色仅支持安卓12及以上和桌面平台'),
           ),
           SettingsSection(
             title: Text('显示'),

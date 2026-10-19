@@ -15,6 +15,8 @@ class SettingsBackup {
   /// - 设备标识与同步游标：每台设备必须自己生成，拷过来会和另一台设备撞车。
   /// - 同步用的内部状态 / 待办队列：来自远端数据，不是用户设置。
   /// - 代理「已测试通过」标记：换设备 / 重装后网络环境不同，必须重新测试。
+  /// - 下载位置：路径与安全作用域书签都是这台设备上的沙箱状态，
+  ///   拷到另一台设备既无权限也指向不存在的目录。
   /// - 引导与提示条「已显示」标记：那份体验跟着这台设备走。
   /// - 播放器快捷键：设置页已移除，不再有编辑入口；旧安装残留的键名
   ///   恢复过来也改不了，没有备份的意义（前缀见 [isExcludedKey]）。
@@ -27,6 +29,8 @@ class SettingsBackup {
     'danmakuShieldSyncCorruptState',
     'bangumiProgressQueue',
     'proxyConfigured',
+    'downloadDirectory',
+    'downloadDirectoryBookmark',
     'onboardingCompleted',
     'shortcutDialogShown',
   };

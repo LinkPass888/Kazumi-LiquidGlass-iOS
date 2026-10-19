@@ -6,14 +6,23 @@ import 'package:path/path.dart' as path;
 
 /// iOS can move an app's data container on update. Download files move with it,
 /// but the absolute paths stored in Hive still point to the old container.
-/// iOS has no custom download directory, so restore all started episodes under
-/// the current default directory before any playback, resume or deletion.
+/// Restore sandbox downloads under the current default directory before any
+/// playback, resume or deletion.
+///
+/// [customDownloadRoot] is the user-picked download folder (iOS only). Its
+/// paths live outside the app container and survive updates, so they must not
+/// be rebased.
 Future<void> rebaseIosDownloadPaths(
   Box<DownloadRecord> downloads, {
   Future<String> Function() downloadDirectory = getDefaultDownloadDirectory,
+  String customDownloadRoot = '',
 }) async {
   try {
-    await _rebaseDownloadPaths(downloads, await downloadDirectory());
+    await _rebaseDownloadPaths(
+      downloads,
+      await downloadDirectory(),
+      customDownloadRoot,
+    );
   } catch (error, stackTrace) {
     // Existing boxes remain usable even if migration cannot be persisted (for
     // example on a full disk). Retry from the saved records on the next launch.
@@ -28,7 +37,14 @@ Future<void> rebaseIosDownloadPaths(
 Future<void> _rebaseDownloadPaths(
   Box<DownloadRecord> downloads,
   String downloadBase,
+  String customDownloadRoot,
 ) async {
+  bool isCustom(String value) =>
+      customDownloadRoot.isNotEmpty &&
+      value.isNotEmpty &&
+      (value == customDownloadRoot ||
+          path.isWithin(customDownloadRoot, value));
+
   var changed = false;
   for (final key in downloads.keys.toList()) {
     final record = downloads.get(key);
@@ -38,6 +54,10 @@ Future<void> _rebaseDownloadPaths(
     for (final entry in record.episodes.entries) {
       final episode = entry.value;
       if (episode.downloadDirectory.isEmpty && episode.localM3u8Path.isEmpty) {
+        continue;
+      }
+      if (isCustom(episode.downloadDirectory) ||
+          isCustom(episode.localM3u8Path)) {
         continue;
       }
 

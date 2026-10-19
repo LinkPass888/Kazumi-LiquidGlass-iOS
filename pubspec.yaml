@@ -37,7 +37,6 @@ dependencies:
   audio_video_progress_bar: ^2.0.2
   audio_service: ^0.18.15
   audio_session: ^0.2.2
-  dynamic_color: ^1.9.0
 
   url_launcher: ^6.3.0
   xpath_selector: ^3.0.2
@@ -119,7 +118,3 @@ flutter:
     - assets/images/logo/
     - assets/statements/
     - licenses/ech_http/
-  fonts:
-    - family: MI_Sans_Regular
-      fonts:
-        - asset: assets/fonts/MiSans-Regular.ttf

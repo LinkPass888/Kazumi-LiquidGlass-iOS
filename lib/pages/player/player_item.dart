@@ -102,7 +102,6 @@ class _PlayerItemState extends State<PlayerItem>
   late double _danmakuDuration;
   late double _danmakuLineHeight;
   late int _danmakuFontWeight;
-  late bool _danmakuUseSystemFont;
   late double _danmakuBorderSize;
 
   late bool autoPlayNext;
@@ -969,7 +968,6 @@ class _PlayerItemState extends State<PlayerItem>
     _danmakuDanDanSource =
         GStorage.getSetting(SettingsKeys.danmakuDanDanSource);
     _danmakuFontWeight = GStorage.getSetting(SettingsKeys.danmakuFontWeight);
-    _danmakuUseSystemFont = GStorage.getSetting(SettingsKeys.useSystemFont);
     _danmakuBorderSize = GStorage.getSetting(SettingsKeys.danmakuBorderSize);
     autoPlayNext = GStorage.getSetting(SettingsKeys.autoPlayNext);
     backgroundPlayback = GStorage.getSetting(SettingsKeys.backgroundPlayback);
@@ -1118,9 +1116,6 @@ class _PlayerItemState extends State<PlayerItem>
                           strokeWidth: _border ? _danmakuBorderSize : 0.0,
                           fontWeight: _danmakuFontWeight,
                           massiveMode: _massiveMode,
-                          fontFamily: _danmakuUseSystemFont
-                              ? null
-                              : customAppFontFamily,
                         ),
                       ),
                     ),

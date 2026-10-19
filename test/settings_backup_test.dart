@@ -15,6 +15,8 @@ void main() {
           'shortcut_playPause': ['Space'],
           'proxyConfigured': true,
           'historySyncDeviceId': 'device-a',
+          'downloadDirectory': '/private/var/mobile/Downloads',
+          'downloadDirectoryBookmark': 'AAAA',
           'danmakuSearchHistory_123': ['one piece'],
           'unencodable': {'nested': true},
         },
@@ -139,6 +141,8 @@ void main() {
       expect(SettingsBackup.isExcludedKey('historySyncDeviceId'), isTrue);
       expect(SettingsBackup.isExcludedKey('shortcut_nextEpisode'), isTrue);
       expect(SettingsBackup.isExcludedKey('danmakuSearchHistory_1'), isTrue);
+      expect(SettingsBackup.isExcludedKey('downloadDirectory'), isTrue);
+      expect(SettingsBackup.isExcludedKey('downloadDirectoryBookmark'), isTrue);
       expect(SettingsBackup.isExcludedKey('themeMode'), isFalse);
     });
   });
