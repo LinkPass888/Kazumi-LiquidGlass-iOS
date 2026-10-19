@@ -467,7 +467,7 @@ class SettingsKeys {
   );
   static const defaultCollectLayout = SettingKey<String>(
     'defaultCollectLayout',
-    'list',
+    'cards',
     group: SettingGroup.interface,
   );
   static const defaultCollectSort = SettingKey<String>(

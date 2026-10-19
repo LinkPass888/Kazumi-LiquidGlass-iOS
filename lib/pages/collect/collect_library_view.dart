@@ -76,6 +76,11 @@ class _CollectLibraryViewState extends State<CollectLibraryView>
     return CollectSort.updateTime;
   }
 
+  /// 当前分类可用的排序项：更新时间只对「在看」有意义。
+  List<CollectSort> get _availableSorts => CollectSort.values
+      .where((sort) => sort != CollectSort.updateTime || _supportsUpdateTime)
+      .toList();
+
   @override
   void initState() {
     super.initState();
@@ -164,8 +169,17 @@ class _CollectLibraryViewState extends State<CollectLibraryView>
     final type = _collectCategories[_tabController.index];
     if (type == _selectedType) return;
     _libraryFocus.requestFocus();
-    setState(() => _selectedType = type);
+    setState(() {
+      _selectedType = type;
+      // 更新时间只对「在看」有意义；切到其它分类后落到最近变更。
+      if (!_supportsUpdateTime && _sort == CollectSort.updateTime) {
+        _sort = CollectSort.recentlyChanged;
+      }
+    });
   }
+
+  /// 只有「在看」分类才有更新时间排序。
+  bool get _supportsUpdateTime => _selectedType == CollectType.watching;
 
   @override
   Widget build(BuildContext context) {
@@ -274,6 +288,7 @@ class _CollectLibraryViewState extends State<CollectLibraryView>
             _CollectSortMenu(
               value: _sort,
               showLabel: !compact,
+              options: _availableSorts,
               onChanged: (value) {
                 unawaited(GStorage.putSetting(
                     SettingsKeys.defaultCollectSort, value.name));

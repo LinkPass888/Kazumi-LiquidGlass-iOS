@@ -50,7 +50,7 @@ abstract class _TimelineController with Store {
       _collectRepository.getTimelineOnlyShowWatchingBangumis();
 
   @readonly
-  TimelineSort _sort = TimelineSort.popularity;
+  TimelineSort _sort = TimelineSort.defaultOrder;
 
   bool get _bangumiMirrorEnabled =>
       BangumiAcceleration.current == BangumiAcceleration.mirror;

@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:dio/dio.dart';
 import 'package:kazumi/request/core/dio_factory.dart';
@@ -44,10 +45,11 @@ class AniListAiring {
 
 /// AniList GraphQL 的当季番播出状态。
 ///
-/// 只给「当季在更」的番用：bangumi 的日历里有周几和时刻，但停播/延期
-/// 它不知道；AniList 的 `nextAiringEpisode` 是实时数据。缓存到「下一集
-/// 播出时刻」为止，而不是固定 TTL —— 一周只有一部番更新一次，按播出日
-/// 分批查询，请求量很小。
+/// - 批量查询：每次 HTTP 请求用 GraphQL 别名合并多部番（[batchSize]），
+///   请求量比逐部查询低一个数量级。
+/// - 429 退避：读 `Retry-After` / `X-RateLimit-Reset` 再等，不连续重发。
+/// - 失败重试：查不到的番记进 [_pendingIds]，下次 [ensureLoaded] 会再试，
+///   不会因为一次失败就永久跳过。
 class AniListClient {
   AniListClient._();
 
@@ -56,7 +58,14 @@ class AniListClient {
   static const _endpoint = 'https://graphql.anilist.co';
   static const _maxAge = Duration(days: 7);
 
+  /// 单次 HTTP 请求里合并的番数。AniList 对 GraphQL 请求体有大小限制，
+  /// 25 个别名（每个 ~80 字节）远低于上限，同时把请求数压到 1/25。
+  static const _batchSize = 25;
+
   final Map<int, AniListAiring> _memory = {};
+
+  /// 查询失败、等待下次重试的 bangumi id。
+  final Set<int> _pendingIds = {};
 
   Future<void>? _loading;
 
@@ -76,7 +85,7 @@ class AniListClient {
   /// bangumi 的周期推算准；刷新失败或还没刷新时用它兜底。
   AniListAiring? staleCached(int bangumiId) => _memory[bangumiId];
 
-  /// 批量补齐当季番的播出状态。已缓存的跳过，失败的静默忽略。
+  /// 批量补齐当季番的播出状态。已缓存的跳过；上次失败的会重试。
   /// 正在加载时把新 ID 追加进队列，由同一轮加载处理。
   Future<void> ensureLoaded(Iterable<int> bangumiIds) {
     final now = DateTime.now();
@@ -103,47 +112,111 @@ class AniListClient {
     var batch = firstBatch;
     while (batch.isNotEmpty) {
       await _loadAll(batch);
-      batch = _queued
-          .where((id) => cached(id) == null)
-          .toList();
+      batch = _queued.where((id) => cached(id) == null).toList();
       _queued.clear();
     }
   }
 
-  /// 按 bangumi id 查 MAL id，再查 AniList。单次请求即一部番。
-  Future<AniListAiring?> fetch(int bangumiId, int malId) async {
-    try {
-      final response = await DioFactory.apiDio.post(
-        _endpoint,
-        data: {
-          'query':
-              'query (\$mal: Int) { Media(idMal: \$mal, type: ANIME) { nextAiringEpisode { episode airingAt } } }',
-          'variables': {'mal': malId},
-        },
-      );
-      final data = response.data;
-      if (data is! Map) return null;
-      final media = (data['data'] as Map?)?['Media'];
-      if (media is! Map) return null;
+  /// 一次 HTTP 查询多部番：GraphQL 别名把每个 MAL id 编成一个字段。
+  Future<Map<int, AniListAiring>> fetchBatch(List<int> bangumiIds) async {
+    final updates = BangumiUpdateTimesService.instance;
+    // bangumi id -> mal id，同时建立别名。
+    final aliasToBangumi = <String, int>{};
+    final variables = <String, dynamic>{};
+    var index = 0;
+    for (final bangumiId in bangumiIds) {
+      final malId = updates.malIds[bangumiId];
+      if (malId == null) continue;
+      final alias = 'm$index';
+      aliasToBangumi[alias] = bangumiId;
+      variables['mal$index'] = malId;
+      index++;
+    }
+    if (aliasToBangumi.isEmpty) return {};
+
+    final fields = aliasToBangumi.entries
+        .map((e) =>
+            '${e.key}: Media(idMal: \$mal${e.key.substring(1)}, type: ANIME) '
+            '{ nextAiringEpisode { episode airingAt } }')
+        .join('\n');
+    final declarations =
+        variables.keys.map((k) => '\$$k: Int').join(', ');
+    final query = 'query ($declarations) { $fields }';
+
+    final data = await _post(query, variables);
+    if (data == null) return {};
+
+    final result = <int, AniListAiring>{};
+    for (final entry in aliasToBangumi.entries) {
+      final media = data[entry.key];
+      if (media is! Map) continue;
       final next = media['nextAiringEpisode'];
-      if (next is! Map) return null;
+      if (next is! Map) continue;
       final episode = next['episode'];
       final airingAtSeconds = next['airingAt'];
-      if (episode is! int || airingAtSeconds is! int) return null;
-      return AniListAiring(
+      if (episode is! int || airingAtSeconds is! int) continue;
+      result[entry.value] = AniListAiring(
         episode: episode,
         airingAt: airingAtSeconds * 1000,
       );
-    } on DioException catch (e) {
-      // 429 = 限流；404 = 查不到。都静默回退。
-      if (e.response?.statusCode != 404 && e.response?.statusCode != 429) {
-        KazumiLogger().w('AniList: lookup failed for mal=$malId', error: e);
-      }
-      return null;
-    } catch (e) {
-      KazumiLogger().w('AniList: lookup failed for mal=$malId', error: e);
-      return null;
     }
+    return result;
+  }
+
+  /// 单次请求，带 429 退避。返回 `data` 节点；失败返回 null。
+  Future<Map<String, dynamic>?> _post(
+    String query,
+    Map<String, dynamic> variables,
+  ) async {
+    var attempt = 0;
+    while (true) {
+      try {
+        final response = await DioFactory.apiDio.post(
+          _endpoint,
+          data: {'query': query, 'variables': variables},
+          options: Options(validateStatus: (status) => status != null && status < 500),
+        );
+        final status = response.statusCode ?? 0;
+        if (status == 429) {
+          final wait = _retryDelay(response.headers, attempt);
+          if (attempt >= 2) return null;
+          attempt++;
+          await Future.delayed(wait);
+          continue;
+        }
+        if (status >= 400) return null;
+        final body = response.data;
+        if (body is! Map) return null;
+        final data = body['data'];
+        return data is Map ? Map<String, dynamic>.from(data) : null;
+      } on DioException catch (e) {
+        // 网络错误也按退避重试一次，避免整批数据直接丢掉。
+        if (attempt >= 2) {
+          KazumiLogger().w('AniList: lookup failed', error: e);
+          return null;
+        }
+        attempt++;
+        await Future.delayed(_retryDelay(e.response?.headers, attempt));
+      }
+    }
+  }
+
+  /// 429 的等待时间：优先 `Retry-After`，其次 `X-RateLimit-Reset`，
+  /// 都没有时按指数退避（1s、2s）。
+  Duration _retryDelay(Headers? headers, int attempt) {
+    final retryAfter = int.tryParse(headers?.value('retry-after') ?? '');
+    if (retryAfter != null && retryAfter > 0) {
+      return Duration(seconds: retryAfter.clamp(1, 120));
+    }
+    final resetEpoch = int.tryParse(headers?.value('x-ratelimit-reset') ?? '');
+    if (resetEpoch != null && resetEpoch > 0) {
+      final waitMs =
+          resetEpoch * 1000 - DateTime.now().millisecondsSinceEpoch;
+      if (waitMs > 0) {
+        return Duration(milliseconds: waitMs.clamp(1000, 120000));
+      }
+    }
+    return Duration(milliseconds: 1000 * math.pow(2, attempt).toInt());
   }
 
   Future<void> _loadAll(List<int> bangumiIds) async {
@@ -151,12 +224,28 @@ class AniListClient {
     final updates = BangumiUpdateTimesService.instance;
     await updates.ensureLoaded();
 
-    for (final bangumiId in bangumiIds) {
-      if (cached(bangumiId) != null) continue;
-      final malId = updates.malIds[bangumiId];
-      if (malId == null) continue;
-      final airing = await fetch(bangumiId, malId);
-      if (airing != null) _memory[bangumiId] = airing;
+    // 上次失败的连同本次一起重试。
+    final ids = <int>{...bangumiIds, ..._pendingIds}
+        .where((id) => cached(id) == null && updates.malIds[id] != null)
+        .toList();
+    _pendingIds.clear();
+    if (ids.isEmpty) {
+      await _saveDiskCache();
+      return;
+    }
+
+    for (var i = 0; i < ids.length; i += _batchSize) {
+      final batch = ids.sublist(i, math.min(i + _batchSize, ids.length));
+      final airings = await fetchBatch(batch);
+      airings.forEach((id, airing) => _memory[id] = airing);
+      // 这批里没查到的留到下次重试。
+      for (final id in batch) {
+        if (!airings.containsKey(id)) _pendingIds.add(id);
+      }
+      // 批次之间留出间隔，避免短时间内连续打满配额。
+      if (i + _batchSize < ids.length) {
+        await Future.delayed(const Duration(milliseconds: 400));
+      }
     }
     await _saveDiskCache();
   }
@@ -200,7 +289,8 @@ class AniListClient {
       await file.parent.create(recursive: true);
       await file.writeAsString(
         jsonEncode({
-          for (final entry in _memory.entries) '${entry.key}': entry.value.toJson(),
+          for (final entry in _memory.entries)
+            '${entry.key}': entry.value.toJson(),
         }),
         flush: true,
       );
