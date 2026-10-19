@@ -103,7 +103,7 @@ final class NativeTabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDel
         result(nil)
       case "setHidden":
         let hidden = (call.arguments as? [String: Any])?["hidden"] as? Bool ?? false
-        self.container.isHidden = hidden
+        GlassVisibilityAnimator.setHidden(self.container, hidden: hidden)
         result(nil)
       default:
         result(FlutterMethodNotImplemented)
@@ -217,7 +217,7 @@ final class GlassPlatformView: NSObject, FlutterPlatformView {
         result(nil)
       case "setHidden":
         let hidden = (call.arguments as? [String: Any])?["hidden"] as? Bool ?? false
-        self.container.isHidden = hidden
+        GlassVisibilityAnimator.setHidden(self.container, hidden: hidden)
         result(nil)
       default:
         result(FlutterMethodNotImplemented)
@@ -226,6 +226,32 @@ final class GlassPlatformView: NSObject, FlutterPlatformView {
   }
 
   func view() -> UIView { container }
+}
+
+/// 路由转场期间玻璃的显隐：消失瞬时、出现淡入。
+///
+/// 消失必须瞬时：玻璃是原生层，不跟随页面滑动，若用淡出，残留会在转场
+/// 开始的头 200ms 盖住正在滑动的封面。而消失发生在转场刚开始、整屏都在
+/// 变化的时候，瞬时消失几乎察觉不到。
+///
+/// 出现才是「闪现」的来源：转场结束时玻璃突然以全强度出现。改为 alpha
+/// 0→1 渐显（0.2s），出现的**时刻不变**，只是从跳变变成渐显。
+enum GlassVisibilityAnimator {
+  static func setHidden(_ view: UIView, hidden: Bool) {
+    if hidden {
+      // 已隐藏就不重复处理；瞬时消失并把 alpha 归零，为下次淡入做准备。
+      guard !view.isHidden else { return }
+      view.layer.removeAllAnimations()
+      view.alpha = 0
+      view.isHidden = true
+    } else {
+      // 已完全可见（从未隐藏的常驻玻璃）就跳过，避免无谓的重绘闪烁。
+      guard view.isHidden || view.alpha < 1 else { return }
+      view.layer.removeAllAnimations()
+      view.isHidden = false
+      UIView.animate(withDuration: 0.2, animations: { view.alpha = 1 })
+    }
+  }
 }
 
 final class GlassHostView: UIView {

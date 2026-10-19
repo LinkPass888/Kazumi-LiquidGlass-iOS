@@ -1,19 +1,12 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:flutter_modular/flutter_modular.dart';
 import 'package:flutter_rating_bar/flutter_rating_bar.dart';
-import 'package:kazumi/bean/dialog/dialog_helper.dart';
-import 'package:kazumi/bean/liquid_glass/kazumi_glass.dart';
 import 'package:kazumi/bean/widget/collect_button.dart';
 import 'package:kazumi/utils/constants.dart';
 import 'package:kazumi/utils/date_time.dart';
 import 'package:kazumi/modules/bangumi/bangumi_item.dart';
-import 'package:kazumi/modules/collect/collect_type.dart';
-import 'package:kazumi/pages/collect/collect_controller.dart';
-import 'package:kazumi/pages/timeline/timeline_controller.dart';
-import 'package:kazumi/services/logging/logger.dart';
-import 'package:kazumi/services/storage/bangumi_timeline_store.dart';
+import 'package:kazumi/services/bangumi_update_times.dart';
 import 'package:kazumi/bean/card/network_img_layer.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:skeletonizer/skeletonizer.dart';
@@ -31,6 +24,101 @@ class BangumiInfoCardV extends StatefulWidget {
   final bool isLoading;
   final bool showRating;
 
+  /// 详情页顶栏给卡片留的最大宽度，与页面里的 Padding 和卡片的
+  /// [BoxConstraints.maxWidth] 一致。
+  static const double _maxWidth = 950;
+
+  /// 页面给卡片的左右内边距（info_page.dart 的 EdgeInsets.fromLTRB）。
+  static const double horizontalInset = 16;
+
+  /// 封面那一列的宽高比：宽度定下来，高度就定了。
+  static const double _coverAspectRatio = 0.65;
+
+  /// 封面和右侧信息之间的间距。
+  static const double _coverGap = 16;
+
+  static String _titleOf(BangumiItem item) =>
+      item.nameCn.trim().isEmpty ? item.name.trim() : item.nameCn.trim();
+
+  /// 标题在给定宽度、指定行数下的高度。
+  static double _measureTitle(
+    BuildContext context,
+    BangumiItem item,
+    int maxLines,
+  ) {
+    final width = math.min(
+      MediaQuery.sizeOf(context).width - horizontalInset * 2,
+      _maxWidth,
+    );
+    final text = _titleOf(item);
+    return (TextPainter(
+      text: TextSpan(
+        text: text.isEmpty ? ' ' : text,
+        style: Theme.of(context).textTheme.headlineSmall,
+      ),
+      maxLines: maxLines,
+      textDirection: Directionality.of(context),
+      textScaler: MediaQuery.textScalerOf(context),
+    )..layout(maxWidth: width))
+        .height;
+  }
+
+  /// 卡片总高度。标题换行时整体加高，封面、条目信息、概览吐槽按钮跟着一起
+  /// 下移，与标题始终隔着 [_verticalGap]。详情页的 SliverAppBar 用同一函数
+  /// 算 expandedHeight，两边始终一致。
+  ///
+  /// 高度由内容驱动：标题（按实际换行）+ [_verticalGap] + 封面行高。封面行高
+  /// 由宽度推出（见 [_coverRowHeight]），不再写死，卡片下缘到「概览/吐槽」
+  /// 标签的距离于是恒为 [info_page] 里那段固定留白，不会因为封面比卡片矮而
+  /// 多出一段空。[showRating] / [isLoading] 决定是否计入「评分透视」那一列，
+  /// 必须与 build 时一致，封面行高才和卡片总高对得上。
+  static double heightFor(
+    BuildContext context,
+    BangumiItem item, {
+    required bool showRating,
+    required bool isLoading,
+  }) {
+    return _measureTitle(context, item, 2) +
+        _verticalGap +
+        _coverRowHeight(context, showRating: showRating, isLoading: isLoading);
+  }
+
+  /// 封面那一行的高度：和 build 里 LayoutBuilder 的算法一致，按宽度推。
+  ///
+  /// 封面是「宽高比 0.65」定尺寸的：行里除了 16 的间距，其余都是弹性子项
+  /// （封面、文字列、可选的评分透视），所以封面那一份宽度 =（行宽 − 间距）/
+  /// 弹性子项个数，高度 = 宽度 / 0.65。这里不算「最多不超过行高」那一支：
+  /// 卡片总高本来就由封面行高决定，行高不会再反过来压它。
+  static double _coverRowHeight(
+    BuildContext context, {
+    required bool showRating,
+    required bool isLoading,
+  }) {
+    final width = math.min(
+      MediaQuery.sizeOf(context).width - horizontalInset * 2,
+      _maxWidth,
+    );
+    final share = (width - _coverGap) /
+        (_showVoteChart(context, showRating: showRating, isLoading: isLoading)
+            ? 3
+            : 2);
+    return share / _coverAspectRatio;
+  }
+
+  /// 右侧的「评分透视」要不要显示：宽屏 + 有评分 + 不是骨架屏。
+  /// 静态副本供 [heightFor] 在还没有 State 时预判同一结论。
+  static bool _showVoteChart(
+    BuildContext context, {
+    required bool showRating,
+    required bool isLoading,
+  }) =>
+      showRating &&
+      MediaQuery.sizeOf(context).width >= LayoutBreakpoint.compact['width']! &&
+      !isLoading;
+
+  /// 标题、内容块之间的竖向间距。
+  static const double _verticalGap = 10;
+
   @override
   State<BangumiInfoCardV> createState() => _BangumiInfoCardVState();
 }
@@ -38,168 +126,56 @@ class BangumiInfoCardV extends StatefulWidget {
 class _BangumiInfoCardVState extends State<BangumiInfoCardV> {
   int touchedIndex = -1;
 
-  /// 放送星期 1 = 星期一 ... 7 = 星期日
-  late int weekday;
-
-  /// 是否在时间表对应放送星期展示
-  late bool showInTimeline;
-
   @override
   void initState() {
     super.initState();
-    _loadTimelineEntry();
+    _loadUpdateInfo();
   }
 
   @override
   void didUpdateWidget(covariant BangumiInfoCardV oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.bangumiItem.id != widget.bangumiItem.id) {
-      _loadTimelineEntry();
+      _loadUpdateInfo();
     }
   }
 
-  void _loadTimelineEntry() {
-    final entry = BangumiTimelineStore.entryOf(widget.bangumiItem.id);
-    weekday = entry?.weekday ??
-        normalizeBangumiWeekday(widget.bangumiItem.airWeekday);
-    showInTimeline = entry?.showInTimeline ?? false;
-  }
-
-  CollectController? get _collectController {
-    try {
-      return inject<CollectController>();
-    } catch (error) {
-      KazumiLogger().w('Collect controller not found', error: error);
-      return null;
-    }
-  }
-
-  /// 详情页改动后让时间表立即生效
-  void _refreshTimeline() {
-    try {
-      inject<TimelineController>().refreshCustomTimelineEntries();
-    } catch (error) {
-      KazumiLogger().w('Refresh timeline entries failed', error: error);
-    }
-  }
-
-  Future<void> _showWeekdayPicker() async {
-    final selected = await KazumiDialog.show<int>(
-      builder: (context) {
-        return AlertDialog(
-          // 收窄成正方形：宽高都给死，按钮 2 个一行
-          constraints: const BoxConstraints.tightFor(width: 260, height: 260),
-          title: const Center(
-            child: Text('选择放送星期'),
-          ),
-          content: Wrap(
-            // 居中分布：左右余量相等，两侧离边框的距离就一样
-            alignment: WrapAlignment.center,
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              for (int index = 1; index <= 7; index++)
-                // 尺寸写死：原生玻璃视图在 Wrap 里会被撑到可用宽度，
-                // 靠 padding 撑不出大小，必须给死宽高（和详情页收藏按钮一致）
-                SizedBox(
-                  width: 96,
-                  height: 40,
-                  child: KazumiGlass.glassButton(
-                    context: context,
-                    padding: EdgeInsets.zero,
-                    selected: index == weekday,
-                    onTap: () {
-                      KazumiDialog.dismiss<int>(popWith: index);
-                    },
-                    child: Text(weekdayCnLabel(index)),
-                  ),
-                ),
-              ],
-            ),
-          // 按用户要求不留「取消」按钮：点外面即取消，弹窗也更紧凑。
-          // 弹窗本体保持原来的不透明背景，标题不会再被挤出。
-        );
-      },
-    );
-    if (!mounted || selected == null || selected == weekday) {
-      return;
-    }
-    await BangumiTimelineStore.setWeekday(widget.bangumiItem.id, selected);
-    if (!mounted) {
-      return;
-    }
-    setState(() {
-      weekday = normalizeBangumiWeekday(selected);
+  /// 更新时间数据异步到达后重建一次，让放送时间/进度显示出来。
+  /// ensureLoaded 是共享的，已加载过时立即返回，不会重复下载。
+  void _loadUpdateInfo() {
+    final service = BangumiUpdateTimesService.instance;
+    final id = widget.bangumiItem.id;
+    service.ensureLoaded().then((_) async {
+      if (mounted) setState(() {});
+      // 两季数据就绪后只为这一部补 AniList 实测值（总集数/准确进度）。
+      await service.ensureAniListLoaded([id]);
+      if (mounted) setState(() {});
     });
-    _refreshTimeline();
-    if (!showInTimeline) {
-      KazumiDialog.showToast(
-        message: '已设置放送星期，点亮右侧图标后即可在时间表展示',
-      );
-    }
   }
 
-  Future<void> _setShowInTimeline(bool value) async {
-    if (value) {
-      final collectType =
-          _collectController?.getCollectType(widget.bangumiItem) ?? 0;
-      if (!bangumiKeepsTimelineEntry(collectType)) {
-        final confirmed = await _confirmMarkWatching();
-        if (!mounted || !confirmed) {
-          return;
-        }
-        final controller = _collectController;
-        if (controller == null) {
-          return;
-        }
-        await controller.addCollect(
-          widget.bangumiItem,
-          type: CollectType.watching.value,
-        );
-        if (!mounted) {
-          return;
-        }
-      }
-    }
-    await BangumiTimelineStore.setShowInTimeline(
-      widget.bangumiItem.id,
-      value,
-      weekday: weekday,
-    );
-    if (!mounted) {
-      return;
-    }
-    setState(() {
-      showInTimeline = value;
-    });
-    _refreshTimeline();
+  /// 「周五 20:00」，没有更新时间（含非最近两季的番）返回 null。
+  String? get _broadcastTime {
+    final service = BangumiUpdateTimesService.instance;
+    if (!service.isRecentSeason(widget.bangumiItem.id)) return null;
+    final epoch = service.nextUpdateEpoch(widget.bangumiItem.id);
+    if (epoch == null) return null;
+    final time = DateTime.fromMillisecondsSinceEpoch(epoch);
+    return '${weekdayCnLabel(time.weekday)} '
+        '${time.hour.toString().padLeft(2, '0')}:'
+        '${time.minute.toString().padLeft(2, '0')}';
   }
 
-  /// 开启前确认把番剧标记为「在看」
-  Future<bool> _confirmMarkWatching() async {
-    final confirmed = await KazumiDialog.show<bool>(
-      builder: (context) {
-        return AlertDialog(
-          title: const Text('在时间表展示'),
-          content: const Text('该功能需要番剧处于「在看」状态，是否标记为在看并开启？'),
-          actions: [
-            TextButton(
-              onPressed: () {
-                KazumiDialog.dismiss<bool>(popWith: false);
-              },
-              child: const Text('取消'),
-            ),
-            FilledButton(
-              onPressed: () {
-                KazumiDialog.dismiss<bool>(popWith: true);
-              },
-              child: const Text('标记并开启'),
-            ),
-          ],
-        );
-      },
-    );
-    return confirmed ?? false;
+  /// 「03/12」，总集数未知时为「03/??」；没有进度返回 null。
+  String? get _updateProgress {
+    final service = BangumiUpdateTimesService.instance;
+    if (!service.isRecentSeason(widget.bangumiItem.id)) return null;
+    final current = service.currentEpisode(widget.bangumiItem.id);
+    if (current == null) return null;
+    final total = service.totalEpisodes(widget.bangumiItem.id);
+    final currentText = current.toString().padLeft(2, '0');
+    final totalText =
+        total == null ? '??' : total.toString().padLeft(2, '0');
+    return '$currentText/$totalText';
   }
 
   Widget get voteBarChart {
@@ -291,23 +267,26 @@ class _BangumiInfoCardVState extends State<BangumiInfoCardV> {
     );
   }
 
-  /// 封面那一列的宽高比：宽度定下来，高度就定了。
-  static const double _coverAspectRatio = 0.65;
-
-  /// 封面和右侧信息之间的间距。
-  static const double _coverGap = 16;
-
   /// 右侧的「评分透视」要不要显示：宽屏 + 有评分 + 不是骨架屏。
   bool _showVoteChart(BuildContext context) =>
-      widget.showRating &&
-      MediaQuery.sizeOf(context).width >= LayoutBreakpoint.compact['width']! &&
-      !widget.isLoading;
+      BangumiInfoCardV._showVoteChart(
+        context,
+        showRating: widget.showRating,
+        isLoading: widget.isLoading,
+      );
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 356,
-      constraints: BoxConstraints(maxWidth: 950),
+      height: BangumiInfoCardV.heightFor(
+        context,
+        widget.bangumiItem,
+        showRating: widget.showRating,
+        isLoading: widget.isLoading,
+      ),
+      constraints: const BoxConstraints(
+        maxWidth: BangumiInfoCardV._maxWidth,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -319,7 +298,7 @@ class _BangumiInfoCardVState extends State<BangumiInfoCardV> {
             overflow: TextOverflow.ellipsis,
             style: Theme.of(context).textTheme.headlineSmall,
           ),
-          SizedBox(height: 16),
+          const SizedBox(height: BangumiInfoCardV._verticalGap),
           Expanded(
             child: LayoutBuilder(builder: (context, rowConstraints) {
               // 封面是「宽高比 0.65」定尺寸的：行里除了 16 的间距，其余都是弹性
@@ -327,10 +306,11 @@ class _BangumiInfoCardVState extends State<BangumiInfoCardV> {
               // （行宽 - 间距）/ 弹性子项个数，高度 = 宽度 / 0.65、最多不超过
               // 这一行的高。右下角那个收藏按钮要跟封面底边平齐 —— 右侧文字列
               // 的高度就得是这一份高度（原来撑满整行，按钮比封面底边低了小半格）。
-              final double share = (rowConstraints.maxWidth - _coverGap) /
-                  (_showVoteChart(context) ? 3 : 2);
+              final double share =
+                  (rowConstraints.maxWidth - BangumiInfoCardV._coverGap) /
+                      (_showVoteChart(context) ? 3 : 2);
               final double coverHeight = math.min(
-                share / _coverAspectRatio,
+                share / BangumiInfoCardV._coverAspectRatio,
                 rowConstraints.maxHeight,
               );
               return Row(
@@ -338,7 +318,7 @@ class _BangumiInfoCardVState extends State<BangumiInfoCardV> {
                 children: [
                   Flexible(
                     child: AspectRatio(
-                      aspectRatio: _coverAspectRatio,
+                      aspectRatio: BangumiInfoCardV._coverAspectRatio,
                       child: LayoutBuilder(builder: (context, boxConstraints) {
                         final double maxWidth = boxConstraints.maxWidth;
                         final double maxHeight = boxConstraints.maxHeight;
@@ -359,7 +339,7 @@ class _BangumiInfoCardVState extends State<BangumiInfoCardV> {
                       }),
                     ),
                   ),
-                  SizedBox(width: _coverGap),
+                  SizedBox(width: BangumiInfoCardV._coverGap),
                   Flexible(
                     child: SizedBox(
                       // 和封面一样高：收藏按钮的底部于是和封面底部齐平
@@ -398,83 +378,36 @@ class _BangumiInfoCardVState extends State<BangumiInfoCardV> {
                                               .primary,
                                         ),
                                       ),
-                                      const SizedBox(height: 4),
-                                      const Text('放送星期:'),
-                                      Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          InkWell(
-                                            borderRadius:
-                                                BorderRadius.circular(8),
-                                            onTap: widget.isLoading
-                                                ? null
-                                                : () => _showWeekdayPicker(),
-                                            child: Padding(
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                horizontal: 2,
-                                                vertical: 2,
-                                              ),
-                                              child: Row(
-                                                mainAxisSize: MainAxisSize.min,
-                                                children: [
-                                                  Text(
-                                                    weekdayCnLabel(weekday),
-                                                    style: TextStyle(
-                                                      fontSize: 20,
-                                                      fontWeight:
-                                                          FontWeight.bold,
-                                                      color: Theme.of(context)
-                                                          .colorScheme
-                                                          .primary,
-                                                    ),
-                                                  ),
-                                                  Icon(
-                                                    Icons.expand_more_rounded,
-                                                    size: 20,
-                                                    color: Theme.of(context)
-                                                        .colorScheme
-                                                        .primary,
-                                                  ),
-                                                ],
-                                              ),
-                                            ),
+                                      // 放送时间 / 更新进度：只在有更新时间数据时展示。
+                                      if (!widget.isLoading && _broadcastTime != null) ...[
+                                        const SizedBox(height: 4),
+                                        Text('放送时间:'),
+                                        Text(
+                                          _broadcastTime!,
+                                          style: TextStyle(
+                                            fontSize: 20,
+                                            fontWeight: FontWeight.bold,
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .primary,
                                           ),
-                                          const SizedBox(width: 6),
-                                          Tooltip(
-                                            message: '在时间表展示',
-                                            child: InkWell(
-                                              borderRadius:
-                                                  BorderRadius.circular(
-                                                      KazumiGlass.radiusOf(
-                                                          context)),
-                                              onTap: widget.isLoading
-                                                  ? null
-                                                  : () => _setShowInTimeline(
-                                                      !showInTimeline),
-                                              child: Padding(
-                                                padding:
-                                                    const EdgeInsets.all(6),
-                                                child: Icon(
-                                                  showInTimeline
-                                                      ? Icons.timeline
-                                                      : Icons
-                                                          .timeline_outlined,
-                                                  size: 24,
-                                                  color: showInTimeline
-                                                      ? Theme.of(context)
-                                                          .colorScheme
-                                                          .primary
-                                                      : Theme.of(context)
-                                                          .colorScheme
-                                                          .outline,
-                                                ),
-                                              ),
-                                            ),
+                                        ),
+                                      ],
+                                      if (!widget.isLoading && _updateProgress != null) ...[
+                                        const SizedBox(height: 4),
+                                        Text('更新进度:'),
+                                        Text(
+                                          _updateProgress!,
+                                          style: TextStyle(
+                                            fontSize: 20,
+                                            fontWeight: FontWeight.bold,
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .primary,
                                           ),
-                                        ],
-                                      ),
-                                      SizedBox(height: 8),
+                                        ),
+                                      ],
+                                      const SizedBox(height: 8),
                                       Text(
                                         widget.showRating
                                             ? '${widget.bangumiItem.votes} 人评分:'

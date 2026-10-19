@@ -159,7 +159,13 @@ class GStorage {
     shieldList = await _openBoxSafe<String>('shieldList');
     searchHistory = await _openBoxSafe<SearchHistory>('searchHistory');
     downloads = await _openBoxSafe<DownloadRecord>('downloads');
-    await rebaseIosDownloadPaths(downloads);
+    // Custom download folders (iOS) live outside the app container and do
+    // not move on update; only sandbox paths are rebased.
+    await rebaseIosDownloadPaths(
+      downloads,
+      customDownloadRoot:
+          GStorage.getSetting(SettingsKeys.downloadDirectory),
+    );
   }
 
   /// Open a Hive box with automatic recovery on corruption.
@@ -346,6 +352,15 @@ class GStorage {
   static Stream<void> watchSettings(Iterable<SettingKey<Object?>> keys) {
     final names = keys.map((key) => key.name).toSet();
     return _setting.watch().where((event) => names.contains(event.key)).map((_) {});
+  }
+
+  /// 设置箱的原始快照（只含实际写入过的键），供设置备份导出。
+  static Map<Object?, Object?> rawSettingsSnapshot() => _setting.toMap();
+
+  /// 批量写入设置（键名即 [SettingKey.name]），供设置备份恢复。
+  static Future<void> putRawSettings(Map<String, Object?> values) async {
+    await _setting.putAll(values);
+    await _setting.flush();
   }
 
   static List<String> getStringListSettingByName(

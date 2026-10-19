@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:kazumi/bean/card/network_img_layer.dart';
@@ -9,6 +11,8 @@ import 'package:kazumi/modules/collect/collect_layout.dart';
 import 'package:kazumi/modules/collect/collect_module.dart';
 import 'package:kazumi/modules/collect/collect_type.dart';
 import 'package:kazumi/pages/collect/collect_library_query.dart';
+import 'package:kazumi/services/bangumi_update_times.dart';
+import 'package:kazumi/services/storage/storage.dart';
 
 part 'collect_library_card.dart';
 part 'collect_library_controls.dart';
@@ -60,9 +64,38 @@ class _CollectLibraryViewState extends State<CollectLibraryView>
   };
   PageStorageBucket _resultsStorage = PageStorageBucket();
   CollectType? _selectedType = CollectType.watching;
-  CollectSort _sort = CollectSort.recentlyChanged;
+  late CollectSort _sort = _loadSort();
   String _query = '';
   bool _searchExpanded = false;
+
+  CollectSort _loadSort() {
+    final saved = GStorage.getSetting(SettingsKeys.defaultCollectSort);
+    for (final sort in CollectSort.values) {
+      if (sort.name == saved) return sort;
+    }
+    return CollectSort.updateTime;
+  }
+
+  /// 当前分类可用的排序项：更新时间只对「在看」有意义。
+  List<CollectSort> get _availableSorts => CollectSort.values
+      .where((sort) => sort != CollectSort.updateTime || _supportsUpdateTime)
+      .toList();
+
+  @override
+  void initState() {
+    super.initState();
+    // 更新时间数据异步到达后重排一次；顺带给在追的番补 AniList 实测状态。
+    unawaited(BangumiUpdateTimesService.instance.ensureLoaded().then((_) async {
+      if (!mounted) return;
+      setState(() {});
+      final ids = GStorage.collectibles.values
+          .where((c) => c.type == CollectType.watching.value)
+          .map((c) => c.bangumiItem.id)
+          .toList();
+      await BangumiUpdateTimesService.instance.ensureAniListLoaded(ids);
+      if (mounted) setState(() {});
+    }));
+  }
 
   @override
   void didChangeDependencies() {
@@ -137,8 +170,17 @@ class _CollectLibraryViewState extends State<CollectLibraryView>
     final type = _collectCategories[_tabController.index];
     if (type == _selectedType) return;
     _libraryFocus.requestFocus();
-    setState(() => _selectedType = type);
+    setState(() {
+      _selectedType = type;
+      // 更新时间只对「在看」有意义；切到其它分类后落到最近变更。
+      if (!_supportsUpdateTime && _sort == CollectSort.updateTime) {
+        _sort = CollectSort.recentlyChanged;
+      }
+    });
   }
+
+  /// 只有「在看」分类才有更新时间排序。
+  bool get _supportsUpdateTime => _selectedType == CollectType.watching;
 
   @override
   Widget build(BuildContext context) {
@@ -247,10 +289,15 @@ class _CollectLibraryViewState extends State<CollectLibraryView>
             _CollectSortMenu(
               value: _sort,
               showLabel: !compact,
-              onChanged: (value) => setState(() {
-                _sort = value;
-                _resetResults();
-              }),
+              options: _availableSorts,
+              onChanged: (value) {
+                unawaited(GStorage.putSetting(
+                    SettingsKeys.defaultCollectSort, value.name));
+                setState(() {
+                  _sort = value;
+                  _resetResults();
+                });
+              },
             ),
             if (compact)
               IconButton(
@@ -307,7 +354,11 @@ class _CollectLibraryViewState extends State<CollectLibraryView>
   Widget _results(CollectLibraryQuery query, CollectType? type,
       {required double inset, Widget? header}) {
     return LayoutBuilder(builder: (context, constraints) {
-      final entries = query.results(type, _sort);
+      final entries = query.results(
+        type,
+        _sort,
+        updateTimes: BangumiUpdateTimesService.instance.updates,
+      );
       final contentWidth = constraints.maxWidth - inset * 2;
       return ScrollbarTheme(
         data: ScrollbarTheme.of(context).copyWith(crossAxisMargin: 0),

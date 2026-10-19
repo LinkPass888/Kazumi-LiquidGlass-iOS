@@ -122,11 +122,13 @@ class _CollectSortMenu extends StatelessWidget {
     required this.value,
     required this.showLabel,
     required this.onChanged,
+    required this.options,
   });
 
   final CollectSort value;
   final bool showLabel;
   final ValueChanged<CollectSort> onChanged;
+  final List<CollectSort> options;
 
   @override
   Widget build(BuildContext context) {
@@ -135,7 +137,7 @@ class _CollectSortMenu extends StatelessWidget {
       // 灰板」，和我们其它菜单不是一套。
       glass: true,
       menuChildren: [
-        for (final sort in CollectSort.values)
+        for (final sort in options)
           KazumiMenuItem(
             selected: value == sort,
             onPressed: () => onChanged(sort),

@@ -35,13 +35,36 @@ class TimelinePage extends StatefulWidget {
 class _TimelinePageState extends State<TimelinePage> {
   TimelineController get _controller => widget.controller;
   late final bool _showRating;
+  late bool _preferAniListWeekday;
+  TabController? _tabs;
 
   @override
   void initState() {
     super.initState();
     _showRating = GStorage.getSetting(SettingsKeys.showRating);
+    _preferAniListWeekday = _controller.prefersAniListWeekday;
     if (_controller.bangumiCalendar.isEmpty) {
       _controller.loadSeason(_controller.selectedDate);
+    }
+  }
+
+  @override
+  void dispose() {
+    _tabs?.removeListener(_onTabChanged);
+    super.dispose();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // 从设置页切回时间表时，星期来源可能已经改了：监听设置箱，
+    // 变化后重新分桶并排序（否则要等重新进时间表才生效）。
+    final prefer = _controller.prefersAniListWeekday;
+    if (prefer != _preferAniListWeekday) {
+      _preferAniListWeekday = prefer;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _controller.refreshWeekdaySource();
+      });
     }
   }
 
@@ -69,7 +92,7 @@ class _TimelinePageState extends State<TimelinePage> {
               padding: materialBottomSheetContentPadding.add(
                   EdgeInsets.only(bottom: KazumiGlass.bottomInset(context))),
               itemCount: years.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 24),
+              separatorBuilder: (_, _) => const SizedBox(height: 24),
               itemBuilder: (context, index) {
                 final year = years[index];
                 return ContentSection(
@@ -140,8 +163,22 @@ class _TimelinePageState extends State<TimelinePage> {
       initialIndex: DateTime.now().weekday - 1,
       animationDuration:
           MediaQuery.disableAnimationsOf(context) ? Duration.zero : null,
-      child: _buildContent(context),
+      child: Builder(builder: (context) {
+        // 切到哪一天，就只补查那一天播出的番的 AniList 状态。
+        final tabs = DefaultTabController.of(context);
+        if (!identical(_tabs, tabs)) {
+          _tabs?.removeListener(_onTabChanged);
+          _tabs = tabs..addListener(_onTabChanged);
+        }
+        return _buildContent(context);
+      }),
     );
+  }
+
+  void _onTabChanged() {
+    final tabs = _tabs;
+    if (tabs == null || tabs.indexIsChanging) return;
+    _controller.ensureAniListForDay(tabs.index);
   }
 
   Widget _buildContent(BuildContext context) {
@@ -383,6 +420,12 @@ class _TimelinePageState extends State<TimelinePage> {
         compact: compact);
     final rawCalendar = _controller.bangumiCalendar;
     final filteredOut = day < rawCalendar.length && rawCalendar[day].isNotEmpty;
+    // 按 AniList 分组时，时间胶囊也显示 AniList 的实测时刻，和分组保持一致。
+    final aniListNext =
+        _controller.sort == TimelineSort.defaultOrder &&
+                _controller.prefersAniListWeekday
+            ? _controller.aniListNextEpochsForDay(day)
+            : const <int, int>{};
     return _TimelineScrollView(
       key: PageStorageKey('timeline-day-$day'),
       slivers: [
@@ -427,6 +470,9 @@ class _TimelinePageState extends State<TimelinePage> {
                     compact: compact,
                     showRating: _showRating,
                     isWatching: watchingIds.contains(item.id),
+                    updateEpoch:
+                        aniListNext[item.id] ?? _controller.nextUpdateEpoch(item.id),
+                    currentEpisode: _controller.currentEpisode(item.id),
                     onTap: () => context.pushNamed('/info/', arguments: item),
                   );
                 },

@@ -34,7 +34,7 @@ class _DownloadSettingsPageState extends State<DownloadSettingsPage> {
     parallelSegments =
         GStorage.getSetting(SettingsKeys.downloadParallelSegments);
     downloadDanmaku = GStorage.getSetting(SettingsKeys.downloadDanmaku);
-    downloadDirectory = _directoryService.customDirectory;
+    downloadDirectory = _directoryService.savedDirectory;
     _loadDefaultDownloadDirectory();
   }
 

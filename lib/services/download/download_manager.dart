@@ -241,8 +241,8 @@ class DownloadManager implements IDownloadManager {
     return episodeDir;
   }
 
-  /// Directory to remove for an episode: the recorded one, or the default
-  /// location for episodes that never started downloading.
+  /// Directory to remove for an episode: the recorded one, or the current
+  /// download location for episodes that never started downloading.
   Future<String> _episodeDirForDeletion(
     DownloadEpisode? episode,
     int bangumiId,
@@ -251,8 +251,8 @@ class DownloadManager implements IDownloadManager {
   ) async {
     final storedDir = episode?.downloadDirectory.trim() ?? '';
     if (storedDir.isNotEmpty) return storedDir;
-    return _getEpisodeDir(await getDefaultDownloadDirectory(), bangumiId,
-        pluginName, episodeNumber);
+    return _getEpisodeDir(await _directoryService.getDownloadDirectory(),
+        bangumiId, pluginName, episodeNumber);
   }
 
   @override
@@ -917,7 +917,8 @@ class DownloadManager implements IDownloadManager {
       {DownloadRecord? record}) async {
     if (record == null) {
       final dir = Directory(path.join(
-          await getDefaultDownloadDirectory(), '${bangumiId}_$pluginName'));
+          await _directoryService.getDownloadDirectory(),
+          '${bangumiId}_$pluginName'));
       if (await dir.exists()) {
         await dir.delete(recursive: true);
       }

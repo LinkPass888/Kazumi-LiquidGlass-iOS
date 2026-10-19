@@ -350,11 +350,6 @@ class SettingsKeys {
     false,
     group: SettingGroup.theme,
   );
-  static const useDynamicColor = SettingKey<bool>(
-    _SettingBoxKey.useDynamicColor,
-    false,
-    group: SettingGroup.theme,
-  );
   static const exitBehavior = SettingKey<int>(
     _SettingBoxKey.exitBehavior,
     2,
@@ -425,16 +420,6 @@ class SettingsKeys {
     false,
     group: SettingGroup.collect,
   );
-  static const bangumiTimelineEntries = SettingKey<String>(
-    'bangumiTimelineEntries',
-    '',
-    group: SettingGroup.collect,
-  );
-  static const useSystemFont = SettingKey<bool>(
-    _SettingBoxKey.useSystemFont,
-    false,
-    group: SettingGroup.theme,
-  );
   static const forceAdBlocker = SettingKey<bool>(
     _SettingBoxKey.forceAdBlocker,
     false,
@@ -470,10 +455,20 @@ class SettingsKeys {
     true,
     group: SettingGroup.interface,
   );
+  static const timelinePreferredSource = SettingKey<String>(
+    'timelinePreferredSource',
+    'bangumi',
+    group: SettingGroup.interface,
+  );
   static const defaultCollectLayout = SettingKey<String>(
     'defaultCollectLayout',
-    'list',
+    'cards',
     group: SettingGroup.interface,
+  );
+  static const defaultCollectSort = SettingKey<String>(
+    'defaultCollectSort',
+    'updateTime',
+    group: SettingGroup.collect,
   );
   static const downloadParallelEpisodes = SettingKey<int>(
     _SettingBoxKey.downloadParallelEpisodes,
@@ -495,8 +490,8 @@ class SettingsKeys {
     '',
     group: SettingGroup.download,
   );
-  // macOS only: security-scoped bookmark that keeps downloadDirectory
-  // writable across app restarts under the sandbox.
+  // iOS: security-scoped bookmark that keeps downloadDirectory writable
+  // across app restarts. The path alone is not enough outside the sandbox.
   static const downloadDirectoryBookmark = SettingKey<String>(
     'downloadDirectoryBookmark',
     '',
@@ -545,6 +540,11 @@ class SettingsKeys {
   static const bangumiImmediateSyncToastEnable = SettingKey<bool>(
     _SettingBoxKey.bangumiImmediateSyncToastEnable,
     true,
+    group: SettingGroup.bangumi,
+  );
+  static const bangumiUpdateNotifyEnable = SettingKey<bool>(
+    'bangumiUpdateNotifyEnable',
+    false,
     group: SettingGroup.bangumi,
   );
   static const brightnessVolumeGesture = SettingKey<bool>(
@@ -645,7 +645,6 @@ class SettingsKeys {
     lowMemoryMode,
     lowMemoryPolicy,
     showWindowButton,
-    useDynamicColor,
     exitBehavior,
     playerDebugMode,
     syncPlayEndPoint,
@@ -660,8 +659,6 @@ class SettingsKeys {
     timelineNotShowAbandonedBangumis,
     timelineNotShowWatchedBangumis,
     timelineOnlyShowWatchingBangumis,
-    bangumiTimelineEntries,
-    useSystemFont,
     forceAdBlocker,
     backgroundPlayback,
     proxyEnable,
@@ -669,7 +666,9 @@ class SettingsKeys {
     proxyUrl,
     proxyTestUrl,
     showRating,
+    timelinePreferredSource,
     defaultCollectLayout,
+    defaultCollectSort,
     downloadParallelEpisodes,
     downloadParallelSegments,
     downloadDanmaku,
@@ -684,6 +683,7 @@ class SettingsKeys {
     bangumiAccessToken,
     bangumiSyncPriority,
     bangumiImmediateSyncToastEnable,
+    bangumiUpdateNotifyEnable,
     brightnessVolumeGesture,
     historySyncDeviceId,
     historySyncSequence,
@@ -760,7 +760,6 @@ class _SettingBoxKey {
       webDavPassword = 'webDavPasswd',
       lowMemoryMode = 'lowMemoryMode',
       showWindowButton = 'showWindowButton',
-      useDynamicColor = 'useDynamicColor',
       exitBehavior = 'exitBehavior',
       playerDebugMode = 'playerDebugMode',
       syncPlayEndPoint = 'syncPlayEndPoint',
@@ -774,7 +773,6 @@ class _SettingBoxKey {
       timelineNotShowAbandonedBangumis = 'timelineNotShowAbandonedBangumis',
       timelineNotShowWatchedBangumis = 'timelineNotShowWatchedBangumis',
       timelineOnlyShowWatchingBangumis = 'timelineOnlyShowWatchingBangumis',
-      useSystemFont = 'useSystemFont',
       forceAdBlocker = 'forceAdBlocker',
       backgroundPlayback = 'backgroundPlayback',
       proxyEnable = 'proxyEnable',

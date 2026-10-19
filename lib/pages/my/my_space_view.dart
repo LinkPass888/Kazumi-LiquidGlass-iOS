@@ -6,7 +6,7 @@ import 'package:kazumi/modules/my/watch_stats.dart';
 import 'package:material_new_shapes/material_new_shapes.dart';
 
 enum MyDestination {
-  theme,
+  notification,
   player,
   danmaku,
   rules,
@@ -197,7 +197,8 @@ class _CompactSpaceLayout extends StatelessWidget {
           title: '内容与偏好',
           children: [
             _entry('规则设置', Icons.extension_rounded, MyDestination.rules),
-            _entry('外观设置', Icons.palette_rounded, MyDestination.theme),
+            _entry('通知设置', Icons.notifications_rounded,
+                MyDestination.notification),
             _entry('播放设置', Icons.play_circle_rounded, MyDestination.player),
             _entry('弹幕设置', Icons.subtitles_rounded, MyDestination.danmaku),
           ],
@@ -500,7 +501,7 @@ class _PreferencesPanel extends StatelessWidget {
   final ValueChanged<MyDestination> onOpen;
 
   static const _entries = [
-    ('外观', Icons.palette_rounded, MyDestination.theme),
+    ('通知', Icons.notifications_rounded, MyDestination.notification),
     ('播放', Icons.play_circle_rounded, MyDestination.player),
     ('弹幕', Icons.subtitles_rounded, MyDestination.danmaku),
   ];

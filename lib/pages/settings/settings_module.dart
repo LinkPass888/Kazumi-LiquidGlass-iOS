@@ -6,10 +6,11 @@ import 'package:kazumi/pages/history/history_module.dart';
 import 'package:kazumi/pages/logs/logs_page.dart';
 import 'package:kazumi/pages/plugin_editor/plugin_module.dart';
 import 'package:kazumi/pages/settings/danmaku/danmaku_module.dart';
+import 'package:kazumi/pages/settings/backup_settings.dart';
 import 'package:kazumi/pages/settings/decoder_settings.dart';
 import 'package:kazumi/pages/settings/download_settings.dart';
 import 'package:kazumi/pages/settings/interface_settings.dart';
-import 'package:kazumi/pages/settings/keyboard_settings.dart';
+import 'package:kazumi/pages/settings/notification_settings.dart';
 import 'package:kazumi/pages/settings/player_settings.dart';
 import 'package:kazumi/pages/settings/proxy/proxy_module.dart';
 import 'package:kazumi/pages/settings/renderer_settings.dart';
@@ -50,12 +51,12 @@ final settingsModule = createModule(
           ..route('/storage',
               child: (context, state) => const StorageSettingsPage())
           ..route('/storage/logs', child: (context, state) => const LogsPage())
+          ..route(
+            '/backup',
+            child: (context, state) => const SettingsBackupPage(),
+          )
           ..route('/theme',
               child: (context, state) => const ThemeSettingsPage())
-          ..route(
-            '/keyboard',
-            child: (context, state) => const KeyboardSettingsPage(),
-          )
           ..route('/player',
               child: (context, state) => const PlayerSettingsPage())
           ..route(
@@ -69,6 +70,10 @@ final settingsModule = createModule(
           ..route(
             '/interface',
             child: (context, state) => const InterfaceSettingsPage(),
+          )
+          ..route(
+            '/notification',
+            child: (context, state) => const NotificationSettingsPage(),
           )
           ..module(proxyModule)
           ..route(
