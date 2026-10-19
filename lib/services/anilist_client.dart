@@ -14,6 +14,7 @@ class AniListAiring {
   const AniListAiring({
     required this.episode,
     required this.airingAt,
+    this.totalEpisodes,
   });
 
   /// 下一集（即将播出的那一集）的集数。
@@ -21,6 +22,9 @@ class AniListAiring {
 
   /// 下一集的播出时刻（epoch ms）。
   final int airingAt;
+
+  /// 总集数，AniList 没填时为 null。
+  final int? totalEpisodes;
 
   /// 已播出到第几集：下一集之前的那一集。
   int get currentEpisode => episode - 1;
@@ -32,6 +36,7 @@ class AniListAiring {
   Map<String, dynamic> toJson() => {
         'episode': episode,
         'airingAt': airingAt,
+        if (totalEpisodes != null) 'totalEpisodes': totalEpisodes,
       };
 
   static AniListAiring? fromJson(Object? raw) {
@@ -39,7 +44,12 @@ class AniListAiring {
     final episode = raw['episode'];
     final airingAt = raw['airingAt'];
     if (episode is! int || airingAt is! int) return null;
-    return AniListAiring(episode: episode, airingAt: airingAt);
+    final total = raw['totalEpisodes'];
+    return AniListAiring(
+      episode: episode,
+      airingAt: airingAt,
+      totalEpisodes: total is int ? total : null,
+    );
   }
 }
 
@@ -137,7 +147,7 @@ class AniListClient {
     final fields = aliasToBangumi.entries
         .map((e) =>
             '${e.key}: Media(idMal: \$mal${e.key.substring(1)}, type: ANIME) '
-            '{ nextAiringEpisode { episode airingAt } }')
+            '{ episodes nextAiringEpisode { episode airingAt } }')
         .join('\n');
     final declarations =
         variables.keys.map((k) => '\$$k: Int').join(', ');
@@ -155,9 +165,11 @@ class AniListClient {
       final episode = next['episode'];
       final airingAtSeconds = next['airingAt'];
       if (episode is! int || airingAtSeconds is! int) continue;
+      final total = media['episodes'];
       result[entry.value] = AniListAiring(
         episode: episode,
         airingAt: airingAtSeconds * 1000,
+        totalEpisodes: total is int ? total : null,
       );
     }
     return result;

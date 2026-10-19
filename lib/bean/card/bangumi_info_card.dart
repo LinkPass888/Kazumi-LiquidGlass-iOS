@@ -4,7 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_rating_bar/flutter_rating_bar.dart';
 import 'package:kazumi/bean/widget/collect_button.dart';
 import 'package:kazumi/utils/constants.dart';
+import 'package:kazumi/utils/date_time.dart';
 import 'package:kazumi/modules/bangumi/bangumi_item.dart';
+import 'package:kazumi/services/bangumi_update_times.dart';
 import 'package:kazumi/bean/card/network_img_layer.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:skeletonizer/skeletonizer.dart';
@@ -123,6 +125,65 @@ class BangumiInfoCardV extends StatefulWidget {
 
 class _BangumiInfoCardVState extends State<BangumiInfoCardV> {
   int touchedIndex = -1;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUpdateInfo();
+  }
+
+  @override
+  void didUpdateWidget(covariant BangumiInfoCardV oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.bangumiItem.id != widget.bangumiItem.id) {
+      _loadUpdateInfo();
+    }
+  }
+
+  /// 更新时间数据异步到达后重建一次，让放送时间/进度显示出来。
+  void _loadUpdateInfo() {
+    final service = BangumiUpdateTimesService.instance;
+    final id = widget.bangumiItem.id;
+    if (service.updates.isNotEmpty) {
+      // 已有两季数据：只为这一部补 AniList 实测值（总集数/准确进度）。
+      service.ensureAniListLoaded([id]).then((_) {
+        if (mounted) setState(() {});
+      });
+      return;
+    }
+    service.ensureLoaded().then((_) {
+      if (!mounted) return;
+      setState(() {});
+      service.ensureAniListLoaded([id]).then((_) {
+        if (mounted) setState(() {});
+      });
+    });
+  }
+
+  /// 「周五 20:00」，没有更新时间（含非最近两季的番）返回 null。
+  String? get _broadcastTime {
+    final service = BangumiUpdateTimesService.instance;
+    if (!service.isRecentSeason(widget.bangumiItem.id)) return null;
+    final epoch = service.nextUpdateEpoch(widget.bangumiItem.id);
+    if (epoch == null) return null;
+    final time = DateTime.fromMillisecondsSinceEpoch(epoch);
+    return '${weekdayCnLabel(time.weekday)} '
+        '${time.hour.toString().padLeft(2, '0')}:'
+        '${time.minute.toString().padLeft(2, '0')}';
+  }
+
+  /// 「03/12」，总集数未知时为「03/??」；没有进度返回 null。
+  String? get _updateProgress {
+    final service = BangumiUpdateTimesService.instance;
+    if (!service.isRecentSeason(widget.bangumiItem.id)) return null;
+    final current = service.currentEpisode(widget.bangumiItem.id);
+    if (current == null) return null;
+    final total = service.totalEpisodes(widget.bangumiItem.id);
+    final currentText = current.toString().padLeft(2, '0');
+    final totalText =
+        total == null ? '??' : total.toString().padLeft(2, '0');
+    return '$currentText/$totalText';
+  }
 
   Widget get voteBarChart {
     return Flexible(
@@ -324,6 +385,35 @@ class _BangumiInfoCardVState extends State<BangumiInfoCardV> {
                                               .primary,
                                         ),
                                       ),
+                                      // 放送时间 / 更新进度：只在有更新时间数据时展示。
+                                      if (!widget.isLoading && _broadcastTime != null) ...[
+                                        const SizedBox(height: 4),
+                                        Text('放送时间:'),
+                                        Text(
+                                          _broadcastTime!,
+                                          style: TextStyle(
+                                            fontSize: 20,
+                                            fontWeight: FontWeight.bold,
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .primary,
+                                          ),
+                                        ),
+                                      ],
+                                      if (!widget.isLoading && _updateProgress != null) ...[
+                                        const SizedBox(height: 4),
+                                        Text('更新进度:'),
+                                        Text(
+                                          _updateProgress!,
+                                          style: TextStyle(
+                                            fontSize: 20,
+                                            fontWeight: FontWeight.bold,
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .primary,
+                                          ),
+                                        ),
+                                      ],
                                       const SizedBox(height: 8),
                                       Text(
                                         widget.showRating

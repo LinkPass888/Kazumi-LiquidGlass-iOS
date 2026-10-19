@@ -99,6 +99,16 @@ class BangumiUpdateTimesService {
     return DateTime.fromMillisecondsSinceEpoch(epoch).weekday;
   }
 
+  /// 总集数，仅 AniList 提供；没有数据返回 null。
+  int? totalEpisodes(int bangumiId) {
+    final anilist = AniListClient.instance.cached(bangumiId) ??
+        AniListClient.instance.staleCached(bangumiId);
+    return anilist?.totalEpisodes;
+  }
+
+  /// 番剧是否在最近两季的数据范围内（不在就没有更新时间可展示）。
+  bool isRecentSeason(int bangumiId) => updates.containsKey(bangumiId);
+
   /// 重复调用共享一次下载。抛错不会被保留，下次调用会重试。
   Future<void> ensureLoaded() => _loading ??= _load();
 
