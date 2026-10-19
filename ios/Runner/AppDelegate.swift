@@ -132,31 +132,8 @@ import UniformTypeIdentifiers
     @objc private func chooseCurrentFolder() {
         guard let result = pendingPickResult, let picker = activePicker else { return }
         finishPick(picker) {
-            self.completePick(currentBrowsedFolder(of: picker), result: result)
+            self.completePick(picker.directoryURL, result: result)
         }
-    }
-
-    /// The folder the picker is currently showing. `directoryURL` is the
-    /// public way but is not reliably kept in sync while browsing; the
-    /// long-standing fallback walks the remote view hierarchy for the folder
-    /// icon control and reads its `documentURL`.
-    private func currentBrowsedFolder(of picker: UIDocumentPickerViewController) -> URL? {
-        if let url = picker.directoryURL {
-            return url
-        }
-        func folderIconURL(in view: UIView) -> URL? {
-            if String(describing: type(of: view)).contains("FolderIconControl"),
-               let url = view.value(forKey: "documentURL") as? URL {
-                return url
-            }
-            for subview in view.subviews {
-                if let url = folderIconURL(in: subview) {
-                    return url
-                }
-            }
-            return nil
-        }
-        return folderIconURL(in: picker.view)
     }
 
     /// Clears picker state and dismisses it, then runs [completion].
