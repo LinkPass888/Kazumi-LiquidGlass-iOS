@@ -64,8 +64,9 @@ class _DownloadSettingsPageState extends State<DownloadSettingsPage> {
       KazumiDialog.showToast(message: '下载位置已更新，仅对新下载生效');
     } on DownloadDirectoryException catch (e) {
       KazumiDialog.showToast(message: e.message);
-    } on FileSystemException catch (e) {
-      KazumiDialog.showToast(message: '无法写入该目录: ${e.message}');
+    } on FileSystemException {
+      KazumiDialog.showToast(
+          message: '该文件夹不可写入，请选择「文件」App「我的 iPhone」下可写的文件夹');
     } catch (e) {
       KazumiDialog.showToast(message: '选择下载位置失败: $e');
     } finally {

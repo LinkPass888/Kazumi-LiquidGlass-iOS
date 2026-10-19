@@ -4,7 +4,8 @@ import AVKit
 import UniformTypeIdentifiers
 
 @main
-@objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate, UIDocumentPickerDelegate {
+@objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate,
+                        UIDocumentPickerDelegate, UINavigationControllerDelegate {
 
     override func application(
         _ application: UIApplication,
@@ -77,6 +78,8 @@ import UniformTypeIdentifiers
     /// must stay alive for the security-scoped access to remain valid.
     private var accessedDirectories: [String: URL] = [:]
     private var pendingPickResult: FlutterResult?
+    /// Strong reference to the presented picker; its delegate is weak.
+    private var activePicker: UIDocumentPickerViewController?
 
     private func pickDownloadDirectory(result: @escaping FlutterResult) {
         guard pendingPickResult == nil else {
@@ -98,7 +101,102 @@ import UniformTypeIdentifiers
         picker.delegate = self
         picker.allowsMultipleSelection = false
         pendingPickResult = result
+        activePicker = picker
         presenter.present(picker, animated: true)
+    }
+
+    /// iOS only enables the picker's own "Open" button for folders the app
+    /// can write to, and sideloaded (re-signed) builds can hit folders where
+    /// it never responds. UIDocumentPickerDelegate doubles as
+    /// UINavigationControllerDelegate, and the picker is itself a navigation
+    /// controller — so when the user browses into a folder we get this
+    /// callback and can add our own button that always picks the folder
+    /// being viewed.
+    func navigationController(
+        _ navigationController: UINavigationController,
+        didShow viewController: UIViewController,
+        animated: Bool
+    ) {
+        guard let picker = navigationController as? UIDocumentPickerViewController,
+              navigationController.viewControllers.count > 1,
+              pendingPickResult != nil else { return }
+        viewController.navigationItem.rightBarButtonItem = UIBarButtonItem(
+            title: "选取当前文件夹",
+            style: .done,
+            target: self,
+            action: #selector(chooseCurrentFolder)
+        )
+    }
+
+    /// Picks the folder the user is currently browsing in.
+    @objc private func chooseCurrentFolder() {
+        guard let result = pendingPickResult, let picker = activePicker else { return }
+        finishPick(picker) {
+            self.completePick(currentBrowsedFolder(of: picker), result: result)
+        }
+    }
+
+    /// The folder the picker is currently showing. `directoryURL` is the
+    /// public way but is not reliably kept in sync while browsing; the
+    /// long-standing fallback walks the remote view hierarchy for the folder
+    /// icon control and reads its `documentURL`.
+    private func currentBrowsedFolder(of picker: UIDocumentPickerViewController) -> URL? {
+        if let url = picker.directoryURL {
+            return url
+        }
+        func folderIconURL(in view: UIView) -> URL? {
+            if String(describing: type(of: view)).contains("FolderIconControl"),
+               let url = view.value(forKey: "documentURL") as? URL {
+                return url
+            }
+            for subview in view.subviews {
+                if let url = folderIconURL(in: subview) {
+                    return url
+                }
+            }
+            return nil
+        }
+        return folderIconURL(in: picker.view)
+    }
+
+    /// Clears picker state and dismisses it, then runs [completion].
+    private func finishPick(
+        _ picker: UIDocumentPickerViewController,
+        completion: () -> Void
+    ) {
+        pendingPickResult = nil
+        activePicker = nil
+        picker.delegate = nil
+        picker.dismiss(animated: true)
+        completion()
+    }
+
+    /// Grants access to the picked URL and hands path + bookmark to Dart.
+    private func completePick(_ url: URL?, result: @escaping FlutterResult) {
+        guard let url = url else {
+            result(nil)
+            return
+        }
+        // Returns false both for refused scope and for URLs that need no
+        // scope at all (e.g. the app's own container); the Dart side
+        // write-tests the folder and reports properly.
+        _ = url.startAccessingSecurityScopedResource()
+        accessedDirectories[url.path] = url
+        do {
+            let bookmark = try url.bookmarkData(
+                options: .minimalBookmark,
+                includingResourceValuesForKeys: nil,
+                relativeTo: nil
+            )
+            result([
+                "path": url.path,
+                "bookmark": bookmark.base64EncodedString(),
+            ])
+        } catch {
+            result(FlutterError(code: "bookmark_failed",
+                                message: error.localizedDescription,
+                                details: nil))
+        }
     }
 
     /// Resolves a stored bookmark and starts accessing the folder.
@@ -112,7 +210,7 @@ import UniformTypeIdentifiers
         do {
             let url = try URL(
                 resolvingBookmarkData: data,
-                options: .withoutUI,
+                options: [.withoutUI, .withoutMounting],
                 relativeTo: nil,
                 bookmarkDataIsStale: &isStale
             )
@@ -154,38 +252,15 @@ import UniformTypeIdentifiers
         didPickDocumentsAt urls: [URL]
     ) {
         guard let result = pendingPickResult else { return }
-        pendingPickResult = nil
-        guard let url = urls.first else {
-            result(nil)
-            return
-        }
-        guard url.startAccessingSecurityScopedResource() else {
-            result(FlutterError(code: "access_denied",
-                                message: "无法获得该目录的访问权限",
-                                details: nil))
-            return
-        }
-        accessedDirectories[url.path] = url
-        do {
-            let bookmark = try url.bookmarkData(
-                options: .minimalBookmark,
-                includingResourceValuesForKeys: nil,
-                relativeTo: nil
-            )
-            result([
-                "path": url.path,
-                "bookmark": bookmark.base64EncodedString(),
-            ])
-        } catch {
-            result(FlutterError(code: "bookmark_failed",
-                                message: error.localizedDescription,
-                                details: nil))
+        finishPick(controller) {
+            self.completePick(urls.first, result: result)
         }
     }
 
     func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
-        pendingPickResult?(nil)
-        pendingPickResult = nil
+        let result = pendingPickResult
+        finishPick(controller) {}
+        result?(nil)
     }
     
     // TODO: ADD VLC SUPPORT
