@@ -3,7 +3,6 @@ import 'package:kazumi/modules/bangumi/bangumi_item.dart';
 import 'package:kazumi/modules/bangumi/bangumi_tag.dart';
 import 'package:kazumi/modules/collect/collect_module.dart';
 import 'package:kazumi/services/bangumi_update_times.dart';
-import 'package:kazumi/services/network/bangumi_acceleration.dart';
 
 BangumiUpdateEntry _entry(int? first, int? period) =>
     BangumiUpdateEntry(first, period);
@@ -57,14 +56,14 @@ void main() {
       expect(previousBangumiDataSeason(DateTime(2026, 4, 1)), (2026, 1));
     });
 
-    test('季节文件 URL 月份补零 + 按直连/镜像选源', () {
-      // 加速模式显式注入，不触碰 GStorage（测试环境没有 Hive box）。
-      expect(bangumiDataSeasonUrl(2026, 1, acceleration: BangumiAcceleration.direct),
-          'https://raw.githubusercontent.com/bangumi-data/bangumi-data/master/data/items/2026/01.json');
-      expect(bangumiDataSeasonUrl(2026, 10, acceleration: BangumiAcceleration.mirror),
-          'https://cdn.jsdelivr.net/gh/bangumi-data/bangumi-data@master/data/items/2026/10.json');
-      expect(bangumiDataSeasonUrl(2026, 7, acceleration: BangumiAcceleration.ech),
-          contains('cdn.jsdelivr.net'));
+    test('季节文件 URL 月份补零', () {
+      // 统一走 GitHub Pages，加速设置不再影响地址。
+      expect(bangumiMalSeasonUrl(2026, 1),
+          'https://linkpass888.github.io/bangumi-mal/data/seasons/2026/01.json');
+      expect(bangumiMalSeasonUrl(2026, 10),
+          'https://linkpass888.github.io/bangumi-mal/data/seasons/2026/10.json');
+      expect(bangumiMalSeasonUrl(2026, 7),
+          'https://linkpass888.github.io/bangumi-mal/data/seasons/2026/07.json');
     });
   });
 
@@ -89,56 +88,39 @@ void main() {
   });
 
   group('季节 JSON 解析', () {
-    test('用条目自身 begin/broadcast，站点时间不参与', () {
-      // type 用真实格式：bangumi-data 里是字符串 "tv"/"web"/"movie"，
-      // 不是数字（写成数字会全部被跳过，时间表和排程都拿不到数据）。
+    test('bangumi-mal 季节格式：begin/broadcast/mal_id', () {
       const source = '''
-      [
-        {
-          "title": "A", "type": "tv", "begin": "2026-10-01T15:00:00.000Z",
-          "broadcast": "R/2026-10-01T15:00:00.000Z/P7D",
-          "sites": [
-            {"site": "bangumi", "id": "100"},
-            {"site": "mal", "id": "200"},
-            {"site": "gamer", "id": "g1",
-             "begin": "2026-10-02T16:00:00.000Z",
-             "broadcast": "R/2026-10-02T16:00:00.000Z/P7D"}
-          ]
-        },
-        {
-          "title": "B", "type": "web", "begin": "2026-10-01T15:00:00.000Z",
-          "sites": [{"site": "mal", "id": "201"}]
-        },
-        {"title": "C", "type": "movie", "sites": [{"site": "bangumi", "id": "300"}]},
-        {"title": "D", "type": "ova", "sites": [{"site": "bangumi", "id": "400"}]}
-      ]
+      {
+        "season": "2026-10", "count": 2,
+        "items": {
+          "100": {"bangumi_id": 100, "mal_id": 200,
+            "begin": "2026-10-01T15:00:00.000Z",
+            "broadcast": "R/2026-10-01T15:00:00.000Z/P7D"},
+          "101": {"bangumi_id": 101, "mal_id": null,
+            "begin": "2026-10-02T15:00:00.000Z", "broadcast": null}
+        }
+      }
       ''';
-      final data = parseBangumiDataSeason(source);
-      // movie / ova 一次性放送不参与更新时间。
-      expect(data.updates.keys, [100]);
-      // 只看条目自身的 begin，gamer 的站点 begin（晚一天）不参与。
+      final data = parseBangumiMalSeason(source);
+      expect(data.updates.keys, [100, 101]);
       expect(data.updates[100]!.firstEpochMs,
           DateTime.parse('2026-10-01T15:00:00.000Z').millisecondsSinceEpoch);
       expect(data.updates[100]!.periodMs, 7 * 86400000);
-      expect(data.malIds[100], 200);
+      expect(data.updates[101]!.periodMs, isNull);
+      // 没有 MAL id 的条目不写进映射表。
+      expect(data.malIds, {100: 200});
     });
 
     test('损坏 JSON 返回空表', () {
-      final data = parseBangumiDataSeason('not json');
+      final data = parseBangumiMalSeason('not json');
       expect(data.updates, isEmpty);
       expect(data.malIds, isEmpty);
     });
 
-    test('日期只有 date 无时刻时周期为 null', () {
-      const source = '''
-      [{"title": "A", "type": "tv", "begin": "2026-10-01",
-        "sites": [{"site": "bangumi", "id": "1"}]}]
-      ''';
-      final data = parseBangumiDataSeason(source);
-      // DateTime.tryParse('2026-10-01') 产生本地零点，length <= 10，
-      // 不可信时刻 -> period 为 null。
-      expect(data.updates[1]!.periodMs, isNull);
-      expect(data.updates[1]!.firstEpochMs, isNotNull);
+    test('缺 items 字段返回空表', () {
+      final data = parseBangumiMalSeason('{"season": "2026-10"}');
+      expect(data.updates, isEmpty);
+      expect(data.malIds, isEmpty);
     });
   });
 
@@ -212,18 +194,18 @@ void main() {
       );
     });
 
-    test('追番页：不在最近两季的排最上面', () {
+    test('追番页：不在最近两季的排最下面', () {
       final updates = _updates({
         1: _entry(first, week),
       });
-      // 2 无数据（不在最近两季）-> 排在 1 前面。
+      // 2 无数据（不在最近两季）-> 排在 1 后面。
       expect(
         compareCollectUpdateTime(_collected(2), _collected(1), updates, now),
-        isNegative,
+        isPositive,
       );
       expect(
         compareCollectUpdateTime(_collected(1), _collected(2), updates, now),
-        isPositive,
+        isNegative,
       );
     });
 
@@ -240,20 +222,20 @@ void main() {
       );
     });
 
-    test('追番页：推不出更新时间的排最上面', () {
+    test('追番页：推不出更新时间的排最下面', () {
       // 只下载最近两季，所以「不在最近两季」和「推不出更新时间」是同一类：
-      // 都排最上面。这里用周期缺失的条目代表这一类。
+      // 都排最下面。这里用周期缺失的条目代表这一类。
       final updates = _updates({
         1: _entry(first, week),
         2: _entry(first, null),
       });
       expect(
         compareCollectUpdateTime(_collected(2), _collected(1), updates, now),
-        isNegative,
+        isPositive,
       );
       expect(
         compareCollectUpdateTime(_collected(1), _collected(2), updates, now),
-        isPositive,
+        isNegative,
       );
     });
   });

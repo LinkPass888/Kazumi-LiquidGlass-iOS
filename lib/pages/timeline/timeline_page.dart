@@ -14,7 +14,6 @@ import 'package:kazumi/bean/widget/loading_indicator.dart';
 import 'package:kazumi/bean/widget/state_presentation.dart';
 import 'package:kazumi/modules/bangumi/bangumi_item.dart';
 import 'package:kazumi/pages/timeline/timeline_controller.dart';
-import 'package:kazumi/services/bangumi_update_times.dart';
 import 'package:kazumi/services/storage/storage.dart';
 import 'package:kazumi/utils/anime_season.dart';
 
@@ -36,6 +35,7 @@ class TimelinePage extends StatefulWidget {
 class _TimelinePageState extends State<TimelinePage> {
   TimelineController get _controller => widget.controller;
   late final bool _showRating;
+  TabController? _tabs;
 
   @override
   void initState() {
@@ -44,6 +44,12 @@ class _TimelinePageState extends State<TimelinePage> {
     if (_controller.bangumiCalendar.isEmpty) {
       _controller.loadSeason(_controller.selectedDate);
     }
+  }
+
+  @override
+  void dispose() {
+    _tabs?.removeListener(_onTabChanged);
+    super.dispose();
   }
 
   String _seasonLabel(DateTime date) {
@@ -141,8 +147,22 @@ class _TimelinePageState extends State<TimelinePage> {
       initialIndex: DateTime.now().weekday - 1,
       animationDuration:
           MediaQuery.disableAnimationsOf(context) ? Duration.zero : null,
-      child: _buildContent(context),
+      child: Builder(builder: (context) {
+        // 切到哪一天，就只补查那一天播出的番的 AniList 状态。
+        final tabs = DefaultTabController.of(context);
+        if (!identical(_tabs, tabs)) {
+          _tabs?.removeListener(_onTabChanged);
+          _tabs = tabs..addListener(_onTabChanged);
+        }
+        return _buildContent(context);
+      }),
     );
+  }
+
+  void _onTabChanged() {
+    final tabs = _tabs;
+    if (tabs == null || tabs.indexIsChanging) return;
+    _controller.ensureAniListForDay(tabs.index);
   }
 
   Widget _buildContent(BuildContext context) {
@@ -428,9 +448,8 @@ class _TimelinePageState extends State<TimelinePage> {
                     compact: compact,
                     showRating: _showRating,
                     isWatching: watchingIds.contains(item.id),
-                    updateText: _controller.nextUpdateEpoch(item.id) == null
-                        ? null
-                        : '${formatUpdateTime(_controller.nextUpdateEpoch(item.id))} 更新',
+                    updateEpoch: _controller.nextUpdateEpoch(item.id),
+                    currentEpisode: _controller.currentEpisode(item.id),
                     onTap: () => context.pushNamed('/info/', arguments: item),
                   );
                 },

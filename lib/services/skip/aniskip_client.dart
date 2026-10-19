@@ -3,25 +3,27 @@ import 'dart:io';
 
 import 'package:dio/dio.dart';
 import 'package:kazumi/request/core/dio_factory.dart';
-import 'package:kazumi/services/bangumi_update_times.dart';
 import 'package:kazumi/services/logging/logger.dart';
 import 'package:kazumi/services/skip/skip_segments.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 
 /// Crowd-sourced skip times from AniSkip (https://api.aniskip.com), keyed by
-/// MyAnimeList id. Bangumi ids are mapped through Rhilip/BangumiExtLinker
-/// (CC BY 4.0).
+/// MyAnimeList id. Bangumi ids are mapped through LinkPass888/bangumi-mal
+/// (CC BY 4.0), which merges BangumiExtLinker and bangumi-data.
 class AniSkipClient {
   AniSkipClient._();
 
   static final AniSkipClient instance = AniSkipClient._();
 
-  static const _mapUrl =
-      'https://rhilip.github.io/BangumiExtLinker/data/anime_map.json';
+  static const _baseUrl = 'https://linkpass888.github.io/bangumi-mal/data';
+  static const _mapUrl = '$_baseUrl/bangumi-mal.min.json';
   static const _mapMaxAge = Duration(days: 7);
 
   Future<Map<int, int>>? _malIds;
+
+  /// 按需查到的分片（bangumi_id % 100 -> {bangumi_id: mal_id}），只在内存里。
+  final Map<int, Map<int, int>> _shards = {};
 
   Future<SkipSegments> lookup(
     int bangumiId,
@@ -56,7 +58,11 @@ class AniSkipClient {
     // next lookup tries again.
     final load = _malIds ??= _loadMap();
     try {
-      return (await load)[bangumiId];
+      final map = await load;
+      final cached = map[bangumiId];
+      if (cached != null) return cached;
+      // 全量表里没有：这个 ID 可能是新番，按分片补查（~2 KB）。
+      return await _lookupShard(bangumiId);
     } catch (_) {
       if (identical(_malIds, load)) _malIds = null;
       return null;
@@ -68,7 +74,7 @@ class AniSkipClient {
       path.join(
         (await getApplicationSupportDirectory()).path,
         'skip',
-        'bgm_mal.json',
+        'bangumi_mal.json',
       ),
     );
     final fresh =
@@ -80,14 +86,7 @@ class AniSkipClient {
           _mapUrl,
           options: Options(responseType: ResponseType.plain),
         );
-        final compact = compactBangumiMalMap(response.data ?? '[]');
-        // 并入最近两季 bangumi-data 的 mal 映射（新番覆盖更快）；
-        // ExtLinker 为主，冲突不覆盖。拿不到季节数据就只用 ExtLinker。
-        try {
-          await BangumiUpdateTimesService.instance.ensureLoaded();
-          BangumiUpdateTimesService.instance.malIds
-              .forEach((bgm, mal) => compact.putIfAbsent(bgm, () => mal));
-        } catch (_) {}
+        final compact = parseBangumiMalMap(response.data ?? '{}');
         await cache.parent.create(recursive: true);
         await cache.writeAsString(
           jsonEncode(compact.map((k, v) => MapEntry('$k', v))),
@@ -106,10 +105,58 @@ class AniSkipClient {
       return {};
     }
   }
+
+  Future<int?> _lookupShard(int bangumiId) async {
+    final shard = bangumiId % 100;
+    final cached = _shards[shard];
+    if (cached != null) return cached[bangumiId];
+
+    final cache = File(
+      path.join(
+        (await getApplicationSupportDirectory()).path,
+        'skip',
+        'shards',
+        '$shard.json',
+      ),
+    );
+    final fresh =
+        await cache.exists() &&
+        DateTime.now().difference(await cache.lastModified()) < _mapMaxAge;
+    if (!fresh) {
+      try {
+        final response = await DioFactory.apiDio.get<String>(
+          '$_baseUrl/shards/$shard.json',
+          options: Options(responseType: ResponseType.plain),
+        );
+        final parsed = parseBangumiMalMap(response.data ?? '{}');
+        await cache.parent.create(recursive: true);
+        await cache.writeAsString(
+          jsonEncode(parsed.map((k, v) => MapEntry('$k', v))),
+          flush: true,
+        );
+        _shards[shard] = parsed;
+        return parsed[bangumiId];
+      } on DioException catch (e) {
+        if (e.response?.statusCode != 404) {
+          KazumiLogger().w('AniSkip: shard $shard download failed', error: e);
+        }
+        return null;
+      }
+    }
+    if (!await cache.exists()) return null;
+    try {
+      final raw = jsonDecode(await cache.readAsString()) as Map<String, dynamic>;
+      final parsed = raw.map((k, v) => MapEntry(int.parse(k), v as int));
+      _shards[shard] = parsed;
+      return parsed[bangumiId];
+    } on Object {
+      return null;
+    }
+  }
 }
 
-/// Reduces BangumiExtLinker's anime_map.json to bangumi id -> MAL id.
-Map<int, int> compactBangumiMalMap(String source) {
+/// Parses bangumi-mal's compact map `{"<bangumi_id>": <mal_id>}`.
+Map<int, int> parseBangumiMalMap(String source) {
   final result = <int, int>{};
   final Object? decoded;
   try {
@@ -117,13 +164,12 @@ Map<int, int> compactBangumiMalMap(String source) {
   } on Object {
     return result;
   }
-  if (decoded is! List) return result;
-  for (final row in decoded) {
-    if (row is! Map) continue;
-    final bgm = int.tryParse('${row['bgm_id'] ?? ''}');
-    final mal = int.tryParse('${row['mal_id'] ?? ''}');
-    if (bgm != null && mal != null) result[bgm] = mal;
-  }
+  if (decoded is! Map) return result;
+  decoded.forEach((key, value) {
+    final bgm = int.tryParse('$key');
+    final mal = value is int ? value : int.tryParse('$value');
+    if (bgm != null && mal != null && mal > 0) result[bgm] = mal;
+  });
   return result;
 }
 

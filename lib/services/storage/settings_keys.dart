@@ -425,11 +425,6 @@ class SettingsKeys {
     false,
     group: SettingGroup.collect,
   );
-  static const bangumiTimelineEntries = SettingKey<String>(
-    'bangumiTimelineEntries',
-    '',
-    group: SettingGroup.collect,
-  );
   static const useSystemFont = SettingKey<bool>(
     _SettingBoxKey.useSystemFont,
     false,
@@ -670,7 +665,6 @@ class SettingsKeys {
     timelineNotShowAbandonedBangumis,
     timelineNotShowWatchedBangumis,
     timelineOnlyShowWatchingBangumis,
-    bangumiTimelineEntries,
     useSystemFont,
     forceAdBlocker,
     backgroundPlayback,

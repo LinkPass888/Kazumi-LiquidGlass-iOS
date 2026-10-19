@@ -7,17 +7,18 @@ import 'package:kazumi/bean/dialog/dialog_helper.dart';
 import 'package:kazumi/modules/bangumi/bangumi_item.dart';
 import 'package:kazumi/modules/collect/collect_module.dart';
 import 'package:kazumi/request/core/dio_factory.dart';
+import 'package:kazumi/services/anilist_client.dart';
 import 'package:kazumi/services/logging/logger.dart';
 import 'package:kazumi/services/network/bangumi_acceleration.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 
-/// 最近两季的「更新时间」数据，来自 bangumi-data 仓库按季度拆分的 JSON
-/// （https://github.com/bangumi-data/bangumi-data，CC BY 4.0）。
+/// 最近两季的「更新时间」数据，来自 bangumi-mal 仓库按季度拆分的 JSON
+/// （https://github.com/LinkPass888/bangumi-mal，CC BY 4.0）。
 ///
-/// 每季一个文件 `data/items/{年}/{季首月}.json`，包含条目的开播时间、
-/// 播出周期（`broadcast: "R/<起始>/P7D"`）以及 bangumi / MAL 站点 id。由此推导下一次/上一次更新时间，供时间表排序与展示、追番页
-/// 排序使用；同一份数据还提供 mal id 映射，供 AniSkip 并入。
+/// 每季一个文件 `data/seasons/{年}/{季首月}.json`，包含条目的开播时间（begin）、
+/// 播出周期（broadcast: "R/<起始>/P7D"）以及 bangumi / MAL id。由此推导下一次/上一次更新时间，供时间表排序与展示、追番页
+/// 排序使用；同一份数据还提供 mal id 映射，供 AniSkip 与 AniList 使用。
 class BangumiUpdateTimesService {
   BangumiUpdateTimesService._();
 
@@ -30,22 +31,82 @@ class BangumiUpdateTimesService {
   /// bangumi id -> 更新时间条目。未加载完成时为空表。
   Map<int, BangumiUpdateEntry> updates = {};
 
-  /// bangumi id -> MAL id（仅最近两季，ExtLinker 覆盖更全，作为补充）。
+  /// bangumi id -> MAL id（仅最近两季，供 AniSkip 与 AniList 查询使用）。
   Map<int, int> malIds = {};
 
   /// 数据刷新完成后的回调（通知服务用它重排提醒）。设置在 main 初始化。
   void Function()? onRefreshed;
 
   /// 下一次更新时间（epoch ms），无数据或无法推算时返回 null。
-  int? nextUpdateEpoch(int bangumiId, {DateTime? now}) =>
-      nextUpdateEpochFrom(updates[bangumiId], now ?? DateTime.now());
+  /// 优先用 AniList 的实测播出时刻（停播/延期会反映）；缓存过期也先用
+  /// 缓存值；完全没有才按 bangumi-mal 推算。
+  int? nextUpdateEpoch(int bangumiId, {DateTime? now}) {
+    final current = now ?? DateTime.now();
+    final anilist = AniListClient.instance.cached(bangumiId, now: current) ??
+        AniListClient.instance.staleCached(bangumiId);
+    // 过期的缓存只知道「上一集的播出时刻」，回推一个周期即下一次。
+    if (anilist != null) {
+      if (anilist.isFreshAt(current)) return anilist.airingAt;
+      final period = updates[bangumiId]?.periodMs;
+      if (period != null) return anilist.airingAt + period;
+    }
+    return nextUpdateEpochFrom(updates[bangumiId], current);
+  }
 
   /// 上一次更新时间（epoch ms），无数据或未开播时返回 null。
-  int? lastUpdateEpoch(int bangumiId, {DateTime? now}) =>
-      lastUpdateEpochFrom(updates[bangumiId], now ?? DateTime.now());
+  /// 优先用 AniList 的实测值：下一集（episode）之前的那一集，它已播出
+  /// 的重排时刻取 airingAt 减一个周期不准确，所以直接用本期已播推算。
+  int? lastUpdateEpoch(int bangumiId, {DateTime? now}) {
+    final current = now ?? DateTime.now();
+    final anilist = AniListClient.instance.cached(bangumiId, now: current) ??
+        AniListClient.instance.staleCached(bangumiId);
+    if (anilist != null) {
+      final entry = updates[bangumiId];
+      final period = entry?.periodMs;
+      // AniList 只给「下一集」，用下一次播出时刻回推一个周期即为上次更新。
+      if (period != null) return anilist.airingAt - period;
+      if (!anilist.isFreshAt(current)) return anilist.airingAt;
+    }
+    return lastUpdateEpochFrom(updates[bangumiId], current);
+  }
+
+  /// 当前已播出到第几集（1-based），无数据或未开播时返回 null。
+  /// 优先用 AniList 的实测值（停播/延期会反映）；缓存过期也先用缓存
+  /// （那一集确实已经播出了），完全没有才按 bangumi-mal 推算。
+  int? currentEpisode(int bangumiId, {DateTime? now}) {
+    final current = now ?? DateTime.now();
+    final anilist = AniListClient.instance.cached(bangumiId, now: current);
+    if (anilist != null) return anilist.currentEpisode;
+    final stale = AniListClient.instance.staleCached(bangumiId);
+    if (stale != null) return stale.currentEpisode;
+    final entry = updates[bangumiId];
+    final first = entry?.firstEpochMs;
+    final period = entry?.periodMs;
+    if (first == null || period == null) return null;
+    final nowMs = current.millisecondsSinceEpoch;
+    if (nowMs < first) return null;
+    return ((nowMs - first) ~/ period) + 1;
+  }
+
+  /// 单部番的放送星期（1 = 周一 ... 7 = 周日，本地时区）。
+  /// 优先 AniList 的下一次播出时刻，其次 bangumi-mal 的推算值；
+  /// 都没有时返回 null（调用方保留 bangumi 日历原分组）。
+  int? updateWeekday(int bangumiId, {DateTime? now}) {
+    final current = now ?? DateTime.now();
+    final epoch = nextUpdateEpoch(bangumiId, now: current) ??
+        lastUpdateEpoch(bangumiId, now: current);
+    if (epoch == null) return null;
+    return DateTime.fromMillisecondsSinceEpoch(epoch).weekday;
+  }
 
   /// 重复调用共享一次下载。抛错不会被保留，下次调用会重试。
   Future<void> ensureLoaded() => _loading ??= _load();
+
+  /// 为当季番批量补齐 AniList 播出状态（失败静默回退到 bangumi-mal）。
+  Future<void> ensureAniListLoaded(Iterable<int> bangumiIds) async {
+    await AniListClient.instance.ensureLoaded(bangumiIds);
+    onRefreshed?.call();
+  }
 
   /// 数据可用（更新时间表非空）时回调；设置在 main 初始化，供通知重排。
   /// 这里额外在「彻底拿不到数据」时弹 toast —— 时间表时间和更新提醒都依赖
@@ -84,12 +145,12 @@ class BangumiUpdateTimesService {
         final malIds = <int, int>{};
         for (final body in bodies) {
           if (body.isEmpty) continue;
-          final data = parseBangumiDataSeason(body);
+          final data = parseBangumiMalSeason(body);
           updates.addAll(data.updates);
           malIds.addAll(data.malIds);
         }
         if (updates.isEmpty) {
-          throw const FormatException('bangumi-data: no season data parsed');
+          throw const FormatException('bangumi-mal: no season data parsed');
         }
         await cache.parent.create(recursive: true);
         await cache.writeAsString(
@@ -98,9 +159,6 @@ class BangumiUpdateTimesService {
               for (final e in updates.entries)
                 '${e.key}': [e.value.firstEpochMs, e.value.periodMs],
             },
-            // JSON 对象的 key 必须是字符串：malIds 是 Map<int, int>，直接塞进去
-            // jsonEncode 会抛「Converting object to an encodable object failed」，
-            // 于是解析成功的数据也写不进缓存、updates 一直是空表（直连失败的根因）。
             'mal': {for (final e in malIds.entries) '${e.key}': e.value},
           }),
           flush: true,
@@ -157,7 +215,7 @@ class BangumiUpdateTimesService {
   Future<String> _fetchSeason(int year, int month) async {
     try {
       final response = await DioFactory.apiDio.get<String>(
-        bangumiDataSeasonUrl(year, month),
+        bangumiMalSeasonUrl(year, month),
         options: Options(responseType: ResponseType.plain),
       );
       return response.data ?? '';
@@ -191,7 +249,7 @@ class BangumiSeasonData {
   final Map<int, int> malIds;
 }
 
-/// 当前的 bangumi-data 季节文件：季首月只可能是 1/4/7/10。
+/// 当前的季节：季首月只可能是 1/4/7/10。
 (int, int) currentBangumiDataSeason(DateTime now) {
   final month = ((now.month - 1) ~/ 3) * 3 + 1;
   return (now.year, month);
@@ -204,25 +262,22 @@ class BangumiSeasonData {
   return (year, month - 3);
 }
 
-/// 季节文件的下载地址。番剧条目加速为直连时走 raw.githubusercontent，
-/// 镜像/ECH 走 jsDelivr（该源无 ECH 支持，ECH 也按镜像处理）。
+/// 季节文件的下载地址。统一走 GitHub Pages（jsDelivr 对 GitHub Pages 内容不适用）。
 /// [acceleration] 供测试注入；省略时读全局设置。
-String bangumiDataSeasonUrl(
+String bangumiMalSeasonUrl(
   int year,
   int month, {
   BangumiAcceleration? acceleration,
 }) {
   final monthPart = month.toString().padLeft(2, '0');
-  final relativePath = 'data/items/$year/$monthPart.json';
-  return switch (acceleration ?? BangumiAcceleration.current) {
-    BangumiAcceleration.direct =>
-      'https://raw.githubusercontent.com/bangumi-data/bangumi-data/master/$relativePath',
-    _ => 'https://cdn.jsdelivr.net/gh/bangumi-data/bangumi-data@master/$relativePath',
-  };
+  return 'https://linkpass888.github.io/bangumi-mal/data/seasons/$year/$monthPart.json';
 }
 
-/// 从整份季节 JSON 提取更新时间与 mal 映射。
-BangumiSeasonData parseBangumiDataSeason(String source) {
+/// 从 bangumi-mal 季节 JSON 提取更新时间与 mal 映射。
+///
+/// 格式：`{"season": "2026-01", "count": 91, "items": {"<bangumi_id>": {bangumi_id, mal_id, begin, broadcast, ...}}}`
+/// begin 是 ISO UTC 时间戳，broadcast 是 `"R/<ISO>/P7D"` 或 null。
+BangumiSeasonData parseBangumiMalSeason(String source) {
   final updates = <int, BangumiUpdateEntry>{};
   final malIds = <int, int>{};
   final Object? decoded;
@@ -231,42 +286,35 @@ BangumiSeasonData parseBangumiDataSeason(String source) {
   } on Object {
     return BangumiSeasonData(updates, malIds);
   }
-  if (decoded is! List) return BangumiSeasonData(updates, malIds);
-  for (final item in decoded) {
-    if (item is! Map) continue;
-    // bangumi-data 里 type 是字符串（"tv" / "web" / "movie"），TV 与 Web
-    // 配信的番剧才有更新时间，movie / ova 一次性放送不参与时间表。
-    if (item['type'] != 'tv' && item['type'] != 'web') continue;
-    int? bangumiId;
-    int? malId;
-    for (final site in item['sites'] as List? ?? const []) {
-      if (site is! Map) continue;
-      if (site['site'] == 'bangumi') {
-        bangumiId ??= int.tryParse('${site['id']}');
-      } else if (site['site'] == 'mal') {
-        malId ??= int.tryParse('${site['id']}');
-      }
+  if (decoded is! Map) return BangumiSeasonData(updates, malIds);
+  final items = decoded['items'];
+  if (items is! Map) return BangumiSeasonData(updates, malIds);
+  items.forEach((key, value) {
+    if (value is! Map) return;
+    final bangumiId = int.tryParse(key.toString());
+    if (bangumiId == null) return;
+    updates[bangumiId] = deriveBangumiMalEntry(value);
+    final malId = value['mal_id'];
+    if (malId is int && malId > 0) {
+      malIds[bangumiId] = malId;
     }
-    // 没有 bangumi id 的条目无法和 Bangumi 日历对上，跳过。
-    if (bangumiId == null) continue;
-    updates[bangumiId] = deriveUpdateEntry(item);
-    if (malId != null) malIds[bangumiId] = malId;
-  }
+  });
   return BangumiSeasonData(updates, malIds);
 }
 
-/// 直接取条目自身的 begin / broadcast（日本首播时刻）推算更新时间，
-/// 不读站点级时间：国内平台不会上，站点 begin 对用户没有意义。
-BangumiUpdateEntry deriveUpdateEntry(Map item) {
-  final sourceBegin = '${item['begin']}' != 'null' ? '${item['begin']}' : '';
-  final sourceBroadcast =
+/// 从 bangumi-mal 记录推算更新时间。begin 是 UTC ISO 时间戳，
+/// broadcast 是 `"R/<ISO>/P7D"` 形式。没有 broadcast 时推不出周期。
+BangumiUpdateEntry deriveBangumiMalEntry(Map item) {
+  final beginStr = '${item['begin']}' != 'null' ? '${item['begin']}' : '';
+  final broadcastStr =
       '${item['broadcast']}' != 'null' ? '${item['broadcast']}' : null;
 
-  final begin = DateTime.tryParse(sourceBegin)?.toUtc();
-  final broadcast = parseIsoBroadcast(sourceBroadcast);
-  // begin 只有日期没有时刻时（本地零点解析），拿不出可信的更新时刻。
+  final begin = DateTime.tryParse(beginStr)?.toUtc();
+  final broadcast = parseIsoBroadcast(broadcastStr);
+  // begin 只有日期（或年月）没有时刻时，拿不出可信的更新时刻。
+  // bangumi-mal 的 begin 若是 "2024-10" / "2024-10-06" 这类粗粒度值就走这里。
   final hasTimeOfDay =
-      begin != null && sourceBegin.length > 10 && broadcast != null;
+      begin != null && beginStr.length > 10 && broadcast != null;
   return BangumiUpdateEntry(
     begin?.millisecondsSinceEpoch,
     hasTimeOfDay ? broadcast : null,
@@ -332,21 +380,36 @@ int compareTimelineUpdateTime(
   return comparison != 0 ? comparison : a.id.compareTo(b.id);
 }
 
-/// 追番页排序：无更新时间的（即不在最近两季，或两季内推不出时刻的）排最上面；
-/// 其余按上一次更新时间从新到旧。
+/// 追番页排序：有更新时间的按上一次更新时间从新到旧；无更新时间的排底部。
 int compareCollectUpdateTime(
   CollectedBangumi a,
   CollectedBangumi b,
   Map<int, BangumiUpdateEntry> updates,
   DateTime now,
 ) {
-  final aLast = lastUpdateEpochFrom(updates[a.bangumiItem.id], now);
-  final bLast = lastUpdateEpochFrom(updates[b.bangumiItem.id], now);
+  final aLast = _resolveLastEpoch(a.bangumiItem.id, updates, now);
+  final bLast = _resolveLastEpoch(b.bangumiItem.id, updates, now);
   if (aLast == null && bLast == null) {
     return a.bangumiItem.id.compareTo(b.bangumiItem.id);
   }
-  if (aLast == null) return -1;
-  if (bLast == null) return 1;
+  if (aLast == null) return 1;
+  if (bLast == null) return -1;
   final comparison = bLast.compareTo(aLast);
   return comparison != 0 ? comparison : a.bangumiItem.id.compareTo(b.bangumiItem.id);
+}
+
+/// 上一次更新时刻：优先 AniList 实测（下一集回推一个周期），缓存过期也先用；
+/// 否则 bangumi-mal。
+int? _resolveLastEpoch(
+  int bangumiId,
+  Map<int, BangumiUpdateEntry> updates,
+  DateTime now,
+) {
+  final anilist = AniListClient.instance.cached(bangumiId, now: now) ??
+      AniListClient.instance.staleCached(bangumiId);
+  final period = updates[bangumiId]?.periodMs;
+  if (anilist != null && period != null) {
+    return anilist.airingAt - period;
+  }
+  return lastUpdateEpochFrom(updates[bangumiId], now);
 }

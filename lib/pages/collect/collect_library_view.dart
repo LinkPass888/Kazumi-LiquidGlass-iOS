@@ -79,8 +79,14 @@ class _CollectLibraryViewState extends State<CollectLibraryView>
   @override
   void initState() {
     super.initState();
-    // 更新时间数据异步到达后重排一次。
-    unawaited(BangumiUpdateTimesService.instance.ensureLoaded().then((_) {
+    // 更新时间数据异步到达后重排一次；顺带给在追的番补 AniList 实测状态。
+    unawaited(BangumiUpdateTimesService.instance.ensureLoaded().then((_) async {
+      if (mounted) setState(() {});
+      final ids = GStorage.collectibles.values
+          .where((c) => c.type == CollectType.watching.value)
+          .map((c) => c.bangumiItem.id)
+          .toList();
+      await BangumiUpdateTimesService.instance.ensureAniListLoaded(ids);
       if (mounted) setState(() {});
     }));
   }

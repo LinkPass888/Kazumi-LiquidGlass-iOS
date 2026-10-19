@@ -1,7 +1,5 @@
 import 'package:kazumi/services/storage/storage.dart';
-import 'package:kazumi/services/storage/bangumi_timeline_store.dart';
 import 'package:kazumi/modules/bangumi/bangumi_item.dart';
-import 'package:kazumi/modules/collect/collect_type.dart';
 import 'package:kazumi/modules/collect/collect_module.dart';
 import 'package:kazumi/modules/collect/collect_change_module.dart';
 import 'package:kazumi/services/logging/logger.dart';
@@ -115,7 +113,6 @@ class CollectCrudRepository implements ICollectCrudRepository {
         type,
       );
       await GStorage.putCollectible(collectedBangumi);
-      await _syncTimelineEntry(bangumiItem.id, type);
     } catch (e, stackTrace) {
       KazumiLogger().e(
         'GStorage: add collectible failed. id=${bangumiItem.id}, type=$type',
@@ -138,7 +135,6 @@ class CollectCrudRepository implements ICollectCrudRepository {
       }
       collectible.bangumiItem = bangumiItem;
       await GStorage.putCollectible(collectible);
-      await _syncTimelineEntry(bangumiItem.id, collectible.type);
     } catch (e, stackTrace) {
       KazumiLogger().e(
         'GStorage: update collectible failed. id=${bangumiItem.id}',
@@ -153,7 +149,6 @@ class CollectCrudRepository implements ICollectCrudRepository {
   Future<void> deleteCollectible(int id) async {
     try {
       await GStorage.deleteCollectible(id);
-      await _syncTimelineEntry(id, CollectType.none.value);
     } catch (e, stackTrace) {
       KazumiLogger().e(
         'GStorage: delete collectible failed. id=$id',
@@ -164,20 +159,6 @@ class CollectCrudRepository implements ICollectCrudRepository {
     }
   }
 
-  /// 番剧不再处于「在看」时，删除它的时间表数据
-  Future<void> _syncTimelineEntry(int bangumiId, int collectType) async {
-    if (bangumiKeepsTimelineEntry(collectType)) {
-      return;
-    }
-    try {
-      await BangumiTimelineStore.remove(bangumiId);
-    } catch (e) {
-      KazumiLogger().w(
-        'GStorage: remove timeline entry failed. id=$bangumiId',
-        error: e,
-      );
-    }
-  }
 
   @override
   Future<void> addCollectChange(CollectedBangumiChange change) async {

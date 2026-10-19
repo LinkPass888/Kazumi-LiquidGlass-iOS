@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:kazumi/bean/card/network_img_layer.dart';
 import 'package:kazumi/modules/bangumi/bangumi_item.dart';
+import 'package:kazumi/services/bangumi_update_times.dart';
 
 class BangumiTimelineCard extends StatelessWidget {
   const BangumiTimelineCard({
@@ -12,7 +13,8 @@ class BangumiTimelineCard extends StatelessWidget {
     required this.onTap,
     this.isWatching = false,
     this.compact = false,
-    this.updateText,
+    this.updateEpoch,
+    this.currentEpisode,
   });
 
   final BangumiItem bangumiItem;
@@ -21,12 +23,11 @@ class BangumiTimelineCard extends StatelessWidget {
   final bool isWatching;
   final bool compact;
 
-  /// 下次更新时间文案（如「18:30 更新」），null 时整行留白占位，
-  /// 保证有/无数据的卡片在同一网格里高度一致。
-  final String? updateText;
+  /// 下一次更新时刻（epoch ms）。为空时不显示更新时间胶囊。
+  final int? updateEpoch;
 
-  static final _episodePattern =
-      RegExp(r'^\s*([1-9]\d*)\s*[话話集](?=\s*(?:[/／]|$))');
+  /// 已更新到第几集，为空时不显示集数胶囊。
+  final int? currentEpisode;
 
   static const _contentPadding = 12.0;
   // 时间表卡片的圆角保持原样（28 的外框 + 同心 16 的内封面），不跟全局屏幕圆角走。
@@ -35,47 +36,35 @@ class BangumiTimelineCard extends StatelessWidget {
   static const _titleLineHeight = 1.5;
   static const _labelFontSize = 12.0;
   static const _labelLineHeight = 4 / 3;
-  static const _updateFontSize = 11.0;
-  static const _updateGap = 4.0;
   static const _metadataGap = 8.0;
   static const _footerGap = 12.0;
-  static const _ratingIconSize = 16.0;
-  static const _ratingPadding =
+  static const _pillIconSize = 16.0;
+  static const _pillPadding =
       EdgeInsets.symmetric(horizontal: 10, vertical: 6);
+  static const _pillGap = 8.0;
 
   // Shared by the grid and card to keep their text-scaled heights in sync.
   static double heightFor(TextScaler scaler, {bool compact = false}) {
     final titleHeight = scaler.scale(_titleFontSize) * _titleLineHeight * 2;
     final labelHeight = scaler.scale(_labelFontSize) * _labelLineHeight;
-    final updateHeight =
-        _updateGap + scaler.scale(_updateFontSize) * _labelLineHeight;
     final footerHeight =
-        math.max(_ratingIconSize, labelHeight) + _ratingPadding.vertical;
+        math.max(_pillIconSize, labelHeight) + _pillPadding.vertical;
     final contentHeight = math.max(
       compact ? 120.0 : 136.0,
-      titleHeight +
-          _metadataGap +
-          labelHeight +
-          updateHeight +
-          _footerGap +
-          footerHeight,
+      titleHeight + _metadataGap + labelHeight + _footerGap + footerHeight,
     );
     return _contentPadding * 2 + contentHeight;
   }
 
   String _supportingText(String title) {
-    // Calendar entries expose episode counts through info.
-    final episodes = _episodePattern.firstMatch(bangumiItem.info);
     final tags = bangumiItem.metaTags.isNotEmpty
         ? bangumiItem.metaTags
         : bangumiItem.tags.map((tag) => tag.name);
-    final metadata = <String>[
-      if (episodes != null) '${episodes.group(1)} 话',
-      ...tags
-          .map((name) => name.trim())
-          .where((name) => name.isNotEmpty)
-          .toSet(),
-    ];
+    final metadata = tags
+        .map((name) => name.trim())
+        .where((name) => name.isNotEmpty)
+        .toSet()
+        .toList();
     if (metadata.isNotEmpty) return metadata.take(3).join(' · ');
     final originalName = bangumiItem.name.trim();
     return originalName != title ? originalName : '';
@@ -137,57 +126,138 @@ class BangumiTimelineCard extends StatelessWidget {
             height: _titleLineHeight,
           ),
         ),
-        if (supportingText.isNotEmpty) ...[
-          const SizedBox(height: _metadataGap),
+        // 标签行：评分在最左，后面是标签。
+        SizedBox(height: _metadataGap),
+        Row(
+          children: [
+            if (showRating) ...[
+              _buildRatingInline(context),
+              if (supportingText.isNotEmpty) const SizedBox(width: 8),
+            ],
+            if (supportingText.isNotEmpty)
+              Expanded(
+                child: Text(
+                  supportingText,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: colors.onSurfaceVariant,
+                    fontSize: _labelFontSize,
+                    height: _labelLineHeight,
+                  ),
+                ),
+              ),
+          ],
+        ),
+        const Spacer(),
+        const SizedBox(height: _footerGap),
+        Row(
+          children: [
+            if (updateEpoch != null)
+              Flexible(
+                child: _buildPill(
+                  context,
+                  icon: Icons.schedule_rounded,
+                  label: '${formatUpdateTime(updateEpoch)} 更新',
+                ),
+              ),
+            if (updateEpoch != null && currentEpisode != null)
+              const SizedBox(width: _pillGap),
+            if (currentEpisode != null)
+              Flexible(
+                child: _buildPill(
+                  context,
+                  icon: Icons.playlist_play_rounded,
+                  label: '第 $currentEpisode 话',
+                ),
+              ),
+            if (isWatching) ...[
+              const SizedBox(width: _pillGap),
+              Tooltip(
+                message: '正在追',
+                child: Icon(Icons.bookmark_rounded,
+                    size: 20, color: colors.primary),
+              ),
+            ],
+          ],
+        ),
+      ],
+    );
+  }
+
+  /// 评分在标签行左侧，不带胶囊背景：星标 + 分数。
+  Widget _buildRatingInline(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final labelStyle = theme.textTheme.labelMedium?.copyWith(
+      fontSize: _labelFontSize,
+      height: _labelLineHeight,
+    );
+    if (bangumiItem.ratingScore <= 0) {
+      return Text('暂无评分',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: labelStyle?.copyWith(color: colors.onSurfaceVariant));
+    }
+    final score = bangumiItem.ratingScore.toStringAsFixed(1);
+    return Semantics(
+      label: '评分 $score',
+      excludeSemantics: true,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.star_rounded,
+              size: _pillIconSize, color: colors.primary),
+          const SizedBox(width: 2),
           Text(
-            supportingText,
+            score,
             maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: colors.onSurfaceVariant,
-              fontSize: _labelFontSize,
-              height: _labelLineHeight,
+            style: labelStyle?.copyWith(
+              color: colors.onSurface,
+              fontWeight: FontWeight.w700,
             ),
           ),
         ],
-        // 更新时间行：占位行常驻，无数据时留白，网格高度保持一致。
-        SizedBox(height: _updateGap),
-        Text(
-          updateText ?? '',
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: colors.outline,
-            fontSize: _updateFontSize,
-            height: _labelLineHeight,
-          ),
-        ),
-        if (showRating || isWatching) ...[
-          const Spacer(),
-          const SizedBox(height: _footerGap),
-          Row(
-            children: [
-              if (showRating)
-                Expanded(
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: _buildRating(context),
-                  ),
-                )
-              else
-                const Spacer(),
-              if (isWatching) ...[
-                if (showRating) const SizedBox(width: 8),
-                Tooltip(
-                  message: '正在追',
-                  child: Icon(Icons.bookmark_rounded,
-                      size: 20, color: colors.primary),
-                ),
-              ],
-            ],
+      ),
+    );
+  }
+
+  /// 底部信息胶囊：和原评分胶囊同款 StadiumBorder。
+  Widget _buildPill(
+    BuildContext context, {
+    required IconData icon,
+    required String label,
+  }) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final labelStyle = theme.textTheme.labelMedium?.copyWith(
+      fontSize: _labelFontSize,
+      height: _labelLineHeight,
+    );
+    return Container(
+      padding: _pillPadding,
+      decoration: ShapeDecoration(
+        color: colors.secondaryContainer,
+        shape: const StadiumBorder(),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: _pillIconSize, color: colors.onSecondaryContainer),
+          const SizedBox(width: 4),
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: labelStyle?.copyWith(
+                color: colors.onSecondaryContainer,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
           ),
         ],
-      ],
+      ),
     );
   }
 
@@ -221,49 +291,6 @@ class BangumiTimelineCard extends StatelessWidget {
                     ),
             ),
           ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildRating(BuildContext context) {
-    final theme = Theme.of(context);
-    final colors = theme.colorScheme;
-    final labelStyle = theme.textTheme.labelMedium?.copyWith(
-      fontSize: _labelFontSize,
-      height: _labelLineHeight,
-    );
-    if (bangumiItem.ratingScore <= 0) {
-      return Text('暂无评分',
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: labelStyle?.copyWith(color: colors.onSurfaceVariant));
-    }
-    final score = bangumiItem.ratingScore.toStringAsFixed(1);
-    return Semantics(
-      label: '评分 $score',
-      excludeSemantics: true,
-      child: Container(
-        padding: _ratingPadding,
-        decoration: ShapeDecoration(
-          color: colors.secondaryContainer,
-          shape: const StadiumBorder(),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.star_rounded,
-                size: _ratingIconSize, color: colors.onSecondaryContainer),
-            const SizedBox(width: 4),
-            Flexible(
-              child: Text(score,
-                  maxLines: 1,
-                  style: labelStyle?.copyWith(
-                    color: colors.onSecondaryContainer,
-                    fontWeight: FontWeight.w700,
-                  )),
-            ),
-          ],
         ),
       ),
     );
