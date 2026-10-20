@@ -425,7 +425,8 @@ void main() {
     test('追番页：星期由放送星期决定，不从时刻反推', () {
       // 两条目的时刻落在同一个星期四，放送星期却可以是任意一天：落到
       // 「本周那一次」时星期应等于调用方给的 target，而不是时刻自带的
-      // 星期四。这正是时间表分组不再从时刻反推的同一个原则。
+      // 星期四。时间表那边也一样：换列只看 bangumi 的星期（凌晨档往后
+      // 挪一天），不看时刻属于星期几。
       final anchor = DateTime(2026, 10, 15, 21, 0).millisecondsSinceEpoch;
       for (final weekday in <int>[1, 3, 7]) {
         final epoch = updateTimeForWeekdayFrom(anchor, weekday, now)!;
@@ -458,6 +459,49 @@ void main() {
         updateTimeForWeekdayFrom(anchor, 4, now, firstEpochMs: firstEpoch),
         isNull,
       );
+    });
+  });
+
+  group('时间表的列', () {
+    // 2026-10-11 是星期日，12 是星期一。
+    int at(int day, int hour, int minute) =>
+        DateTime(2026, 10, day, hour, minute).millisecondsSinceEpoch;
+
+    test('白天档照 bangumi 的星期放', () {
+      // 星期日 22:00 的番仍在星期日。
+      expect(timelineColumnWeekday(7, at(11, 22, 0)), 7);
+      // 星期一 06:00 已经是星期一自己的节目日。
+      expect(timelineColumnWeekday(1, at(12, 6, 0)), 1);
+    });
+
+    test('凌晨档往后挪一天，挪到哪天只看 bangumi', () {
+      // bangumi 的日曜 24:00 / 25:05 记在星期日，本地时钟是周一 00:05。
+      expect(timelineColumnWeekday(7, at(12, 0, 5)), 1);
+      expect(timelineColumnWeekday(7, at(12, 1, 0)), 1);
+      expect(timelineColumnWeekday(7, at(12, 5, 59)), 1);
+      // 星期六的凌晨档 -> 星期日。
+      expect(timelineColumnWeekday(6, at(11, 0, 30)), 7);
+    });
+
+    test('时刻自带的星期跨度很大时也以 bangumi 为准', () {
+      // bangumi 记星期四，时刻却落在星期三 00:05：不按时刻的星期走，
+      // 仍是 bangumi 那一天的第二天。
+      expect(timelineColumnWeekday(4, at(14, 0, 5)), 5);
+      expect(timelineColumnWeekday(2, at(12, 0, 5)), 3);
+    });
+
+    test('6 点整是分界：仍留在 bangumi 的星期', () {
+      expect(timelineColumnWeekday(7, at(12, 6, 0)), 7);
+    });
+
+    test('拿不到更新时刻时原样返回 bangumi 的星期', () {
+      expect(timelineColumnWeekday(7, null), 7);
+      expect(timelineColumnWeekday(3, null), 3);
+    });
+
+    test('星期数值先规整到 1–7', () {
+      expect(timelineColumnWeekday(0, at(11, 22, 0)), 1);
+      expect(timelineColumnWeekday(42, at(11, 22, 0)), 7);
     });
   });
 

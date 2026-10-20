@@ -441,9 +441,9 @@ String? formatUpdateTime(int? epochMs) {
 /// 时间表排序：同一列内按「当天时刻」从早到晚，无时刻的排最后，同序回退 id。
 ///
 /// 列（星期）由分组决定 —— bangumi 日历的放送星期，加上用户手动设置的
-/// 放送星期 —— 所以这里**只比时刻，不比星期**：手动放进某一天的番，
-/// 排序时和那天原生的番一样按自己的 HH:mm 落位，不会被时刻自带的星期
-/// 甩到另一个位置去。
+/// 放送星期，凌晨档（0–5 点）再往后挪一天（见 [timelineColumnWeekday]）——
+/// 所以这里**只比时刻，不比星期**：手动放进某一天的番，排序时和那天原生
+/// 的番一样按自己的 HH:mm 落位，不会被时刻自带的星期甩到另一个位置去。
 ///
 /// 「下一次」是相对现在滚动的，直接比绝对时刻会让同一列里的先后随加载
 /// 时间变化（周一晚上加载时，0 点档的下一次在下周）。所以取的是**一天
@@ -466,9 +466,33 @@ int compareTimelineUpdateTime(
 /// 按「当天时刻」比较两个播出时刻（不比星期）；同一时刻再比绝对时刻。
 ///
 /// 以前这里连星期一起比（`compareWeeklyPhase`），那是给「按时刻重新
-/// 分桶」用的。现在分组不再看时刻，跨星期的比较只会在手动条目和原生
-/// 条目混排时出现，而那种情况下用户要的是「这一天里几点播」，不是
-/// 「它原本属于星期几」。
+/// 分桶」用的。现在分组只看 bangumi 的星期（凌晨档往后挪一天），跨星期
+/// 的比较只会在手动条目和原生条目混排时出现，而那种情况下用户要的是
+/// 「这一天里几点播」，不是「它原本属于星期几」。
+/// 凌晨档的上限（不含）：0–5 点播出的番属于前一天节目日的
+/// 「24:00–29:00」，本地时钟却已经是第二天。
+const int lateNightHourLimit = 6;
+
+/// 时间表上这部番该放哪一列（1 = 星期一）。
+///
+/// bangumi 日历的星期是**节目日**：日曜 24:00 记在星期日，本地时钟却
+/// 是周一 00:00。凌晨 0–5 点播出的番按本地时钟挪到**第二天**那一列，
+/// 其余时刻仍用 bangumi 的星期 —— 白天档两者本来就一致，不在这里改。
+///
+/// 只挪一天、星期只从 bangumi 来：bangumi 说星期日，凌晨档就是星期一。
+/// 时刻自带的星期不参与判断 —— 它在 bangumi 和 bangumi-mal 对不上的
+/// 情况下（先行配信、首播特殊等）会跨度很大，以 bangumi 为准。
+///
+/// 拿不到更新时刻（不在最近两季）时原样返回 bangumi 的星期。
+/// 用户手动设置的星期优先级更高，不经过这里。
+int timelineColumnWeekday(int bangumiWeekday, int? updateEpochMs) {
+  final base = normalizeBangumiWeekday(bangumiWeekday);
+  if (updateEpochMs == null) return base;
+  final time = DateTime.fromMillisecondsSinceEpoch(updateEpochMs);
+  if (time.hour >= lateNightHourLimit) return base;
+  return base % 7 + 1;
+}
+
 int compareTimeOfDay(int aEpochMs, int bEpochMs) {
   final a = DateTime.fromMillisecondsSinceEpoch(aEpochMs);
   final b = DateTime.fromMillisecondsSinceEpoch(bEpochMs);
