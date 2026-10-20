@@ -51,6 +51,42 @@ class CreditsPage extends StatelessWidget {
                   subtitle: '以图搜番',
                   url: 'https://trace.moe',
                 ),
+                AboutLinkTile(
+                  icon: Icons.schedule_rounded,
+                  title: 'AniList',
+                  subtitle: '更新时间与集数',
+                  url: ApiEndpoints.aniListIndex,
+                ),
+                AboutLinkTile(
+                  icon: Icons.fast_forward_rounded,
+                  title: 'AniSkip',
+                  subtitle: '片头片尾时间轴',
+                  url: ApiEndpoints.aniSkipIndex,
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
+            ContentSection.group(
+              title: '数据',
+              children: const [
+                AboutLinkTile(
+                  icon: Icons.table_chart_rounded,
+                  title: 'bangumi-mal',
+                  subtitle: 'bangumi ↔ MAL 映射与播出周期',
+                  url: ApiEndpoints.bangumiMalIndex,
+                ),
+                AboutLinkTile(
+                  icon: Icons.link_rounded,
+                  title: 'BangumiExtLinker',
+                  subtitle: 'bangumi ↔ MAL 映射主表 · CC BY 4.0',
+                  url: ApiEndpoints.bangumiExtLinkerIndex,
+                ),
+                AboutLinkTile(
+                  icon: Icons.event_rounded,
+                  title: 'bangumi-data',
+                  subtitle: '番剧播出时间 · CC BY 4.0',
+                  url: ApiEndpoints.bangumiDataIndex,
+                ),
               ],
             ),
             const SizedBox(height: 24),

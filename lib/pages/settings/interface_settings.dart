@@ -26,13 +26,15 @@ class _InterfaceSettingsPageState extends State<InterfaceSettingsPage> {
     '/tab/my/': '我的',
   };
 
-  /// 时间表的星期分组来源。
-  /// - bangumi：条目自身的播出星期（放送星期），同一时段的排在一起。
-  /// - anilist：实测的下一次播出时刻。首播日和正片播出日不一致（先行配信、
-  ///   流媒体提前上线）时按它分组。
+  /// 时间表的时刻来源：**分组、排序、卡片上的更新时刻三者一起切**，
+  /// 不能只切其中一个（以前排序固定用 bangumi-mal、胶囊固定用 AniList，
+  /// 同一列里就出现「周六 20:00 的番排在周一 21:00 后面」）。
+  /// - anilist（默认）：AniList 实测播出时刻，停播/延期/先行配信会反映；
+  ///   查不到的条目兜底到 bangumi-mal，兜底后三者仍是同一个时刻。
+  /// - bangumi：只用 bangumi-mal 推算，不看 AniList。
   static const Map<String, String> timelineSourceMap = {
-    'bangumi': 'Bangumi 放送星期',
     'anilist': 'AniList 播出时间',
+    'bangumi': 'Bangumi 放送星期',
   };
 
   @override
@@ -94,12 +96,12 @@ class _InterfaceSettingsPageState extends State<InterfaceSettingsPage> {
               leading: Icons.calendar_view_week_rounded,
               title: const Text('时间表星期来源'),
               description: const Text(
-                '按放送星期分组时，同一时段的番剧会排在一起；'
-                '按 AniList 播出时间分组时跟随最新一次的播出时刻',
+                '决定时间表的星期分组、同一列里的先后，以及卡片上的更新时刻；'
+                'AniList 跟随实测播出时刻，停播/延期/先行配信会反映出来',
               ),
               value: _timelinePreferredSource,
               options: timelineSourceMap,
-              fallbackLabel: 'Bangumi 放送星期',
+              fallbackLabel: 'AniList 播出时间',
               onChanged: _updateTimelineSource,
             ),
             SettingsDropdownTile<CollectLayout>(

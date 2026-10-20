@@ -7,6 +7,7 @@ import 'package:kazumi/utils/constants.dart';
 import 'package:kazumi/utils/date_time.dart';
 import 'package:kazumi/modules/bangumi/bangumi_item.dart';
 import 'package:kazumi/services/bangumi_update_times.dart';
+import 'package:kazumi/services/storage/storage.dart';
 import 'package:kazumi/bean/card/network_img_layer.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:skeletonizer/skeletonizer.dart';
@@ -153,11 +154,18 @@ class _BangumiInfoCardVState extends State<BangumiInfoCardV> {
     });
   }
 
-  /// 「周五 20:00」，没有更新时间（含非最近两季的番）返回 null。
+  /// 「周六 20:00」，没有更新时间（含非最近两季的番）返回 null。
+  /// 用时间表同源的时刻：详情页写「周六 20:00」，时间表却把它排在周一，
+  /// 正是分组/排序/显示各用一套来源造成的。
   String? get _broadcastTime {
     final service = BangumiUpdateTimesService.instance;
     if (!service.isRecentSeason(widget.bangumiItem.id)) return null;
-    final epoch = service.nextUpdateEpoch(widget.bangumiItem.id);
+    final epoch = service.timelineUpdateEpoch(
+      widget.bangumiItem.id,
+      preferAniList:
+          GStorage.getSetting(SettingsKeys.timelinePreferredSource) ==
+              'anilist',
+    );
     if (epoch == null) return null;
     final time = DateTime.fromMillisecondsSinceEpoch(epoch);
     return '${weekdayCnLabel(time.weekday)} '
