@@ -457,7 +457,9 @@ class SettingsKeys {
   );
   static const timelinePreferredSource = SettingKey<String>(
     'timelinePreferredSource',
-    'bangumi',
+    // 默认 AniList：bangumi-mal 的 begin 是「首播那一集」的时刻，和之后
+    // 每周的实际播出时间可能差一天，拿它分组会把番放到错误的星期。
+    'anilist',
     group: SettingGroup.interface,
   );
   static const defaultCollectLayout = SettingKey<String>(

@@ -10,6 +10,7 @@ import 'package:kazumi/services/download/download_directory_service.dart';
 import 'package:hive_ce_flutter/hive_flutter.dart';
 import 'package:kazumi/services/network/metered_network_service.dart';
 import 'package:kazumi/services/network/ech_http_licenses.dart';
+import 'package:kazumi/services/network/bangumi_data_licenses.dart';
 import 'package:kazumi/services/network/proxy_manager.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:kazumi/pages/error/storage_error_page.dart';
@@ -24,6 +25,7 @@ import 'package:kazumi/services/bangumi_update_times.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   registerEchHttpLicenses();
+  registerBangumiDataLicenses();
   MediaKit.ensureInitialized();
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(

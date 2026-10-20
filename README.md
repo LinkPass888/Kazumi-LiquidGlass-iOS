@@ -44,6 +44,11 @@
 - [X]  自定义放送星期（在时间表展示）
 - [X]  自动跳过片头片尾(由[AniSkip](https://github.com/aniskip)提供时间,[BangumiExtLinker](https://github.com/Rhilip/BangumiExtLinker)提供条目映射)
 - [X]  Bangumi自动标记集看过
+- [X]  时间表与详情页展示更新时刻：卡片标签下方显示「HH:mm 更新」，详情页展示放送时间与更新进度（当前第几集 / 总集数）
+- [X]  时间表排序按更新时间从早到晚，分组、排序与卡片上的时刻同源，可切换「Bangumi 放送星期 / AniList 播出时间」
+- [X]  追番页「更新时间」排序：最近更新的在前
+- [X]  更新提醒：为「我在追的动画」在更新时刻排定本地通知（我的 → 通知设置）
+- [X]  设置备份：导出/导入设置到剪贴板，重装后恢复
 - [X]  针对原版部分界面优化
 
 ## 下载
@@ -115,7 +120,7 @@ A: 本项目编译需要良好的网络环境, 除了由 Google 托管的 Flutte
 
 此图标由其原作者 [Yuquanaaa](https://www.pixiv.net/users/66219277) 拥有版权。我们已获得原作者的授权和许可, 可以在本项目中使用这一图标。这一图标不是自由使用的, 未经原作者明确授权, 任何人不得擅自使用、复制、修改或分发这一图标。
 
-本项目内嵌字体为 [Mi Sans](https://hyperos.mi.com/font/zh/details/sc/) 字体, 由 [Xiaomi](https://www.mi.com/index.html) 开发和拥有版权。
+本项目统一使用系统字体, 不再内嵌第三方字体。
 
 ## 免责声明
 
@@ -149,6 +154,16 @@ A: 本项目编译需要良好的网络环境, 除了由 Google 托管的 Flutte
 特别感谢 [所有贡献者](https://github.com/LinkPass888/Kazumi-LiquidGlass-iOS/graphs/contributors) 本项目因为你们变得更好。
 
 特别感谢 [trace.moe](https://trace.moe) 本项目使用了 trace.moe 提供的图片识别番剧功能。
+
+特别感谢 [BangumiExtLinker](https://github.com/Rhilip/BangumiExtLinker) 本项目使用其 bangumi ↔ MAL 条目映射（CC BY 4.0）。
+
+特别感谢 [bangumi-data](https://github.com/bangumi-data/bangumi-data) 本项目使用其番剧播出时间数据（CC BY 4.0）。
+
+特别感谢 [bangumi-mal](https://github.com/LinkPass888/bangumi-mal) 本项目使用其合并后的映射表与按季播出数据（CC BY 4.0）。
+
+感谢 [AniList](https://anilist.co) 本项目通过其公开 GraphQL API 获取实测播出时刻与集数。
+
+感谢 [AniSkip](https://github.com/aniskip) 本项目使用 AniSkip 社区提供的片头片尾时间轴。
 
 感谢 [media-kit](https://github.com/media-kit/media-kit) 本项目跨平台媒体播放能力来自 media-kit。
 

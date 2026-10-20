@@ -1,0 +1,30 @@
+bangumi-mal / BangumiExtLinker / bangumi-data 数据许可说明
+========================================================
+
+本项目的时间表「更新时间」、追番页排序、通知排程，以及 AniSkip / AniList
+的 bangumi ↔ MAL id 转换，使用了下面这些以 CC BY 4.0 发布的数据。完整许可
+正文见同目录的 CC-BY-4.0.txt。
+
+CC BY 4.0: https://creativecommons.org/licenses/by/4.0/
+
+1. bangumi-mal
+   https://github.com/LinkPass888/bangumi-mal
+   由本项目的维护者整理的 bangumi ↔ MAL 合并映射表与按季播出数据
+   （data/seasons/<年>/<季>.json）。该仓库的再分发同样遵循 CC BY 4.0。
+
+2. BangumiExtLinker
+   https://github.com/Rhilip/BangumiExtLinker
+   映射主表（条目覆盖最广）。许可正文：BangumiExtLinker_LICENSE.txt
+
+3. bangumi-data
+   https://github.com/bangumi-data/bangumi-data
+   番剧播出时间（begin / broadcast）。按其 README 的 License 一节，
+   数据以 CC BY 4.0 提供，署名方式为注明来源是 bangumi-data。
+
+署名
+----
+Bangumi 番剧播出时间与 bangumi ↔ MAL 映射数据来自 BangumiExtLinker 与
+bangumi-data，经 bangumi-mal 合并后使用，均以 CC BY 4.0 授权。
+
+AniList 的播出时刻与集数通过其公开 GraphQL API 查询；AniSkip 的片头片尾
+时间轴来自 AniSkip 社区。

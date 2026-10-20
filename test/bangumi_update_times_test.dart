@@ -168,19 +168,25 @@ void main() {
     final first = DateTime.utc(2026, 10, 7, 15).millisecondsSinceEpoch;
     const week = 7 * 86400000;
 
+    // 时间表排序：时刻来源由调用方给，测试里直接按 bangumi 数据表取，
+    // 和线上 `timelineUpdateEpoch(preferAniList: false)` 一致。
+    int compare(List<int> entryIds, Map<int, BangumiUpdateEntry> updates,
+        DateTime at) {
+      return compareTimelineUpdateTime(
+        _item(entryIds[0]),
+        _item(entryIds[1]),
+        at,
+        epochFor: (id) => nextUpdateEpochFrom(updates[id], at),
+      );
+    }
+
     test('时间表：无更新时间排最后', () {
       final updates = _updates({
         1: _entry(first, week),
       });
       // 2 无数据 -> 排在 1 后面。
-      expect(
-        compareTimelineUpdateTime(_item(1), _item(2), updates, now),
-        isNegative,
-      );
-      expect(
-        compareTimelineUpdateTime(_item(2), _item(1), updates, now),
-        isPositive,
-      );
+      expect(compare([1, 2], updates, now), isNegative);
+      expect(compare([2, 1], updates, now), isPositive);
     });
 
     test('时间表：更早更新在前', () {
@@ -188,10 +194,7 @@ void main() {
         1: _entry(first, week),
         2: _entry(first + 3600000, week),
       });
-      expect(
-        compareTimelineUpdateTime(_item(1), _item(2), updates, now),
-        isNegative,
-      );
+      expect(compare([1, 2], updates, now), isNegative);
     });
 
     test('时间表：同一天内按当天时刻排，不按「下一次」的绝对时刻', () {
@@ -206,14 +209,8 @@ void main() {
       // 今天 —— 直接比绝对时刻会把 10 点档排到 0 点档前面。按当天时刻则
       // 0 点档在前，和加载时刻无关。
       final sundayDawn = DateTime(2026, 10, 4, 5);
-      expect(
-        compareTimelineUpdateTime(_item(1), _item(2), updates, sundayDawn),
-        isNegative,
-      );
-      expect(
-        compareTimelineUpdateTime(_item(2), _item(1), updates, sundayDawn),
-        isPositive,
-      );
+      expect(compare([1, 2], updates, sundayDawn), isNegative);
+      expect(compare([2, 1], updates, sundayDawn), isPositive);
     });
 
     test('时间表：跨星期按星期几从周一到周日', () {
@@ -224,10 +221,7 @@ void main() {
         1: _entry(monday, week),
         2: _entry(friday, week),
       });
-      expect(
-        compareTimelineUpdateTime(_item(1), _item(2), updates, now),
-        isNegative,
-      );
+      expect(compare([1, 2], updates, now), isNegative);
     });
 
     test('时间表：同一星期几按当天时刻从早到晚', () {
@@ -237,10 +231,44 @@ void main() {
         1: _entry(early, week),
         2: _entry(late, week),
       });
-      expect(
-        compareTimelineUpdateTime(_item(1), _item(2), updates, now),
-        isNegative,
-      );
+      expect(compare([1, 2], updates, now), isNegative);
+    });
+
+    test('时间表：排序键就是卡片显示的时刻（同一来源）', () {
+      // 回归：周六 20:00 的番曾因为排序用 bangumi-mal 的「首播那一集」
+      // 时刻（周一 22:30）而排到周一 21:00 的番后面，卡片却显示 20:00。
+      // 现在排序和显示取同一个 epoch，两者的相位必然一致。
+      final updates = _updates({
+        1: _entry(DateTime(2026, 10, 3, 20, 0).millisecondsSinceEpoch, week),
+        2: _entry(DateTime(2026, 10, 5, 21, 0).millisecondsSinceEpoch, week),
+      });
+      final epoch = nextUpdateEpochFrom(updates[1], now);
+      final shown = DateTime.fromMillisecondsSinceEpoch(epoch!);
+      // 卡片写的「HH:mm」来自同一个 epoch。
+      expect(formatUpdateTime(epoch), '20:00');
+      expect(shown.weekday, DateTime.saturday);
+      // 周六 20:00 排在周一 21:00 前面（同一列里不会出现跨星期混排）。
+      expect(compare([1, 2], updates, now), isNegative);
+    });
+
+    test('时间表：AniList 查不到时兜底 bangumi-mal，兜底后三者仍一致', () {
+      // 服务层的兜底逻辑：preferAniList 时 AniList 没数据就走
+      // nextUpdateEpochFrom(bangumi-mal)。这里直接验证「兜底后拿到的
+      // 那个 epoch」同时决定星期、排序和卡片上的 HH:mm —— 也就是
+      // 兜底不会让分组/排序/显示分家，只是那一天可能不准。
+      final updates = _updates({
+        1: _entry(DateTime(2026, 10, 5, 21, 0).millisecondsSinceEpoch, week),
+        2: _entry(DateTime(2026, 10, 6, 22, 0).millisecondsSinceEpoch, week),
+      });
+      // AniList 没有数据 -> 退回 bangumi-mal。
+      final fallback = nextUpdateEpochFrom(updates[1], now);
+      expect(fallback, isNotNull);
+      final shown = DateTime.fromMillisecondsSinceEpoch(fallback!);
+      expect(shown.weekday, DateTime.monday);
+      expect(formatUpdateTime(fallback), '21:00');
+      // 兜底条目按自己的时刻参与排序，不会因为「兜底」而排到最后。
+      expect(compare([1, 2], updates, now), isNegative);
+      expect(compare([2, 1], updates, now), isPositive);
     });
 
     test('追番页：不在最近两季的排最下面', () {

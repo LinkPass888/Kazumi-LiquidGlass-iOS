@@ -420,12 +420,10 @@ class _TimelinePageState extends State<TimelinePage> {
         compact: compact);
     final rawCalendar = _controller.bangumiCalendar;
     final filteredOut = day < rawCalendar.length && rawCalendar[day].isNotEmpty;
-    // 按 AniList 分组时，时间胶囊也显示 AniList 的实测时刻，和分组保持一致。
-    final aniListNext =
-        _controller.sort == TimelineSort.defaultOrder &&
-                _controller.prefersAniListWeekday
-            ? _controller.aniListNextEpochsForDay(day)
-            : const <int, int>{};
+    // 时间胶囊、排序、分组三者同源（见 TimelineController.timelineUpdateEpoch）。
+    final updateEpochs = _controller.sort == TimelineSort.defaultOrder
+        ? _controller.updateEpochsForDay(day)
+        : const <int, int>{};
     return _TimelineScrollView(
       key: PageStorageKey('timeline-day-$day'),
       slivers: [
@@ -470,8 +468,7 @@ class _TimelinePageState extends State<TimelinePage> {
                     compact: compact,
                     showRating: _showRating,
                     isWatching: watchingIds.contains(item.id),
-                    updateEpoch:
-                        aniListNext[item.id] ?? _controller.nextUpdateEpoch(item.id),
+                    updateEpoch: updateEpochs[item.id],
                     currentEpisode: _controller.currentEpisode(item.id),
                     onTap: () => context.pushNamed('/info/', arguments: item),
                   );

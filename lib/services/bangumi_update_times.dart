@@ -89,16 +89,38 @@ class BangumiUpdateTimesService {
     return ((nowMs - first) ~/ period) + 1;
   }
 
-  /// 单部番的放送星期（1 = 周一 ... 7 = 周日，本地时区）。
-  /// 默认用 bangumi-mal 的推算值：它周一的日子就是条目页的「放送星期」，
-  /// 同一时段（比如深夜档跨零点）的番会落在同一天，按时间排序也才连得上。
-  /// AniList 只在调用方明确要求时使用：它的 `airingAt` 是新一轮播出
-  /// （首播日 / 先行配信日），和条目页的放送星期可能差一两天。
-  int? updateWeekday(int bangumiId, {DateTime? now, bool preferAniList = false}) {
+  /// 时间表用的「更新时刻」：分组、排序、卡片胶囊一律走这一个函数。
+  ///
+  /// 三者必须同源，否则会出现「周六 20:00 更新的番排在周一 21:00 之后」——
+  /// 分组按一个来源、排序按另一个来源、胶囊又按第三个来源时必然对不上。
+  ///
+  /// 所以无论设置怎么选，**返回的都是单个时刻**，调用方拿它同时决定
+  /// 星期、同一列里的先后和卡片上的「HH:mm」：
+  ///
+  /// - `preferAniList`（默认，设置 → 时间表星期来源 → AniList 播出时间）：
+  ///   AniList 实测优先（停播/延期/先行配信会反映）；**查不到的条目兜底
+  ///   到 bangumi-mal 推算**，兜底后分组、排序、显示依然是这同一个时刻，
+  ///   只是那个星期可能不准（bangumi-mal 的 begin 是首播那一集的时刻）。
+  /// - `false`（Bangumi 放送星期）：只用 bangumi-mal，不看 AniList。
+  ///   两种来源不能混在同一个返回值里挑，否则排序键和显示时刻又会分家。
+  int? timelineUpdateEpoch(
+    int bangumiId, {
+    DateTime? now,
+    bool preferAniList = false,
+  }) {
     final current = now ?? DateTime.now();
-    final epoch = preferAniList
-        ? nextUpdateEpoch(bangumiId, now: current)
-        : nextUpdateEpochFrom(updates[bangumiId], current);
+    if (preferAniList) return nextUpdateEpoch(bangumiId, now: current);
+    return nextUpdateEpochFrom(updates[bangumiId], current);
+  }
+
+  /// 单部番的放送星期（1 = 周一 ... 7 = 周日，本地时区）。
+  /// 和 [timelineUpdateEpoch] 同源，分组用哪天、排序和胶囊就用哪天的时刻。
+  int? updateWeekday(int bangumiId, {DateTime? now, bool preferAniList = false}) {
+    final epoch = timelineUpdateEpoch(
+      bangumiId,
+      now: now,
+      preferAniList: preferAniList,
+    );
     if (epoch == null) return null;
     return DateTime.fromMillisecondsSinceEpoch(epoch).weekday;
   }
@@ -407,20 +429,25 @@ String? formatUpdateTime(int? epochMs) {
   return '$hour:$minute';
 }
 
-/// 时间表排序：按下一次更新时间从早到晚，无数据的排最后，同序回退 id。
+/// 时间表排序：按「星期几 + 当天时刻」从早到晚，无数据的排最后，同序回退 id。
 ///
 /// 时间表是按星期分组展示的，而「下一次」是相对现在滚动的：周一晚上
 /// 加载时，周日档的番下一次在下周、周五档的在周五，直接比绝对时刻会让
 /// 同一列里的先后随加载时间变化。所以先比「星期几 + 当天时刻」，再比
 /// 绝对时刻兜底（同一相位但周期不同的条目）。
+///
+/// [epochFor] 是这一行的时刻来源，**必须和分组、卡片胶囊用同一个**
+/// （时间表里传 `timelineUpdateEpoch(preferAniList: 当前设置)`）；
+/// 否则同一列里排序键和显示的时刻会是两套，出现「周六 20:00 的番
+/// 排在周一 21:00 后面」这种错位。
 int compareTimelineUpdateTime(
   BangumiItem a,
   BangumiItem b,
-  Map<int, BangumiUpdateEntry> updates,
-  DateTime now,
-) {
-  final aNext = nextUpdateEpochFrom(updates[a.id], now);
-  final bNext = nextUpdateEpochFrom(updates[b.id], now);
+  DateTime now, {
+  required int? Function(int bangumiId) epochFor,
+}) {
+  final aNext = epochFor(a.id);
+  final bNext = epochFor(b.id);
   if (aNext == null && bNext == null) return a.id.compareTo(b.id);
   if (aNext == null) return 1;
   if (bNext == null) return -1;
