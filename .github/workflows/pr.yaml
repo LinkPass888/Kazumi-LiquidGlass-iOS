@@ -55,7 +55,8 @@
               sudo apt-get install -y cmake ninja-build g++
             shell: bash
           - name: Run Flutter tests
-            run: flutter test
+            timeout-minutes: 20
+            run: flutter test --reporter expanded
             shell: bash
 
       flutter-analyze:
