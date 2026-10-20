@@ -37,9 +37,8 @@ class CollectLibraryQuery {
 
   List<CollectedBangumi> results(
     CollectType? type,
-    CollectSort sort, {
-    Map<int, BangumiUpdateEntry> updateTimes = const {},
-  }) {
+    CollectSort sort,
+  ) {
     final result = _matches
         .where((entry) => type == null || entry.type == type.value)
         .toList();
@@ -48,7 +47,6 @@ class CollectLibraryQuery {
         CollectSort.updateTime => compareCollectUpdateTime(
             a,
             b,
-            updateTimes,
             DateTime.now(),
           ),
         CollectSort.recentlyChanged => b.time.compareTo(a.time),

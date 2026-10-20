@@ -354,11 +354,7 @@ class _CollectLibraryViewState extends State<CollectLibraryView>
   Widget _results(CollectLibraryQuery query, CollectType? type,
       {required double inset, Widget? header}) {
     return LayoutBuilder(builder: (context, constraints) {
-      final entries = query.results(
-        type,
-        _sort,
-        updateTimes: BangumiUpdateTimesService.instance.updates,
-      );
+      final entries = query.results(type, _sort);
       final contentWidth = constraints.maxWidth - inset * 2;
       return ScrollbarTheme(
         data: ScrollbarTheme.of(context).copyWith(crossAxisMargin: 0),

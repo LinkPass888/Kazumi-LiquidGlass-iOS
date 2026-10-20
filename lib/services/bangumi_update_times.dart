@@ -54,18 +54,27 @@ class BangumiUpdateTimesService {
   }
 
   /// 上一次更新时间（epoch ms），无数据或未开播时返回 null。
-  /// 优先用 AniList 的实测值：下一集（episode）之前的那一集，它已播出
-  /// 的重排时刻取 airingAt 减一个周期不准确，所以直接用本期已播推算。
+  /// 优先用 AniList 的实测值，查不到再按 bangumi-mal 推算。
+  ///
+  /// AniList 的 [AniListAiring.airingAt] 永远是**下一集**的时刻，所以
+  /// 「上一集」要看缓存新不新鲜：
+  /// - 新鲜（`now < airingAt`）：下一集还没播，上一集 = airingAt − 周期；
+  /// - 已过期（`now >= airingAt`）：那一集已经播了，airingAt 自己就是
+  ///   上一集，**不能再减一个周期**（会多退一周）。
+  ///
+  /// 没有周更周期时无法回推，新鲜缓存给不出上一集，只能交给 bangumi-mal。
   int? lastUpdateEpoch(int bangumiId, {DateTime? now}) {
     final current = now ?? DateTime.now();
     final anilist = AniListClient.instance.cached(bangumiId, now: current) ??
         AniListClient.instance.staleCached(bangumiId, now: current);
     if (anilist != null) {
-      final entry = updates[bangumiId];
-      final period = entry?.periodMs;
-      // AniList 只给「下一集」，用下一次播出时刻回推一个周期即为上次更新。
-      if (period != null) return anilist.airingAt - period;
-      if (!anilist.isFreshAt(current)) return anilist.airingAt;
+      if (anilist.isFreshAt(current)) {
+        final period = updates[bangumiId]?.periodMs;
+        if (period != null) return anilist.airingAt - period;
+      } else {
+        // 已播出的那一集就是 airingAt 本身。
+        return anilist.airingAt;
+      }
     }
     return lastUpdateEpochFrom(updates[bangumiId], current);
   }
@@ -75,11 +84,15 @@ class BangumiUpdateTimesService {
   /// （那一集确实已经播出了），完全没有才按 bangumi-mal 推算。
   int? currentEpisode(int bangumiId, {DateTime? now}) {
     final current = now ?? DateTime.now();
-    final anilist = AniListClient.instance.cached(bangumiId, now: current);
-    if (anilist != null) return anilist.currentEpisode;
-    final stale =
+    final anilist = AniListClient.instance.cached(bangumiId, now: current) ??
         AniListClient.instance.staleCached(bangumiId, now: current);
-    if (stale != null) return stale.currentEpisode;
+    if (anilist != null) {
+      // 缓存新鲜时「下一集」还没播，已播到 episode − 1；
+      // 缓存过期说明那一集已经播了，已播到 episode 本身。
+      return anilist.isFreshAt(current)
+          ? anilist.currentEpisode
+          : anilist.episode;
+    }
     final entry = updates[bangumiId];
     final first = entry?.firstEpochMs;
     final period = entry?.periodMs;
@@ -450,11 +463,10 @@ int compareTimeOfDay(int aEpochMs, int bEpochMs) {
 int compareCollectUpdateTime(
   CollectedBangumi a,
   CollectedBangumi b,
-  Map<int, BangumiUpdateEntry> updates,
   DateTime now,
 ) {
-  final aLast = _resolveLastEpoch(a.bangumiItem.id, updates, now);
-  final bLast = _resolveLastEpoch(b.bangumiItem.id, updates, now);
+  final aLast = _lastEpoch(a.bangumiItem.id, now);
+  final bLast = _lastEpoch(b.bangumiItem.id, now);
   if (aLast == null && bLast == null) {
     return a.bangumiItem.id.compareTo(b.bangumiItem.id);
   }
@@ -464,18 +476,11 @@ int compareCollectUpdateTime(
   return comparison != 0 ? comparison : a.bangumiItem.id.compareTo(b.bangumiItem.id);
 }
 
-/// 上一次更新时刻：优先 AniList 实测（下一集回推一个周期），缓存过期也先用；
-/// 否则 bangumi-mal。
-int? _resolveLastEpoch(
-  int bangumiId,
-  Map<int, BangumiUpdateEntry> updates,
-  DateTime now,
-) {
-  final anilist = AniListClient.instance.cached(bangumiId, now: now) ??
-      AniListClient.instance.staleCached(bangumiId, now: now);
-  final period = updates[bangumiId]?.periodMs;
-  if (anilist != null && period != null) {
-    return anilist.airingAt - period;
-  }
-  return lastUpdateEpochFrom(updates[bangumiId], now);
-}
+/// 追番页的「上一次更新时刻」，和 [BangumiUpdateTimesService.lastUpdateEpoch]
+/// 同一条链路：AniList 实测优先，兜底 bangumi-mal。
+///
+/// 直接复用服务层的实现，不再自己拼一遍 —— 以前本地版本多一个
+/// 「AniList 有数据但没有周更周期就放弃它」的判断，和详情页的更新进度
+/// 用两套兜底规则，同一条目会算出不同的上次更新时间。
+int? _lastEpoch(int bangumiId, DateTime now) =>
+    BangumiUpdateTimesService.instance.lastUpdateEpoch(bangumiId, now: now);

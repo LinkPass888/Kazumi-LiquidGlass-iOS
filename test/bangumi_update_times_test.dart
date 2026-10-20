@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:kazumi/modules/bangumi/bangumi_item.dart';
 import 'package:kazumi/modules/bangumi/bangumi_tag.dart';
 import 'package:kazumi/modules/collect/collect_module.dart';
+import 'package:kazumi/services/anilist_client.dart';
 import 'package:kazumi/services/bangumi_update_times.dart';
 
 BangumiUpdateEntry _entry(int? first, int? period) =>
@@ -160,6 +161,33 @@ void main() {
       final now = DateTime.fromMillisecondsSinceEpoch(first - 1000);
       expect(lastUpdateEpochFrom(_entry(first, week), now), isNull);
     });
+
+    test('AniList 缓存的「下一集」语义：新鲜 vs 已播', () {
+      // lastUpdateEpoch 的「上一集」要按缓存新不新鲜分开算：
+      // - 新鲜（now < airingAt）：下一集还没播，上一集 = airingAt − 周期
+      // - 已过期（now >= airingAt）：那一集已经播了，airingAt 就是上一集，
+      //   再减一个周期会多退一周
+      // 这里锁住这两个判据本身，避免以后又把两个分支合并。
+      final airingAt = first + 2 * week;
+      final airing = AniListAiring(
+        episode: 3,
+        airingAt: airingAt,
+        totalEpisodes: 12,
+      );
+
+      // 下一集播出前：缓存新鲜，上一集要回推一个周期。
+      final before =
+          DateTime.fromMillisecondsSinceEpoch(airingAt - 3600000);
+      expect(airing.isFreshAt(before), isTrue);
+      expect(airingAt - week, first + week);
+
+      // 到点 / 过后：缓存不再新鲜，airingAt 自己就是刚播完的那一集。
+      final after = DateTime.fromMillisecondsSinceEpoch(airingAt + 1000);
+      expect(airing.isFreshAt(after), isFalse);
+      expect(airingAt, first + 2 * week);
+      // 这个分支如果再减一个周期，就会错到 first + week。
+      expect(airingAt - week, isNot(airingAt));
+    });
   });
 
   group('排序比较器', () {
@@ -308,49 +336,65 @@ void main() {
       expect(compare([2, 1], updates, now), isPositive);
     });
 
+    // 追番页排序走服务层单例（AniList 优先、bangumi-mal 兜底），数据要
+    // 直接放进单例；测试里没有 AniList 缓存，所以走的一定是兜底分支。
+    void withUpdates(Map<int, BangumiUpdateEntry> entries, void Function() body) {
+      final service = BangumiUpdateTimesService.instance;
+      final original = service.updates;
+      service.updates = entries;
+      try {
+        body();
+      } finally {
+        service.updates = original;
+      }
+    }
+
     test('追番页：不在最近两季的排最下面', () {
-      final updates = _updates({
+      withUpdates({
         1: _entry(first, week),
+      }, () {
+        // 2 无数据（不在最近两季）-> 排在 1 后面。
+        expect(
+          compareCollectUpdateTime(_collected(2), _collected(1), now),
+          isPositive,
+        );
+        expect(
+          compareCollectUpdateTime(_collected(1), _collected(2), now),
+          isNegative,
+        );
       });
-      // 2 无数据（不在最近两季）-> 排在 1 后面。
-      expect(
-        compareCollectUpdateTime(_collected(2), _collected(1), updates, now),
-        isPositive,
-      );
-      expect(
-        compareCollectUpdateTime(_collected(1), _collected(2), updates, now),
-        isNegative,
-      );
     });
 
     test('追番页：最近更新的在前', () {
       // 相位错开一个周期的一半，两条目的「上次更新」不会打平。
-      final updates = _updates({
+      withUpdates({
         1: _entry(first, week),
         2: _entry(first + week ~/ 2, week),
+      }, () {
+        // 2 的上次更新更晚 -> 排前面。
+        expect(
+          compareCollectUpdateTime(_collected(2), _collected(1), now),
+          isNegative,
+        );
       });
-      // 2 的上次更新更晚 -> 排前面。
-      expect(
-        compareCollectUpdateTime(_collected(2), _collected(1), updates, now),
-        isNegative,
-      );
     });
 
     test('追番页：推不出更新时间的排最下面', () {
       // 只下载最近两季，所以「不在最近两季」和「推不出更新时间」是同一类：
       // 都排最下面。这里用周期缺失的条目代表这一类。
-      final updates = _updates({
+      withUpdates({
         1: _entry(first, week),
         2: _entry(first, null),
+      }, () {
+        expect(
+          compareCollectUpdateTime(_collected(2), _collected(1), now),
+          isPositive,
+        );
+        expect(
+          compareCollectUpdateTime(_collected(1), _collected(2), now),
+          isNegative,
+        );
       });
-      expect(
-        compareCollectUpdateTime(_collected(2), _collected(1), updates, now),
-        isPositive,
-      );
-      expect(
-        compareCollectUpdateTime(_collected(1), _collected(2), updates, now),
-        isNegative,
-      );
     });
   });
 
