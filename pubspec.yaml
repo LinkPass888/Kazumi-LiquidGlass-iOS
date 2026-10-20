@@ -13,8 +13,7 @@ dependencies:
   flutter_localizations:
     sdk: flutter
   cupertino_icons: ^1.0.6
-  real_liquid_glass:
-    path: plugins/real_liquid_glass
+  native_glass_navbar: ^1.2.0
   flutter_modular: ^7.1.0
   mobx: ^2.6.0
   flutter_mobx: ^2.3.0

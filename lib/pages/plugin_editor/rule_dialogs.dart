@@ -298,7 +298,7 @@ class _RuleDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    return AlertDialog(
+    return KazumiAlert(
       backgroundColor: colors.surfaceContainerHigh,
       shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(KazumiGlass.radiusOf(context))),

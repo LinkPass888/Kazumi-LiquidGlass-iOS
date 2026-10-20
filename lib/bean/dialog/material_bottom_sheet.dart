@@ -1,4 +1,5 @@
 ﻿import 'package:flutter/material.dart';
+import 'package:kazumi/bean/liquid_glass/kazumi_glass.dart';
 
 const EdgeInsets materialBottomSheetContentPadding =
     EdgeInsets.fromLTRB(24, 0, 24, 24);
@@ -59,17 +60,13 @@ class MaterialBottomSheetHeader extends StatelessWidget {
                 trailing!,
               ] else if (onClose != null) ...[
                 const SizedBox(width: 12),
-                // 这里不铺原生液态玻璃：弹窗里放原生玻璃视图会渲染成一大块
-                // 遮挡，退回 Material 的圆形按钮，尺寸仍是 40（和顶栏玻璃按钮
-                // 一致，视觉上是一套）。
-                SizedBox.square(
-                  dimension: 40,
-                  child: IconButton(
-                    onPressed: onClose,
-                    tooltip: '关闭',
-                    padding: EdgeInsets.zero,
-                    icon: const Icon(Icons.close_rounded, size: 22),
-                  ),
+                // 弹层外壳就是玻璃，这里的关闭按钮直接复用顶栏那颗玻璃圆
+                // 按钮（40×40），尺寸、手感、视觉语言完全一致。
+                KazumiGlass.iconButton(
+                  context: context,
+                  icon: const Icon(Icons.close_rounded, size: 20),
+                  onPressed: onClose,
+                  tooltip: '关闭',
                 ),
               ],
             ],

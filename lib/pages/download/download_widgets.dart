@@ -3,13 +3,15 @@ import 'package:flutter/material.dart';
 import 'package:kazumi/bean/card/network_img_layer.dart';
 import 'package:kazumi/bean/card/rule_card.dart';
 import 'package:kazumi/bean/liquid_glass/kazumi_glass.dart';
+import 'package:kazumi/bean/liquid_glass/kazumi_motion.dart';
 import 'package:kazumi/bean/widget/kazumi_menu.dart';
 import 'package:kazumi/bean/widget/loading_indicator.dart';
 import 'package:kazumi/modules/download/download_module.dart';
 import 'package:kazumi/utils/format.dart';
 
-const Duration _kExpandDuration = Duration(milliseconds: 250);
-const Curve _kExpandCurve = Curves.easeInOutCubic;
+const Duration _kExpandDuration = Duration(milliseconds: 260);
+// 展开 / 收起走弹簧的响应曲线（见 KazumiMotion.springDecel）。
+const Curve _kExpandCurve = KazumiMotion.springDecel;
 
 class DownloadRecordCard extends StatelessWidget {
   const DownloadRecordCard({

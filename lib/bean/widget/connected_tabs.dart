@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:kazumi/bean/liquid_glass/kazumi_glass.dart';
+import 'package:kazumi/bean/liquid_glass/kazumi_motion.dart';
 
 // Material 3 connected-button small tokens.
 
@@ -95,7 +96,7 @@ class _ConnectedSegmentState extends State<_ConnectedSegment> {
       child: TweenAnimationBuilder<double>(
         tween: Tween<double>(end: _pressed ? 1 : 0),
         duration: const Duration(milliseconds: 180),
-        curve: Curves.easeOutCubic,
+        curve: KazumiMotion.springDecel,
         builder: (context, press, child) {
           // 同心的内圆角：和全局圆角一起缩放，选中时并到外圆角
           final groupCorner = KazumiGlass.radiusOf(context);

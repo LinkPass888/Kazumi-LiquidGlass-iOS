@@ -573,7 +573,7 @@ class _PlayerItemState extends State<PlayerItem>
         bool dontAskAgain = false;
 
         return StatefulBuilder(builder: (context, setState) {
-          return AlertDialog(
+          return KazumiAlert(
             title: const Text('性能提示'),
             content: Column(
               mainAxisSize: MainAxisSize.min,

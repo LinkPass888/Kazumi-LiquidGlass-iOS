@@ -122,7 +122,7 @@ class _SettingsBackupPageState extends State<SettingsBackupPage> {
 
     final confirmed = await KazumiDialog.show<bool>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context) => KazumiAlert(
         icon: const Icon(Icons.settings_backup_restore_rounded),
         title: const Text('恢复这些设置？'),
         content: Column(

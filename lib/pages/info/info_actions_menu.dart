@@ -91,7 +91,6 @@ class _InfoActionsMenuState extends State<InfoActionsMenu> {
   Widget build(BuildContext context) {
     return KazumiMenuButton(
       // 真玻璃面板：详情页顶栏的「更多」。页面底下是封面和内容，有东西可折射。
-      // 弹窗/底部弹层里的菜单不能这么用（原生玻璃在弹层里会渲染成一大块遮挡）。
       glass: true,
       menuChildren: [
         KazumiMenuItem(

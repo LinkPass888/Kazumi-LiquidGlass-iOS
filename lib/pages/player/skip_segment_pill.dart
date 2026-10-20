@@ -5,7 +5,8 @@ import 'package:flutter_mobx/flutter_mobx.dart';
 import 'package:kazumi/bean/liquid_glass/kazumi_glass.dart';
 import 'package:kazumi/pages/player/player_controller.dart';
 import 'package:kazumi/services/skip/skip_segments.dart';
-import 'package:real_liquid_glass/real_liquid_glass.dart';
+import 'package:kazumi/bean/liquid_glass/glass_material.dart';
+import 'package:kazumi/bean/liquid_glass/liquid_glass.dart';
 
 /// 即将进入片头/片尾区间时浮出的倒计时弹窗。
 ///
@@ -337,9 +338,9 @@ class _CountdownPill extends StatelessWidget {
           fontWeight: FontWeight.w700,
           letterSpacing: 0.3,
         );
-    return LiquidGlassContainer(
+    return KazumiLiquidGlass(
       shape: KazumiGlass.panelShapeOf(context),
-      style: LiquidGlassStyle.clear,
+      kind: GlassSurfaceKind.playerOverlay,
       interactive: false,
       padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
       child: Column(
@@ -411,9 +412,9 @@ class _NextEpisodePill extends StatelessWidget {
           fontWeight: FontWeight.w700,
           letterSpacing: 0.3,
         );
-    return LiquidGlassContainer(
+    return KazumiLiquidGlass(
       shape: KazumiGlass.panelShapeOf(context),
-      style: LiquidGlassStyle.clear,
+      kind: GlassSurfaceKind.playerOverlay,
       interactive: false,
       padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
       child: Column(
@@ -480,9 +481,9 @@ class _UndoPill extends StatelessWidget {
           fontWeight: FontWeight.w700,
           letterSpacing: 0.3,
         );
-    return LiquidGlassContainer(
+    return KazumiLiquidGlass(
       shape: KazumiGlass.panelShapeOf(context),
-      style: LiquidGlassStyle.clear,
+      kind: GlassSurfaceKind.playerOverlay,
       interactive: false,
       padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
       child: Column(

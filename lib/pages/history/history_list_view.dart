@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:kazumi/bean/appbar/sys_app_bar.dart';
 import 'package:kazumi/bean/liquid_glass/kazumi_glass.dart';
+import 'package:kazumi/bean/liquid_glass/kazumi_motion.dart';
+import 'package:kazumi/bean/liquid_glass/kazumi_search_field.dart';
 import 'package:kazumi/bean/widget/empty_state_widget.dart';
 import 'package:kazumi/bean/widget/state_presentation.dart';
 import 'package:kazumi/modules/history/history_module.dart';
@@ -12,11 +15,19 @@ class HistoryListView extends StatefulWidget {
     required this.entries,
     required this.itemBuilder,
     this.editing = false,
+    this.scrollProgress,
+    this.topInset = 0,
   });
 
   final List<History> entries;
   final bool editing;
   final Widget Function(History history, BorderRadius borderRadius) itemBuilder;
+
+  /// 顶栏玻璃的进度，由这个列表的滚动驱动。
+  final KazumiScrollProgress? scrollProgress;
+
+  /// 顶部让出的高度（状态栏 + 顶栏），页面开了 `extendBodyBehindAppBar` 时用。
+  final double topInset;
 
   @override
   State<HistoryListView> createState() => _HistoryListViewState();
@@ -26,11 +37,26 @@ class _HistoryListViewState extends State<HistoryListView> {
   final _searchController = TextEditingController();
   final _searchFocus = FocusNode();
   final _scrollController = ScrollController();
+
   HistorySourceFilter _source = HistorySourceFilter.all;
   String _query = '';
 
   @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_progressListener);
+  }
+
+  /// 滚动监听单独挂一份：控制器本身没有通知流（见 [KazumiScrollProgress]）。
+  void _progressListener() {
+    final progress = widget.scrollProgress;
+    if (progress == null || !_scrollController.hasClients) return;
+    progress.updateFrom(_scrollController.position);
+  }
+
+  @override
   void dispose() {
+    _scrollController.removeListener(_progressListener);
     _searchController.dispose();
     _searchFocus.dispose();
     _scrollController.dispose();
@@ -78,10 +104,6 @@ class _HistoryListViewState extends State<HistoryListView> {
     final filtered =
         _query.trim().isNotEmpty || _source != HistorySourceFilter.all;
     final now = DateTime.now();
-    final searchBorder = OutlineInputBorder(
-      borderRadius: BorderRadius.circular(KazumiGlass.radiusOf(context)),
-      borderSide: BorderSide.none,
-    );
 
     return CallbackShortcuts(
       bindings: {
@@ -112,37 +134,29 @@ class _HistoryListViewState extends State<HistoryListView> {
               slivers: [
                 if (widget.entries.isNotEmpty || filtered)
                   SliverPadding(
-                    padding: EdgeInsets.fromLTRB(inset, 16, inset, 0),
+                    padding: EdgeInsets.fromLTRB(
+                        inset, widget.topInset + 16, inset, 0),
                     sliver: SliverToBoxAdapter(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          TextField(
+                          KazumiSearchField(
                             controller: _searchController,
                             focusNode: _searchFocus,
-                            textInputAction: TextInputAction.search,
-                            decoration: InputDecoration(
-                              hintText: '搜索番剧、别名或来源',
-                              prefixIcon: const Icon(Icons.search_rounded),
-                              suffixIcon: _query.isEmpty
-                                  ? null
-                                  : IconButton(
-                                      tooltip: '清除搜索',
-                                      onPressed: _clearSearch,
-                                      icon: const Icon(Icons.close_rounded),
-                                    ),
-                              filled: true,
-                              fillColor: colors.surfaceContainerHigh,
-                              constraints: const BoxConstraints(minHeight: 56),
-                              contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: 20, vertical: 16),
-                              border: searchBorder,
-                              enabledBorder: searchBorder,
-                              focusedBorder: searchBorder.copyWith(
-                                borderSide:
-                                    BorderSide(color: colors.primary, width: 2),
-                              ),
+                            hintText: '搜索番剧、别名或来源',
+                            constraints: const BoxConstraints(minHeight: 56),
+                            leading: const Padding(
+                              padding: EdgeInsets.only(left: 8, right: 4),
+                              child: Icon(Icons.search_rounded, size: 22),
                             ),
+                            trailing: [
+                              if (_query.isNotEmpty)
+                                KazumiSearchIcon(
+                                  tooltip: '清除搜索',
+                                  onPressed: _clearSearch,
+                                  icon: const Icon(Icons.close_rounded),
+                                ),
+                            ],
                             onChanged: (value) =>
                                 _updateFilters(() => _query = value),
                             onSubmitted: (_) => _searchFocus.unfocus(),
@@ -248,7 +262,7 @@ class _HistoryListViewState extends State<HistoryListView> {
         duration: MediaQuery.disableAnimationsOf(context)
             ? Duration.zero
             : const Duration(milliseconds: 250),
-        curve: Curves.easeInOutCubicEmphasized,
+        curve: KazumiMotion.springDecel,
         decoration: BoxDecoration(
           color:
               selected ? colors.secondaryContainer : colors.surfaceContainerLow,

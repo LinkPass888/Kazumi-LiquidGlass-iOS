@@ -967,6 +967,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.7.7"
+  native_glass_navbar:
+    dependency: "direct main"
+    description:
+      name: native_glass_navbar
+      sha256: "25631e3a1c96fab5de385175c5413bcf77c8b4c2101eb4f2d95c6d6668141b93"
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.2.0"
   native_toolchain_c:
     dependency: transitive
     description:
@@ -1199,13 +1207,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.2.2"
-  real_liquid_glass:
-    dependency: "direct main"
-    description:
-      path: "plugins/real_liquid_glass"
-      relative: true
-    source: path
-    version: "0.4.0-kazumi.1"
   record_use:
     dependency: transitive
     description:
@@ -1764,5 +1765,5 @@ packages:
     source: hosted
     version: "2.1.0"
 sdks:
-  dart: ">=3.12.1 <4.0.0"
+  dart: ">=3.11.0 <4.0.0"
   flutter: "3.47.7"

@@ -24,6 +24,9 @@ class HistoryPage extends StatefulWidget {
 }
 
 class _HistoryPageState extends State<HistoryPage> {
+  /// 顶栏玻璃的出现进度。
+  final KazumiScrollProgress _scrollProgress = KazumiScrollProgress();
+
   bool _editing = false;
   bool _clearing = false;
   final Set<String> _deleting = {};
@@ -32,6 +35,12 @@ class _HistoryPageState extends State<HistoryPage> {
   void initState() {
     super.initState();
     widget.controller.init();
+  }
+
+  @override
+  void dispose() {
+    _scrollProgress.dispose();
+    super.dispose();
   }
 
   Future<void> _deleteHistory(History history) async {
@@ -55,7 +64,7 @@ class _HistoryPageState extends State<HistoryPage> {
     if (_clearing || _deleting.isNotEmpty) return;
     final confirmed = await KazumiDialog.show<bool>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context) => KazumiAlert(
         icon: const Icon(Icons.delete_sweep_outlined),
         title: const Text('清空历史记录？'),
         content: Text(
@@ -100,9 +109,13 @@ class _HistoryPageState extends State<HistoryPage> {
             setState(() => _editing = false);
           }
         },
-        child: Scaffold(
-          appBar: SysAppBar(
-            title: Text('历史记录', style: appBarTitleStyle(context)),
+        child: Builder(builder: (context) {
+          final appBar = SysAppBar(
+            // 列表从顶栏底下滑过去，玻璃才采得到内容，所以标题放在折叠层里，
+            // 而不是 AppBar 的 title（那样会被不透明的栏体挡住）。
+            title: const SizedBox.shrink(),
+            collapsedTitle: const Text('历史记录'),
+            scrollProgress: _scrollProgress,
             actions: [
               if (entries.isNotEmpty) ...[
                 // 编辑中：「清空全部」在左，「完成」在最右（贴屏幕边，和返回键
@@ -147,23 +160,34 @@ class _HistoryPageState extends State<HistoryPage> {
                   ),
               ],
             ],
-          ),
-          body: SafeArea(
-            top: false,
-            bottom: false,
-            child: HistoryListView(
-              entries: entries,
-              editing: _editing,
-              itemBuilder: (history, borderRadius) => _HistoryCard(
-                history: history,
-                borderRadius: borderRadius,
-                editing: _editing,
-                busy: _clearing || _deleting.contains(history.key),
-                onDelete: () => _deleteHistory(history),
-              ),
+          );
+          return Scaffold(
+            appBar: appBar,
+            extendBodyBehindAppBar: true,
+            body: Stack(
+              children: [
+                SafeArea(
+                  top: false,
+                  bottom: false,
+                  child: HistoryListView(
+                    entries: entries,
+                    editing: _editing,
+                    scrollProgress: _scrollProgress,
+                    topInset: appBar.bodyTopInset(context),
+                    itemBuilder: (history, borderRadius) => _HistoryCard(
+                      history: history,
+                      borderRadius: borderRadius,
+                      editing: _editing,
+                      busy: _clearing || _deleting.contains(history.key),
+                      onDelete: () => _deleteHistory(history),
+                    ),
+                  ),
+                ),
+                appBar.glassOverlay(context),
+              ],
             ),
-          ),
-        ),
+          );
+        }),
       );
     });
   }

@@ -3,8 +3,10 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_modular/flutter_modular.dart';
+import 'package:kazumi/bean/appbar/sys_app_bar.dart';
 import 'package:kazumi/bean/card/network_img_layer.dart';
 import 'package:kazumi/bean/liquid_glass/kazumi_glass.dart';
+import 'package:kazumi/bean/liquid_glass/kazumi_search_field.dart';
 import 'package:kazumi/bean/widget/empty_state_widget.dart';
 import 'package:kazumi/bean/widget/kazumi_menu.dart';
 import 'package:kazumi/modules/bangumi/bangumi_item.dart';
@@ -40,6 +42,8 @@ class CollectLibraryView extends StatefulWidget {
     required this.canEdit,
     required this.layout,
     required this.onLayoutChanged,
+    this.scrollProgress,
+    this.topInset = 0,
   });
 
   final List<CollectedBangumi> entries;
@@ -49,6 +53,13 @@ class CollectLibraryView extends StatefulWidget {
   final bool Function(BangumiItem) canEdit;
   final CollectLayout layout;
   final ValueChanged<CollectLayout> onLayoutChanged;
+
+  /// 顶栏玻璃的进度：由当前分类列表的滚动驱动。
+  final KazumiScrollProgress? scrollProgress;
+
+  /// 顶部让出的高度（状态栏 + 顶栏）。页面开了 `extendBodyBehindAppBar` 时
+  /// 内容从顶栏底下起步，需要它把第一行推下来。
+  final double topInset;
 
   @override
   State<CollectLibraryView> createState() => _CollectLibraryViewState();
@@ -65,6 +76,18 @@ class _CollectLibraryViewState extends State<CollectLibraryView>
   bool? _disableAnimations;
   final _scrollControllers = {
     for (final type in _collectCategories) type: ScrollController(),
+  };
+  // ScrollController 本身没有通知流，只能挂监听；每个分类一个，回调里只认
+  // 当前分类 —— 别的分类在后台的滚动（页面重建时复位）不该拉动顶栏。
+  late final Map<CollectType?, VoidCallback> _scrollListeners = {
+    for (final type in _collectCategories)
+      type: () {
+        if (type != _selectedType) return;
+        final controller = _scrollControllers[type]!;
+        if (controller.hasClients) {
+          widget.scrollProgress?.updateFrom(controller.position);
+        }
+      },
   };
   PageStorageBucket _resultsStorage = PageStorageBucket();
   CollectType? _selectedType = CollectType.watching;
@@ -88,6 +111,9 @@ class _CollectLibraryViewState extends State<CollectLibraryView>
   @override
   void initState() {
     super.initState();
+    _scrollListeners.forEach((type, listener) {
+      _scrollControllers[type]!.addListener(listener);
+    });
     // 时间表加载完 / 详情页改了放送星期后，星期缓存会变，这里跟着重排。
     _weekdayRevision = _observeWeekdayRevision();
     // 更新时间数据异步到达后重排一次；顺带给在追的番补 AniList 实测状态。
@@ -152,6 +178,9 @@ class _CollectLibraryViewState extends State<CollectLibraryView>
     _searchController.dispose();
     _searchFocus.dispose();
     _libraryFocus.dispose();
+    _scrollListeners.forEach((type, listener) {
+      _scrollControllers[type]!.removeListener(listener);
+    });
     for (final controller in _scrollControllers.values) {
       controller.dispose();
     }
@@ -203,6 +232,12 @@ class _CollectLibraryViewState extends State<CollectLibraryView>
         _sort = CollectSort.recentlyChanged;
       }
     });
+    // 新分类有自己的滚动位置：顶栏玻璃立刻对齐，不要等下一次滚动。
+    final controller = _scrollControllers[type];
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || controller == null || !controller.hasClients) return;
+      widget.scrollProgress?.updateFrom(controller.position);
+    });
   }
 
   /// 只有「在看」分类才有更新时间排序。
@@ -238,7 +273,8 @@ class _CollectLibraryViewState extends State<CollectLibraryView>
                 ? Column(
                     children: [
                       Padding(
-                        padding: EdgeInsets.symmetric(horizontal: inset),
+                        padding: EdgeInsets.fromLTRB(
+                            inset, widget.topInset, inset, 0),
                         child: header,
                       ),
                       Expanded(
@@ -351,13 +387,20 @@ class _CollectLibraryViewState extends State<CollectLibraryView>
 
   Widget _searchBar() => Semantics(
         label: '搜索收藏',
-        child: SearchBar(
+        child: KazumiSearchField(
           controller: _searchController,
           focusNode: _searchFocus,
-          leading: const Icon(Icons.search_rounded, size: 22),
+          hintText: '搜索收藏',
+          constraints: const BoxConstraints(minHeight: 48),
+          // 前置的搜索镜只是提示，不是按钮：点它不该发生任何事，所以给一个
+          // 纯图标，而不是禁用态的 IconButton（禁用态会灰掉、还占 48 宽）。
+          leading: const Padding(
+            padding: EdgeInsets.only(left: 8, right: 4),
+            child: Icon(Icons.search_rounded, size: 22),
+          ),
           trailing: [
             if (_query.isNotEmpty)
-              IconButton(
+              KazumiSearchIcon(
                 tooltip: '清除搜索',
                 onPressed: () {
                   _searchController.clear();
@@ -366,12 +409,6 @@ class _CollectLibraryViewState extends State<CollectLibraryView>
                 icon: const Icon(Icons.close_rounded),
               ),
           ],
-          elevation: const WidgetStatePropertyAll(0),
-          backgroundColor: WidgetStatePropertyAll(
-              Theme.of(context).colorScheme.surfaceContainerLow),
-          padding: const WidgetStatePropertyAll(
-              EdgeInsets.symmetric(horizontal: 16)),
-          constraints: const BoxConstraints(minHeight: 48),
           onChanged: _search,
           onSubmitted: (_) => _libraryFocus.requestFocus(),
         ),
@@ -431,7 +468,8 @@ class _CollectLibraryViewState extends State<CollectLibraryView>
           slivers: [
             if (header != null)
               SliverPadding(
-                padding: EdgeInsets.symmetric(horizontal: inset),
+                padding:
+                    EdgeInsets.fromLTRB(inset, widget.topInset, inset, 0),
                 sliver: SliverToBoxAdapter(child: header),
               ),
             if (entries.isEmpty)

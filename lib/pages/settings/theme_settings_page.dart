@@ -127,7 +127,7 @@ class _ThemeSettingsPageState extends State<ThemeSettingsPage> {
                 leading: Icons.palette_rounded,
                 onPressed: (_) async {
                   KazumiDialog.show(builder: (context) {
-                    return AlertDialog(
+                    return KazumiAlert(
                       title: Text('配色方案'),
                       content: StatefulBuilder(builder:
                           (BuildContext context, StateSetter setState) {

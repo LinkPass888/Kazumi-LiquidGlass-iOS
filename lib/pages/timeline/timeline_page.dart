@@ -3,6 +3,7 @@ import 'package:flutter_mobx/flutter_mobx.dart';
 import 'package:flutter_modular/flutter_modular.dart';
 
 import 'package:kazumi/bean/appbar/sys_app_bar.dart';
+import 'package:kazumi/bean/appbar/kazumi_overlap_glass.dart';
 import 'package:kazumi/bean/liquid_glass/kazumi_glass.dart';
 import 'package:kazumi/bean/card/bangumi_timeline_card.dart';
 import 'package:kazumi/bean/dialog/adaptive_bottom_sheet.dart';
@@ -37,6 +38,9 @@ class _TimelinePageState extends State<TimelinePage> {
   late final bool _showRating;
   TabController? _tabs;
 
+  /// 顶栏玻璃的出现进度（外层视图的纵向滚动驱动）。
+  final KazumiScrollProgress _scrollProgress = KazumiScrollProgress();
+
   @override
   void initState() {
     super.initState();
@@ -49,6 +53,7 @@ class _TimelinePageState extends State<TimelinePage> {
   @override
   void dispose() {
     _tabs?.removeListener(_onTabChanged);
+    _scrollProgress.dispose();
     super.dispose();
   }
 
@@ -198,35 +203,44 @@ class _TimelinePageState extends State<TimelinePage> {
             isLoading: loading || failed,
           ),
         );
-        return Scaffold(
-          appBar: SysAppBar(
-            needTopOffset: false,
-            toolbarHeight: 72,
-            title: narrowPortrait
-                ? _buildSeasonPicker(context, loading: loading, inAppBar: true)
-                : Text(
-                    '时间表',
-                    // 顶栏大标题的字号字重和推荐页「热门番组」保持一致。
-                    style: appBarTitleStyle(context),
-                  ),
-            actions: [
+        final appBar = SysAppBar(
+          needTopOffset: false,
+          toolbarHeight: 72,
+          // 标题留在顶栏里，随滚动原地收缩（这一页下面紧接着就是固定的星期条，
+          // 没有一段可以滚走的大标题）。
+          title: narrowPortrait
+              ? _buildSeasonPicker(context, loading: loading, inAppBar: true)
+              : KazumiCollapsingTitle(
+                  text: '时间表',
+                  progress: _scrollProgress,
+                ),
+          scrollProgress: _scrollProgress,
+          actions: [
               // SysAppBar 是按「放进 actions 的那个值」的类型判断要不要套
               // 40×40 圆玻璃的，所以 SysAppBarWideAction 必须是这里的直接子项；
               // 放进 _TimelineOptionsButton 内部（它的 build 返回值）没用，
               // SysAppBar 看到的是 _TimelineOptionsButton，照旧套圆玻璃把文字压出界。
-              SysAppBarWideAction(
-                child: _TimelineOptionsButton(
-                  sort: _controller.sort,
-                  filterCount: _controller.activeFilterCount,
-                  onPressed: _showOptions,
-                ),
+            SysAppBarWideAction(
+              child: _TimelineOptionsButton(
+                sort: _controller.sort,
+                filterCount: _controller.activeFilterCount,
+                onPressed: _showOptions,
               ),
-            ],
-          ),
-          body: SafeArea(
-            top: false,
-            child: LayoutBuilder(
-                builder: (context, viewport) => NestedScrollView(
+            ),
+          ],
+        );
+        return Scaffold(
+          appBar: appBar,
+          // 内容从顶栏底下滑过去，玻璃才采得到东西（详见 SysAppBar.glassOverlay）。
+          extendBodyBehindAppBar: true,
+          body: Stack(
+            children: [
+              SafeArea(
+                top: false,
+                child: KazumiScrollProgressObserver(
+                    progress: _scrollProgress,
+                    child: LayoutBuilder(
+                        builder: (context, viewport) => NestedScrollView(
                       // Keep the outer viewport clamped and unstretched so tabs stay fixed.
                       physics: const ClampingScrollPhysics(),
                       scrollBehavior: ScrollConfiguration.of(context).copyWith(
@@ -234,6 +248,15 @@ class _TimelinePageState extends State<TimelinePage> {
                         scrollbars: false,
                       ),
                       headerSliverBuilder: (context, innerBoxIsScrolled) => [
+                        // 顶栏底下那一段：空白的固定头，作用是把星期条压在
+                        // 顶栏下面（两个 pinned 头会依次叠放），同时给内层列表
+                        // 留出穿过顶栏的滚动距离。
+                        SliverPersistentHeader(
+                          pinned: true,
+                          delegate: _TopSpacerDelegate(
+                            height: appBar.bodyTopInset(context),
+                          ),
+                        ),
                         if (seasonHeader != null)
                           SliverToBoxAdapter(
                             child: Padding(
@@ -288,7 +311,10 @@ class _TimelinePageState extends State<TimelinePage> {
                                       ),
                                   ],
                                 ),
-                    )),
+                    ))),
+              ),
+              appBar.glassOverlay(context),
+            ],
           ),
         );
       });
@@ -485,6 +511,31 @@ class _TimelineScrollView extends StatelessWidget {
   }
 }
 
+/// 顶栏下方的空白固定头：只占位置，不画东西。
+///
+/// 有了它，星期条（另一个 pinned 头）在滚动后停在顶栏下面，而不是钻到
+/// 状态栏底下；内层列表也因此获得「顶栏高度」这段可以穿过去的滚动距离。
+class _TopSpacerDelegate extends SliverPersistentHeaderDelegate {
+  const _TopSpacerDelegate({required this.height});
+
+  final double height;
+
+  @override
+  double get minExtent => height;
+
+  @override
+  double get maxExtent => height;
+
+  @override
+  Widget build(
+          BuildContext context, double shrinkOffset, bool overlapsContent) =>
+      const SizedBox.expand();
+
+  @override
+  bool shouldRebuild(covariant _TopSpacerDelegate oldDelegate) =>
+      oldDelegate.height != height;
+}
+
 class _WeekHeaderDelegate extends SliverPersistentHeaderDelegate {
   const _WeekHeaderDelegate({
     required this.height,
@@ -504,8 +555,15 @@ class _WeekHeaderDelegate extends SliverPersistentHeaderDelegate {
 
   @override
   Widget build(
-          BuildContext context, double shrinkOffset, bool overlapsContent) =>
-      ColoredBox(color: color, child: child);
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) =>
+      KazumiOverlapGlass(
+        overlapsContent: overlapsContent,
+        backgroundColor: color,
+        child: child,
+      );
 
   @override
   bool shouldRebuild(covariant _WeekHeaderDelegate oldDelegate) =>

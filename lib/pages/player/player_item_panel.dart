@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_mobx/flutter_mobx.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:kazumi/bean/liquid_glass/kazumi_glass.dart';
+import 'package:kazumi/bean/liquid_glass/kazumi_motion.dart';
 import 'package:kazumi/bean/widget/kazumi_menu.dart';
 import 'package:kazumi/bean/widget/play_pause_icon.dart';
 import 'package:kazumi/pages/player/player_adjustment_hud.dart';
@@ -251,7 +252,7 @@ class _PlayerItemPanelState extends State<PlayerItemPanel> {
   void _showForwardChange() {
     KazumiDialog.show(builder: (context) {
       var input = '';
-      return AlertDialog(
+      return KazumiAlert(
         title: const Text('跳过秒数'),
         content: TextField(
           inputFormatters: [
@@ -291,8 +292,10 @@ class _PlayerItemPanelState extends State<PlayerItemPanel> {
   void initState() {
     super.initState();
     playerController = widget.playerController;
+    // 控制条滑出 / 收回走弹簧的响应曲线（见 KazumiMotion.springDecel）：
+    // 收尾更缓，和玻璃面板浮起的手感一致。
     final visibility = widget.panelVisibilityController
-        .drive(CurveTween(curve: Curves.easeInOut));
+        .drive(CurveTween(curve: KazumiMotion.springDecel));
     _topOffsetAnimation = visibility.drive(Tween<Offset>(
       begin: const Offset(0, -1),
       end: Offset.zero,
@@ -657,8 +660,6 @@ class _PlayerItemPanelState extends State<PlayerItemPanel> {
         // 面板透明：真玻璃画在 menuChildren 里，这里不能再压一层底色
         menuStyle: KazumiGlass.submenuStyle(context).copyWith(
           backgroundColor: const WidgetStatePropertyAll(Colors.transparent),
-          surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
-          shadowColor: const WidgetStatePropertyAll(Colors.transparent),
           padding: const WidgetStatePropertyAll(EdgeInsets.zero),
         ),
         menuChildren: [

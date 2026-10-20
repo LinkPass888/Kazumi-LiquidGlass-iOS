@@ -5,6 +5,7 @@ import 'package:kazumi/bean/widget/loading_indicator.dart';
 import 'package:kazumi/bean/widget/state_presentation.dart';
 import 'package:kazumi/modules/bangumi/sync_priority.dart';
 import 'package:kazumi/modules/collect/collect_sync_plan.dart';
+import 'package:kazumi/bean/dialog/kazumi_alert.dart';
 
 enum CollectSyncDestination { webDavSettings, bangumiSettings }
 
@@ -171,11 +172,10 @@ class _CollectSyncDialogState extends State<CollectSyncDialog> {
     final description = _description;
     return PopScope(
       canPop: !_running,
-      child: AlertDialog(
+      child: KazumiAlert(
         constraints: const BoxConstraints(minWidth: 280, maxWidth: 440),
         insetPadding: const EdgeInsets.all(24),
         backgroundColor: colors.surfaceContainerHigh,
-        surfaceTintColor: Colors.transparent,
         shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(KazumiGlass.radiusOf(context))),
         clipBehavior: Clip.antiAlias,

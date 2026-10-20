@@ -27,6 +27,9 @@ class DownloadPage extends StatefulWidget {
 class _DownloadPageState extends State<DownloadPage> {
   DownloadController get downloadController => widget.controller;
 
+  /// 顶栏玻璃的出现进度。
+  final KazumiScrollProgress _scrollProgress = KazumiScrollProgress();
+
   // Keep expansion state across controller snapshot replacements.
   final Map<String, bool> _expanded = {};
 
@@ -34,6 +37,12 @@ class _DownloadPageState extends State<DownloadPage> {
   void initState() {
     super.initState();
     downloadController.refreshRecords();
+  }
+
+  @override
+  void dispose() {
+    _scrollProgress.dispose();
+    super.dispose();
   }
 
   bool _isExpanded(String recordKey, DownloadRecord record) {
@@ -46,30 +55,50 @@ class _DownloadPageState extends State<DownloadPage> {
 
   @override
   Widget build(BuildContext context) {
+    final appBar = SysAppBar(
+      // 列表从顶栏底下滑过去，玻璃才采得到卡片。
+      title: const SizedBox.shrink(),
+      collapsedTitle: const Text('下载管理'),
+      scrollProgress: _scrollProgress,
+    );
     return Scaffold(
-      appBar: const SysAppBar(title: Text('下载管理')),
-      body: Observer(builder: (context) {
-        final recordKeys = downloadController.recordKeys.toList();
-        _expanded.removeWhere((key, _) => !recordKeys.contains(key));
-        if (recordKeys.isEmpty) {
-          return const GeneralEmptyState(
-            icon: Icons.download_rounded,
-            title: '还没有下载记录',
-          );
-        }
-        return ListView.builder(
-          padding: const EdgeInsets.all(16),
-          itemCount: recordKeys.length,
-          itemBuilder: (context, index) {
-            return Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 1000),
-                child: _buildRecordCard(recordKeys[index]),
-              ),
-            );
-          },
-        );
-      }),
+      appBar: appBar,
+      extendBodyBehindAppBar: true,
+      body: Stack(
+        children: [
+          SafeArea(
+            top: false,
+            bottom: false,
+            child: Observer(builder: (context) {
+              final recordKeys = downloadController.recordKeys.toList();
+              _expanded.removeWhere((key, _) => !recordKeys.contains(key));
+              if (recordKeys.isEmpty) {
+                return const GeneralEmptyState(
+                  icon: Icons.download_rounded,
+                  title: '还没有下载记录',
+                );
+              }
+              return KazumiScrollProgressObserver(
+                progress: _scrollProgress,
+                child: ListView.builder(
+                  padding: EdgeInsets.fromLTRB(
+                      16, appBar.bodyTopInset(context) + 8, 16, 16),
+                  itemCount: recordKeys.length,
+                  itemBuilder: (context, index) {
+                    return Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 1000),
+                        child: _buildRecordCard(recordKeys[index]),
+                      ),
+                    );
+                  },
+                ),
+              );
+            }),
+          ),
+          appBar.glassOverlay(context),
+        ],
+      ),
     );
   }
 
@@ -282,7 +311,7 @@ class _DownloadPageState extends State<DownloadPage> {
 
   void _confirmDeleteEpisode(DownloadRecord record, DownloadEpisode episode) {
     KazumiDialog.show(
-      builder: (context) => AlertDialog(
+      builder: (context) => KazumiAlert(
         title: const Text('删除下载'),
         content: Text(
             '确定要删除「${episode.episodeName.isNotEmpty ? episode.episodeName : '第${episode.episodeNumber}集'}」的下载文件吗？'),
@@ -317,7 +346,7 @@ class _DownloadPageState extends State<DownloadPage> {
 
   void _confirmDeleteRecord(DownloadRecord record) {
     KazumiDialog.show(
-      builder: (context) => AlertDialog(
+      builder: (context) => KazumiAlert(
         title: const Text('删除全部下载'),
         content: Text('确定要删除「${record.bangumiName}」的所有下载文件吗？'),
         actions: [
@@ -356,7 +385,7 @@ class _DownloadPageState extends State<DownloadPage> {
       if (!mounted) return;
       KazumiDialog.show(
         context: context,
-        builder: (context) => AlertDialog(
+        builder: (context) => KazumiAlert(
           title: const Text('删除失败'),
           content: const Text('删除下载文件失败，请稍后重试'),
           actions: [

@@ -83,7 +83,7 @@ class _PlayerSettingsPageState extends State<PlayerSettingsPage> {
 
   Future<void> resetPlayerSettings() async {
     final bool shouldReset = await KazumiDialog.show<bool>(
-          builder: (context) => AlertDialog(
+          builder: (context) => KazumiAlert(
             title: const Text('恢复默认播放设置'),
             content: const Text('播放设置、硬件解码器、视频渲染器和超分辨率设置将恢复为默认值。'),
             actions: [
@@ -156,7 +156,7 @@ class _PlayerSettingsPageState extends State<PlayerSettingsPage> {
       {required String title, required String initialValue}) async {
     return KazumiDialog.show<int>(builder: (context) {
       String input = "";
-      return AlertDialog(
+      return KazumiAlert(
         title: Text(title),
         content: StatefulBuilder(
             builder: (BuildContext context, StateSetter setState) {

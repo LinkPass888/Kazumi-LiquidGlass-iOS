@@ -179,7 +179,7 @@ class AutoUpdater {
   void _showUpdateDialog(UpdateInfo updateInfo, {bool isAutoCheck = false}) {
     KazumiDialog.show(
       builder: (context) {
-        return AlertDialog(
+        return KazumiAlert(
           title: Text('发现新版本 ${updateInfo.version}'),
           content: SingleChildScrollView(
             child: Column(
@@ -303,7 +303,7 @@ class AutoUpdater {
             expectedHash, cancelToken),
         onCancel: cancelToken.cancel,
         builder: (context) {
-          return AlertDialog(
+          return KazumiAlert(
             title: const Text('正在下载更新'),
             content: Column(
               mainAxisSize: MainAxisSize.min,
@@ -348,7 +348,7 @@ class AutoUpdater {
 
       KazumiDialog.show(
         builder: (context) {
-          return AlertDialog(
+          return KazumiAlert(
             title: const Text('下载失败'),
             content: Column(
               mainAxisSize: MainAxisSize.min,
@@ -389,7 +389,7 @@ class AutoUpdater {
   void _showDownloadCompleteDialog(String filePath, UpdateInfo updateInfo) {
     KazumiDialog.show(
       builder: (context) {
-        return AlertDialog(
+        return KazumiAlert(
           title: const Text('下载完成'),
           content: Column(
             mainAxisSize: MainAxisSize.min,

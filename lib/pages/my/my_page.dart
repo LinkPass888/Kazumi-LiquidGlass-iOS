@@ -19,6 +19,9 @@ class MyPage extends StatefulWidget {
 class _MyPageState extends State<MyPage> {
   bool _attached = false;
 
+  /// 顶栏玻璃的出现进度（见 [SysAppBar.scrollProgress]）。
+  final KazumiScrollProgress _scrollProgress = KazumiScrollProgress();
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -37,6 +40,7 @@ class _MyPageState extends State<MyPage> {
   @override
   void dispose() {
     _setAttached(false);
+    _scrollProgress.dispose();
     super.dispose();
   }
 
@@ -65,33 +69,48 @@ class _MyPageState extends State<MyPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: SysAppBar(
-        toolbarHeight: 72,
-        title: Text('我的', style: appBarTitleStyle(context)),
-        needTopOffset: false,
-        actions: [
-          // 顶栏右侧统一是 40×40 的圆形玻璃图标按钮（SysAppBar 自动给每个
-          // action 铺玻璃底）。上游这里原本是一个带「设置」文字的宽带按钮，
-          // 塞进圆形玻璃里会溢出、也破坏了这套玻璃顶栏的形状语言，所以还原成本
-          // 分支一贯的图标按钮 —— 玻璃里的图标按钮才是这里该有的样子，
-          // 点击行为（打开 /settings/）不变。
-          IconButton(
-            tooltip: '全部设置',
-            onPressed: () => context.pushNamed('/settings/'),
-            icon: const Icon(Icons.tune_rounded, size: 22),
-          ),
-        ],
-      ),
-      body: SafeArea(
-        top: false,
-        bottom: false,
-        child: Observer(
-          builder: (context) => MySpaceView(
-            stats: widget.controller.watchStats,
-            onOpen: _open,
-          ),
+    final SysAppBar appBar = SysAppBar(
+      toolbarHeight: 72,
+      // 大标题画在列表里（KazumiLargeTitle），顶栏这里让出位置给折叠标题。
+      title: const SizedBox.shrink(),
+      collapsedTitle: const Text('我的'),
+      needTopOffset: false,
+      scrollProgress: _scrollProgress,
+      actions: [
+        // 顶栏右侧统一是 40×40 的圆形玻璃图标按钮（SysAppBar 自动给每个
+        // action 铺玻璃底）。上游这里原本是一个带「设置」文字的宽带按钮，
+        // 塞进圆形玻璃里会溢出、也破坏了这套玻璃顶栏的形状语言，所以还原成本
+        // 分支一贯的图标按钮 —— 玻璃里的图标按钮才是这里该有的样子，
+        // 点击行为（打开 /settings/）不变。
+        IconButton(
+          tooltip: '全部设置',
+          onPressed: () => context.pushNamed('/settings/'),
+          icon: const Icon(Icons.tune_rounded, size: 22),
         ),
+      ],
+    );
+    return Scaffold(
+      appBar: appBar,
+      // 内容从顶栏底下滑过去，玻璃才采得到东西（详见 SysAppBar.glassOverlay）。
+      extendBodyBehindAppBar: true,
+      body: Stack(
+        children: [
+          SafeArea(
+            top: false,
+            bottom: false,
+            child: KazumiScrollProgressObserver(
+              progress: _scrollProgress,
+              child: Observer(
+                builder: (context) => MySpaceView(
+                  stats: widget.controller.watchStats,
+                  onOpen: _open,
+                  topInset: appBar.bodyTopInset(context),
+                ),
+              ),
+            ),
+          ),
+          appBar.glassOverlay(context),
+        ],
       ),
     );
   }

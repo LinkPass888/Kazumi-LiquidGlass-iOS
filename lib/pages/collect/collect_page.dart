@@ -35,6 +35,15 @@ class _CollectPageState extends State<CollectPage> with KazumiDialogOwner {
   final Set<int> _pendingIds = {};
   late CollectLayout _layout;
 
+  /// 顶栏玻璃的出现进度（由当前分类的列表滚动驱动）。
+  final KazumiScrollProgress _scrollProgress = KazumiScrollProgress();
+
+  @override
+  void dispose() {
+    _scrollProgress.dispose();
+    super.dispose();
+  }
+
   Future<bool> _syncStep(
     CollectSyncStep step, {
     required ValueChanged<String> onError,
@@ -107,52 +116,65 @@ class _CollectPageState extends State<CollectPage> with KazumiDialogOwner {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: SysAppBar(
-        needTopOffset: false,
-        toolbarHeight: 72,
-        title: Text('追番', style: appBarTitleStyle(context)),
-        actions: [
-          // 和原版一样带「同步」文字（图标 + 文字）。顶栏的默认动作是 40×40 的
-          // 圆玻璃，装不下文字，所以用 SysAppBarWideAction + KazumiGlass.barPill
-          // 出一颗更宽的玻璃药丸，圆角跟全局走。点击行为（_sync）与禁用条件
-          // 保持不变。
-          SysAppBarWideAction(
-            child: Tooltip(
-              message: '同步收藏',
-              child: KazumiGlass.barPill(
-                context: context,
-                onPressed:
-                    _syncDialogOpen || _pendingIds.isNotEmpty ? null : _sync,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.sync_rounded, size: 20),
-                    const SizedBox(width: 6),
-                    Text('同步',
-                        style: Theme.of(context).textTheme.labelLarge),
-                  ],
-                ),
+    final SysAppBar appBar = SysAppBar(
+      needTopOffset: false,
+      toolbarHeight: 72,
+      // 分类条固定在标题下面，没有能滚走的大标题，所以标题留在顶栏里，
+      // 随滚动原地收缩（见 KazumiCollapsingTitle）。
+      title: KazumiCollapsingTitle(text: '追番', progress: _scrollProgress),
+      scrollProgress: _scrollProgress,
+      actions: [
+        // 和原版一样带「同步」文字（图标 + 文字）。顶栏的默认动作是 40×40 的
+        // 圆玻璃，装不下文字，所以用 SysAppBarWideAction + KazumiGlass.barPill
+        // 出一颗更宽的玻璃药丸，圆角跟全局走。点击行为（_sync）与禁用条件
+        // 保持不变。
+        SysAppBarWideAction(
+          child: Tooltip(
+            message: '同步收藏',
+            child: KazumiGlass.barPill(
+              context: context,
+              onPressed:
+                  _syncDialogOpen || _pendingIds.isNotEmpty ? null : _sync,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.sync_rounded, size: 20),
+                  const SizedBox(width: 6),
+                  Text('同步', style: Theme.of(context).textTheme.labelLarge),
+                ],
               ),
             ),
           ),
-        ],
-      ),
-      body: SafeArea(
-        top: false,
-        bottom: false,
-        child: Observer(
-          builder: (context) => CollectLibraryView(
-            entries: collectController.collectibles.toList(),
-            showRating: GStorage.getSetting(SettingsKeys.showRating),
-            layout: _layout,
-            onLayoutChanged: _changeLayout,
-            canEdit: (item) =>
-                !_syncDialogOpen && !_pendingIds.contains(item.id),
-            onOpen: (item) => context.pushNamed('/info/', arguments: item),
-            onChangeType: (item, type) => unawaited(_changeType(item, type)),
-          ),
         ),
+      ],
+    );
+    return Scaffold(
+      appBar: appBar,
+      // 列表从顶栏底下滑过去，玻璃才采得到封面（详见 SysAppBar.glassOverlay）。
+      extendBodyBehindAppBar: true,
+      body: Stack(
+        children: [
+          SafeArea(
+            top: false,
+            bottom: false,
+            child: Observer(
+              builder: (context) => CollectLibraryView(
+                entries: collectController.collectibles.toList(),
+                showRating: GStorage.getSetting(SettingsKeys.showRating),
+                layout: _layout,
+                onLayoutChanged: _changeLayout,
+                canEdit: (item) =>
+                    !_syncDialogOpen && !_pendingIds.contains(item.id),
+                onOpen: (item) => context.pushNamed('/info/', arguments: item),
+                onChangeType: (item, type) =>
+                    unawaited(_changeType(item, type)),
+                scrollProgress: _scrollProgress,
+                topInset: appBar.bodyTopInset(context),
+              ),
+            ),
+          ),
+          appBar.glassOverlay(context),
+        ],
       ),
     );
   }

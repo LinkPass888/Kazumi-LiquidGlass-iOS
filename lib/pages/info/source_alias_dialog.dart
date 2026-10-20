@@ -34,7 +34,7 @@ void _showCustomKeywordDialog({
   }
 
   KazumiDialog.show(
-    builder: (context) => AlertDialog(
+    builder: (context) => KazumiAlert(
       title: const Text('修改检索词'),
       content: TextFormField(
         initialValue: initialKeyword,
@@ -86,7 +86,7 @@ class _AliasPickerDialog extends StatefulWidget {
 class _AliasPickerDialogState extends State<_AliasPickerDialog> {
   void _confirmDelete(int index) {
     KazumiDialog.show(
-      builder: (context) => AlertDialog(
+      builder: (context) => KazumiAlert(
         title: const Text('删除确认'),
         content: const Text('删除后无法恢复，确认要永久删除这个别名吗？'),
         actions: [

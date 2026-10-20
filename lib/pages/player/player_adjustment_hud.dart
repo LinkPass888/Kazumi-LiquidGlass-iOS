@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:kazumi/bean/liquid_glass/kazumi_glass.dart';
+import 'package:kazumi/bean/liquid_glass/kazumi_motion.dart';
 import 'package:kazumi/utils/format.dart';
-import 'package:real_liquid_glass/real_liquid_glass.dart';
+import 'package:kazumi/bean/liquid_glass/glass_material.dart';
+import 'package:kazumi/bean/liquid_glass/liquid_glass.dart';
 
 enum PlayerAdjustmentHudType {
   brightness,
@@ -125,25 +127,25 @@ class _PlayerAdjustmentHudState extends State<PlayerAdjustmentHud> {
       child: AnimatedOpacity(
         opacity: widget.visible ? 1 : 0,
         duration: duration,
-        curve: Curves.easeOutCubic,
+        curve: KazumiMotion.springDecel,
         child: AnimatedSlide(
           offset: widget.visible ? Offset.zero : const Offset(0, -0.18),
           duration: duration,
-          curve: Curves.easeOutCubic,
+          curve: KazumiMotion.springDecel,
           child: AnimatedScale(
             scale: widget.visible ? 1 : 0.92,
             duration: duration,
-            curve: Curves.easeOutBack,
+            curve: KazumiMotion.springDecel,
             // 给玻璃加一层很淡的黑色 tint，减弱视频帧的穿透干扰；同时让
             // 玻璃表面形状与原 clip 的圆角一致。
-            child: LiquidGlassContainer(
+            child: KazumiLiquidGlass(
               shape: KazumiGlass.panelShapeOf(context),
-              style: LiquidGlassStyle.clear,
+              kind: GlassSurfaceKind.playerOverlay,
               tint: const Color(0x14000000),
               interactive: false,
               child: AnimatedContainer(
                 duration: duration,
-                curve: Curves.easeOutCubic,
+                curve: KazumiMotion.springDecel,
                 width: 200,
                 padding:
                     const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
@@ -154,8 +156,8 @@ class _PlayerAdjustmentHudState extends State<PlayerAdjustmentHud> {
                     // 玻璃形状被盖住的观感才一致。
                     AnimatedSwitcher(
                       duration: duration,
-                      switchInCurve: Curves.easeOutBack,
-                      switchOutCurve: Curves.easeInCubic,
+                      switchInCurve: KazumiMotion.springDecel,
+                      switchOutCurve: KazumiMotion.springDecel,
                       transitionBuilder: (child, animation) {
                         return ScaleTransition(
                           scale: animation,
@@ -195,7 +197,7 @@ class _PlayerAdjustmentHudState extends State<PlayerAdjustmentHud> {
                           duration: widget.disableAnimations || snapProgress
                               ? Duration.zero
                               : const Duration(milliseconds: 180),
-                          curve: Curves.easeOutCubic,
+                          curve: KazumiMotion.springDecel,
                           builder: (context, animatedProgress, child) {
                             return Slider(
                               value: animatedProgress,
@@ -451,25 +453,25 @@ class _PlayerSeekHudState extends State<PlayerSeekHud> {
       child: AnimatedOpacity(
         opacity: widget.visible ? 1 : 0,
         duration: duration,
-        curve: Curves.easeOutCubic,
+        curve: KazumiMotion.springDecel,
         child: AnimatedSlide(
           offset: widget.visible ? Offset.zero : const Offset(0, -0.18),
           duration: duration,
-          curve: Curves.easeOutCubic,
+          curve: KazumiMotion.springDecel,
           child: AnimatedScale(
             scale: widget.visible ? 1 : 0.92,
             duration: duration,
-            curve: Curves.easeOutBack,
+            curve: KazumiMotion.springDecel,
             // 玻璃上不叠深色盒；进度填充用主题 container 色并裁成玻璃圆角；
             // 加一点黑色 tint 减弱视频穿透。两行文字统一纯白，不用主题色。
-            child: LiquidGlassContainer(
+            child: KazumiLiquidGlass(
               shape: KazumiGlass.panelShapeOf(context),
-              style: LiquidGlassStyle.clear,
+              kind: GlassSurfaceKind.playerOverlay,
               tint: const Color(0x14000000),
               interactive: false,
               child: AnimatedContainer(
                 duration: duration,
-                curve: Curves.easeOutCubic,
+                curve: KazumiMotion.springDecel,
                 width: 248,
                 child: Stack(
                   children: [
@@ -479,7 +481,7 @@ class _PlayerSeekHudState extends State<PlayerSeekHud> {
                         duration: widget.disableAnimations || snapProgress
                             ? Duration.zero
                             : const Duration(milliseconds: 180),
-                        curve: Curves.easeOutCubic,
+                        curve: KazumiMotion.springDecel,
                         builder: (context, animatedProgress, child) {
                           return _SeekProgressBackground(
                             progress: animatedProgress,
@@ -497,8 +499,8 @@ class _PlayerSeekHudState extends State<PlayerSeekHud> {
                         children: [
                           AnimatedSwitcher(
                             duration: duration,
-                            switchInCurve: Curves.easeOutBack,
-                            switchOutCurve: Curves.easeInCubic,
+                            switchInCurve: KazumiMotion.springDecel,
+                            switchOutCurve: KazumiMotion.springDecel,
                             transitionBuilder: (child, animation) {
                               return ScaleTransition(
                                 scale: animation,
@@ -665,24 +667,24 @@ class _PlayerSpeedHudState extends State<PlayerSpeedHud> {
       child: AnimatedOpacity(
         opacity: widget.visible ? 1 : 0,
         duration: duration,
-        curve: Curves.easeOutCubic,
+        curve: KazumiMotion.springDecel,
         child: AnimatedSlide(
           offset: widget.visible ? Offset.zero : const Offset(0, -0.12),
           duration: duration,
-          curve: Curves.easeOutCubic,
+          curve: KazumiMotion.springDecel,
           child: AnimatedScale(
             scale: widget.visible ? 1 : 0.96,
             duration: duration,
-            curve: Curves.easeOutCubic,
+            curve: KazumiMotion.springDecel,
             // 倍速 HUD：图标恢复主题色，数字保持纯白；玻璃加黑色 tint 减弱视频穿透。
-            child: LiquidGlassContainer(
+            child: KazumiLiquidGlass(
               shape: KazumiGlass.panelShapeOf(context),
-              style: LiquidGlassStyle.clear,
+              kind: GlassSurfaceKind.playerOverlay,
               tint: const Color(0x14000000),
               interactive: false,
               child: AnimatedContainer(
                 duration: duration,
-                curve: Curves.easeOutCubic,
+                curve: KazumiMotion.springDecel,
                 width: 94,
                 padding:
                     const EdgeInsets.symmetric(vertical: 4, horizontal: 8),

@@ -12,8 +12,8 @@ final infoModule = createModule(
     c.route(
       '/',
       provide: (s) => s.add<InfoController>(InfoController.new),
-      // 详情页路由必须带 name '/info/'：GlassRouteObserver 靠它识别详情页，
-      // 在 push / 侧滑返回期间隐藏详情页自己的玻璃（见 NamedInfoPageTransition）。
+      // 详情页路由带上 name '/info/'，日志与埋点里能看到完整路径
+      // （见 NamedInfoPageTransition）。
       transition: const NamedInfoPageTransition(),
       child: (context, state) {
         final bangumiItem = state.arguments;

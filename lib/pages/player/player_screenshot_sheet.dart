@@ -14,6 +14,7 @@ import 'package:kazumi/services/player/screenshot_candidate.dart';
 import 'package:kazumi/services/player/screenshot_export_service.dart';
 import 'package:kazumi/services/player/screenshot_image_cache.dart';
 import 'package:mobx/mobx.dart' as mobx;
+import 'package:kazumi/bean/dialog/kazumi_alert.dart';
 
 Future<void> showPlayerScreenshotSheet(
   BuildContext context, {
@@ -229,7 +230,7 @@ class _PlayerScreenshotSheetState extends State<_PlayerScreenshotSheet> {
     if (collection.busy || collection.candidates.isEmpty) return;
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context) => KazumiAlert(
         title: const Text('清空候选截图？'),
         content: Text('这将丢弃 ${collection.candidates.length} 张未保存的截图，无法恢复。'),
         actions: [

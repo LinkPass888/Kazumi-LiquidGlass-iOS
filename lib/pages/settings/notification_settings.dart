@@ -108,7 +108,7 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage>
         await BangumiUpdateNotificationService.instance.scheduledNotifications();
     if (!mounted) return;
     await KazumiDialog.show(builder: (context) {
-      return AlertDialog(
+      return KazumiAlert(
         title: const Text('通知排程'),
         content: scheduled.isEmpty
             ? const Text('当前没有已排定的提醒。\n正在追的番剧有更新时会自动排定。')

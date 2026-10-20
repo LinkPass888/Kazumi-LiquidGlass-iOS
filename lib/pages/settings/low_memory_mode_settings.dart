@@ -54,7 +54,7 @@ class _LowMemoryModeDialogState extends State<_LowMemoryModeDialog> {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
-    return AlertDialog(
+    return KazumiAlert(
       title: const Text('低内存模式'),
       scrollable: true,
       content: SizedBox(

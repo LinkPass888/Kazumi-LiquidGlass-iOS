@@ -83,7 +83,7 @@ class TimedShutdownService {
         if (identical(_expiryDialog, dialog)) _expiryDialog = null;
       },
       builder: (context) {
-        return AlertDialog(
+        return KazumiAlert(
           title: const Text('定时关闭'),
           content: const Text('定时时间已到，视频已暂停'),
           actions: [
@@ -188,7 +188,7 @@ class _CustomTimerDialogState extends State<_CustomTimerDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
+    return KazumiAlert(
       title: const Text('自定义定时'),
       content: SizedBox(
         height: 200,

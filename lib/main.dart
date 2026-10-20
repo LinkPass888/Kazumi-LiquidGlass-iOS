@@ -16,7 +16,7 @@ import 'package:media_kit/media_kit.dart';
 import 'package:kazumi/pages/error/storage_error_page.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:kazumi/bean/dialog/dialog_helper.dart';
-import 'package:kazumi/bean/liquid_glass/glass_route_observer.dart';
+import 'package:kazumi/bean/liquid_glass/glass_shader.dart';
 import 'package:kazumi/modules/collect/collect_type.dart';
 import 'package:kazumi/navigation.dart';
 import 'package:kazumi/services/bangumi_update_notification_service.dart';
@@ -52,6 +52,9 @@ void main() async {
         }));
     return;
   }
+  // 液态玻璃着色器编译很贵，且在首帧就要用：提前加载，避免第一块玻璃
+  // 先以纯磨砂出现、下一帧才变成折光玻璃（会看到一次明显的跳变）。
+  await GlassShader.preload();
   await DownloadDirectoryService().restoreAccess();
   await MeteredNetworkService.refresh();
   ProxyManager.applyProxy();
@@ -65,7 +68,7 @@ void main() async {
     ModularApp(
       module: appModule,
       navigatorKey: rootNavigatorKey,
-      navigatorObservers: [KazumiDialog.observer, rootRouteObserver, glassRouteObserver],
+      navigatorObservers: [KazumiDialog.observer, rootRouteObserver],
       defaultTransition: TransitionType.material,
       provide: (scoped) {
         scoped.addChangeNotifier<ThemeProvider>(ThemeProvider.new);

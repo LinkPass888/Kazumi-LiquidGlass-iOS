@@ -8,8 +8,8 @@ final historyModule = createModule(
   register: (c) {
     c.route(
       '/',
-      // 路由带名字，GlassRouteObserver 才认得出历史记录页（模块挂在 /settings
-      // 下，完整路径是 /settings/history/）。详见 [NamedPageTransition]。
+      // 路由带名字，日志与埋点里能看到完整路径（模块挂在 /settings 下，
+      // 完整路径是 /settings/history/）。详见 [NamedPageTransition]。
       transition: const NamedPageTransition('/settings/history/'),
       child: (context, state) => HistoryPage(
         controller: inject<HistoryController>(),

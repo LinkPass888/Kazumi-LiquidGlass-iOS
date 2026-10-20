@@ -12,7 +12,7 @@ class RemotePlay {
     List<Widget> dlnaDevice = [];
     await KazumiDialog.show(builder: (BuildContext context) {
       return StatefulBuilder(builder: (context, setState) {
-        return AlertDialog(
+        return KazumiAlert(
           title: const Text('远程投屏'),
           content: SingleChildScrollView(
             child: Column(

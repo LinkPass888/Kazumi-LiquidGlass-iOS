@@ -202,7 +202,7 @@ class _BangumiInfoCardVState extends State<BangumiInfoCardV> {
   Future<void> _showWeekdayPicker() async {
     final selected = await KazumiDialog.show<int>(
       builder: (context) {
-        return AlertDialog(
+        return KazumiAlert(
           // 收窄成正方形：宽高都给死，按钮 2 个一行
           constraints: const BoxConstraints.tightFor(width: 260, height: 260),
           title: const Center(
@@ -215,8 +215,8 @@ class _BangumiInfoCardVState extends State<BangumiInfoCardV> {
             runSpacing: 8,
             children: [
               for (int index = 1; index <= 7; index++)
-                // 尺寸写死：原生玻璃视图在 Wrap 里会被撑到可用宽度，
-                // 靠 padding 撑不出大小，必须给死宽高（和详情页收藏按钮一致）
+                // 尺寸写死：Wrap 里不指定大小会按内容分散，
+                // 靠 padding 撑不出统一尺寸，必须给死宽高（和详情页收藏按钮一致）
                 SizedBox(
                   width: 96,
                   height: 40,
@@ -303,7 +303,7 @@ class _BangumiInfoCardVState extends State<BangumiInfoCardV> {
   Future<bool> _confirmMarkWatching() async {
     final confirmed = await KazumiDialog.show<bool>(
       builder: (context) {
-        return AlertDialog(
+        return KazumiAlert(
           title: const Text('在时间表展示'),
           content: const Text('该功能需要番剧处于「在看」状态，是否标记为在看并开启？'),
           actions: [

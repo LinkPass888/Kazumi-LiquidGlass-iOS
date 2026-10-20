@@ -8,9 +8,7 @@ void _provideSearchController(Scoped scoped) {
   scoped.add<SearchPageController>(SearchPageController.new);
 }
 
-/// 搜索页的路由都要带名字：GlassRouteObserver 靠路由名认出「顶栏有大标题」的
-/// 搜索页，在 push / 侧滑返回期间隐藏这一页自己的玻璃（否则顶栏那行大标题
-/// 会在转场结束的那一帧被原生玻璃盖一下，看起来就是标题闪了一下）。
+/// 搜索页的路由都带名字，日志与埋点里能看到完整路径。
 /// 详见 [NamedPageTransition]。
 final searchModule = createModule(
   path: '/search',
@@ -35,8 +33,7 @@ final searchModule = createModule(
       ..route(
         '/:tag',
         provide: _provideSearchController,
-        // 动态 tag 路由：路径是 /search/<tag>，这里给个固定名字即可，
-        // observer 只按 '/search' 前缀匹配。
+        // 动态 tag 路由：路径是 /search/<tag>，这里给个固定名字即可。
         transition: const NamedPageTransition('/search/tag'),
         child: (context, state) => SearchPage(
           controller: context.read<SearchPageController>(),

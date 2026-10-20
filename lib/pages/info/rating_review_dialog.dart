@@ -166,7 +166,7 @@ class _RatingReviewDialogState extends State<RatingReviewDialog> {
     _confirmingClose = true;
     final discard = await KazumiDialog.show<bool>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
+      builder: (dialogContext) => KazumiAlert(
         icon: const Icon(Icons.edit_note_rounded),
         title: const Text('放弃编辑？'),
         content: const Text('未保存的修改将丢失。'),
@@ -308,7 +308,6 @@ class _RatingReviewDialogState extends State<RatingReviewDialog> {
                       const BoxConstraints(maxWidth: 640, maxHeight: 800),
                   insetPadding: const EdgeInsets.all(24),
                   backgroundColor: colors.surfaceContainerHigh,
-                  surfaceTintColor: Colors.transparent,
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(
                           KazumiGlass.radiusOf(context))),

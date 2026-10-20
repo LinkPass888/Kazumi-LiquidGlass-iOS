@@ -5,8 +5,11 @@ import 'package:flutter_mobx/flutter_mobx.dart';
 import 'package:flutter_modular/flutter_modular.dart';
 
 import 'package:kazumi/bean/appbar/drag_to_move_bar.dart' as dtb;
+import 'package:kazumi/bean/liquid_glass/glass_material.dart';
 import 'package:kazumi/bean/liquid_glass/glass_tab_bar.dart';
 import 'package:kazumi/bean/liquid_glass/kazumi_glass.dart';
+import 'package:kazumi/bean/liquid_glass/kazumi_motion.dart';
+import 'package:kazumi/bean/liquid_glass/liquid_glass.dart';
 import 'package:kazumi/bean/card/bangumi_info_card.dart';
 import 'package:kazumi/bean/card/network_img_layer.dart';
 import 'package:kazumi/bean/dialog/adaptive_bottom_sheet.dart';
@@ -360,6 +363,12 @@ class _InfoPageState extends State<InfoPage>
                   ),
                 ),
                 automaticallyImplyLeading: false,
+                // 顶栏自己不再铺面板：折叠后由 _CollapseGlass 铺一层玻璃，
+                // 底下那张模糊封面才能透上来（不透明的栏体会把它整块盖住）。
+                backgroundColor: Colors.transparent,
+                surfaceTintColor: Colors.transparent,
+                shadowColor: Colors.transparent,
+                elevation: 0,
                 scrolledUnderElevation: 0.0,
                 leadingWidth: KazumiGlass.barLeadingWidth,
                 leading: Center(
@@ -410,59 +419,70 @@ class _InfoPageState extends State<InfoPage>
                 // 这里之前把状态栏和标签栏也写了进去，于是收起后顶栏白白多出
                 // 107（= 59 状态栏 + 48 标签栏）的空档，标签条停在半路上不去。
                 collapsedHeight: kToolbarHeight,
-                flexibleSpace: FlexibleSpaceBar(
-                  collapseMode: CollapseMode.pin,
-                  background: Observer(builder: (context) {
-                    final showBangumiInfoSkeleton =
-                        _isShowingBangumiInfoSkeleton;
-                    // 背景那一层**始终留在 children 里**，只切「画不画」：
-                    // 之前是 `if (!skeleton)` 直接增删这一个 child，骨架结束时
-                    // 它插到 index 0，下面那棵 SafeArea 就从 0 挪到 1 —— 两个
-                    // 都没 key，Flutter 认为对不上，整棵重建：Hero 重新 startFlight，
-                    // 封面被 placeholder 顶掉再显示，就是详情页封面「闪一下」。
-                    // 推荐页的条目没有 summary / 评分分布，进来必然走这段刷新，
-                    // 所以只有从推荐页进详情才看得见（时间表、收藏的数据是全的）。
-                    //
-                    // 用 Offstage 而不是一直画：这块背景是全屏 ImageFilter.blur，
-                    // 骨架期间不画它，既省掉转场中的模糊开销（#2058 原本的用意），
-                    // 又保住元素位置不变。
-                    return Stack(
-                      children: [
-                        Positioned.fill(
-                          bottom: tabBand,
-                          child: Offstage(
-                            offstage: showBangumiInfoSkeleton,
-                            child: IgnorePointer(
-                              child: _InfoHeaderBackground(
-                                imageUrl: infoController
-                                        .bangumiItem.images['large'] ??
-                                    '',
-                              ),
-                            ),
-                          ),
-                        ),
-                        SafeArea(
-                          bottom: false,
-                          child: EmbeddedNativeControlArea(
-                            child: Align(
-                              alignment: Alignment.topCenter,
-                              child: Padding(
-                                padding: const EdgeInsets.fromLTRB(
-                                    16, kToolbarHeight, 16, 0),
-                                child: BangumiInfoCardV(
-                                  bangumiItem: infoController.bangumiItem,
-                                  isLoading: showBangumiInfoSkeleton,
-                                  showRating: showRating,
+                flexibleSpace: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    FlexibleSpaceBar(
+                      collapseMode: CollapseMode.pin,
+                      background: Observer(builder: (context) {
+                        final showBangumiInfoSkeleton =
+                            _isShowingBangumiInfoSkeleton;
+                        // 背景那一层**始终留在 children 里**，只切「画不画」：
+                        // 之前是 `if (!skeleton)` 直接增删这一个 child，骨架结束时
+                        // 它插到 index 0，下面那棵 SafeArea 就从 0 挪到 1 —— 两个
+                        // 都没 key，Flutter 认为对不上，整棵重建：Hero 重新 startFlight，
+                        // 封面被 placeholder 顶掉再显示，就是详情页封面「闪一下」。
+                        // 推荐页的条目没有 summary / 评分分布，进来必然走这段刷新，
+                        // 所以只有从推荐页进详情才看得见（时间表、收藏的数据是全的）。
+                        //
+                        // 用 Offstage 而不是一直画：这块背景是全屏 ImageFilter.blur，
+                        // 骨架期间不画它，既省掉转场中的模糊开销（#2058 原本的用意），
+                        // 又保住元素位置不变。
+                        return Stack(
+                          children: [
+                            Positioned.fill(
+                              bottom: tabBand,
+                              child: Offstage(
+                                offstage: showBangumiInfoSkeleton,
+                                child: IgnorePointer(
+                                  child: _InfoHeaderBackground(
+                                    imageUrl: infoController
+                                            .bangumiItem.images['large'] ??
+                                        '',
+                                  ),
                                 ),
                               ),
                             ),
-                          ),
-                        ),
-                      ],
-                    );
-                  }),
+                            SafeArea(
+                              bottom: false,
+                              child: EmbeddedNativeControlArea(
+                                child: Align(
+                                  alignment: Alignment.topCenter,
+                                  child: Padding(
+                                    padding: const EdgeInsets.fromLTRB(
+                                        16, kToolbarHeight, 16, 0),
+                                    child: BangumiInfoCardV(
+                                      bangumiItem: infoController.bangumiItem,
+                                      isLoading: showBangumiInfoSkeleton,
+                                      showRating: showRating,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        );
+                      }),
+                    ),
+                    // 顶栏那一带：折叠到顶后浮出玻璃。放在 FlexibleSpaceBar
+                    // **外面**：背景那一层会随折叠淡出（RenderOpacity），套在
+                    // 里面玻璃会跟着一起淡，而且 saveLayer 会让 BackdropFilter
+                    // 采不到背后的封面。工具栏（返回键、标题、动作）画在
+                    // flexibleSpace 之后，仍然压在玻璃上面。
+                    const _CollapseGlass(),
+                  ],
                 ),
-                forceElevated: innerBoxIsScrolled,
+                forceElevated: false,
                 bottom: KazumiGlassTabBar(
                   controller: infoTabController,
                   tabs: _infoTabs,
@@ -602,6 +622,49 @@ class _InfoHeaderBackground extends StatelessWidget {
   }
 }
 
+/// 顶栏的玻璃层：折叠进度走到哪里，玻璃就在顶栏那一带淡入到哪里。
+///
+/// 玻璃的淡入交给着色器（`KazumiLiquidGlass.fade`）：外面套 `Opacity` 会插
+/// 一层 `saveLayer`，`BackdropFilter` 就只能采到那一层里的空背景 —— 玻璃会
+/// 变成一块灰。这里直接读 [FlexibleSpaceBarSettings] 的折叠进度，和
+/// [_CollapseFade] 用的是同一个来源。
+class _CollapseGlass extends StatelessWidget {
+  const _CollapseGlass();
+
+  @override
+  Widget build(BuildContext context) {
+    final FlexibleSpaceBarSettings? settings =
+        context.dependOnInheritedWidgetOfExactType<FlexibleSpaceBarSettings>();
+    double progress = 0;
+    if (settings != null) {
+      final double span = settings.maxExtent - settings.minExtent;
+      if (span > 0) {
+        progress = ((settings.maxExtent - settings.currentExtent) / span)
+            .clamp(0.0, 1.0);
+      }
+    }
+    // 前一半折叠量里玻璃还不该出现：那时卡片还压在顶栏下面，铺玻璃会把
+    // 它整块糊掉；到快收拢时（卡片已经滑走）玻璃才淡入。
+    final double t = ((progress - 0.5) / 0.5).clamp(0.0, 1.0);
+    if (t <= 0) return const SizedBox.shrink();
+    final double height =
+        MediaQuery.paddingOf(context).top + kToolbarHeight;
+    return Positioned(
+      top: 0,
+      left: 0,
+      right: 0,
+      height: height,
+      child: IgnorePointer(
+        child: KazumiLiquidGlass(
+          kind: GlassSurfaceKind.mediaHeader,
+          shape: LiquidGlassShape.roundedRectangle(0),
+          fade: t,
+        ),
+      ),
+    );
+  }
+}
+
 /// 详情页顶栏按钮：尺寸统一的圆形玻璃，图标居中。
 ///
 /// 左右各留 [KazumiGlass.barButtonGap] / 2：两个按钮之间就是 barButtonGap，
@@ -649,8 +712,8 @@ class _CollapseFade extends StatelessWidget {
       }
     }
     return AnimatedOpacity(
-      duration: const Duration(milliseconds: 200),
-      curve: Curves.easeOut,
+      duration: KazumiMotion.short,
+      curve: KazumiMotion.springDecel,
       opacity: progress > 0.6 ? 1 : 0,
       child: child,
     );

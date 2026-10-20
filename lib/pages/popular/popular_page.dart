@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_modular/flutter_modular.dart';
+import 'package:kazumi/bean/appbar/sys_app_bar.dart';
 import 'package:kazumi/bean/liquid_glass/kazumi_glass.dart';
 import 'package:kazumi/bean/widget/bangumi_mirror_error_widget.dart';
 import 'package:kazumi/bean/widget/custom_dropdown_menu.dart';
@@ -9,7 +10,6 @@ import 'package:kazumi/bean/card/bangumi_card.dart';
 import 'package:kazumi/utils/constants.dart';
 import 'package:flutter_mobx/flutter_mobx.dart';
 import 'package:kazumi/services/logging/logger.dart';
-import 'package:kazumi/bean/appbar/drag_to_move_bar.dart' as dtb;
 
 class PopularPage extends StatefulWidget {
   const PopularPage({
@@ -30,6 +30,9 @@ class _PopularPageState extends State<PopularPage> {
   // 给分类选择器定位用：菜单是浮层，得先拿到标题按钮在屏幕上的位置。
   final GlobalKey selectorKey = GlobalKey();
 
+  /// 顶栏玻璃的出现进度：只让顶栏那一小块随滚动重建，列表不参与。
+  final KazumiScrollProgress scrollProgress = KazumiScrollProgress();
+
   @override
   void initState() {
     super.initState();
@@ -46,10 +49,12 @@ class _PopularPageState extends State<PopularPage> {
   void dispose() {
     scrollController.removeListener(scrollListener);
     scrollController.dispose();
+    scrollProgress.dispose();
     super.dispose();
   }
 
   void scrollListener() {
+    scrollProgress.updateFrom(scrollController.position);
     popularController.scrollOffset = scrollController.offset;
     if (scrollController.position.pixels >=
             scrollController.position.maxScrollExtent - 200 &&
@@ -66,60 +71,91 @@ class _PopularPageState extends State<PopularPage> {
 
   @override
   Widget build(BuildContext context) {
+    final SysAppBar appBar = SysAppBar(
+      // 小标题在滚动后淡入；大标题由 buildLargeTitle 画在列表里。
+      title: const SizedBox.shrink(),
+      collapsedTitle: Observer(
+        builder: (_) => Text(
+          popularController.currentTag.isEmpty
+              ? '热门番组'
+              : popularController.currentTag,
+        ),
+      ),
+      actions: buildActions(),
+      scrollProgress: scrollProgress,
+    );
     return Scaffold(
-      body: CustomScrollView(
-        controller: scrollController,
-        slivers: [
-          buildSliverAppBar(),
-          SliverToBoxAdapter(
-            child: Observer(
-              builder: (_) => AnimatedOpacity(
-                opacity: popularController.isLoadingMore ? 1.0 : 0.0,
-                duration: const Duration(milliseconds: 300),
-                child: popularController.isLoadingMore
-                    ? const LinearProgressIndicator(minHeight: 4)
-                    : const SizedBox(height: 4),
+      appBar: appBar,
+      // 内容从顶栏底下滑过去，玻璃才采得到封面。AppBar 的背景画在 body
+      // 之前（采不到东西），所以玻璃由 glassOverlay 叠在 body 的最上层。
+      extendBodyBehindAppBar: true,
+      body: Stack(
+        children: [
+          CustomScrollView(
+            controller: scrollController,
+            slivers: [
+              SliverPadding(
+                padding: EdgeInsets.only(top: appBar.bodyTopInset(context)),
               ),
-            ),
-          ),
-          SliverPadding(
-              padding: const EdgeInsets.fromLTRB(
-                  StyleString.cardSpace, 0, StyleString.cardSpace, 0),
-              sliver: Observer(builder: (_) {
-                if (popularController.isTimeOut) {
-                  return SliverToBoxAdapter(
-                    child: SizedBox(
-                      height: 400,
-                      child: BangumiMirrorErrorWidget(
-                        onRetry: () {
-                          if (popularController.trendList.isEmpty) {
-                            popularController.queryBangumiByTrend();
-                          } else {
-                            popularController.queryBangumiByTag();
-                          }
-                        },
-                        onSettingsReturned: () {
-                          if (mounted) {
-                            setState(() {});
-                          }
-                        },
+              SliverToBoxAdapter(child: buildLargeTitle()),
+              SliverToBoxAdapter(
+                child: Observer(
+                  builder: (_) => AnimatedOpacity(
+                    opacity: popularController.isLoadingMore ? 1.0 : 0.0,
+                    duration: const Duration(milliseconds: 300),
+                    child: popularController.isLoadingMore
+                        ? const LinearProgressIndicator(minHeight: 4)
+                        : const SizedBox(height: 4),
+                  ),
+                ),
+              ),
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(
+                    StyleString.cardSpace, 0, StyleString.cardSpace, 0),
+                sliver: Observer(builder: (_) {
+                  if (popularController.isTimeOut) {
+                    return SliverToBoxAdapter(
+                      child: SizedBox(
+                        height: 400,
+                        child: BangumiMirrorErrorWidget(
+                          onRetry: () {
+                            if (popularController.trendList.isEmpty) {
+                              popularController.queryBangumiByTrend();
+                            } else {
+                              popularController.queryBangumiByTag();
+                            }
+                          },
+                          onSettingsReturned: () {
+                            if (mounted) {
+                              setState(() {});
+                            }
+                          },
+                        ),
                       ),
-                    ),
+                    );
+                  }
+                  return contentGrid(
+                    (popularController.currentTag == '')
+                        ? popularController.trendList
+                        : popularController.bangumiList,
                   );
-                }
-                return contentGrid(
-                  (popularController.currentTag == '')
-                      ? popularController.trendList
-                      : popularController.bangumiList,
-                );
-              })),
+                }),
+              ),
+            ],
+          ),
+          appBar.glassOverlay(context),
         ],
       ),
       floatingActionButton: KazumiGlass.floatingButton(
         context: context,
         child: FloatingActionButton(
-          onPressed: () => scrollController.animateTo(0,
-              duration: const Duration(milliseconds: 350), curve: Curves.easeOut),
+          // 回到顶部走滚动自己的惯性通道（用户一碰就交还控制权），
+          // 曲线只负责前快后慢，和 iOS 的滚动一致。
+          onPressed: () => scrollController.animateTo(
+            0,
+            duration: const Duration(milliseconds: 420),
+            curve: Curves.easeOutCubic,
+          ),
           child: const Icon(Icons.arrow_upward),
         ),
       ),
@@ -161,68 +197,47 @@ class _PopularPageState extends State<PopularPage> {
     );
   }
 
-  Widget buildSliverAppBar() {
+  /// 大标题：随列表滚走，并在滚动时收缩、淡出。
+  ///
+  /// 不需要额外的顶部留白：scaffold 的 body 本来就排在 AppBar 下面。
+  Widget buildLargeTitle() {
     final theme = Theme.of(context);
-    return SliverAppBar(
-      pinned: true,
-      stretch: true,
-      expandedHeight: 120,
-      elevation: 0,
-      titleSpacing: 0,
-      centerTitle: false,
-      backgroundColor: Theme.of(context).colorScheme.surface,
-      actions: buildActions(),
-      title: null,
-      flexibleSpace: SafeArea(
-        child: dtb.DragToMoveArea(
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              // 标题只跟着顶栏往上走，字号和字重全程不变。以前按折叠进度把
-              // 28/w700 线性缩成 20/w500，上滑时字一直在跳。
-              const double fontSize = 28;
-              const FontWeight fontWeight = FontWeight.w700;
-              return Align(
-                alignment: Alignment.centerLeft,
-                child: Padding(
-                  padding: const EdgeInsets.only(
-                      left: 16, top: 8, bottom: 8, right: 60),
-                  child: SizedBox(
-                    height: 44,
-                    child: Observer(
-                      builder: (_) {
-                        final bool isTrend = popularController.currentTag == '';
-                        // 用我们自己的浮层菜单（CustomDropdownMenu），不用 MenuAnchor：
-                        // 框架的菜单面板画在 Overlay 里铺不了玻璃，开合动画也比我们
-                        // 这版慢（200ms 淡入 + 高度展开）。
-                        return InkWell(
-                          key: selectorKey,
-                          borderRadius: BorderRadius.circular(8),
-                          onTap: showTagMenu,
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                isTrend ? '热门番组' : popularController.currentTag,
-                                style: theme.textTheme.headlineMedium!.copyWith(
-                                  fontWeight: fontWeight,
-                                  fontSize: fontSize,
-                                ),
-                              ),
-                              const SizedBox(width: 4),
-                              Icon(Icons.keyboard_arrow_down,
-                                  size: fontSize, color: theme.iconTheme.color),
-                            ],
-                          ),
-                        );
-                      },
+    return KazumiLargeTitle(
+        progress: scrollProgress,
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+        child: Observer(
+          builder: (_) {
+            final bool isTrend = popularController.currentTag == '';
+            // 用我们自己的浮层菜单（CustomDropdownMenu），不用 MenuAnchor：
+            // 框架的菜单面板开合动画比我们这版慢（200ms 淡入 + 高度展开）。
+            return Align(
+              alignment: Alignment.centerLeft,
+              child: GestureDetector(
+                key: selectorKey,
+                behavior: HitTestBehavior.opaque,
+                onTap: showTagMenu,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      isTrend ? '热门番组' : popularController.currentTag,
+                      style: theme.textTheme.headlineMedium!.copyWith(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 28,
+                      ),
                     ),
-                  ),
+                    const SizedBox(width: 4),
+                    Icon(
+                      Icons.keyboard_arrow_down,
+                      size: 26,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ],
                 ),
-              );
-            },
-          ),
+              ),
+            );
+          },
         ),
-      ),
     );
   }
 

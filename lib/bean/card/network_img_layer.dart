@@ -1,7 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:kazumi/bean/liquid_glass/kazumi_glass.dart';
 import 'package:kazumi/services/logging/logger.dart';
-import 'package:kazumi/utils/constants.dart';
 import 'package:kazumi/utils/image_extension.dart';
 
 class NetworkImgLayer extends StatelessWidget {
@@ -146,8 +146,9 @@ class NetworkImgLayer extends StatelessWidget {
         // 头像要正圆，不受圆角设置影响
         'avatar' => 50,
         'emote' => 0,
-        // 缩略图 / 封面：沿用原来的 12，不跟全局屏幕圆角走。
-        _ => StyleString.imgRadius.x,
+        // 缩略图 / 封面跟全局圆角走：它嵌在卡片里，两圈圆角必须同族，
+        // 内层再用一个 12 的正圆弧会在角上和卡片对不齐。
+        _ => KazumiGlass.radiusOf(context),
       });
 
   Widget _placeholder(BuildContext context) {

@@ -228,7 +228,7 @@ class _SkipRulesDialog extends StatelessWidget {
   const _SkipRulesDialog();
 
   @override
-  Widget build(BuildContext context) => AlertDialog(
+  Widget build(BuildContext context) => KazumiAlert(
         scrollable: true,
         constraints: const BoxConstraints(maxWidth: 560),
         icon: const Icon(Icons.warning_amber_rounded),

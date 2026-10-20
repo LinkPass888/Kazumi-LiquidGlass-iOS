@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:kazumi/bean/liquid_glass/kazumi_glass.dart';
+import 'package:kazumi/bean/liquid_glass/kazumi_motion.dart';
 
 /// A custom dropdown menu widget that provides smooth animations without flickering.
 ///
@@ -70,8 +71,11 @@ class CustomDropdownMenu extends StatelessWidget {
                 child: AnimatedBuilder(
                   animation: animation,
                   builder: (context, child) {
-                    final curvedValue =
-                        Curves.easeOutCubic.transform(animation.value);
+                    // 面板展开本质是一次「落地」：用弹簧方程而不是减速曲线，
+                    // 收尾带一点回弹，和玻璃菜单（MenuAnchor）的手感对上。
+                    // 透明度不能越界，所以并一条钳在 [0,1] 的曲线。
+                    final double curvedValue = KazumiMotion.springDecel
+                        .transform(animation.value);
                     return ClipRect(
                       child: Align(
                         alignment: Alignment.topCenter,

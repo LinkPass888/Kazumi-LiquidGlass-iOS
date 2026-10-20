@@ -7,6 +7,7 @@ import 'package:scrollview_observer/scrollview_observer.dart';
 import 'package:kazumi/bean/dialog/dialog_helper.dart';
 import 'package:kazumi/bean/dialog/material_bottom_sheet.dart';
 import 'package:kazumi/bean/liquid_glass/kazumi_glass.dart';
+import 'package:kazumi/bean/liquid_glass/kazumi_motion.dart';
 import 'package:kazumi/modules/download/download_module.dart';
 import 'package:kazumi/modules/roads/road_module.dart';
 import 'package:kazumi/pages/download/download_controller.dart';
@@ -265,7 +266,7 @@ class _EpisodeTile extends StatelessWidget {
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 250),
-      curve: Curves.easeInOutCubic,
+      curve: KazumiMotion.springDecel,
       decoration: BoxDecoration(
         color: backgroundColor,
         borderRadius: BorderRadius.circular(KazumiGlass.radiusOf(context)),
@@ -310,7 +311,7 @@ class _EpisodeTile extends StatelessWidget {
                   child: AnimatedScale(
                     scale: isSelected ? 1 : 0,
                     duration: const Duration(milliseconds: 250),
-                    curve: Curves.easeInOutCubic,
+                    curve: KazumiMotion.springDecel,
                     child: Icon(
                       Icons.check_circle_rounded,
                       size: 14,

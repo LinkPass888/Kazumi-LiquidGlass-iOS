@@ -1,5 +1,6 @@
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:kazumi/bean/liquid_glass/kazumi_glass.dart';
 import 'package:kazumi/bean/settings/theme_provider.dart';
@@ -74,6 +75,10 @@ ThemeData appTheme({
   return ThemeData(
     useMaterial3: true,
     brightness: brightness,
+    // iOS 的默认字体是 SF Pro。中文仍然落到系统字体（苹方），西文数字和
+    // 标点用 SF —— 和系统设置、App Store 这些原生界面的字形一致。
+    // 只有平台提供这套字体时才有意义，其他平台保持框架默认。
+    fontFamily: _platformFontFamily,
     colorSchemeSeed: color,
     colorScheme: scheme,
     progressIndicatorTheme: progressIndicatorTheme2024,
@@ -99,6 +104,13 @@ ThemeData appTheme({
     dialogTheme: DialogThemeData(
       shape: globalShape,
       surfaceTintColor: Colors.transparent,
+    ),
+    // 吐司是玻璃，框架的底面板必须完全让开（见 KazumiDialog.showToast）。
+    snackBarTheme: const SnackBarThemeData(
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      behavior: SnackBarBehavior.floating,
+      insetPadding: EdgeInsets.zero,
     ),
     bottomSheetTheme: const BottomSheetThemeData().copyWith(
       shape: RoundedRectangleBorder(
@@ -133,6 +145,16 @@ ThemeData appTheme({
     ),
   );
 }
+
+/// 主题字体：iOS 上用的系统族名。
+///
+/// Flutter 在 iOS 上把 `CupertinoSystemText` 映射到系统的 `-apple-system`
+/// （SF Pro 文本体），中文自动落到苹方 —— 和设置、App Store 这些原生界面的
+/// 字形一致。它不是私有字体名，取不到时由引擎回落到系统默认，不会变方块。
+///
+/// 其他平台不指定字体，沿用框架默认（各平台自己的系统字体）。
+final String? _platformFontFamily =
+    defaultTargetPlatform == TargetPlatform.iOS ? 'CupertinoSystemText' : null;
 
 /// 当前窗口的短边（逻辑像素）。主题构建在 BuildContext 之外，用它估屏幕圆角。
 double _windowShortestSide() {

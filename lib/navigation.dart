@@ -14,13 +14,10 @@ final rootRouteObserver = RouteObserver<PageRoute<void>>();
 ///
 /// 背景：Modular 7.x（Navigator 2.0 / Router API）默认的 material 转场生成的是
 /// `MaterialPage<void>(key: key, child: child)` —— 只有 key、**没有 name**，
-/// 于是 `route.settings.name` 恒为 null。任何「按路由名办事」的机制都会静默失效：
-/// 典型的就是 [GlassRouteObserver]（见 bean/liquid_glass/glass_route_observer.dart），
-/// 它靠 `settings.name` 认出「顶栏有大标题」的页面，在 push / 侧滑返回期间隐藏
-/// 这一页自己的原生玻璃。
+/// 于是 `route.settings.name` 恒为 null。
 ///
-/// 所以需要被 observer 认出来的路由，都要把转场换成这个类，并把 [name] 传成
-/// 和 `pushNamed()` 一致的路径（observer 按前缀匹配）。
+/// 现在玻璃已经改为 Flutter 图层内的着色器，不再需要「转场期间隐藏玻璃」，
+/// 但带 name 的路由对调试、埋点和后续按路由名做动画仍然有用，保留这个转场。
 class NamedPageTransition extends PageTransition {
   const NamedPageTransition(this.name);
 

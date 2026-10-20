@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:real_liquid_glass/real_liquid_glass.dart';
+
+import 'package:kazumi/bean/liquid_glass/glass_material.dart';
+import 'package:kazumi/bean/liquid_glass/kazumi_motion.dart';
+import 'package:kazumi/bean/liquid_glass/liquid_glass.dart';
 
 /// 菜单条目点完要关到哪一层。
 ///
@@ -38,16 +41,25 @@ class KazumiMenuCloseScope extends InheritedWidget {
 
 /// 液态玻璃（iOS 26 Liquid Glass）适配的统一入口。
 ///
-/// iOS 26+ 上交给苹果原生的 `UIGlassEffect`：真正的折光液态玻璃，并且自动
-/// 跟随系统的透明度滑块、降低透明度与增强对比度；iOS 26 以下是系统模糊；
-/// 其它平台由 real_liquid_glass 自己画一层磨砂。所有玻璃表面都从这里出，
-/// 是为了只有一处开关、形状统一，也方便随时整体退回原来的 Material 外观。
+/// 所有玻璃表面都从 [KazumiLiquidGlass] 出：折光、磨砂、边缘高光都在
+/// Flutter 图层内由 `assets/shaders/liquid_glass.frag` 一次画完，因此可以
+/// 被裁剪、跟随路由转场、放进弹层/弹窗，并且和内容共用同一棵图层树。
+///
+/// 只有底部标签栏仍是原生 `UITabBar`（系统自带的玻璃与选中胶囊）。
+///
+/// 材质分 regular / clear 两种，按场景分配（见 `GlassMaterial.of`）；
+/// 所有入口集中在这里，是为了只有一处开关、形状统一，也方便随时整体退回
+/// 原来的 Material 外观。
 abstract final class KazumiGlass {
   /// 底部玻璃标签栏的高度。
   ///
-  /// iOS 上这是原生 `UITabBar` 的高度，栏体一直铺到屏幕底部并自己处理底部
-  /// 安全区，所以这里包含安全区高度。
-  static const double bottomBarHeight = 85;
+  /// iOS 上这是原生 `UITabBar` 的高度：栏体本身 49，再加上它自己处理的底部
+  /// 安全区。带 Home 指示条的机型上是 83，iPad 与无指示条的机型上是 49。
+  static const double bottomBarHeight = 49;
+
+  /// 底部标签栏实际占用的高度（含安全区）。
+  static double bottomBarHeightOf(BuildContext context) =>
+      bottomBarHeight + MediaQuery.paddingOf(context).bottom;
 
   /// 圆形按钮 / 浮动按钮的形状。
   static const LiquidGlassShape circleShape = LiquidGlassShape.capsule();
@@ -124,10 +136,10 @@ abstract final class KazumiGlass {
 
   /// 面板和条目填充共用的轮廓：**苹果连续圆角**（squircle）。
   ///
-  /// 面板本身是 UIKit 的原生玻璃，苹果画的就是连续圆角；条目填充如果还用
-  /// Flutter 的 [RoundedRectangleBorder]（正圆弧），把 squircle 内缩 6 得到
-  /// 的并不是「平行内缩」的曲线 —— 直边上缝宽一样，**角上会变宽**，看着就是
-  /// 「不直、和面板不平行」。两边都用连续圆角，圆角才是同族的同心曲线。
+  /// 玻璃面板的圆角由着色器按超椭圆画出来，苹果用的就是连续圆角；条目填充
+  /// 如果还用 Flutter 的 [RoundedRectangleBorder]（正圆弧），把 squircle
+  /// 内缩 6 得到的并不是「平行内缩」的曲线 —— 直边上缝宽一样，**角上会变宽**，
+  /// 看着就是「不直、和面板不平行」。两边都用连续圆角，圆角才是同族的同心曲线。
   ///
   /// [item] 为 true 时取条目圆角（面板圆角 − [menuPanelInset]），否则取面板圆角。
   static OutlinedBorder panelOutline(BuildContext context, {bool item = false}) =>
@@ -152,7 +164,7 @@ abstract final class KazumiGlass {
       backgroundColor: WidgetStatePropertyAll(
         selected ? primary.withValues(alpha: 0.30) : Colors.transparent,
       ),
-      // 填充圆角用苹果连续圆角，和原生玻璃面板同族（见 [panelOutline]）。
+      // 填充圆角用苹果连续圆角，和玻璃面板同族（见 [panelOutline]）。
       shape: WidgetStatePropertyAll(panelOutline(context, item: true)),
       // 按下/悬停的深色：和 _GlassTapTarget 的按下填充同一个值。
       // 以前这里是 0.18，而别处（菜单条目的按下、子菜单触发条目）是 0.22 ——
@@ -242,9 +254,9 @@ abstract final class KazumiGlass {
     if (!enabled) {
       return child;
     }
-    return LiquidGlassContainer(
+    return KazumiLiquidGlass(
+      kind: GlassSurfaceKind.mediaTabBar,
       shape: LiquidGlassShape.roundedRectangle(floatingBarRadiusOf(context)),
-      style: LiquidGlassStyle.regular,
       padding: padding,
       child: child,
     );
@@ -286,7 +298,7 @@ abstract final class KazumiGlass {
       return 0;
     }
     // 栏体本身已经盖住底部安全区，这里再留一点余量，免得最后一行贴着玻璃。
-    return bottomBarHeight + 8;
+    return bottomBarHeightOf(context) + 8;
   }
 
   /// 顶栏用的系统状态栏样式：透明背景 + 跟随主题明暗的图标。
@@ -313,14 +325,17 @@ abstract final class KazumiGlass {
     required Widget child,
     LiquidGlassShape shape = circleShape,
     EdgeInsetsGeometry? padding,
+    GlassSurfaceKind kind = GlassSurfaceKind.groupedSurface,
+    double fade = 1,
   }) {
     if (!enabled) {
       return child;
     }
-    return LiquidGlassContainer(
+    return KazumiLiquidGlass(
+      kind: kind,
       shape: shape,
-      style: LiquidGlassStyle.regular,
       padding: padding,
+      fade: fade,
       child: child,
     );
   }
@@ -332,9 +347,9 @@ abstract final class KazumiGlass {
     if (!enabled) {
       return child;
     }
-    return LiquidGlassContainer(
+    return KazumiLiquidGlass(
+      kind: GlassSurfaceKind.appBar,
       shape: circleShape,
-      style: LiquidGlassStyle.regular,
       child: child,
     );
   }
@@ -353,6 +368,7 @@ abstract final class KazumiGlass {
       padding: EdgeInsets.zero,
       width: size,
       height: size,
+      kind: GlassSurfaceKind.appBar,
       child: icon,
     );
     if (tooltip == null) {
@@ -382,6 +398,7 @@ abstract final class KazumiGlass {
       padding: padding,
       selected: selected,
       radius: radius ?? panelRadiusOf(context),
+      kind: GlassSurfaceKind.groupedSurface,
       child: child,
     );
   }
@@ -407,6 +424,7 @@ abstract final class KazumiGlass {
       padding: padding,
       height: barButtonSize,
       radius: panelRadiusOf(context),
+      kind: GlassSurfaceKind.appBar,
       child: child,
     );
   }
@@ -551,7 +569,7 @@ abstract final class KazumiGlass {
       padding: EdgeInsets.only(
         bottom: aboveTabBar ? bottomInset(context) : 0,
       ),
-      child: glassSurface(child: themed),
+      child: glassSurface(kind: GlassSurfaceKind.floatingAction, child: themed),
     );
   }
 }
@@ -572,6 +590,7 @@ class _GlassTapTarget extends StatefulWidget {
     this.height,
     this.radius,
     this.wrapInGlass = true,
+    this.kind = GlassSurfaceKind.groupedSurface,
   });
 
   final Widget child;
@@ -590,17 +609,41 @@ class _GlassTapTarget extends StatefulWidget {
   /// 是否在盒子后面铺一层玻璃。菜单条目不需要，因为整块菜单已经是一块玻璃。
   final bool wrapInGlass;
 
+  /// 铺玻璃时用哪种场景的材质。
+  final GlassSurfaceKind kind;
+
   @override
   State<_GlassTapTarget> createState() => _GlassTapTargetState();
 }
 
-class _GlassTapTargetState extends State<_GlassTapTarget> {
+class _GlassTapTargetState extends State<_GlassTapTarget>
+    with SingleTickerProviderStateMixin {
   bool _pressed = false;
 
+  /// 按下高亮的弹簧进度：0 = 常态，1 = 按到底。
+  ///
+  /// 以前这里是 120ms 的 `AnimatedContainer` + `easeOut` —— 颜色虽然是
+  /// 渐变过去的，但节奏是直线性的，按下去和抬起来都「平」。改用弹簧后，
+  /// 按下快、抬起带一点点回弹，和 iOS 的触感一致。
+  late final AnimationController _press = AnimationController.unbounded(
+    vsync: this,
+    value: 0,
+  );
+
+  @override
+  void dispose() {
+    _press.dispose();
+    super.dispose();
+  }
+
   void _setPressed(bool value) {
-    if (mounted && _pressed != value) {
-      setState(() => _pressed = value);
+    if (!mounted || _pressed == value) return;
+    setState(() => _pressed = value);
+    if (MediaQuery.maybeDisableAnimationsOf(context) ?? false) {
+      _press.value = value ? 1 : 0;
+      return;
     }
+    KazumiMotion.springTo(_press, value ? 1 : 0);
   }
 
   @override
@@ -609,39 +652,42 @@ class _GlassTapTargetState extends State<_GlassTapTarget> {
     final Color base = widget.selected
         ? scheme.primary.withValues(alpha: 0.30)
         : Colors.transparent;
-    // 按下高亮和选中填充画在同一个盒子上：形状、圆角、大小必然一致。
-    // 有圆角时用苹果连续圆角（和原生玻璃面板同族），胶囊（radius == null）不变。
-    final Color color = _pressed
-        ? scheme.primary
-            .withValues(alpha: widget.selected ? 0.46 : 0.22)
-        : base;
+    final Color pressedColor = scheme.primary
+        .withValues(alpha: widget.selected ? 0.46 : 0.22);
     final ShapeBorder border = widget.radius == null
         ? const StadiumBorder()
         : RoundedSuperellipseBorder(
             borderRadius: BorderRadius.all(Radius.circular(widget.radius!)),
           );
+    // 按下高亮和选中填充画在同一个盒子上：形状、圆角、大小必然一致。
+    // 颜色由弹簧进度插值，而不是 AnimatedContainer 的线性补间。
     final Widget box = GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTapDown: (_) => _setPressed(true),
       onTapUp: (_) => _setPressed(false),
       onTapCancel: () => _setPressed(false),
       onTap: widget.onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 120),
-        curve: Curves.easeOut,
-        width: widget.width,
-        height: widget.height,
-        alignment: Alignment.center,
-        decoration: ShapeDecoration(shape: border, color: color),
+      child: AnimatedBuilder(
+        animation: _press,
+        builder: (context, child) => Container(
+          width: widget.width,
+          height: widget.height,
+          alignment: Alignment.center,
+          decoration: ShapeDecoration(
+            shape: border,
+            color: Color.lerp(base, pressedColor, _press.value.clamp(0.0, 1.0)),
+          ),
+          child: child,
+        ),
         child: Padding(padding: widget.padding, child: widget.child),
       ),
     );
     if (!KazumiGlass.enabled || !widget.wrapInGlass) {
       return box;
     }
-    return LiquidGlassContainer(
+    return KazumiLiquidGlass(
+      kind: widget.kind,
       shape: widget.shape,
-      style: LiquidGlassStyle.regular,
       // 装饰用：触摸交给上面的 GestureDetector，玻璃自己不接管触摸
       interactive: false,
       child: box,

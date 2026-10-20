@@ -19,12 +19,33 @@ const _menuItemStyle = ButtonStyle(
 /// 观感，隔着面板不会看见背后内容。内边距取
 /// [KazumiGlass.menuPanelPadding]，条目的高亮圆角才是同心圆（见
 /// [KazumiGlass.menuItemButtonStyle]）。
-MenuStyle _panelStyle(BuildContext context) => KazumiGlass.submenuStyle(context)
-    .copyWith(
-  padding: const WidgetStatePropertyAll(KazumiGlass.menuPanelPadding),
-  surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
-  shadowColor: const WidgetStatePropertyAll(Colors.transparent),
-);
+///
+/// [glass] 为 true 时模式完全不同：整块面板是一块真玻璃，由 children 自己带上，
+/// 所以这里必须把框架那层 `Material` 整个去掉 —— 不是调成透明，而是
+/// `shape: null` + `backgroundColor: null`，让 `_MenuPanel` 落到
+/// `MaterialType.transparency`。否则 `Material` 仍会按 shape 建一层
+/// `PhysicalShape`，玻璃的折射会被这层半透明画布盖住（OpenGlass 的菜单就是
+/// 这么做的，也是唯一能在 Overlay 里拿到真实背景的方式）。
+MenuStyle _panelStyle(BuildContext context, {bool glass = false}) {
+  final MenuStyle base = KazumiGlass.submenuStyle(context);
+  if (glass) {
+    return base.copyWith(
+      padding: const WidgetStatePropertyAll(EdgeInsets.zero),
+      backgroundColor: const WidgetStatePropertyAll(Colors.transparent),
+      surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
+      shadowColor: const WidgetStatePropertyAll(Colors.transparent),
+      elevation: const WidgetStatePropertyAll(0),
+      shape: const WidgetStatePropertyAll<OutlinedBorder>(
+        RoundedRectangleBorder(),
+      ),
+    );
+  }
+  return base.copyWith(
+    padding: const WidgetStatePropertyAll(KazumiGlass.menuPanelPadding),
+    surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
+    shadowColor: const WidgetStatePropertyAll(Colors.transparent),
+  );
+}
 
 class KazumiMenuButton extends StatelessWidget {
   const KazumiMenuButton({
@@ -66,9 +87,8 @@ class KazumiMenuButton extends StatelessWidget {
   /// 包进一块 [KazumiGlass.glassSurface]，再把框架那层底色/阴影/内边距去掉 ——
   /// 和播放器菜单（player_panel_hold.dart）是同一个做法。
   ///
-  /// 默认关，而且**弹窗/底部弹层里的菜单不要开**：原生玻璃视图在弹窗里会渲染成
-  /// 一大块遮挡（见 material_bottom_sheet.dart 里的说明）。只有画在普通页面上的
-  /// 菜单才开它 —— 底下有内容可折射时才有意义（热门番组、追番分类这类）。
+  /// 默认关。玻璃是 Flutter 图层内的着色器，弹层/弹窗里也能正常裁剪与折射；
+  /// 只有底下确实有内容可折射时才值得开（热门番组、追番分类这类）。
   final bool glass;
 
   @override
@@ -78,11 +98,12 @@ class KazumiMenuButton extends StatelessWidget {
     // 样式反过来盖住调用方的设置，所以必须把默认样式合到调用方后面。
     // 顺序写反过，后果就是「面板整块变透明」这类调用方的设置全部失效 ——
     // 玻璃菜单背后那层半透明 surface 就是这么冒出来的。
-    final MenuStyle panelStyle = _panelStyle(context);
+    final bool useGlass = glass && KazumiGlass.enabled;
+    final MenuStyle panelStyle = _panelStyle(context, glass: useGlass);
     MenuStyle resolvedStyle =
         style == null ? panelStyle : style!.merge(panelStyle);
     List<Widget> children = menuChildren;
-    if (glass && KazumiGlass.enabled) {
+    if (useGlass) {
       // 面板整块透明，玻璃由 children 自己带上。这里用 copyWith：不管调用方
       // 传了什么，玻璃都得是唯一的那层表面，也不能再压一层底色/阴影/内边距。
       resolvedStyle = resolvedStyle.copyWith(
@@ -91,6 +112,11 @@ class KazumiMenuButton extends StatelessWidget {
         shadowColor: const WidgetStatePropertyAll(Colors.transparent),
         elevation: const WidgetStatePropertyAll(0),
         padding: const WidgetStatePropertyAll(EdgeInsets.zero),
+        // 圆角由玻璃自己裁（它只需要一个零圆角的矩形边界，圆角是着色器的
+        // 距离场画出来的）。
+        shape: const WidgetStatePropertyAll<OutlinedBorder>(
+          RoundedRectangleBorder(),
+        ),
       );
       children = [
         KazumiGlass.glassSurface(

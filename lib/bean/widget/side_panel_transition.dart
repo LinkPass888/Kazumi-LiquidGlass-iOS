@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'package:kazumi/bean/liquid_glass/kazumi_motion.dart';
+
 class SidePanelTransition extends StatelessWidget {
   const SidePanelTransition({
     super.key,
@@ -7,7 +9,8 @@ class SidePanelTransition extends StatelessWidget {
     required this.child,
   });
 
-  static const duration = Duration(milliseconds: 120);
+  /// 侧边面板滑入：短、快、收尾缓，和玻璃面板的浮起一致。
+  static const duration = Duration(milliseconds: 180);
 
   final Animation<double> animation;
   final Widget child;
@@ -17,7 +20,7 @@ class SidePanelTransition extends StatelessWidget {
         position: Tween<Offset>(
           begin: const Offset(1, 0),
           end: Offset.zero,
-        ).animate(animation.drive(CurveTween(curve: Curves.easeOut))),
+        ).animate(animation.drive(CurveTween(curve: KazumiMotion.springDecel))),
         child: child,
       );
 }

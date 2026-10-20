@@ -83,7 +83,9 @@ class HistoryRecordTile extends StatelessWidget {
       ),
       child: Material(
         color: colors.surfaceContainerLow,
-        borderRadius: borderRadius,
+        // 苹果连续圆角：和卡片、菜单、对话框同一族曲线（Dismissible 的背景
+        // 仍是圆角矩形，两者差值只有几个像素，滑动时看不出来）。
+        shape: RoundedSuperellipseBorder(borderRadius: borderRadius),
         clipBehavior: Clip.antiAlias,
         child: Stack(
           children: [

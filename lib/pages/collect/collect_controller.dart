@@ -112,7 +112,7 @@ abstract class _CollectController with Store {
 
     return KazumiDialog.show<_BangumiDeleteSyncAction>(
       clickMaskDismiss: true,
-      builder: (context) => AlertDialog(
+      builder: (context) => KazumiAlert(
         title: const Text('Bangumi 不支持删除收藏'),
         content: const Text(
           '因为安全考虑，Bangumi 未提供删除接口，您可以选择把本地和远端标记为“抛弃”，或者选择仅删除本地收藏并打开网页后手动删除 Bangumi 数据。',

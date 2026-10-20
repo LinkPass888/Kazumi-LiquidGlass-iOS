@@ -37,6 +37,7 @@ class _ImageSearchPageState extends State<ImageSearchPage> {
   final _pageScroll = ScrollController();
   final _sourceScroll = ScrollController();
   final _resultScroll = ScrollController();
+  final _scrollProgress = KazumiScrollProgress();
   final _resultsKey = GlobalKey();
   final _picker = ImagePicker();
   Timer? _previewDebounce;
@@ -71,6 +72,7 @@ class _ImageSearchPageState extends State<ImageSearchPage> {
     _pageScroll.dispose();
     _sourceScroll.dispose();
     _resultScroll.dispose();
+    _scrollProgress.dispose();
     super.dispose();
   }
 
@@ -208,7 +210,7 @@ class _ImageSearchPageState extends State<ImageSearchPage> {
   void _showHelp() {
     KazumiDialog.show<void>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context) => KazumiAlert(
         icon: const Icon(Icons.image_search_rounded),
         title: const Text('让截图更容易被找到'),
         content: const SingleChildScrollView(
@@ -239,41 +241,54 @@ class _ImageSearchPageState extends State<ImageSearchPage> {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    final appBar = SysAppBar(
+      title: KazumiCollapsingTitle(text: '以图搜番', progress: _scrollProgress),
+      scrollProgress: _scrollProgress,
+      actions: [
+        IconButton(
+            onPressed: _showHelp,
+            tooltip: '搜图小贴士',
+            icon: const Icon(Icons.help_outline_rounded)),
+      ],
+    );
     return Scaffold(
       backgroundColor: colors.surface,
-      appBar: SysAppBar(
-        backgroundColor: colors.surface,
-        actions: [
-          IconButton(
-              onPressed: _showHelp,
-              tooltip: '搜图小贴士',
-              icon: const Icon(Icons.help_outline_rounded)),
+      appBar: appBar,
+      extendBodyBehindAppBar: true,
+      body: Stack(
+        children: [
+          SafeArea(
+            top: false,
+            child: KazumiScrollProgressObserver(
+              progress: _scrollProgress,
+              child: NotificationListener<UserScrollNotification>(
+                  onNotification: (notification) {
+                    if (_controller.isImageSearching &&
+                        notification.direction != ScrollDirection.idle) {
+                      _userScrolledDuringSearch = true;
+                    }
+                    return false;
+                  },
+                  child: LayoutBuilder(
+                    builder: (context, constraints) => Observer(
+                      builder: (context) => ScrollConfiguration(
+                        behavior: ScrollConfiguration.of(context)
+                            .copyWith(scrollbars: false),
+                        child: _buildContent(
+                            context, constraints, appBar.bodyTopInset(context)),
+                      ),
+                    ),
+                  )),
+            ),
+          ),
+          appBar.glassOverlay(context),
         ],
-      ),
-      body: SafeArea(
-        top: false,
-        child: NotificationListener<UserScrollNotification>(
-            onNotification: (notification) {
-              if (_controller.isImageSearching &&
-                  notification.direction != ScrollDirection.idle) {
-                _userScrolledDuringSearch = true;
-              }
-              return false;
-            },
-            child: LayoutBuilder(
-              builder: (context, constraints) => Observer(
-                builder: (context) => ScrollConfiguration(
-                  behavior: ScrollConfiguration.of(context)
-                      .copyWith(scrollbars: false),
-                  child: _buildContent(context, constraints),
-                ),
-              ),
-            )),
       ),
     );
   }
 
-  Widget _buildContent(BuildContext context, BoxConstraints constraints) {
+  Widget _buildContent(
+      BuildContext context, BoxConstraints constraints, double topInset) {
     final window = MediaQuery.sizeOf(context);
     final textScale = MediaQuery.textScalerOf(context).scale(16) / 16;
     final splitLayout = constraints.maxWidth >= 840 ||
@@ -319,7 +334,7 @@ class _ImageSearchPageState extends State<ImageSearchPage> {
                     ? ((constraints.maxWidth - padding * 2 - 24) * .36)
                         .clamp(264.0, 400.0)
                     : (constraints.maxWidth - padding * 2).clamp(0.0, 520.0),
-                child: _buildSourcePane(source,
+                child: _buildSourcePane(source, topInset,
                     action: pinAction ? _buildPrimaryAction(searching) : null),
               ),
               if (resultContent != null)
@@ -329,8 +344,10 @@ class _ImageSearchPageState extends State<ImageSearchPage> {
                     child: SingleChildScrollView(
                       key: const PageStorageKey('image-search-results'),
                       controller: _resultScroll,
-                      // 结果底部让开浮起的玻璃标签栏。
+                      // 顶部让开顶栏玻璃（内容从它底下滑过），底部让开浮起的
+                      // 玻璃标签栏。
                       padding: EdgeInsets.only(
+                          top: topInset,
                           right: inset,
                           bottom: 8 + KazumiGlass.bottomInset(context)),
                       child: resultContent,
@@ -348,9 +365,9 @@ class _ImageSearchPageState extends State<ImageSearchPage> {
         key: const PageStorageKey('image-search-page'),
         controller: _pageScroll,
         keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-        // 底部让开浮起的玻璃标签栏。
-        padding: EdgeInsets.fromLTRB(
-            padding, 0, padding, 24 + KazumiGlass.bottomInset(context)),
+        // 顶部让开顶栏玻璃，底部让开浮起的玻璃标签栏。
+        padding: EdgeInsets.fromLTRB(padding, topInset, padding,
+            24 + KazumiGlass.bottomInset(context)),
         child: Center(
           child: ConstrainedBox(
             constraints: BoxConstraints(maxWidth: showResults ? 640 : 520),
@@ -369,14 +386,16 @@ class _ImageSearchPageState extends State<ImageSearchPage> {
     );
   }
 
-  Widget _buildSourcePane(Widget source, {Widget? action}) {
+  Widget _buildSourcePane(Widget source, double topInset, {Widget? action}) {
     final scrollable = Scrollbar(
       controller: _sourceScroll,
       child: SingleChildScrollView(
         key: const PageStorageKey('image-search-source'),
         controller: _sourceScroll,
-        // 底部让开浮起的玻璃标签栏（有固定动作按钮时它压在下面）。
+        // 顶部让开顶栏玻璃，底部让开浮起的玻璃标签栏（有固定动作按钮时它
+        // 压在下面）。
         padding: EdgeInsets.only(
+            top: topInset,
             bottom: (action == null ? 0 : 16) +
                 KazumiGlass.bottomInset(context)),
         child: source,
@@ -390,7 +409,7 @@ class _ImageSearchPageState extends State<ImageSearchPage> {
         Flexible(
             fit: action == null ? FlexFit.loose : FlexFit.tight,
             child: scrollable),
-        if (action != null) action,
+        ?action,
       ],
     );
   }

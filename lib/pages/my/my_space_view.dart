@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:kazumi/bean/liquid_glass/kazumi_glass.dart';
+import 'package:kazumi/bean/liquid_glass/kazumi_motion.dart';
 import 'package:kazumi/bean/settings/settings_list.dart';
 import 'package:kazumi/bean/widget/content_section.dart';
 import 'package:kazumi/modules/my/watch_stats.dart';
@@ -22,10 +23,17 @@ class MySpaceView extends StatelessWidget {
     super.key,
     required this.stats,
     required this.onOpen,
+    this.topInset = 0,
   });
 
   final WatchStats stats;
   final ValueChanged<MyDestination> onOpen;
+
+  /// 滚动视图顶部需要让出的高度（状态栏 + 顶栏）。
+  ///
+  /// 页面开了 `extendBodyBehindAppBar`，内容从顶栏底下起步 —— 让出这一段，
+  /// 免得大标题一开始就被顶栏压住；滚上去的内容正好被顶栏玻璃采到。
+  final double topInset;
 
   @override
   Widget build(BuildContext context) {
@@ -37,7 +45,7 @@ class MySpaceView extends StatelessWidget {
       return SingleChildScrollView(
         key: const PageStorageKey('my-space'),
         padding: EdgeInsets.fromLTRB(
-            inset, 12, inset, 32 + KazumiGlass.bottomInset(context)),
+            inset, topInset + 4, inset, 32 + KazumiGlass.bottomInset(context)),
         child: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 1120),
@@ -703,10 +711,11 @@ class _ExpressiveActionState extends State<_ExpressiveAction> {
       child: AnimatedScale(
         scale: _pressed && !reducedMotion ? .97 : 1,
         duration: duration,
-        curve: _pressed ? Curves.easeOutCubic : Curves.easeOutBack,
+        // 抬起用弹簧方程（不回弹越界）：Scale 越界会把块放大到圆角之外。
+        curve: KazumiMotion.springDecel,
         child: AnimatedContainer(
           duration: duration,
-          curve: Curves.easeOutCubic,
+          curve: KazumiMotion.springDecel,
           clipBehavior: Clip.antiAlias,
           decoration: BoxDecoration(
             color: widget.color,

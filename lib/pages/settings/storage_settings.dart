@@ -28,7 +28,7 @@ class _StorageSettingsPageState extends State<StorageSettingsPage> {
     if (_clearing) return;
     final confirmed = await KazumiDialog.show<bool>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context) => KazumiAlert(
         icon: const Icon(Icons.cleaning_services_rounded),
         title: const Text('清除图片缓存？'),
         content: const Text('图片会在下次加载时重新下载。视频、记录和设置不会删除。'),

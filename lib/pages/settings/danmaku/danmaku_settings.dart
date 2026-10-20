@@ -75,7 +75,7 @@ class _DanmakuSettingsPageState extends State<DanmakuSettingsPage> {
 
   Future<void> resetDanmakuSettings() async {
     final bool shouldReset = await KazumiDialog.show<bool>(
-          builder: (context) => AlertDialog(
+          builder: (context) => KazumiAlert(
             title: const Text('恢复默认弹幕设置'),
             content: const Text('弹幕来源、显示和样式设置将恢复为默认值，关键词屏蔽列表不会被清空。'),
             actions: [

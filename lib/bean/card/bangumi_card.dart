@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_modular/flutter_modular.dart';
 import 'package:kazumi/bean/card/network_img_layer.dart';
 import 'package:kazumi/bean/dialog/dialog_helper.dart';
+import 'package:kazumi/bean/liquid_glass/kazumi_glass.dart';
 import 'package:kazumi/modules/bangumi/bangumi_item.dart';
-import 'package:kazumi/utils/constants.dart';
 
 // 视频卡片 - 垂直布局
 class BangumiCardV extends StatelessWidget {
@@ -20,14 +20,15 @@ class BangumiCardV extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
+    // 卡片是一条**表面**，不是玻璃：列表里同时存在几十张，逐张采样背景
+    // 会把磨砂滤镜的开销乘上张数。用和玻璃同族的连续圆角 + 中性表面，
+    // 看上去是同一套语言，首帧和滚动都不掉帧。
+    return Material(
+      color: Theme.of(context).colorScheme.surfaceContainerLow,
       elevation: 0,
       clipBehavior: Clip.antiAlias,
-      margin: EdgeInsets.zero,
-      // 推荐页的番剧卡片保持原来的 R 角（Material 卡的默认 12），
-      // 不跟全局屏幕圆角走。
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.all(StyleString.imgRadius),
+      shape: RoundedSuperellipseBorder(
+        borderRadius: BorderRadius.circular(KazumiGlass.radiusOf(context)),
       ),
       child: GestureDetector(
         child: InkWell(

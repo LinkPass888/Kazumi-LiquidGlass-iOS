@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:kazumi/bean/dialog/kazumi_alert.dart';
 import 'package:kazumi/bean/liquid_glass/kazumi_glass.dart';
 
 enum ExitDialogAction { exit, minimizeToTray }
@@ -45,11 +46,10 @@ class _ExitConfirmationDialogState extends State<ExitConfirmationDialog> {
       ),
     );
 
-    return AlertDialog(
+    return KazumiAlert(
       constraints: const BoxConstraints(minWidth: 280, maxWidth: 440),
       insetPadding: const EdgeInsets.all(24),
       backgroundColor: colors.surfaceContainerHigh,
-      surfaceTintColor: Colors.transparent,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(KazumiGlass.radiusOf(context)),
       ),

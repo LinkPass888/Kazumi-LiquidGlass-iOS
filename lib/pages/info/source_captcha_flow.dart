@@ -118,7 +118,7 @@ class _VerifyDialogFrame extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
-    return AlertDialog(
+    return KazumiAlert(
       scrollable: true,
       backgroundColor: colors.surfaceContainerHigh,
       shape: RoundedRectangleBorder(

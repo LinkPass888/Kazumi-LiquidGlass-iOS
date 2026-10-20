@@ -6,6 +6,7 @@ import 'package:flutter_modular/flutter_modular.dart';
 
 import 'package:kazumi/bean/appbar/sys_app_bar.dart';
 import 'package:kazumi/bean/liquid_glass/kazumi_glass.dart';
+import 'package:kazumi/bean/liquid_glass/kazumi_search_field.dart';
 import 'package:kazumi/bean/card/network_img_layer.dart';
 import 'package:kazumi/bean/dialog/adaptive_bottom_sheet.dart';
 import 'package:kazumi/bean/dialog/material_bottom_sheet.dart';
@@ -42,6 +43,9 @@ class _SearchPageState extends State<SearchPage> {
   String? _submittedQuery;
   bool _managingHistory = false;
 
+  /// 顶栏玻璃的出现进度。
+  final KazumiScrollProgress _scrollProgress = KazumiScrollProgress();
+
   SearchPageController get _controller => widget.controller;
   bool get _hasSearched => _submittedQuery != null;
 
@@ -64,6 +68,7 @@ class _SearchPageState extends State<SearchPage> {
     _input.dispose();
     _inputFocus.dispose();
     _scroll.dispose();
+    _scrollProgress.dispose();
     super.dispose();
   }
 
@@ -134,31 +139,26 @@ class _SearchPageState extends State<SearchPage> {
   }
 
   Widget _searchField() {
-    final colors = Theme.of(context).colorScheme;
     return ValueListenableBuilder<TextEditingValue>(
       valueListenable: _input,
-      builder: (context, value, child) => SearchBar(
+      builder: (context, value, child) => KazumiSearchField(
         controller: _input,
         focusNode: _inputFocus,
         hintText: '搜索番剧名称',
         textInputAction: TextInputAction.search,
         constraints: const BoxConstraints(minHeight: 64),
-        elevation: const WidgetStatePropertyAll(0),
-        backgroundColor: WidgetStatePropertyAll(colors.surfaceContainerHigh),
-        padding:
-            const WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 8)),
-        leading: IconButton(
+        leading: KazumiSearchIcon(
           tooltip: '搜索',
           onPressed: () => _submit(_input.text),
           icon: const Icon(Icons.search_rounded),
         ),
         trailing: [
           if (value.text.isNotEmpty || _hasSearched)
-            IconButton(
+            KazumiSearchIcon(
                 tooltip: '清空搜索',
                 onPressed: _clearSearch,
                 icon: const Icon(Icons.close_rounded)),
-          IconButton(
+          KazumiSearchIcon(
             tooltip: '以图搜番',
             onPressed: _imageSearch,
             icon: const Icon(Icons.image_search_rounded),
@@ -370,54 +370,72 @@ class _SearchPageState extends State<SearchPage> {
 
   @override
   Widget build(BuildContext context) {
+    final appBar = SysAppBar(
+      // 和其它页面的大标题同一套字号字重；随滚动原地收缩。
+      title: KazumiCollapsingTitle(text: '番剧搜索', progress: _scrollProgress),
+      scrollProgress: _scrollProgress,
+    );
+    final double topInset = appBar.bodyTopInset(context);
     return Scaffold(
-      appBar: SysAppBar(
-          backgroundColor: Colors.transparent,
-          // 和其它页面的大标题同一套字号字重（此前是框架默认的小标题）。
-          title: Text('番剧搜索', style: appBarTitleStyle(context))),
-      body: SafeArea(
-          top: false,
-          child: LayoutBuilder(builder: (context, constraints) {
-            final horizontal = constraints.maxWidth >= 700 ? 32.0 : 20.0;
-            final width = math.min(_hasSearched ? 1120.0 : 760.0,
-                constraints.maxWidth - horizontal * 2);
-            final inset = (constraints.maxWidth - width) / 2;
-            final pinSearch = _hasSearched &&
-                constraints.maxHeight >= 420 &&
-                MediaQuery.textScalerOf(context).scale(16) <= 24;
-            Widget scrollView(List<Widget> slivers) => CustomScrollView(
-                  controller: _scroll,
-                  keyboardDismissBehavior:
-                      ScrollViewKeyboardDismissBehavior.onDrag,
-                  slivers: [
-                    SliverPadding(
-                      // 底部多留一段，让结果别被浮起的玻璃标签栏压住 —— 原生
-                      // 标签栏是浮在所有页面（含被打开的搜索页）之上的。
-                      padding: EdgeInsets.fromLTRB(
-                          inset, 0, inset, 24 + KazumiGlass.bottomInset(context)),
-                      sliver: SliverMainAxisGroup(slivers: slivers),
-                    )
-                  ],
-                );
-            return Column(children: [
-              if (pinSearch)
-                Padding(
-                    padding: EdgeInsets.symmetric(horizontal: inset),
-                    child: _header()),
-              Expanded(
-                  child: _hasSearched
-                      ? Observer(
-                          builder: (_) => scrollView([
-                                if (!pinSearch)
-                                  SliverToBoxAdapter(child: _header()),
-                                ..._resultSlivers(width),
-                              ]))
-                      : scrollView([
-                          SliverToBoxAdapter(child: _header()),
-                          SliverToBoxAdapter(child: _discovery()),
-                        ])),
-            ]);
-          })),
+      appBar: appBar,
+      // 内容从顶栏底下滑过去，玻璃才采得到东西（详见 SysAppBar.glassOverlay）。
+      extendBodyBehindAppBar: true,
+      body: Stack(
+        children: [
+          SafeArea(
+            top: false,
+            child: KazumiScrollProgressObserver(
+              progress: _scrollProgress,
+              child: LayoutBuilder(builder: (context, constraints) {
+                final horizontal = constraints.maxWidth >= 700 ? 32.0 : 20.0;
+                final width = math.min(_hasSearched ? 1120.0 : 760.0,
+                    constraints.maxWidth - horizontal * 2);
+                final inset = (constraints.maxWidth - width) / 2;
+                final pinSearch = _hasSearched &&
+                    constraints.maxHeight >= 420 &&
+                    MediaQuery.textScalerOf(context).scale(16) <= 24;
+                Widget scrollView(List<Widget> slivers, {double top = 0}) =>
+                    CustomScrollView(
+                      controller: _scroll,
+                      keyboardDismissBehavior:
+                          ScrollViewKeyboardDismissBehavior.onDrag,
+                      slivers: [
+                        SliverPadding(
+                          // 底部多留一段，让结果别被浮起的玻璃标签栏压住 ——
+                          // 原生标签栏浮在所有页面（含被打开的搜索页）之上。
+                          padding: EdgeInsets.fromLTRB(inset, top, inset,
+                              24 + KazumiGlass.bottomInset(context)),
+                          sliver: SliverMainAxisGroup(slivers: slivers),
+                        )
+                      ],
+                    );
+                return Column(children: [
+                  if (pinSearch)
+                    Padding(
+                      // 搜索框固定在顶栏下面，所以顶栏高度的留白由它让出来。
+                      padding: EdgeInsets.fromLTRB(inset, topInset, inset, 0),
+                      child: _header(),
+                    ),
+                  Expanded(
+                    child: _hasSearched
+                        ? Observer(
+                            builder: (_) => scrollView([
+                                  if (!pinSearch)
+                                    SliverToBoxAdapter(child: _header()),
+                                  ..._resultSlivers(width),
+                                ], top: pinSearch ? 0 : topInset))
+                        : scrollView([
+                            SliverToBoxAdapter(child: _header()),
+                            SliverToBoxAdapter(child: _discovery()),
+                          ], top: topInset),
+                  ),
+                ]);
+              }),
+            ),
+          ),
+          appBar.glassOverlay(context),
+        ],
+      ),
     );
   }
 }

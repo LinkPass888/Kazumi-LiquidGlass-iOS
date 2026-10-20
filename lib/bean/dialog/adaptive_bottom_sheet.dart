@@ -3,7 +3,9 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/physics.dart';
+import 'package:kazumi/bean/liquid_glass/glass_material.dart';
+import 'package:kazumi/bean/liquid_glass/kazumi_motion.dart';
+import 'package:kazumi/bean/liquid_glass/liquid_glass.dart';
 import 'package:kazumi/bean/liquid_glass/kazumi_glass.dart';
 
 BoxConstraints _adaptiveBottomSheetConstraints(
@@ -28,12 +30,11 @@ BoxConstraints _adaptiveBottomSheetConstraints(
   );
 }
 
-// Native route motion and the extra surface entrance spring are separate.
-const AnimationStyle _materialSheetAnimationStyle = AnimationStyle(
-  duration: Duration(milliseconds: 250),
-  reverseDuration: Duration(milliseconds: 200),
-  curve: Easing.legacyDecelerate,
-  reverseCurve: Easing.legacyDecelerate,
+// 路由自身的位移交给框架（它负责遮罩与手势）；这里只给一个不带曲线的时长，
+// 面板的「弹起」由下面的弹簧负责。
+const AnimationStyle _sheetRouteAnimationStyle = AnimationStyle(
+  duration: Duration(milliseconds: 320),
+  reverseDuration: Duration(milliseconds: 240),
 );
 
 Future<T?> showAdaptiveBottomSheet<T>({
@@ -46,11 +47,14 @@ Future<T?> showAdaptiveBottomSheet<T>({
 }) {
   return showModalBottomSheet<T>(
     context: context,
-    // A single surface owns the handle and background to avoid a second cap.
+    // 玻璃自己就是面板，框架那层不透明的 Material 必须让开。
     backgroundColor: Colors.transparent,
     elevation: 0,
     shape: const RoundedRectangleBorder(),
     clipBehavior: Clip.none,
+    // 玻璃面板浮在页面之上，遮罩太重会把背后的内容压成死黑，折射也就没有
+    // 东西可折了。苹果的弹层遮罩本来就比 Material 淡。
+    barrierColor: Colors.black.withValues(alpha: 0.28),
     constraints: _adaptiveBottomSheetConstraints(
       context,
       maxHeightFactor: maxHeightFactor,
@@ -63,26 +67,41 @@ Future<T?> showAdaptiveBottomSheet<T>({
     useSafeArea: true,
     sheetAnimationStyle: MediaQuery.disableAnimationsOf(context)
         ? AnimationStyle.noAnimation
-        : _materialSheetAnimationStyle,
-    builder: (context) => _MaterialSheetSurface(
+        : _sheetRouteAnimationStyle,
+    builder: (context) => _GlassSheetSurface(
       child: Builder(builder: builder),
     ),
   );
 }
 
-class _MaterialSheetSurface extends StatefulWidget {
-  const _MaterialSheetSurface({required this.child});
+/// 底部弹层的外壳：一块贴着屏幕底边的玻璃。
+///
+/// 关键变化：以前这里是一层不透明的 `Material(color: surface)`，弹层和页面
+/// 是两张互不相干的白板。现在面板就是玻璃本身 —— 页面内容透过它折射，弹层
+/// 和页面在视觉上是连续的（和系统「音乐」「地图」的底部卡片一致）。
+///
+/// 因为玻璃在 Flutter 图层树里，它可以被裁剪、可以参与转场，也不会像平台视图
+/// 那样在弹层里整块遮挡。
+class _GlassSheetSurface extends StatefulWidget {
+  const _GlassSheetSurface({required this.child});
 
   final Widget child;
 
   @override
-  State<_MaterialSheetSurface> createState() => _MaterialSheetSurfaceState();
+  State<_GlassSheetSurface> createState() => _GlassSheetSurfaceState();
 }
 
-class _MaterialSheetSurfaceState extends State<_MaterialSheetSurface>
+class _GlassSheetSurfaceState extends State<_GlassSheetSurface>
     with SingleTickerProviderStateMixin {
   late final _entrance = AnimationController.unbounded(vsync: this);
   bool _started = false;
+
+  /// 玻璃比内容多伸出的高度。
+  ///
+  /// 入场弹簧会略微过冲（面板上浮几像素），面板底边一旦离开屏幕底边就会露出
+  /// 一条缝。让玻璃多伸出一段到屏幕外，过冲时补上的仍是玻璃，而不是一条底色。
+  /// 40 足够覆盖 0.8 阻尼弹簧约 1.5% 的过冲（位移幅度 200 时约 3 像素）。
+  static const double _bottomExtension = 40;
 
   @override
   void didChangeDependencies() {
@@ -94,17 +113,7 @@ class _MaterialSheetSurfaceState extends State<_MaterialSheetSurface>
       _started = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted || MediaQuery.disableAnimationsOf(context)) return;
-        _entrance.animateWith(SpringSimulation(
-          SpringDescription.withDampingRatio(
-            mass: 1,
-            stiffness: 380,
-            ratio: 0.8,
-          ),
-          0,
-          1,
-          0,
-          snapToEnd: false,
-        ));
+        KazumiMotion.springTo(_entrance, 1, description: KazumiMotion.sheet);
       });
     }
   }
@@ -119,50 +128,41 @@ class _MaterialSheetSurfaceState extends State<_MaterialSheetSurface>
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
+    // 全局统一圆角：弹层顶边圆角跟整机走，底边贴屏幕，不需要圆角。
+    final sheetShape =
+        LiquidGlassShape.sheet(KazumiGlass.radiusOf(context));
 
-    final background = colors.surface;
-    // 全局统一圆角：底部弹层的顶边圆角跟整机走
-    final sheetShape = RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(
-        top: Radius.circular(KazumiGlass.radiusOf(context)),
+    final content = Theme(
+      data: theme.copyWith(
+        scaffoldBackgroundColor: Colors.transparent,
+        canvasColor: Colors.transparent,
       ),
-    );
-    final surface = Material(
-      color: background,
-      elevation: 0,
-      shape: sheetShape,
-      clipBehavior: Clip.antiAlias,
-      child: Theme(
-        data: theme.copyWith(
-          scaffoldBackgroundColor: Colors.transparent,
-        ),
-        child: SafeArea(
-          top: false,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Semantics(
-                label:
-                    MaterialLocalizations.of(context).modalBarrierDismissLabel,
-                onDismiss: () => Navigator.of(context).maybePop(),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  child: Center(
-                    child: Container(
-                      width: 32,
-                      height: 4,
-                      decoration: BoxDecoration(
-                        color: colors.onSurfaceVariant.withValues(alpha: 0.4),
-                        borderRadius: BorderRadius.circular(2),
-                      ),
+      child: SafeArea(
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Semantics(
+              label:
+                  MaterialLocalizations.of(context).modalBarrierDismissLabel,
+              onDismiss: () => Navigator.of(context).maybePop(),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                child: Center(
+                  child: Container(
+                    width: 36,
+                    height: 5,
+                    decoration: BoxDecoration(
+                      color: colors.onSurfaceVariant.withValues(alpha: 0.38),
+                      borderRadius: BorderRadius.circular(2.5),
                     ),
                   ),
                 ),
               ),
-              Flexible(child: widget.child),
-            ],
-          ),
+            ),
+            Flexible(child: widget.child),
+          ],
         ),
       ),
     );
@@ -171,17 +171,21 @@ class _MaterialSheetSurfaceState extends State<_MaterialSheetSurface>
       clipBehavior: Clip.none,
       alignment: Alignment.topCenter,
       children: [
-        // Cover the bottom gap during spring overshoot.
+        // 玻璃层：从面板顶部一直铺到屏幕外，内容画在它上面。
         Positioned(
           left: 0,
           right: 0,
-          bottom: -400,
-          height: 450,
-          child: ColoredBox(color: background),
+          top: 0,
+          bottom: -_bottomExtension,
+          child: KazumiLiquidGlass(
+            kind: GlassSurfaceKind.sheet,
+            material: GlassMaterial.regular,
+            shape: sheetShape,
+          ),
         ),
         AnimatedBuilder(
           animation: _entrance,
-          child: surface,
+          child: content,
           builder: (context, child) => Transform.translate(
             offset: Offset(0, (1 - _entrance.value) * 200),
             child: Opacity(
