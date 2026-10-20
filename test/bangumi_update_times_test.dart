@@ -235,20 +235,40 @@ void main() {
     });
 
     test('时间表：排序键就是卡片显示的时刻（同一来源）', () {
-      // 回归：周六 20:00 的番曾因为排序用 bangumi-mal 的「首播那一集」
-      // 时刻（周一 22:30）而排到周一 21:00 的番后面，卡片却显示 20:00。
-      // 现在排序和显示取同一个 epoch，两者的相位必然一致。
-      final updates = _updates({
-        1: _entry(DateTime(2026, 10, 3, 20, 0).millisecondsSinceEpoch, week),
-        2: _entry(DateTime(2026, 10, 5, 21, 0).millisecondsSinceEpoch, week),
-      });
-      final epoch = nextUpdateEpochFrom(updates[1], now);
-      final shown = DateTime.fromMillisecondsSinceEpoch(epoch!);
-      // 卡片写的「HH:mm」来自同一个 epoch。
-      expect(formatUpdateTime(epoch), '20:00');
-      expect(shown.weekday, DateTime.saturday);
-      // 周六 20:00 排在周一 21:00 前面（同一列里不会出现跨星期混排）。
-      expect(compare([1, 2], updates, now), isNegative);
+      // 不变量，和具体哪部番无关：时间表按星期分列，同一列里星期必然
+      // 相同，所以列内顺序只能是「当天时刻从早到晚」。这里对七个星期各
+      // 取两个时刻验证 —— 排序用的那个 epoch，就是卡片上写出的星期与
+      // HH:mm，三者不会分家。
+      //
+      // 回归场景：分组跟设置走、排序固定读 bangumi-mal 时，同一列里会
+      // 出现「按 22:30 排、卡片却写 20:00」。
+      for (var weekday = 1; weekday <= 7; weekday++) {
+        // 2026-10-05 是周一，往后推 weekday-1 天就是该星期。
+        final day = DateTime(2026, 10, 5 + weekday - 1);
+        final earlyFirst = DateTime(day.year, day.month, day.day, 20, 0);
+        final lateFirst = DateTime(day.year, day.month, day.day, 21, 0);
+        final updates = _updates({
+          1: _entry(earlyFirst.millisecondsSinceEpoch, week),
+          2: _entry(lateFirst.millisecondsSinceEpoch, week),
+        });
+
+        final early = nextUpdateEpochFrom(updates[1], now)!;
+        final late = nextUpdateEpochFrom(updates[2], now)!;
+
+        // 卡片上的星期与 HH:mm 都来自各自的 epoch。
+        expect(DateTime.fromMillisecondsSinceEpoch(early).weekday, weekday,
+            reason: 'weekday=$weekday');
+        expect(DateTime.fromMillisecondsSinceEpoch(late).weekday, weekday,
+            reason: 'weekday=$weekday');
+        expect(formatUpdateTime(early), '20:00', reason: 'weekday=$weekday');
+        expect(formatUpdateTime(late), '21:00', reason: 'weekday=$weekday');
+
+        // 同一列里 20:00 排在 21:00 前面，和卡片上的时刻一致。
+        expect(compare([1, 2], updates, now), isNegative,
+            reason: 'weekday=$weekday');
+        expect(compare([2, 1], updates, now), isPositive,
+            reason: 'weekday=$weekday');
+      }
     });
 
     test('时间表：AniList 查不到时兜底 bangumi-mal，兜底后三者仍一致', () {

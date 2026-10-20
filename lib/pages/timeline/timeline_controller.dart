@@ -57,9 +57,11 @@ abstract class _TimelineController with Store {
       BangumiAcceleration.current == BangumiAcceleration.mirror;
 
   /// 时间表的时刻来源是否用 AniList 实测播出时刻（界面设置里可切换）。
-  /// 默认就是 AniList：bangumi-mal 的 begin 是「首播那一集」的时刻，
-  /// 和之后每周的实际播出时间可能差一天（如 511936 首播在周一深夜、
-  /// 常规档是周六 20:00），拿它当分组依据会把番放到错误的星期。
+  ///
+  /// 默认就是 AniList：bangumi-mal 的 begin 是**首播那一集**的时刻，
+  /// 首播常常是特别编排（先行配信、连续放送、首集提前），和之后每周的
+  /// 常规档可能既不同一天也不同一个时刻。拿 begin 当分组依据，就会把
+  /// 整季的番都放到首播那天，而不是它实际播出的星期。
   bool get prefersAniListWeekday =>
       GStorage.getSetting(SettingsKeys.timelinePreferredSource) == 'anilist';
 
