@@ -349,17 +349,22 @@ void main() {
       }
     }
 
-    /// 追番页比较器：星期由调用方固定（这里统一给周二），时刻先按服务层
-    /// 算好再比较，和线上 collectUpdateEpochs → 比较器 同一条路。
-    int compareCollect(int idA, int idB, DateTime at) {
-      const weekday = 2;
+    /// 追番页比较器：星期由调用方给（[weekdays]，默认周二），时刻先按
+    /// 服务层算好再比较，和线上 collectUpdateEpochs → 比较器 同一条路。
+    int compareCollect(
+      int idA,
+      int idB,
+      DateTime at, {
+      Map<int, int> weekdays = const {},
+    }) {
       final a = _collected(idA);
       final b = _collected(idB);
       return compareCollectUpdateTime(
         a,
         b,
         epochFor: (bangumiId) => BangumiUpdateTimesService.instance
-            .updateTimeForWeekday(bangumiId, weekday, now: at),
+            .updateTimeForWeekday(bangumiId, weekdays[bangumiId] ?? 2,
+                now: at),
       );
     }
 
@@ -374,13 +379,34 @@ void main() {
     });
 
     test('追番页：最近更新的在前', () {
-      // 相位错开一个周期的一半，两条目的「上次更新」不会打平。
+      // 「谁更新得更晚」现在由放送星期决定，不再看时刻自带的相位：两条
+      // 都是 21:00，周五那部刚播过、周一那部是本周早些时候，所以周五的
+      // 排前面。拿相位错开去区分在这条链路上是无效的 —— 时刻只有「几点」
+      // 会被留下，星期由调用方给。
+      final monday = DateTime(2026, 10, 12, 21).millisecondsSinceEpoch;
+      final friday = DateTime(2026, 10, 16, 21).millisecondsSinceEpoch;
       withUpdates({
-        1: _entry(first, week),
-        2: _entry(first + week ~/ 2, week),
+        1: _entry(monday, week),
+        2: _entry(friday, week),
       }, () {
-        // 2 的上次更新更晚 -> 排前面。
+        const weekdays = {1: 1, 2: 5};
+        // 2（周五）比 1（周一）更晚 -> 排前面。
+        expect(compareCollect(2, 1, now, weekdays: weekdays), isNegative);
+        expect(compareCollect(1, 2, now, weekdays: weekdays), isPositive);
+      });
+    });
+
+    test('追番页：同一星期内按当天时刻，晚的在前', () {
+      // 同一天的两部番，「最近更新」就是当天时刻更晚的那部。
+      final early = DateTime(2026, 10, 13, 20).millisecondsSinceEpoch;
+      final late = DateTime(2026, 10, 13, 23).millisecondsSinceEpoch;
+      withUpdates({
+        1: _entry(early, week),
+        2: _entry(late, week),
+      }, () {
+        // 同为周二，2 的 23:00 比 1 的 20:00 晚 -> 排前面。
         expect(compareCollect(2, 1, now), isNegative);
+        expect(compareCollect(1, 2, now), isPositive);
       });
     });
 
