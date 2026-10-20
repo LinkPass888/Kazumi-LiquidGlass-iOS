@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_modular/flutter_modular.dart';
 import 'package:kazumi/bean/card/network_img_layer.dart';
 import 'package:kazumi/bean/liquid_glass/kazumi_glass.dart';
 import 'package:kazumi/bean/widget/empty_state_widget.dart';
@@ -11,8 +12,11 @@ import 'package:kazumi/modules/collect/collect_layout.dart';
 import 'package:kazumi/modules/collect/collect_module.dart';
 import 'package:kazumi/modules/collect/collect_type.dart';
 import 'package:kazumi/pages/collect/collect_library_query.dart';
+import 'package:kazumi/pages/timeline/timeline_controller.dart';
 import 'package:kazumi/services/bangumi_update_times.dart';
+import 'package:kazumi/services/logging/logger.dart';
 import 'package:kazumi/services/storage/storage.dart';
+import 'package:mobx/mobx.dart';
 
 part 'collect_library_card.dart';
 part 'collect_library_controls.dart';
@@ -84,6 +88,8 @@ class _CollectLibraryViewState extends State<CollectLibraryView>
   @override
   void initState() {
     super.initState();
+    // 时间表加载完 / 详情页改了放送星期后，星期缓存会变，这里跟着重排。
+    _weekdayRevision = _observeWeekdayRevision();
     // 更新时间数据异步到达后重排一次；顺带给在追的番补 AniList 实测状态。
     unawaited(BangumiUpdateTimesService.instance.ensureLoaded().then((_) async {
       if (!mounted) return;
@@ -95,6 +101,25 @@ class _CollectLibraryViewState extends State<CollectLibraryView>
       await BangumiUpdateTimesService.instance.ensureAniListLoaded(ids);
       if (mounted) setState(() {});
     }));
+  }
+
+  /// 追番页「更新时间」排序依赖时间表的分组，时间表可能晚于追番页加载。
+  ReactionDisposer? _weekdayRevision;
+
+  ReactionDisposer? _observeWeekdayRevision() {
+    try {
+      final controller = inject<TimelineController>();
+      return reaction<int>(
+        (_) => controller.collectedWeekdaysRevision,
+        (_) {
+          if (mounted) setState(() {});
+        },
+      );
+    } catch (error) {
+      // 没有时间表控制器（理论上不会发生）时退回静态排序。
+      KazumiLogger().w('Timeline controller not found', error: error);
+      return null;
+    }
   }
 
   @override
@@ -122,6 +147,7 @@ class _CollectLibraryViewState extends State<CollectLibraryView>
 
   @override
   void dispose() {
+    _weekdayRevision?.call();
     _tabController.dispose();
     _searchController.dispose();
     _searchFocus.dispose();
@@ -351,10 +377,49 @@ class _CollectLibraryViewState extends State<CollectLibraryView>
         ),
       );
 
+  /// 追番页「更新时间」排序用的星期：和时间表分组同一套规则（用户手动
+  /// 设置的星期 → bangumi 日历分组 → 开播日附近的兜底）。
+  ///
+  /// 时间表还没加载过时控制器会用开播日星期先给一个可排序的值；等日历
+  /// 加载完 [refreshSorting] 会重排。
+  Map<int, int> _weekdays() {
+    try {
+      return inject<TimelineController>().collectedWeekdays();
+    } catch (error) {
+      KazumiLogger().w('Timeline controller not found', error: error);
+      return const {};
+    }
+  }
+
+  /// 追番页「更新时间」排序用的时刻：星期由 [_weekdays] 定，时刻走
+  /// AniList 优先、bangumi-mal 兜底（和时间表卡片上的 HH:mm 同源）。
+  Map<int, int?> _updateEpochs() {
+    if (_sort != CollectSort.updateTime) return const {};
+    final weekdays = _weekdays();
+    return collectUpdateEpochs(
+      widget.entries.map((entry) => entry.bangumiItem.id),
+      weekdayOf: (bangumiId) => weekdays[bangumiId],
+      now: DateTime.now(),
+    );
+  }
+
+  /// 时间表加载完成 / 详情页改了放送星期后重排追番页。
+  ///
+  /// 控制器通过 [TimelineController.invalidateCollectedWeekdays] 递增版本
+  /// 号，[initState] 里的 reaction 会走到这里；保留这个入口是为了其它
+  /// 手动触发重排的场景。
+  void refreshSorting() {
+    if (mounted) setState(() {});
+  }
+
   Widget _results(CollectLibraryQuery query, CollectType? type,
       {required double inset, Widget? header}) {
     return LayoutBuilder(builder: (context, constraints) {
-      final entries = query.results(type, _sort);
+      final entries = query.results(
+        type,
+        _sort,
+        updateEpochs: _updateEpochs(),
+      );
       final contentWidth = constraints.maxWidth - inset * 2;
       return ScrollbarTheme(
         data: ScrollbarTheme.of(context).copyWith(crossAxisMargin: 0),

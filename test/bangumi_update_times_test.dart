@@ -349,19 +349,27 @@ void main() {
       }
     }
 
+    /// 追番页比较器：星期由调用方固定（这里统一给周二），时刻先按服务层
+    /// 算好再比较，和线上 collectUpdateEpochs → 比较器 同一条路。
+    int compareCollect(int idA, int idB, DateTime at) {
+      const weekday = 2;
+      final a = _collected(idA);
+      final b = _collected(idB);
+      return compareCollectUpdateTime(
+        a,
+        b,
+        epochFor: (bangumiId) => BangumiUpdateTimesService.instance
+            .updateTimeForWeekday(bangumiId, weekday, now: at),
+      );
+    }
+
     test('追番页：不在最近两季的排最下面', () {
       withUpdates({
         1: _entry(first, week),
       }, () {
         // 2 无数据（不在最近两季）-> 排在 1 后面。
-        expect(
-          compareCollectUpdateTime(_collected(2), _collected(1), now),
-          isPositive,
-        );
-        expect(
-          compareCollectUpdateTime(_collected(1), _collected(2), now),
-          isNegative,
-        );
+        expect(compareCollect(2, 1, now), isPositive);
+        expect(compareCollect(1, 2, now), isNegative);
       });
     });
 
@@ -372,10 +380,7 @@ void main() {
         2: _entry(first + week ~/ 2, week),
       }, () {
         // 2 的上次更新更晚 -> 排前面。
-        expect(
-          compareCollectUpdateTime(_collected(2), _collected(1), now),
-          isNegative,
-        );
+        expect(compareCollect(2, 1, now), isNegative);
       });
     });
 
@@ -386,15 +391,47 @@ void main() {
         1: _entry(first, week),
         2: _entry(first, null),
       }, () {
-        expect(
-          compareCollectUpdateTime(_collected(2), _collected(1), now),
-          isPositive,
-        );
-        expect(
-          compareCollectUpdateTime(_collected(1), _collected(2), now),
-          isNegative,
-        );
+        expect(compareCollect(2, 1, now), isPositive);
+        expect(compareCollect(1, 2, now), isNegative);
       });
+    });
+
+    test('追番页：星期由放送星期决定，不从时刻反推', () {
+      // 两条目的时刻落在同一个星期四，放送星期却可以是任意一天：落到
+      // 「本周那一次」时星期应等于调用方给的 target，而不是时刻自带的
+      // 星期四。这正是时间表分组不再从时刻反推的同一个原则。
+      final anchor = DateTime(2026, 10, 15, 21, 0).millisecondsSinceEpoch;
+      for (final weekday in <int>[1, 3, 7]) {
+        final epoch = updateTimeForWeekdayFrom(anchor, weekday, now)!;
+        final time = DateTime.fromMillisecondsSinceEpoch(epoch);
+        expect(time.weekday, weekday, reason: 'weekday=$weekday');
+        expect(
+          [time.hour, time.minute],
+          [21, 0],
+          reason: '时刻本身不能被换掉：weekday=$weekday',
+        );
+      }
+    });
+
+    test('追番页：今天这一刻还没播时落到上周', () {
+      // 周一 22:00 的番，周一 10:00 看：本周那一次还没到，上一次是上周一。
+      final monday = DateTime(2026, 10, 19);
+      final anchor = DateTime(2026, 10, 19, 22, 0).millisecondsSinceEpoch;
+      final epoch = updateTimeForWeekdayFrom(
+        anchor,
+        1,
+        DateTime(monday.year, monday.month, monday.day, 10),
+      )!;
+      expect(DateTime.fromMillisecondsSinceEpoch(epoch), DateTime(2026, 10, 12, 22));
+    });
+
+    test('追番页：首播之前返回 null', () {
+      final anchor = DateTime(2026, 10, 15, 21, 0).millisecondsSinceEpoch;
+      final firstEpoch = DateTime(2026, 10, 20).millisecondsSinceEpoch;
+      expect(
+        updateTimeForWeekdayFrom(anchor, 4, now, firstEpochMs: firstEpoch),
+        isNull,
+      );
     });
   });
 

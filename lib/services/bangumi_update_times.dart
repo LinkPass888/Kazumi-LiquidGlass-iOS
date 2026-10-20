@@ -10,6 +10,7 @@ import 'package:kazumi/request/core/dio_factory.dart';
 import 'package:kazumi/services/anilist_client.dart';
 import 'package:kazumi/services/logging/logger.dart';
 import 'package:kazumi/services/network/bangumi_acceleration.dart';
+import 'package:kazumi/services/storage/bangumi_timeline_store.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 
@@ -115,6 +116,23 @@ class BangumiUpdateTimesService {
   /// 会把整季的番挪到流媒体那天，而不是它实际在电视上播的星期。
   int? timelineUpdateEpoch(int bangumiId, {DateTime? now}) =>
       nextUpdateEpoch(bangumiId, now: now);
+
+  /// 追番页的「本周这一集」播出时刻：放送星期由调用方指定（bangumi 日历
+  /// 分组 / 用户手动设置的放送星期），时刻走 [timelineUpdateEpoch] 同一条
+  /// 链路（AniList 实测优先，bangumi-mal 兜底）。
+  ///
+  /// 只取时刻里的「几点」，**丢掉它自带的星期**：AniList 的 airingAt 跟
+  /// 先行配信，拿它的星期排序会和时间表的分组对不上。具体落到哪一天见
+  /// [updateTimeForWeekdayFrom]。
+  int? updateTimeForWeekday(int bangumiId, int weekday, {DateTime? now}) {
+    final current = now ?? DateTime.now();
+    return updateTimeForWeekdayFrom(
+      timelineUpdateEpoch(bangumiId, now: current),
+      weekday,
+      current,
+      firstEpochMs: updates[bangumiId]?.firstEpochMs,
+    );
+  }
 
   /// 总集数，仅 AniList 提供；没有数据返回 null。
   int? totalEpisodes(int bangumiId, {DateTime? now}) {
@@ -459,28 +477,92 @@ int compareTimeOfDay(int aEpochMs, int bEpochMs) {
   return aEpochMs.compareTo(bEpochMs);
 }
 
-/// 追番页排序：有更新时间的按上一次更新时间从新到旧；无更新时间的排底部。
-int compareCollectUpdateTime(
-  CollectedBangumi a,
-  CollectedBangumi b,
-  DateTime now,
-) {
-  final aLast = _lastEpoch(a.bangumiItem.id, now);
-  final bLast = _lastEpoch(b.bangumiItem.id, now);
-  if (aLast == null && bLast == null) {
-    return a.bangumiItem.id.compareTo(b.bangumiItem.id);
+/// 把「时刻」按指定的放送星期落到本周（今天这一刻还没到就落到上周）的
+/// 那一次播出，返回 epoch ms；首播之前返回 null。
+///
+/// [anchorEpochMs] 只提供「几点」，它自带的星期被丢掉、换成 [weekday] ——
+/// 星期和时间表分组同一个来源（bangumi 日历 / 用户手动设置），AniList 的
+/// airingAt 跟先行配信，它的星期不该出现在排序里。
+int? updateTimeForWeekdayFrom(
+  int? anchorEpochMs,
+  int weekday,
+  DateTime now, {
+  int? firstEpochMs,
+}) {
+  if (anchorEpochMs == null) return null;
+  final anchor = DateTime.fromMillisecondsSinceEpoch(anchorEpochMs);
+  final target = normalizeBangumiWeekday(weekday);
+
+  // 本周（或上一个）该星期的日期：按日历日回退，避免用 Duration 跨
+  // 夏令时后时刻漂移一小时。
+  final today = DateTime(now.year, now.month, now.day);
+  var day = today.subtract(Duration(days: (today.weekday - target) % 7));
+  var epoch = DateTime(
+    day.year,
+    day.month,
+    day.day,
+    anchor.hour,
+    anchor.minute,
+    anchor.second,
+  ).millisecondsSinceEpoch;
+  if (epoch > now.millisecondsSinceEpoch) {
+    day = DateTime(day.year, day.month, day.day - 7);
+    epoch = DateTime(
+      day.year,
+      day.month,
+      day.day,
+      anchor.hour,
+      anchor.minute,
+      anchor.second,
+    ).millisecondsSinceEpoch;
   }
-  if (aLast == null) return 1;
-  if (bLast == null) return -1;
-  final comparison = bLast.compareTo(aLast);
-  return comparison != 0 ? comparison : a.bangumiItem.id.compareTo(b.bangumiItem.id);
+  if (firstEpochMs != null && epoch < firstEpochMs) return null;
+  return epoch;
 }
 
-/// 追番页的「上一次更新时刻」，和 [BangumiUpdateTimesService.lastUpdateEpoch]
-/// 同一条链路：AniList 实测优先，兜底 bangumi-mal。
+/// 追番页排序：按「本周这一集」的播出先后，越接近现在（或刚播完）的排前面；
+/// 无更新时间的排底部。
 ///
-/// 直接复用服务层的实现，不再自己拼一遍 —— 以前本地版本多一个
-/// 「AniList 有数据但没有周更周期就放弃它」的判断，和详情页的更新进度
-/// 用两套兜底规则，同一条目会算出不同的上次更新时间。
-int? _lastEpoch(int bangumiId, DateTime now) =>
-    BangumiUpdateTimesService.instance.lastUpdateEpoch(bangumiId, now: now);
+/// [epochFor] 给出番剧「本周那一集」的时刻，调用方用
+/// [BangumiUpdateTimesService.updateTimeForWeekday] 配合时间表同一套
+/// 放送星期（手动星期 → bangumi 日历分组）算出。星期不是从时刻反推的：
+/// 时刻只在它自己的「几点」上有意义，落到哪一天由放送星期决定。
+int compareCollectUpdateTime(
+  CollectedBangumi a,
+  CollectedBangumi b, {
+  required int? Function(int bangumiId) epochFor,
+}) {
+  final aEpoch = epochFor(a.bangumiItem.id);
+  final bEpoch = epochFor(b.bangumiItem.id);
+  if (aEpoch == null && bEpoch == null) {
+    return a.bangumiItem.id.compareTo(b.bangumiItem.id);
+  }
+  if (aEpoch == null) return 1;
+  if (bEpoch == null) return -1;
+  final comparison = bEpoch.compareTo(aEpoch);
+  return comparison != 0
+      ? comparison
+      : a.bangumiItem.id.compareTo(b.bangumiItem.id);
+}
+
+/// 追番页「本周这一集」的时刻表：先算好每一部番的时刻，再交给比较器。
+///
+/// 比较器会被调用几十上百次，逐次读缓存 / 重算日期既慢，也可能在数据
+/// 刚到时不前后一致（和时间表里 `changeSort` 固定 epoch 是同一个理由）。
+/// [weekdayOf] 给出放送星期（1 = 星期一 ... 7 = 星期日），拿不到时退回
+/// [BangumiUpdateTimesService.lastUpdateEpoch]。
+Map<int, int?> collectUpdateEpochs(
+  Iterable<int> bangumiIds, {
+  required int? Function(int bangumiId) weekdayOf,
+  required DateTime now,
+}) {
+  final service = BangumiUpdateTimesService.instance;
+  final epochs = <int, int?>{};
+  for (final bangumiId in bangumiIds) {
+    final weekday = weekdayOf(bangumiId);
+    epochs[bangumiId] = weekday == null
+        ? service.lastUpdateEpoch(bangumiId, now: now)
+        : service.updateTimeForWeekday(bangumiId, weekday, now: now);
+  }
+  return epochs;
+}

@@ -37,17 +37,20 @@ class CollectLibraryQuery {
 
   List<CollectedBangumi> results(
     CollectType? type,
-    CollectSort sort,
-  ) {
+    CollectSort sort, {
+    Map<int, int?> updateEpochs = const {},
+  }) {
     final result = _matches
         .where((entry) => type == null || entry.type == type.value)
         .toList();
     result.sort((a, b) {
       final comparison = switch (sort) {
+        // 时刻由调用方先算好（见 collectUpdateEpochs）：星期取时间表
+        // 同一套分组，时刻 AniList 优先、bangumi-mal 兜底。
         CollectSort.updateTime => compareCollectUpdateTime(
             a,
             b,
-            DateTime.now(),
+            epochFor: (bangumiId) => updateEpochs[bangumiId],
           ),
         CollectSort.recentlyChanged => b.time.compareTo(a.time),
         CollectSort.title => titleOf(a).toLowerCase().compareTo(

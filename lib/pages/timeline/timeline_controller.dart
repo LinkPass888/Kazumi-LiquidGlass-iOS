@@ -153,6 +153,7 @@ abstract class _TimelineController with Store {
         .map((dayList) => List<BangumiItem>.from(dayList))
         .toList();
     _resetBangumiCalendarFromBase();
+    invalidateCollectedWeekdays();
   }
 
   void _resetBangumiCalendarFromBase() {
@@ -163,6 +164,63 @@ abstract class _TimelineController with Store {
           .toList(),
     );
   }
+
+  /// 时间表里各番实际所在的星期：0 = 星期一 ... 6 = 星期日。
+  ///
+  /// 追番页的「更新时间」排序用它，和时间表分组同一个来源。日历加载完
+  /// 之后才有值，所以带上一次加载的完整日历，而不是只读当前展示的
+  /// [bangumiCalendar]（点了星期筛选 / 详情页还没刷新时它可能不全）。
+  Map<int, int> get timelineWeekdays {
+    final weekdays = <int, int>{};
+    for (var day = 0; day < _baseBangumiCalendar.length; day++) {
+      for (final bangumiItem in _baseBangumiCalendar[day]) {
+        weekdays[bangumiItem.id] = day;
+      }
+    }
+    for (final entry in BangumiTimelineStore.loadCustomWeekdays().entries) {
+      weekdays[entry.key] = entry.value - 1;
+    }
+    return weekdays;
+  }
+
+  /// 追番页收藏里的番 -> 放送星期（1 = 星期一 ... 7 = 星期日）。
+  ///
+  /// 优先级和时间表一致：用户手动选的星期 → bangumi 日历的分组 → 条目
+  /// 自己的开播日星期（时间表还没加载过时的兜底）。追番页可能先于时间表
+  /// 打开，那时日历是空的，只能靠开播日先给出一个可排序的值，日历加载
+  /// 后 [invalidateCollectedWeekdays] 会让它重算。缓存到下一轮刷新，
+  /// 比较器会被调用几十次，不能每次都重读设置。
+  Map<int, int>? _collectedWeekdays;
+
+  Map<int, int> collectedWeekdays() {
+    final cached = _collectedWeekdays;
+    if (cached != null) return cached;
+    final weekdays = <int, int>{};
+    final calendar = timelineWeekdays;
+    final custom = BangumiTimelineStore.loadCustomWeekdays();
+    for (final collectible in GStorage.collectibles.values) {
+      final bangumiId = collectible.bangumiItem.id;
+      weekdays[bangumiId] = custom[bangumiId] ??
+          (calendar[bangumiId] != null
+              ? calendar[bangumiId]! + 1
+              : normalizeBangumiWeekday(collectible.bangumiItem.airWeekday));
+    }
+    _collectedWeekdays = weekdays;
+    return weekdays;
+  }
+
+  /// 时间表加载完 / 详情页改了星期后，让追番页的下一次排序重新取值。
+  ///
+  /// 同时递增 [collectedWeekdaysRevision]：追番页用 mobx reaction 观察它，
+  /// 在详情页改完星期返回时能立刻重排，不必等切 tab。
+  @action
+  void invalidateCollectedWeekdays() {
+    _collectedWeekdays = null;
+    collectedWeekdaysRevision++;
+  }
+
+  @observable
+  int collectedWeekdaysRevision = 0;
 
   /// 把详情页设置的条目并进日历（改放送星期 / 开关「在时间表展示」）。
   ///
@@ -253,6 +311,8 @@ abstract class _TimelineController with Store {
   /// 详情页修改自定义条目后刷新时间表（改放送星期 / 开关「在时间表展示」）。
   @action
   void refreshCustomTimelineEntries() {
+    // 星期变了，追番页的「更新时间」排序也要重排。
+    invalidateCollectedWeekdays();
     if (_baseBangumiCalendar.isEmpty) {
       return;
     }
