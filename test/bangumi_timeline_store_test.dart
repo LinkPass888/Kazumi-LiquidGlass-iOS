@@ -51,6 +51,127 @@ void main() {
       expect(normalizeBangumiWeekday(0), 1);
       expect(normalizeBangumiWeekday(-3), 1);
     });
+
+    test('round trips the custom flag', () {
+      final encoded = encodeBangumiTimelineEntries(
+        <int, BangumiTimelineEntry>{
+          1: BangumiTimelineEntry(weekday: 2, weekdayCustom: true),
+          2: BangumiTimelineEntry(weekday: 3, showInTimeline: true),
+        },
+      );
+
+      final decoded = decodeBangumiTimelineEntries(encoded);
+
+      expect(decoded[1]!.weekdayCustom, isTrue);
+      expect(decoded[2]!.weekdayCustom, isFalse);
+    });
+
+    test('旧数据没有 custom 字段时按未手动设置处理', () {
+      final decoded = decodeBangumiTimelineEntries(
+        '{"3":{"weekday":2,"show":true}}',
+      );
+
+      expect(decoded[3]!.weekdayCustom, isFalse);
+    });
+  });
+
+  group('resolveTimelineWeekdays', () {
+    test('日历里已有的番改星期就换列，没开「在时间表展示」也生效', () {
+      final weekdays = resolveTimelineWeekdays(
+        shown: <int, int>{},
+        custom: <int, int>{10: 5},
+        inCalendar: <int>{10},
+        collectTypes: <int, int>{},
+      );
+
+      expect(weekdays, <int, int>{10: 5});
+    });
+
+    test('没开「在时间表展示」的番只改星期不会凭空进时间表', () {
+      final weekdays = resolveTimelineWeekdays(
+        shown: <int, int>{},
+        custom: <int, int>{10: 5},
+        inCalendar: <int>{},
+        collectTypes: <int, int>{10: CollectType.watching.value},
+      );
+
+      expect(weekdays, isEmpty);
+    });
+
+    test('手动点选的星期覆盖 bangumi 日历原本的分组', () {
+      final weekdays = resolveTimelineWeekdays(
+        shown: <int, int>{10: 1},
+        custom: <int, int>{10: 5},
+        inCalendar: <int>{10},
+        collectTypes: <int, int>{10: CollectType.watching.value},
+      );
+
+      expect(weekdays[10], 5);
+    });
+
+    test('关掉「在时间表展示」不会撤销选过的星期', () {
+      // 用户先选了星期六、又关掉展示开关：条目还在（只是不展示），
+      // 星期也还是用户选的那个，重新打开时它仍在星期六。
+      final weekdays = resolveTimelineWeekdays(
+        shown: <int, int>{},
+        custom: <int, int>{10: 6},
+        inCalendar: <int>{10},
+        collectTypes: <int, int>{},
+      );
+
+      expect(weekdays[10], 6);
+    });
+
+    test('只开「在时间表展示」不会挪动日历里已有的番', () {
+      final weekdays = resolveTimelineWeekdays(
+        shown: <int, int>{10: 1},
+        custom: <int, int>{},
+        inCalendar: <int>{10},
+        collectTypes: <int, int>{10: CollectType.watching.value},
+      );
+
+      expect(weekdays, isEmpty);
+    });
+
+    test('手动添加的番按记录的那天插进日历', () {
+      final weekdays = resolveTimelineWeekdays(
+        shown: <int, int>{7: 2},
+        custom: <int, int>{},
+        inCalendar: <int>{},
+        collectTypes: <int, int>{7: CollectType.watching.value},
+      );
+
+      expect(weekdays, <int, int>{7: 2});
+    });
+
+    test('不在「在看」的收藏状态不保留手动条目', () {
+      for (final type in <CollectType>[
+        CollectType.planToWatch,
+        CollectType.watched,
+        CollectType.onHold,
+        CollectType.abandoned,
+      ]) {
+        final weekdays = resolveTimelineWeekdays(
+          shown: <int, int>{7: 2},
+          custom: <int, int>{},
+          inCalendar: <int>{},
+          collectTypes: <int, int>{7: type.value},
+        );
+
+        expect(weekdays, isEmpty, reason: '$type');
+      }
+    });
+
+    test('收藏里没有的番不会凭空出现', () {
+      final weekdays = resolveTimelineWeekdays(
+        shown: <int, int>{7: 2},
+        custom: <int, int>{},
+        inCalendar: <int>{},
+        collectTypes: <int, int>{},
+      );
+
+      expect(weekdays, isEmpty);
+    });
   });
 
   group('bangumiKeepsTimelineEntry', () {

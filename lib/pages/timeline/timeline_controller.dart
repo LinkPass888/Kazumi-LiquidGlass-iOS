@@ -164,11 +164,12 @@ abstract class _TimelineController with Store {
     );
   }
 
-  /// 把番剧详情页设置的「在时间表展示」条目合并进日历。
+  /// 把详情页设置的条目并进日历（改放送星期 / 开关「在时间表展示」）。
   ///
-  /// 星期只看两处：bangumi 日历原本的分组，以及用户手动设置的放送星期。
+  /// 星期只看两处：bangumi 日历原本的分组，以及用户点选过的放送星期。
   /// 不再按更新时刻反推星期 —— AniList 的 airingAt 跟的是先行配信，
   /// bangumi 的放送星期跟的是电视放送，拿时刻反推会把番挪到错误的星期。
+  /// 哪一条算「用户选的」由 [resolveTimelineWeekdays] 决定。
   ///
   /// 每次合并都从 [_baseBangumiCalendar] 重新开始：用户改掉某部番的
   /// 放送星期后，它要能从原来的那一天挪走，而不是两处都留一份。
@@ -176,23 +177,36 @@ abstract class _TimelineController with Store {
     if (_baseBangumiCalendar.isEmpty) {
       return;
     }
-    final weekdays = BangumiTimelineStore.loadShownWeekdays();
-    if (weekdays.isEmpty) {
+    final shown = BangumiTimelineStore.loadShownWeekdays();
+    final custom = BangumiTimelineStore.loadCustomWeekdays();
+    if (shown.isEmpty && custom.isEmpty) {
       return;
     }
+
+    // 日历里已有的番：手动改星期时不用去收藏里找副本。
+    final baseItems = <int, BangumiItem>{};
+    for (final dayList in _baseBangumiCalendar) {
+      for (final bangumiItem in dayList) {
+        baseItems[bangumiItem.id] = bangumiItem;
+      }
+    }
+
+    final collectTypes = <int, int>{};
     final items = <int, BangumiItem>{};
     for (final collectible in GStorage.collectibles.values) {
       final bangumiItem = collectible.bangumiItem;
-      if (!weekdays.containsKey(bangumiItem.id)) {
-        continue;
-      }
-      // 只有「在看」的番保留时间表条目，其余收藏状态视为已删除。
-      if (!bangumiKeepsTimelineEntry(collectible.type)) {
-        continue;
-      }
+      collectTypes[bangumiItem.id] = collectible.type;
       items[bangumiItem.id] = bangumiItem;
     }
-    if (items.isEmpty) {
+    items.addAll(baseItems);
+
+    final weekdays = resolveTimelineWeekdays(
+      shown: shown,
+      custom: custom,
+      inCalendar: baseItems.keys.toSet(),
+      collectTypes: collectTypes,
+    );
+    if (weekdays.isEmpty) {
       return;
     }
     final merged = mergeBangumiTimelineEntries(
@@ -202,6 +216,38 @@ abstract class _TimelineController with Store {
     );
     bangumiCalendar.clear();
     bangumiCalendar.addAll(merged);
+  }
+
+  /// 番剧在时间表里的分组（1 = 星期一）。
+  ///
+  /// 顺序和合并时一致：用户选过的星期 → bangumi 日历里的分组。两者都
+  /// 不知道（详情页先于时间表打开）时返回 null，由调用方退回自己的默认值。
+  ///
+  /// 只开「在时间表展示」写进来的星期不算：那只是当时所在的列，没有
+  /// 「换列」的意思（见 [resolveTimelineWeekdays]）。
+  int? timelineWeekdayOf(int bangumiId) {
+    final custom = BangumiTimelineStore.loadCustomWeekdays()[bangumiId];
+    if (custom != null) return custom;
+    for (var day = 0; day < _baseBangumiCalendar.length; day++) {
+      for (final bangumiItem in _baseBangumiCalendar[day]) {
+        if (bangumiItem.id == bangumiId) return day + 1;
+      }
+    }
+    return null;
+  }
+
+  /// 这部番在时间表里能不能看到：bangumi 日历里有，或者开了「在时间表
+  /// 展示」。详情页据此决定改完星期后要不要提示去点亮图标。
+  bool isInTimeline(int bangumiId) {
+    if (BangumiTimelineStore.entryOf(bangumiId)?.showInTimeline ?? false) {
+      return true;
+    }
+    for (final dayList in _baseBangumiCalendar) {
+      for (final bangumiItem in dayList) {
+        if (bangumiItem.id == bangumiId) return true;
+      }
+    }
+    return false;
   }
 
   /// 详情页修改自定义条目后刷新时间表（改放送星期 / 开关「在时间表展示」）。

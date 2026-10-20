@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:flutter/cupertino.dart' show CupertinoIcons;
 import 'package:flutter/material.dart';
 import 'package:flutter_modular/flutter_modular.dart';
 import 'package:flutter_rating_bar/flutter_rating_bar.dart';
@@ -158,8 +159,25 @@ class _BangumiInfoCardVState extends State<BangumiInfoCardV> {
 
   void _loadTimelineEntry() {
     final entry = BangumiTimelineStore.entryOf(widget.bangumiItem.id);
-    weekday = entry?.weekday ??
-        normalizeBangumiWeekday(widget.bangumiItem.airWeekday);
+    // 显示值和合并时同源，都是 [resolveTimelineWeekdays] 认的那种「用户
+    // 选过的星期」：
+    // 1. 用户在本页点选过星期 —— 记在条目的 weekdayCustom 上；
+    // 2. 没点选过就用时间表里这部番实际所在的那一列（bangumi 日历的
+    //    原分组），这样两处写的永远是同一个星期；
+    // 3. 时间表还没加载过（日历是空的）才退回条目里的默认值。
+    //
+    // 不能直接用条目的 weekday：只点亮过「在时间表展示」时它会连开播日
+    // 这种默认值一起写进去，拿它显示会和番实际所在的列对不上。
+    int? timelineWeekday;
+    try {
+      timelineWeekday =
+          inject<TimelineController>().timelineWeekdayOf(widget.bangumiItem.id);
+    } catch (error) {
+      KazumiLogger().w('Timeline controller not found', error: error);
+    }
+    weekday = (entry != null && entry.weekdayCustom ? entry.weekday : null) ??
+        timelineWeekday ??
+        (entry?.weekday ?? normalizeBangumiWeekday(widget.bangumiItem.airWeekday));
     showInTimeline = entry?.showInTimeline ?? false;
   }
 
@@ -229,7 +247,16 @@ class _BangumiInfoCardVState extends State<BangumiInfoCardV> {
       weekday = normalizeBangumiWeekday(selected);
     });
     _refreshTimeline();
-    if (!showInTimeline) {
+    // 日历里已经在播的番，改星期就直接换列了；只有它本来不在时间表里时
+    // 才需要用户再点亮图标加进来。
+    var inTimeline = false;
+    try {
+      inTimeline = inject<TimelineController>()
+          .isInTimeline(widget.bangumiItem.id);
+    } catch (error) {
+      KazumiLogger().w('Timeline controller not found', error: error);
+    }
+    if (!inTimeline) {
       KazumiDialog.showToast(
         message: '已设置放送星期，点亮右侧图标后即可在时间表展示',
       );
@@ -312,11 +339,11 @@ class _BangumiInfoCardVState extends State<BangumiInfoCardV> {
     });
   }
 
-  /// 「周六 20:00」，推不出更新时刻时返回 null。
+  /// 「20:00」，推不出更新时刻时返回 null。
   ///
   /// 星期和时刻分开取，和时间表的规则一致：
-  /// - **星期**来自手动设置的放送星期（没设过就是开播日），也就是时间表
-  ///   分组用的那一天；
+  /// - **星期**来自手动设置的放送星期，也就是时间表分组用的那一天
+  ///   （见 [weekday] 和 [TimelineController.timelineWeekdayOf]）；
   /// - **时刻**来自 [BangumiUpdateTimesService.timelineUpdateEpoch]，
   ///   AniList 实测优先、bangumi-mal 兜底。
   ///
@@ -328,8 +355,7 @@ class _BangumiInfoCardVState extends State<BangumiInfoCardV> {
         .timelineUpdateEpoch(widget.bangumiItem.id);
     if (epoch == null) return null;
     final time = DateTime.fromMillisecondsSinceEpoch(epoch);
-    return '${weekdayCnLabel(weekday)} '
-        '${time.hour.toString().padLeft(2, '0')}:'
+    return '${time.hour.toString().padLeft(2, '0')}:'
         '${time.minute.toString().padLeft(2, '0')}';
   }
 
@@ -546,19 +572,97 @@ class _BangumiInfoCardVState extends State<BangumiInfoCardV> {
                                               .primary,
                                         ),
                                       ),
-                                      // 放送时间 / 更新进度：只在有更新时间数据时展示。
-                                      if (!widget.isLoading && _broadcastTime != null) ...[
+                                      // 放送时间：星期可点（换列），右边是时间表
+                                      // 开关。「更新进度」作为另一行留着。
+                                      if (!widget.isLoading) ...[
                                         const SizedBox(height: 4),
-                                        Text('放送时间:'),
-                                        Text(
-                                          _broadcastTime!,
-                                          style: TextStyle(
-                                            fontSize: 20,
-                                            fontWeight: FontWeight.bold,
-                                            color: Theme.of(context)
-                                                .colorScheme
-                                                .primary,
-                                          ),
+                                        // 星期、时刻、时间表开关在同一行：
+                                        // 它们都是「几点播」这件事的一部分。
+                                        const Text('放送时间:'),
+                                        Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            // 星期就在时刻前面，点它换放送星期。
+                                            InkWell(
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                              onTap: () =>
+                                                  _showWeekdayPicker(),
+                                              child: Padding(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                  horizontal: 2,
+                                                  vertical: 2,
+                                                ),
+                                                child: Row(
+                                                  mainAxisSize: MainAxisSize.min,
+                                                  children: [
+                                                    Text(
+                                                      weekdayCnLabel(weekday),
+                                                      style: TextStyle(
+                                                        fontSize: 20,
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                        color: Theme.of(context)
+                                                            .colorScheme
+                                                            .primary,
+                                                      ),
+                                                    ),
+                                                    Icon(
+                                                      Icons.expand_more_rounded,
+                                                      size: 20,
+                                                      color: Theme.of(context)
+                                                          .colorScheme
+                                                          .primary,
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                            ),
+                                            if (_broadcastTime != null)
+                                              Text(
+                                                _broadcastTime!,
+                                                style: TextStyle(
+                                                  fontSize: 20,
+                                                  fontWeight: FontWeight.bold,
+                                                  color: Theme.of(context)
+                                                      .colorScheme
+                                                      .primary,
+                                                ),
+                                              ),
+                                            const SizedBox(width: 6),
+                                            // 时间表 Tab 的图标：点亮即在时间表展示。
+                                            Tooltip(
+                                              message: '在时间表展示',
+                                              child: InkWell(
+                                                borderRadius:
+                                                    BorderRadius.circular(
+                                                        KazumiGlass.radiusOf(
+                                                            context)),
+                                                onTap: () =>
+                                                    _setShowInTimeline(
+                                                        !showInTimeline),
+                                                child: Padding(
+                                                  padding:
+                                                      const EdgeInsets.all(6),
+                                                  // 底部时间表 Tab 的符号（SF
+                                                  // `calendar`）；选中态只换
+                                                  // 颜色，和 Tab 栏一致。
+                                                  child: Icon(
+                                                    CupertinoIcons.calendar,
+                                                    size: 24,
+                                                    color: showInTimeline
+                                                        ? Theme.of(context)
+                                                            .colorScheme
+                                                            .primary
+                                                        : Theme.of(context)
+                                                            .colorScheme
+                                                            .outline,
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                          ],
                                         ),
                                       ],
                                       if (!widget.isLoading && _updateProgress != null) ...[
@@ -575,82 +679,6 @@ class _BangumiInfoCardVState extends State<BangumiInfoCardV> {
                                           ),
                                         ),
                                       ],
-                                      const SizedBox(height: 4),
-                                      const Text('放送星期:'),
-                                      Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          InkWell(
-                                            borderRadius:
-                                                BorderRadius.circular(8),
-                                            onTap: widget.isLoading
-                                                ? null
-                                                : () => _showWeekdayPicker(),
-                                            child: Padding(
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                horizontal: 2,
-                                                vertical: 2,
-                                              ),
-                                              child: Row(
-                                                mainAxisSize: MainAxisSize.min,
-                                                children: [
-                                                  Text(
-                                                    weekdayCnLabel(weekday),
-                                                    style: TextStyle(
-                                                      fontSize: 20,
-                                                      fontWeight:
-                                                          FontWeight.bold,
-                                                      color: Theme.of(context)
-                                                          .colorScheme
-                                                          .primary,
-                                                    ),
-                                                  ),
-                                                  Icon(
-                                                    Icons.expand_more_rounded,
-                                                    size: 20,
-                                                    color: Theme.of(context)
-                                                        .colorScheme
-                                                        .primary,
-                                                  ),
-                                                ],
-                                              ),
-                                            ),
-                                          ),
-                                          const SizedBox(width: 6),
-                                          Tooltip(
-                                            message: '在时间表展示',
-                                            child: InkWell(
-                                              borderRadius:
-                                                  BorderRadius.circular(
-                                                      KazumiGlass.radiusOf(
-                                                          context)),
-                                              onTap: widget.isLoading
-                                                  ? null
-                                                  : () => _setShowInTimeline(
-                                                      !showInTimeline),
-                                              child: Padding(
-                                                padding:
-                                                    const EdgeInsets.all(6),
-                                                child: Icon(
-                                                  showInTimeline
-                                                      ? Icons.timeline
-                                                      : Icons
-                                                          .timeline_outlined,
-                                                  size: 24,
-                                                  color: showInTimeline
-                                                      ? Theme.of(context)
-                                                          .colorScheme
-                                                          .primary
-                                                      : Theme.of(context)
-                                                          .colorScheme
-                                                          .outline,
-                                                ),
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
                                       const SizedBox(height: 8),
                                       Text(
                                         widget.showRating
