@@ -41,9 +41,12 @@
 ## 本仓库新增
 
 - [X]  iOS原生液态玻璃界面
-- [X]  自定义放送星期（在时间表展示）
-- [X]  自动跳过片头片尾(由[AniSkip](https://github.com/aniskip)提供时间,[BangumiExtLinker](https://github.com/Rhilip/BangumiExtLinker)提供条目映射)
+- [X]  自动跳过片头片尾(由[AniSkip](https://github.com/aniskip)提供时间,[bangumi-mal](https://github.com/LinkPass888/bangumi-mal)提供条目映射)
 - [X]  Bangumi自动标记集看过
+- [X]  更新时间展示与排序（时间表 / 详情页 / 追番）
+- [X]  手动设置放送星期并添加到时间表
+- [X]  更新提醒
+- [X]  设置备份
 - [X]  针对原版部分界面优化
 
 ## 下载
@@ -115,8 +118,6 @@ A: 本项目编译需要良好的网络环境, 除了由 Google 托管的 Flutte
 
 此图标由其原作者 [Yuquanaaa](https://www.pixiv.net/users/66219277) 拥有版权。我们已获得原作者的授权和许可, 可以在本项目中使用这一图标。这一图标不是自由使用的, 未经原作者明确授权, 任何人不得擅自使用、复制、修改或分发这一图标。
 
-本项目内嵌字体为 [Mi Sans](https://hyperos.mi.com/font/zh/details/sc/) 字体, 由 [Xiaomi](https://www.mi.com/index.html) 开发和拥有版权。
-
 ## 免责声明
 
 本项目基于 GNU 通用公共许可证第 3 版（GPL-3.0）授权。我们不对其适用性、可靠性或准确性作出任何明示或暗示的保证。在法律允许的最大范围内, 作者和贡献者不承担任何因使用本软件而产生的直接、间接、偶然、特殊或后果性的损害赔偿责任。
@@ -149,6 +150,16 @@ A: 本项目编译需要良好的网络环境, 除了由 Google 托管的 Flutte
 特别感谢 [所有贡献者](https://github.com/LinkPass888/Kazumi-LiquidGlass-iOS/graphs/contributors) 本项目因为你们变得更好。
 
 特别感谢 [trace.moe](https://trace.moe) 本项目使用了 trace.moe 提供的图片识别番剧功能。
+
+特别感谢 [BangumiExtLinker](https://github.com/Rhilip/BangumiExtLinker) 本项目使用其 bangumi ↔ MAL 条目映射（CC BY 4.0）。
+
+特别感谢 [bangumi-data](https://github.com/bangumi-data/bangumi-data) 本项目使用其番剧播出时间数据（CC BY 4.0）。
+
+特别感谢 [bangumi-mal](https://github.com/LinkPass888/bangumi-mal) 本项目使用其合并后的映射表与按季播出数据（CC BY 4.0）。
+
+感谢 [AniList](https://anilist.co) 本项目通过其公开 GraphQL API 获取实测播出时刻与集数。
+
+感谢 [AniSkip](https://github.com/aniskip) 本项目使用 AniSkip 社区提供的片头片尾时间轴。
 
 感谢 [media-kit](https://github.com/media-kit/media-kit) 本项目跨平台媒体播放能力来自 media-kit。
 

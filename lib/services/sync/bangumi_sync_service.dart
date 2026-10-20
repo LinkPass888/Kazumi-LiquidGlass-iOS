@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:kazumi/modules/collect/collect_sync_merger.dart';
+import 'package:kazumi/services/storage/bangumi_timeline_store.dart';
 import 'package:kazumi/services/storage/storage.dart';
 import 'package:kazumi/services/logging/logger.dart';
 import 'package:kazumi/modules/bangumi/sync_priority.dart';
@@ -143,6 +144,10 @@ class BangumiSyncService extends ChangeNotifier {
 
   Future<void> _applyLocalMutation(BangumiLocalMutation mutation) async {
     await GStorage.putCollectible(mutation.collectible);
+    await _dropTimelineEntryIfNeeded(
+      mutation.collectible.bangumiItem.id,
+      mutation.collectible.type,
+    );
     // Remote changes must also reach WebDAV's incremental change log.
     await GStorage.appendCollectChange(
       bangumiId: mutation.collectible.bangumiItem.id,
@@ -151,6 +156,20 @@ class BangumiSyncService extends ChangeNotifier {
     );
   }
 
+  /// 番剧不再处于「在看」时，删除它的时间表数据
+  Future<void> _dropTimelineEntryIfNeeded(
+    int bangumiId,
+    int collectType,
+  ) async {
+    try {
+      await BangumiTimelineStore.dropIfNotWatching(bangumiId, collectType);
+    } catch (error) {
+      KazumiLogger().w(
+        'Sync: remove timeline entry failed. id=$bangumiId',
+        error: error,
+      );
+    }
+  }
 
   Future<void> syncCollectibles({
     void Function(String message, int current, int total)? onProgress,

@@ -455,10 +455,10 @@ class SettingsKeys {
     true,
     group: SettingGroup.interface,
   );
-  static const timelinePreferredSource = SettingKey<String>(
-    'timelinePreferredSource',
-    'bangumi',
-    group: SettingGroup.interface,
+  static const bangumiTimelineEntries = SettingKey<String>(
+    'bangumiTimelineEntries',
+    '',
+    group: SettingGroup.collect,
   );
   static const defaultCollectLayout = SettingKey<String>(
     'defaultCollectLayout',
@@ -666,7 +666,7 @@ class SettingsKeys {
     proxyUrl,
     proxyTestUrl,
     showRating,
-    timelinePreferredSource,
+    bangumiTimelineEntries,
     defaultCollectLayout,
     defaultCollectSort,
     downloadParallelEpisodes,

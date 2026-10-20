@@ -38,6 +38,24 @@ class ApiEndpoints {
   /// Bangumi 官网
   static const String bangumiIndex = 'https://bangumi.tv/';
 
+  /// bangumi → MAL 映射表（更新时间数据、AniSkip 与 AniList 的 id 转换）
+  static const String bangumiMalIndex =
+      'https://github.com/LinkPass888/bangumi-mal';
+
+  /// bangumi → MAL 映射主表（CC BY 4.0）
+  static const String bangumiExtLinkerIndex =
+      'https://github.com/Rhilip/BangumiExtLinker';
+
+  /// bangumi 播出数据（CC BY 4.0）
+  static const String bangumiDataIndex =
+      'https://github.com/bangumi-data/bangumi-data';
+
+  /// AniSkip 片头片尾时间轴
+  static const String aniSkipIndex = 'https://github.com/aniskip';
+
+  /// AniList 播出时刻
+  static const String aniListIndex = 'https://anilist.co';
+
   /// bangumi API
   static const String bangumiAPIDomain = 'https://api.bgm.tv';
 

@@ -8,6 +8,7 @@ import 'package:kazumi/repositories/collect_repository.dart';
 import 'package:kazumi/modules/collect/collect_type.dart';
 import 'package:kazumi/services/network/bangumi_acceleration.dart';
 import 'package:kazumi/services/logging/logger.dart';
+import 'package:kazumi/services/storage/bangumi_timeline_store.dart';
 import 'package:kazumi/services/storage/storage.dart';
 import 'package:mobx/mobx.dart';
 
@@ -56,11 +57,6 @@ abstract class _TimelineController with Store {
   bool get _bangumiMirrorEnabled =>
       BangumiAcceleration.current == BangumiAcceleration.mirror;
 
-  /// 星期分组是否跟随 AniList 的实测播出时刻（界面设置里可切换）。
-  /// 默认按 bangumi 放送星期分组，阅读顺序稳定、同一时段连在一起。
-  bool get prefersAniListWeekday =>
-      GStorage.getSetting(SettingsKeys.timelinePreferredSource) == 'anilist';
-
   @action
   Future<void> loadSeason(DateTime date) async {
     if (isLoading) return;
@@ -78,16 +74,13 @@ abstract class _TimelineController with Store {
         isTimeOut = bangumiCalendar.every((day) => day.isEmpty);
       }
       if (!isTimeOut) {
-        // 先用已有数据排一次（数据还没到也能按热度/评分展示）。
+        // 把详情页设置的「在时间表展示」条目并进来，再排一次。
+        _applyCustomTimelineEntries();
         changeSort(_sort);
+        // 更新时间数据异步到达后要重新分列并重排：凌晨档的番按新的时刻
+        // 换到第二天，卡片的 HH:mm 也要刷新出来。数据为空时无副作用。
         unawaited(BangumiUpdateTimesService.instance.ensureLoaded().then((_) {
-          // 周几也走更新时间数据：把番剧按更新时刻的本地星期重新分桶，
-          // 无更新时间的保留 bangumi 日历原分组。
-          _regroupByUpdateWeekday();
-          changeSort(_sort);
-          // 只补查今天播出的番：其余日子等用户切到那一天的 tab 再查。
-          // 每部番缓存到下一次播出，一天最多十几部，请求量很小。
-          unawaited(ensureAniListForToday());
+          refreshCustomTimelineEntries();
         }));
       }
     } catch (error, stackTrace) {
@@ -126,16 +119,24 @@ abstract class _TimelineController with Store {
   @action
   void changeSort(TimelineSort sort) {
     _sort = sort;
+    final now = DateTime.now();
+    // 一次排序内把时刻固定下来：比较器会被调用几百次，每次都重算
+    // 既慢，又可能在数据刚到时不前后一致。
+    final epochs = <int, int?>{};
+    int? epochFor(int id) => epochs.putIfAbsent(
+          id,
+          () => BangumiUpdateTimesService.instance.timelineUpdateEpoch(
+            id,
+            now: now,
+          ),
+        );
     final Comparator<BangumiItem> compare = switch (sort) {
       TimelineSort.popularity => (a, b) => b.votes.compareTo(a.votes),
       TimelineSort.rating => (a, b) => b.ratingScore.compareTo(a.ratingScore),
-      // 默认顺序即按更新时间从早到晚，无更新时间的排当日最后。
-      TimelineSort.defaultOrder => (a, b) => compareTimelineUpdateTime(
-          a,
-          b,
-          BangumiUpdateTimesService.instance.updates,
-          DateTime.now(),
-        ),
+      // 默认顺序即按当天更新时刻从早到晚，无更新时间的排当日最后。
+      // 时刻和卡片胶囊同一个（timelineUpdateEpoch），列由分组决定。
+      TimelineSort.defaultOrder => (a, b) =>
+          compareTimelineUpdateTime(a, b, now, epochFor: epochFor),
     };
     final resBangumiCalendar = bangumiCalendar.toList();
     for (final dayList in resBangumiCalendar) {
@@ -151,43 +152,198 @@ abstract class _TimelineController with Store {
         .map((dayList) => List<BangumiItem>.from(dayList))
         .toList();
     _resetBangumiCalendarFromBase();
+    invalidateCollectedWeekdays();
+  }
+
+  /// bangumi 日历按放进时间表的**列**重新分一次桶（0 = 星期一）。
+  ///
+  /// 分组仍以 bangumi 的星期为准，只在一种情况下换列：更新时刻在凌晨
+  /// 0–5 点时，bangumi 记的是前一天的节目日（日曜 24:00 / 25:05），
+  /// 本地时钟却已经是第二天，放进第二天才和卡片上的 HH:mm 对得上。
+  /// 其余时刻、以及拿不到时刻的番，原样留在 bangumi 那一列。规则见
+  /// [timelineColumnWeekday]。
+  List<List<BangumiItem>> _groupedBaseCalendar() {
+    // 接口返回空（超时 / 无数据）时保持空表：调用方用 isEmpty 判断是否
+    // 显示「加载失败」，补成 7 个空列表会把它误判成「这周没有番」。
+    if (_baseBangumiCalendar.isEmpty) return <List<BangumiItem>>[];
+    final grouped = List.generate(7, (_) => <BangumiItem>[]);
+    for (var day = 0; day < _baseBangumiCalendar.length; day++) {
+      for (final bangumiItem in _baseBangumiCalendar[day]) {
+        final column = timelineColumnWeekday(
+          day + 1,
+          BangumiUpdateTimesService.instance
+              .timelineUpdateEpoch(bangumiItem.id),
+        );
+        grouped[column - 1].add(bangumiItem);
+      }
+    }
+    return grouped;
   }
 
   void _resetBangumiCalendarFromBase() {
     bangumiCalendar.clear();
-    bangumiCalendar.addAll(
-      _baseBangumiCalendar
-          .map((dayList) => List<BangumiItem>.from(dayList))
-          .toList(),
-    );
+    bangumiCalendar.addAll(_groupedBaseCalendar());
   }
 
-  /// 按更新时间重新分桶：bangumi 放送星期（默认）或 AniList 实测星期，
-  /// 都没有的番保留 bangumi 日历原分组。周几于是和更新时间同源。
-  void _regroupByUpdateWeekday() {
-    if (_baseBangumiCalendar.isEmpty) return;
-    final service = BangumiUpdateTimesService.instance;
-    final preferAniList = prefersAniListWeekday;
-    final regrouped = List.generate(7, (_) => <BangumiItem>[]);
-    for (var day = 0; day < _baseBangumiCalendar.length; day++) {
-      for (final item in _baseBangumiCalendar[day]) {
-        final weekday = service.updateWeekday(
-          item.id,
-          preferAniList: preferAniList,
-        );
-        // weekday 1-7；没有更新时间就留在原来的那一天。
-        final target = weekday == null ? day : weekday - 1;
-        regrouped[target.clamp(0, 6)].add(item);
+  /// 时间表里各番实际所在的星期：0 = 星期一 ... 6 = 星期日。
+  ///
+  /// 追番页的「更新时间」排序用它，和时间表分组同一个来源。日历加载完
+  /// 之后才有值，所以带上一次加载的完整日历，而不是只读当前展示的
+  /// [bangumiCalendar]（点了星期筛选 / 详情页还没刷新时它可能不全）。
+  Map<int, int> get timelineWeekdays {
+    final weekdays = <int, int>{};
+    final grouped = _groupedBaseCalendar();
+    for (var day = 0; day < grouped.length; day++) {
+      for (final bangumiItem in grouped[day]) {
+        weekdays[bangumiItem.id] = day;
       }
     }
-    bangumiCalendar.clear();
-    bangumiCalendar.addAll(regrouped);
+    for (final entry in BangumiTimelineStore.loadCustomWeekdays().entries) {
+      weekdays[entry.key] = entry.value - 1;
+    }
+    return weekdays;
   }
 
-  /// 界面设置里切换星期来源后调用：重新分桶并排序。
+  /// 追番页收藏里的番 -> 放送星期（1 = 星期一 ... 7 = 星期日）。
+  ///
+  /// 优先级和时间表一致：用户手动选的星期 → bangumi 日历的分组 → 条目
+  /// 自己的开播日星期（时间表还没加载过时的兜底）。追番页可能先于时间表
+  /// 打开，那时日历是空的，只能靠开播日先给出一个可排序的值，日历加载
+  /// 后 [invalidateCollectedWeekdays] 会让它重算。缓存到下一轮刷新，
+  /// 比较器会被调用几十次，不能每次都重读设置。
+  Map<int, int>? _collectedWeekdays;
+
+  Map<int, int> collectedWeekdays() {
+    final cached = _collectedWeekdays;
+    if (cached != null) return cached;
+    final weekdays = <int, int>{};
+    final calendar = timelineWeekdays;
+    final custom = BangumiTimelineStore.loadCustomWeekdays();
+    for (final collectible in GStorage.collectibles.values) {
+      final bangumiId = collectible.bangumiItem.id;
+      weekdays[bangumiId] = custom[bangumiId] ??
+          (calendar[bangumiId] != null
+              ? calendar[bangumiId]! + 1
+              : normalizeBangumiWeekday(collectible.bangumiItem.airWeekday));
+    }
+    _collectedWeekdays = weekdays;
+    return weekdays;
+  }
+
+  /// 时间表加载完 / 详情页改了星期后，让追番页的下一次排序重新取值。
+  ///
+  /// 同时递增 [collectedWeekdaysRevision]：追番页用 mobx reaction 观察它，
+  /// 在详情页改完星期返回时能立刻重排，不必等切 tab。
   @action
-  void refreshWeekdaySource() {
-    _regroupByUpdateWeekday();
+  void invalidateCollectedWeekdays() {
+    _collectedWeekdays = null;
+    collectedWeekdaysRevision++;
+  }
+
+  @observable
+  int collectedWeekdaysRevision = 0;
+
+  /// 把详情页设置的条目并进日历（改放送星期 / 开关「在时间表展示」）。
+  ///
+  /// 星期只看两处：bangumi 日历的分组（凌晨档往后挪一天，见
+  /// [timelineColumnWeekday]），以及用户点选过的放送星期。不从更新时刻
+  /// 反推星期 —— AniList 的 airingAt 跟的是先行配信，bangumi 的放送星期
+  /// 跟的是电视放送，拿时刻的星期换列会把番挪到错误的星期。
+  /// 哪一条算「用户选的」由 [resolveTimelineWeekdays] 决定。
+  ///
+  /// 每次合并都从 [_groupedBaseCalendar] 重新开始：用户改掉某部番的
+  /// 放送星期后，它要能从原来的那一天挪走，而不是两处都留一份。
+  void _applyCustomTimelineEntries() {
+    if (_baseBangumiCalendar.isEmpty) {
+      return;
+    }
+    final shown = BangumiTimelineStore.loadShownWeekdays();
+    final custom = BangumiTimelineStore.loadCustomWeekdays();
+    if (shown.isEmpty && custom.isEmpty) {
+      return;
+    }
+
+    // 日历里已有的番：手动改星期时不用去收藏里找副本。
+    final baseItems = <int, BangumiItem>{};
+    for (final dayList in _groupedBaseCalendar()) {
+      for (final bangumiItem in dayList) {
+        baseItems[bangumiItem.id] = bangumiItem;
+      }
+    }
+
+    final collectTypes = <int, int>{};
+    final items = <int, BangumiItem>{};
+    for (final collectible in GStorage.collectibles.values) {
+      final bangumiItem = collectible.bangumiItem;
+      collectTypes[bangumiItem.id] = collectible.type;
+      items[bangumiItem.id] = bangumiItem;
+    }
+    items.addAll(baseItems);
+
+    final weekdays = resolveTimelineWeekdays(
+      shown: shown,
+      custom: custom,
+      inCalendar: baseItems.keys.toSet(),
+      collectTypes: collectTypes,
+    );
+    if (weekdays.isEmpty) {
+      return;
+    }
+    final merged = mergeBangumiTimelineEntries(
+      base: _groupedBaseCalendar(),
+      weekdays: weekdays,
+      items: items,
+    );
+    bangumiCalendar.clear();
+    bangumiCalendar.addAll(merged);
+  }
+
+  /// 番剧在时间表里的分组（1 = 星期一）。
+  ///
+  /// 顺序和合并时一致：用户选过的星期 → bangumi 日历里的分组。两者都
+  /// 不知道（详情页先于时间表打开）时返回 null，由调用方退回自己的默认值。
+  ///
+  /// 只开「在时间表展示」写进来的星期不算：那只是当时所在的列，没有
+  /// 「换列」的意思（见 [resolveTimelineWeekdays]）。
+  int? timelineWeekdayOf(int bangumiId) {
+    final custom = BangumiTimelineStore.loadCustomWeekdays()[bangumiId];
+    if (custom != null) return custom;
+    for (var day = 0; day < _baseBangumiCalendar.length; day++) {
+      for (final bangumiItem in _baseBangumiCalendar[day]) {
+        if (bangumiItem.id != bangumiId) continue;
+        return timelineColumnWeekday(
+          day + 1,
+          BangumiUpdateTimesService.instance.timelineUpdateEpoch(bangumiId),
+        );
+      }
+    }
+    return null;
+  }
+
+  /// 这部番在时间表里能不能看到：bangumi 日历里有，或者开了「在时间表
+  /// 展示」。详情页据此决定改完星期后要不要提示去点亮图标。
+  bool isInTimeline(int bangumiId) {
+    if (BangumiTimelineStore.entryOf(bangumiId)?.showInTimeline ?? false) {
+      return true;
+    }
+    for (final dayList in _baseBangumiCalendar) {
+      for (final bangumiItem in dayList) {
+        if (bangumiItem.id == bangumiId) return true;
+      }
+    }
+    return false;
+  }
+
+  /// 详情页修改自定义条目后刷新时间表（改放送星期 / 开关「在时间表展示」）。
+  @action
+  void refreshCustomTimelineEntries() {
+    // 星期变了，追番页的「更新时间」排序也要重排。
+    invalidateCollectedWeekdays();
+    if (_baseBangumiCalendar.isEmpty) {
+      return;
+    }
+    _resetBangumiCalendarFromBase();
+    _applyCustomTimelineEntries();
     changeSort(_sort);
   }
 
@@ -213,7 +369,15 @@ abstract class _TimelineController with Store {
     return _collectRepository.getBangumiIdsByType(CollectType.watching);
   }
 
-  /// 单部番剧的下一次更新时间（epoch ms），卡片文案与排序共用。
+  /// 单部番剧的具体更新时刻（epoch ms）：AniList 实测优先，bangumi-mal
+  /// 兜底。排序和卡片胶囊共用它；星期不从这里推（见 [_applyCustomTimelineEntries]）。
+  int? timelineUpdateEpoch(int bangumiId, {DateTime? now}) =>
+      BangumiUpdateTimesService.instance.timelineUpdateEpoch(
+        bangumiId,
+        now: now,
+      );
+
+  /// 单部番剧的下一次更新时间（epoch ms），详情页等非时间表场景用。
   int? nextUpdateEpoch(int bangumiId) =>
       BangumiUpdateTimesService.instance.nextUpdateEpoch(bangumiId);
 
@@ -222,30 +386,24 @@ abstract class _TimelineController with Store {
       BangumiUpdateTimesService.instance.currentEpisode(bangumiId);
 
   /// 只给指定星期（0 = 周一 ... 6 = 周日）的番补 AniList 实测状态。
-  /// 当季的今天用；切 tab 时也调到对应那一天。
+  /// 切 tab 时调到对应那一天，只为拿到准确的时刻与集数。
   Future<void> ensureAniListForDay(int dayIndex) async {
     if (dayIndex < 0 || dayIndex >= bangumiCalendar.length) return;
     final ids = bangumiCalendar[dayIndex].map((item) => item.id).toList();
     if (ids.isEmpty) return;
     await BangumiUpdateTimesService.instance.ensureAniListLoaded(ids);
-    // AniList 的实测星期可能与推算不同，到达后重新分桶一次。
-    _regroupByUpdateWeekday();
-    changeSort(_sort);
+    // 时刻变了：凌晨档的番可能换列，列内顺序也要重排。
+    refreshCustomTimelineEntries();
   }
 
-  /// 只查今天那一天的当季番，供首次加载用。
-  Future<void> ensureAniListForToday() =>
-      ensureAniListForDay(DateTime.now().weekday - 1);
-
-  /// 当天所有番的 AniList 实测时刻（bangumi id -> nextUpdateEpoch）。
-  /// 卡片上的时间胶囊用它：按 AniList 分组时，胶囊显示的时刻必须和
-  /// 分组用的时刻一致，否则会出现「周日 tab 里写周五更新」。
-  Map<int, int> aniListNextEpochsForDay(int dayIndex) {
+  /// 当天所有番的更新时刻（bangumi id -> epoch ms），卡片时间胶囊用。
+  /// 和排序同一个入口 [timelineUpdateEpoch]，同一列里胶囊和先后不会分家。
+  Map<int, int> updateEpochsForDay(int dayIndex) {
     if (dayIndex < 0 || dayIndex >= bangumiCalendar.length) return const {};
-    final service = BangumiUpdateTimesService.instance;
+    final now = DateTime.now();
     final result = <int, int>{};
     for (final item in bangumiCalendar[dayIndex]) {
-      final epoch = service.nextUpdateEpoch(item.id);
+      final epoch = timelineUpdateEpoch(item.id, now: now);
       if (epoch != null) result[item.id] = epoch;
     }
     return result;
