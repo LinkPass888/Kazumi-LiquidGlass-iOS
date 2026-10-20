@@ -168,8 +168,8 @@ void main() {
     final first = DateTime.utc(2026, 10, 7, 15).millisecondsSinceEpoch;
     const week = 7 * 86400000;
 
-    // 时间表排序：时刻来源由调用方给，测试里直接按 bangumi 数据表取，
-    // 和线上 `timelineUpdateEpoch(preferAniList: false)` 一致。
+    // 时间表排序：时刻来源由调用方给，测试里直接按 bangumi 数据表取
+    // （线上是 AniList 优先、bangumi-mal 兜底，兜底分支就是这一条）。
     int compare(List<int> entryIds, Map<int, BangumiUpdateEntry> updates,
         DateTime at) {
       return compareTimelineUpdateTime(
@@ -213,15 +213,19 @@ void main() {
       expect(compare([2, 1], updates, sundayDawn), isPositive);
     });
 
-    test('时间表：跨星期按星期几从周一到周日', () {
-      // 只在「无更新时间的番留在原分组」这种混排时才会比较到跨星期。
+    test('时间表：跨星期只比时刻，不比星期', () {
+      // 列（星期）由分组决定，排序不再看时刻自带的星期。手动放进某一天
+      // 的番、或者时刻来自另一个星期时，排序键只有「当天几点播」。
       final monday = DateTime(2026, 10, 5, 22, 30).millisecondsSinceEpoch;
-      final friday = DateTime(2026, 10, 9, 22, 30).millisecondsSinceEpoch;
+      final friday = DateTime(2026, 10, 9, 20, 0).millisecondsSinceEpoch;
       final updates = _updates({
         1: _entry(monday, week),
         2: _entry(friday, week),
       });
-      expect(compare([1, 2], updates, now), isNegative);
+      // 周五 20:00 比周一 22:30 早 —— 按时刻排，所以周五那条在前。
+      // 按星期排的话会是反过来的（周一在前）。
+      expect(compare([2, 1], updates, now), isNegative);
+      expect(compare([1, 2], updates, now), isPositive);
     });
 
     test('时间表：同一星期几按当天时刻从早到晚', () {
@@ -235,13 +239,9 @@ void main() {
     });
 
     test('时间表：排序键就是卡片显示的时刻（同一来源）', () {
-      // 不变量，和具体哪部番无关：时间表按星期分列，同一列里星期必然
-      // 相同，所以列内顺序只能是「当天时刻从早到晚」。这里对七个星期各
-      // 取两个时刻验证 —— 排序用的那个 epoch，就是卡片上写出的星期与
-      // HH:mm，三者不会分家。
-      //
-      // 回归场景：分组跟设置走、排序固定读 bangumi-mal 时，同一列里会
-      // 出现「按 22:30 排、卡片却写 20:00」。
+      // 不变量，和具体哪部番无关：同一列里的顺序只能是「当天时刻从早到
+      // 晚」，而排序用的那个 epoch 就是卡片上写出 HH:mm 的那个。对七个
+      // 星期各取两个时刻验证，不依赖任何特定条目。
       for (var weekday = 1; weekday <= 7; weekday++) {
         // 2026-10-05 是周一，往后推 weekday-1 天就是该星期。
         final day = DateTime(2026, 10, 5 + weekday - 1);
@@ -255,11 +255,6 @@ void main() {
         final early = nextUpdateEpochFrom(updates[1], now)!;
         final late = nextUpdateEpochFrom(updates[2], now)!;
 
-        // 卡片上的星期与 HH:mm 都来自各自的 epoch。
-        expect(DateTime.fromMillisecondsSinceEpoch(early).weekday, weekday,
-            reason: 'weekday=$weekday');
-        expect(DateTime.fromMillisecondsSinceEpoch(late).weekday, weekday,
-            reason: 'weekday=$weekday');
         expect(formatUpdateTime(early), '20:00', reason: 'weekday=$weekday');
         expect(formatUpdateTime(late), '21:00', reason: 'weekday=$weekday');
 
@@ -271,11 +266,10 @@ void main() {
       }
     });
 
-    test('时间表：AniList 查不到时兜底 bangumi-mal，兜底后三者仍一致', () {
-      // 服务层的兜底逻辑：preferAniList 时 AniList 没数据就走
-      // nextUpdateEpochFrom(bangumi-mal)。这里直接验证「兜底后拿到的
-      // 那个 epoch」同时决定星期、排序和卡片上的 HH:mm —— 也就是
-      // 兜底不会让分组/排序/显示分家，只是那一天可能不准。
+    test('时间表：AniList 查不到时兜底 bangumi-mal', () {
+      // 时刻链路固定是「AniList 实测优先，查不到兜底 bangumi-mal」。
+      // 兜底条目按自己的时刻参与排序和胶囊，不会因为「兜底」而排到最后
+      // 或者不显示时间。
       final updates = _updates({
         1: _entry(DateTime(2026, 10, 5, 21, 0).millisecondsSinceEpoch, week),
         2: _entry(DateTime(2026, 10, 6, 22, 0).millisecondsSinceEpoch, week),
@@ -283,10 +277,33 @@ void main() {
       // AniList 没有数据 -> 退回 bangumi-mal。
       final fallback = nextUpdateEpochFrom(updates[1], now);
       expect(fallback, isNotNull);
-      final shown = DateTime.fromMillisecondsSinceEpoch(fallback!);
-      expect(shown.weekday, DateTime.monday);
       expect(formatUpdateTime(fallback), '21:00');
       // 兜底条目按自己的时刻参与排序，不会因为「兜底」而排到最后。
+      expect(compare([1, 2], updates, now), isNegative);
+      expect(compare([2, 1], updates, now), isPositive);
+    });
+
+    test('时间表：手动放进某一天的番按自己的时刻落位', () {
+      // 手动设置放送星期的番，它的更新时刻仍来自自己那一档（可能落在
+      // 另一个星期）。排序只比当天时刻，所以它在该列里按自己的 HH:mm
+      // 落位，不会因为时刻自带的星期被甩到别处。
+      final inColumn = DateTime(2026, 10, 7, 22, 0); // 列内原生番
+      final manual = DateTime(2026, 10, 9, 19, 30); // 手动放入，时刻是周五
+      final updates = _updates({
+        1: _entry(inColumn.millisecondsSinceEpoch, week),
+        2: _entry(manual.millisecondsSinceEpoch, week),
+      });
+      // 19:30 在 22:00 前面，尽管两条时刻属于不同星期。
+      expect(compare([2, 1], updates, now), isNegative);
+      expect(compare([1, 2], updates, now), isPositive);
+    });
+
+    test('时间表：没有更新时刻的手动条目排在该列最后', () {
+      // 手动添加的番可能不在最近两季的数据里（约 1/3 的当季番如此），
+      // 拿不到时刻。它仍要留在用户指定的那一天，只是排到最后。
+      final updates = _updates({
+        1: _entry(DateTime(2026, 10, 7, 22, 0).millisecondsSinceEpoch, week),
+      });
       expect(compare([1, 2], updates, now), isNegative);
       expect(compare([2, 1], updates, now), isPositive);
     });

@@ -89,41 +89,19 @@ class BangumiUpdateTimesService {
     return ((nowMs - first) ~/ period) + 1;
   }
 
-  /// 时间表用的「更新时刻」：分组、排序、卡片胶囊一律走这一个函数。
+  /// 时间表里的**具体时刻**（同一列内排序 + 卡片上的「HH:mm」）。
   ///
-  /// 三者必须同源，否则会出现「周六 20:00 更新的番排在周一 21:00 之后」——
-  /// 分组按一个来源、排序按另一个来源、胶囊又按第三个来源时必然对不上。
+  /// 来源固定：AniList 实测优先，**查不到时兜底 bangumi-mal 推算**。
+  /// 这条链路只回答「几点播」，**不回答「周几播」** —— 星期由
+  /// bangumi 日历分组 + 用户在详情页手动设置的放送星期决定（见
+  /// `BangumiTimelineStore`），不再从这里的时刻反推。
   ///
-  /// 所以无论设置怎么选，**返回的都是单个时刻**，调用方拿它同时决定
-  /// 星期、同一列里的先后和卡片上的「HH:mm」：
-  ///
-  /// - `preferAniList`（默认，设置 → 时间表星期来源 → AniList 播出时间）：
-  ///   AniList 实测优先（停播/延期/先行配信会反映）；**查不到的条目兜底
-  ///   到 bangumi-mal 推算**，兜底后分组、排序、显示依然是这同一个时刻，
-  ///   只是那个星期可能不准（bangumi-mal 的 begin 是首播那一集的时刻）。
-  /// - `false`（Bangumi 放送星期）：只用 bangumi-mal，不看 AniList。
-  ///   两种来源不能混在同一个返回值里挑，否则排序键和显示时刻又会分家。
-  int? timelineUpdateEpoch(
-    int bangumiId, {
-    DateTime? now,
-    bool preferAniList = false,
-  }) {
-    final current = now ?? DateTime.now();
-    if (preferAniList) return nextUpdateEpoch(bangumiId, now: current);
-    return nextUpdateEpochFrom(updates[bangumiId], current);
-  }
-
-  /// 单部番的放送星期（1 = 周一 ... 7 = 周日，本地时区）。
-  /// 和 [timelineUpdateEpoch] 同源，分组用哪天、排序和胶囊就用哪天的时刻。
-  int? updateWeekday(int bangumiId, {DateTime? now, bool preferAniList = false}) {
-    final epoch = timelineUpdateEpoch(
-      bangumiId,
-      now: now,
-      preferAniList: preferAniList,
-    );
-    if (epoch == null) return null;
-    return DateTime.fromMillisecondsSinceEpoch(epoch).weekday;
-  }
+  /// 两者分开是有意的：AniList 的 airingAt 跟的是**先行配信/流媒体**
+  /// 首播，bangumi 的 airing.weekday 跟的是**电视放送**，同一条目
+  /// 两者可以差好几天（先行配信早播 2 天很常见）。拿时刻反推星期，
+  /// 会把整季的番挪到流媒体那天，而不是它实际在电视上播的星期。
+  int? timelineUpdateEpoch(int bangumiId, {DateTime? now}) =>
+      nextUpdateEpoch(bangumiId, now: now);
 
   /// 总集数，仅 AniList 提供；没有数据返回 null。
   int? totalEpisodes(int bangumiId, {DateTime? now}) {
@@ -429,17 +407,16 @@ String? formatUpdateTime(int? epochMs) {
   return '$hour:$minute';
 }
 
-/// 时间表排序：按「星期几 + 当天时刻」从早到晚，无数据的排最后，同序回退 id。
+/// 时间表排序：同一列内按「当天时刻」从早到晚，无时刻的排最后，同序回退 id。
 ///
-/// 时间表是按星期分组展示的，而「下一次」是相对现在滚动的：周一晚上
-/// 加载时，周日档的番下一次在下周、周五档的在周五，直接比绝对时刻会让
-/// 同一列里的先后随加载时间变化。所以先比「星期几 + 当天时刻」，再比
-/// 绝对时刻兜底（同一相位但周期不同的条目）。
+/// 列（星期）由分组决定 —— bangumi 日历的放送星期，加上用户手动设置的
+/// 放送星期 —— 所以这里**只比时刻，不比星期**：手动放进某一天的番，
+/// 排序时和那天原生的番一样按自己的 HH:mm 落位，不会被时刻自带的星期
+/// 甩到另一个位置去。
 ///
-/// [epochFor] 是这一行的时刻来源，**必须和分组、卡片胶囊用同一个**
-/// （时间表里传 `timelineUpdateEpoch(preferAniList: 当前设置)`）；
-/// 否则同一列里排序键和显示的时刻会是两套，出现「周六 20:00 的番
-/// 排在周一 21:00 后面」这种错位。
+/// 「下一次」是相对现在滚动的，直接比绝对时刻会让同一列里的先后随加载
+/// 时间变化（周一晚上加载时，0 点档的下一次在下周）。所以取的是**一天
+/// 之内的相位**：时刻相同再比绝对时刻兜底。
 int compareTimelineUpdateTime(
   BangumiItem a,
   BangumiItem b,
@@ -451,16 +428,19 @@ int compareTimelineUpdateTime(
   if (aNext == null && bNext == null) return a.id.compareTo(b.id);
   if (aNext == null) return 1;
   if (bNext == null) return -1;
-  final comparison = compareWeeklyPhase(aNext, bNext);
+  final comparison = compareTimeOfDay(aNext, bNext);
   return comparison != 0 ? comparison : a.id.compareTo(b.id);
 }
 
-/// 按「本地星期几、再按当天时刻」比较两个播出时刻；同一相位再比绝对时刻。
-int compareWeeklyPhase(int aEpochMs, int bEpochMs) {
+/// 按「当天时刻」比较两个播出时刻（不比星期）；同一时刻再比绝对时刻。
+///
+/// 以前这里连星期一起比（`compareWeeklyPhase`），那是给「按时刻重新
+/// 分桶」用的。现在分组不再看时刻，跨星期的比较只会在手动条目和原生
+/// 条目混排时出现，而那种情况下用户要的是「这一天里几点播」，不是
+/// 「它原本属于星期几」。
+int compareTimeOfDay(int aEpochMs, int bEpochMs) {
   final a = DateTime.fromMillisecondsSinceEpoch(aEpochMs);
   final b = DateTime.fromMillisecondsSinceEpoch(bEpochMs);
-  final weekday = a.weekday.compareTo(b.weekday);
-  if (weekday != 0) return weekday;
   final minute = (a.hour * 60 + a.minute).compareTo(b.hour * 60 + b.minute);
   if (minute != 0) return minute;
   return aEpochMs.compareTo(bEpochMs);

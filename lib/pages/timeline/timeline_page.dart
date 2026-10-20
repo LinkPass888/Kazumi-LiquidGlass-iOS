@@ -35,14 +35,12 @@ class TimelinePage extends StatefulWidget {
 class _TimelinePageState extends State<TimelinePage> {
   TimelineController get _controller => widget.controller;
   late final bool _showRating;
-  late bool _preferAniListWeekday;
   TabController? _tabs;
 
   @override
   void initState() {
     super.initState();
     _showRating = GStorage.getSetting(SettingsKeys.showRating);
-    _preferAniListWeekday = _controller.prefersAniListWeekday;
     if (_controller.bangumiCalendar.isEmpty) {
       _controller.loadSeason(_controller.selectedDate);
     }
@@ -52,20 +50,6 @@ class _TimelinePageState extends State<TimelinePage> {
   void dispose() {
     _tabs?.removeListener(_onTabChanged);
     super.dispose();
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    // 从设置页切回时间表时，星期来源可能已经改了：监听设置箱，
-    // 变化后重新分桶并排序（否则要等重新进时间表才生效）。
-    final prefer = _controller.prefersAniListWeekday;
-    if (prefer != _preferAniListWeekday) {
-      _preferAniListWeekday = prefer;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _controller.refreshWeekdaySource();
-      });
-    }
   }
 
   String _seasonLabel(DateTime date) {
@@ -420,7 +404,8 @@ class _TimelinePageState extends State<TimelinePage> {
         compact: compact);
     final rawCalendar = _controller.bangumiCalendar;
     final filteredOut = day < rawCalendar.length && rawCalendar[day].isNotEmpty;
-    // 时间胶囊、排序、分组三者同源（见 TimelineController.timelineUpdateEpoch）。
+    // 胶囊和排序同一个时刻（见 TimelineController.timelineUpdateEpoch）；
+    // 星期（列）由分组决定，不从时刻反推。
     final updateEpochs = _controller.sort == TimelineSort.defaultOrder
         ? _controller.updateEpochsForDay(day)
         : const <int, int>{};

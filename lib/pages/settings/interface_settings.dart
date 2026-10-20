@@ -16,7 +16,6 @@ class InterfaceSettingsPage extends StatefulWidget {
 class _InterfaceSettingsPageState extends State<InterfaceSettingsPage> {
   late bool showRating;
   late String defaultPage;
-  late String _timelinePreferredSource;
   late CollectLayout _defaultCollectLayout;
   bool _savingCollectLayout = false;
   static const Map<String, String> defaultPageMap = {
@@ -26,32 +25,14 @@ class _InterfaceSettingsPageState extends State<InterfaceSettingsPage> {
     '/tab/my/': '我的',
   };
 
-  /// 时间表的时刻来源：**分组、排序、卡片上的更新时刻三者一起切**，
-  /// 不能只切其中一个（以前排序固定用 bangumi-mal、胶囊固定用 AniList，
-  /// 同一列里就出现「周六 20:00 的番排在周一 21:00 后面」）。
-  /// - anilist（默认）：AniList 实测播出时刻，停播/延期/先行配信会反映；
-  ///   查不到的条目兜底到 bangumi-mal，兜底后三者仍是同一个时刻。
-  /// - bangumi：只用 bangumi-mal 推算，不看 AniList。
-  static const Map<String, String> timelineSourceMap = {
-    'anilist': 'AniList 播出时间',
-    'bangumi': 'Bangumi 放送星期',
-  };
-
   @override
   void initState() {
     super.initState();
     showRating = GStorage.getSetting(SettingsKeys.showRating);
     defaultPage = GStorage.getSetting(SettingsKeys.defaultStartupPage);
-    _timelinePreferredSource =
-        GStorage.getSetting(SettingsKeys.timelinePreferredSource);
     _defaultCollectLayout = CollectLayout.fromValue(
       GStorage.getSetting(SettingsKeys.defaultCollectLayout),
     );
-  }
-
-  void _updateTimelineSource(String source) {
-    GStorage.putSetting(SettingsKeys.timelinePreferredSource, source);
-    setState(() => _timelinePreferredSource = source);
   }
 
   void updateDefaultPage(String page) {
@@ -92,18 +73,6 @@ class _InterfaceSettingsPageState extends State<InterfaceSettingsPage> {
             ),
           ]),
           SettingsSection(title: Text('展示信息'), tiles: [
-            SettingsDropdownTile<String>(
-              leading: Icons.calendar_view_week_rounded,
-              title: const Text('时间表星期来源'),
-              description: const Text(
-                '决定时间表的星期分组、同一列里的先后，以及卡片上的更新时刻；'
-                'AniList 跟随实测播出时刻，停播/延期/先行配信会反映出来',
-              ),
-              value: _timelinePreferredSource,
-              options: timelineSourceMap,
-              fallbackLabel: 'AniList 播出时间',
-              onChanged: _updateTimelineSource,
-            ),
             SettingsDropdownTile<CollectLayout>(
               leading: Icons.view_agenda_rounded,
               title: const Text('追番默认布局'),

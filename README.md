@@ -44,6 +44,7 @@
 - [X]  自动跳过片头片尾(由[AniSkip](https://github.com/aniskip)提供时间,[bangumi-mal](https://github.com/LinkPass888/bangumi-mal)提供条目映射)
 - [X]  Bangumi自动标记集看过
 - [X]  更新时间展示与排序（时间表 / 详情页 / 追番）
+- [X]  手动设置放送星期并添加到时间表
 - [X]  更新提醒
 - [X]  设置备份
 - [X]  针对原版部分界面优化
