@@ -106,7 +106,7 @@ class KazumiAlert extends StatelessWidget {
               ),
             ),
           ),
-          KazumiAlert(
+          AlertDialog(
             icon: icon,
             iconPadding: iconPadding,
             iconColor: iconColor,
