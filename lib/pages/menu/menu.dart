@@ -5,11 +5,11 @@ import 'package:kazumi/bean/dialog/dialog_helper.dart';
 import 'package:kazumi/bean/liquid_glass/glass_material.dart';
 import 'package:kazumi/bean/liquid_glass/kazumi_motion.dart';
 import 'package:kazumi/bean/liquid_glass/kazumi_glass.dart';
+import 'package:kazumi/bean/liquid_glass/kazumi_native_tab_bar.dart';
 import 'package:kazumi/bean/liquid_glass/liquid_glass.dart';
 import 'package:kazumi/navigation.dart';
 import 'package:kazumi/pages/menu/route_visibility.dart';
 import 'package:kazumi/pages/router.dart';
-import 'package:native_glass_navbar/native_glass_navbar.dart';
 
 class ScaffoldMenu extends StatefulWidget {
   const ScaffoldMenu({super.key, required this.location});
@@ -156,28 +156,33 @@ class _ScaffoldMenu extends State<ScaffoldMenu> with RouteAware {
 
   /// iOS 26 的液态玻璃标签栏。
   ///
-  /// iOS 上是原生 UITabBar：真正的 UIGlassEffect，选中胶囊、手势与无障碍
-  /// 都由系统接管，图标走 SF Symbols。
+  /// iOS 上是原生 UITabBar：真正的 UIGlassEffect、选中胶囊、滑动手势与
+  /// 无障碍都由系统接管，图标走 SF Symbols。
+  ///
+  /// 直接用 [KazumiNativeTabBar] 创建平台视图，而不是插件自带的
+  /// `NativeGlassNavBar`：后者首帧要先做一次「是否支持液态玻璃」的
+  /// method channel 往返，期间渲染空盒子，底栏会从 0 跳到 83。本应用最低
+  /// 就是 iOS 26，那次检查必然通过，跳过它就不会有这阵抖动。
   Widget _glassBottomBar(BuildContext context, int selectedIndex) {
     // 高度和位置都交给原生 UITabBar：栏体一直铺到屏幕底部，底部安全区由它
     // 自己处理，这样浮动胶囊的位置就是 iOS 原生的位置。
-    return NativeGlassNavBar(
-      tabs: const <NativeGlassNavBarItem>[
-        NativeGlassNavBarItem(
+    return KazumiNativeTabBar(
+      items: const <KazumiNativeTabItem>[
+        KazumiNativeTabItem(
           label: '推荐',
           symbol: 'house',
           selectedSymbol: 'house.fill',
         ),
-        NativeGlassNavBarItem(
+        KazumiNativeTabItem(
           label: '时间表',
           symbol: 'calendar',
         ),
-        NativeGlassNavBarItem(
+        KazumiNativeTabItem(
           label: '追番',
           symbol: 'heart',
           selectedSymbol: 'heart.fill',
         ),
-        NativeGlassNavBarItem(
+        KazumiNativeTabItem(
           label: '我的',
           symbol: 'gearshape',
           selectedSymbol: 'gearshape.fill',
