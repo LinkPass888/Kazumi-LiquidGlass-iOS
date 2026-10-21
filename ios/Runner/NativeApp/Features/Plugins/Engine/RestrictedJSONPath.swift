@@ -152,6 +152,6 @@ enum RestrictedJSONPath {
     }
 
     static func readFirst(_ document: JSONValue, expression: String) throws -> JSONValue? {
-        try read(document, expression).first
+        try read(document, expression: expression).first
     }
 }

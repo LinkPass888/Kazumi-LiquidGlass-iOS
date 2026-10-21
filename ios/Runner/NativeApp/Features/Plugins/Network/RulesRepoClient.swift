@@ -56,7 +56,9 @@ final class RulesRepoClient: Sendable {
 
     /// 对应 _RulesMirrorInterceptor：只改写规则仓库前缀。
     static func mirrored(_ url: String) -> String {
-        guard enableMirror.withLock({ $0 }), url.hasPrefix(pluginShop) else { return url }
-        return pluginShopMirror + url.dropFirst(pluginShop.count)
+        guard enableMirror.withLock({ $0 }),
+              url.hasPrefix(KazumiEndpoints.pluginShop) else { return url }
+        return KazumiEndpoints.pluginShopMirror
+            + url.dropFirst(KazumiEndpoints.pluginShop.count)
     }
 }
