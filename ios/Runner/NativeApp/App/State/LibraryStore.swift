@@ -131,11 +131,34 @@ struct WatchRecord: Identifiable, Codable, Hashable, Sendable {
 }
 
 /// 追番列表与历史的可观察快照。
+///
+/// 持久化对应原版的 Hive box（`collect` / `history`）：这里换成
+/// Application Support/Kazumi/library.json 这一个文件，字段与
+/// WebDAV 备份（`WebDAVClient.Payload`）保持一致，备份恢复时直接覆盖即可。
 @MainActor
 @Observable
 final class LibraryStore {
+    /// 落盘用的容器；`version` 与 WebDAV 备份一样从 1 起。
+    private struct Snapshot: Codable, Sendable {
+        var version: Int = 1
+        var savedAt: Date = Date()
+        var entries: [LibraryEntry]
+        var history: [WatchRecord]
+    }
+
+    /// 追番 / 观看历史的存储文件：Application Support/Kazumi/library.json。
+    static var defaultFileURL: URL {
+        AppEnvironment.storageRoot.appending(path: "library.json")
+    }
+
     private(set) var entries: [LibraryEntry] = []
     private(set) var history: [WatchRecord] = []
+
+    private let fileURL: URL
+
+    init(fileURL: URL = LibraryStore.defaultFileURL) {
+        self.fileURL = fileURL
+    }
 
     /// 正在追的番（对应 main.dart 的 _watchingBangumis）。
     var watchingEntries: [LibraryEntry] {
@@ -157,9 +180,54 @@ final class LibraryStore {
         history.first { $0.bangumiID == bangumiID }
     }
 
+    // MARK: - 持久化
+
+    /// 启动时读回上次的追番与历史；文件不存在或损坏时保持空表。
+    func load() {
+        guard FileManager.default.fileExists(atPath: fileURL.path(percentEncoded: false)) else {
+            entries = []
+            history = []
+            return
+        }
+        do {
+            let data = try Data(contentsOf: fileURL)
+            let snapshot = try Self.decoder().decode(Snapshot.self, from: data)
+            entries = snapshot.entries
+            history = snapshot.history
+            KazumiLog.storage.info(
+                "Library: 载入 \(self.entries.count, privacy: .public) 条追番 / \(self.history.count, privacy: .public) 条历史"
+            )
+        } catch {
+            // 文件损坏时不阻塞启动：从空表开始，下次写入会覆盖掉坏文件。
+            KazumiLog.storage.error(
+                "Library: 读取失败 \(error.localizedDescription, privacy: .public)"
+            )
+            entries = []
+            history = []
+        }
+    }
+
+    /// 写回磁盘。数据量很小（几百条），同步写 + `.atomic` 足够快，
+    /// 也不用担心后台任务还没落地就被系统杀掉。
+    private func save() {
+        do {
+            let directory = fileURL.deletingLastPathComponent()
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let snapshot = Snapshot(entries: entries, history: history)
+            try Self.encoder().encode(snapshot).write(to: fileURL, options: .atomic)
+        } catch {
+            KazumiLog.storage.error(
+                "Library: 写入失败 \(error.localizedDescription, privacy: .public)"
+            )
+        }
+    }
+
+    // MARK: - 变更
+
     func replace(entries: [LibraryEntry], history: [WatchRecord]) {
         self.entries = entries
         self.history = history
+        save()
     }
 
     func upsert(_ entry: LibraryEntry) {
@@ -168,10 +236,12 @@ final class LibraryStore {
         } else {
             entries.append(entry)
         }
+        save()
     }
 
     func remove(bangumiID: Int) {
         entries.removeAll { $0.id == bangumiID }
+        save()
     }
 
     func upsert(_ record: WatchRecord) {
@@ -180,9 +250,28 @@ final class LibraryStore {
         } else {
             history.insert(record, at: 0)
         }
+        save()
     }
 
     func removeHistory(bangumiID: Int) {
         history.removeAll { $0.bangumiID == bangumiID }
+        save()
+    }
+
+    // MARK: - 编解码
+
+    /// 与 WebDAV 备份保持同一套日期编码（ISO 8601），
+    /// 这样本地文件与备份文件可以互相替换、也能人工查看。
+    private static func encoder() -> JSONEncoder {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = [.withoutEscapingSlashes]
+        return encoder
+    }
+
+    private static func decoder() -> JSONDecoder {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return decoder
     }
 }
