@@ -32,6 +32,10 @@ struct KazumiApp: App {
                 .environment(environment.plugins)
                 .preferredColorScheme(environment.settings.themeMode.preferredColorScheme)
                 .tint(KazumiPalette.accent)
+                // 配色方案与 OLED 纯黑是全局状态（`KazumiPalette` 为静态取值），
+                // 用 id 让视图树在切换后整体重建，背景与强调色立即生效。
+                .id("\(environment.settings.themeColor.id)-\(environment.settings.oledEnhance)")
         }
     }
 }
+

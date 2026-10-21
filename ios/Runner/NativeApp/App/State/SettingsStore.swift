@@ -40,6 +40,10 @@ enum KazumiThemeMode: String, CaseIterable, Codable, Identifiable, Sendable {
 enum SettingsKey {
     static let themeMode = "themeMode"
     static let colorType = "colorType"
+    /// 配色方案标识，沿用原版 `SettingsKeys.themeColor` 的键名。
+    static let themeColor = "themeColor"
+    /// OLED 纯黑，沿用原版 `SettingsKeys.oledEnhance` 的键名。
+    static let oledEnhance = "oledEnhance"
     static let glassEnabled = "glassEnabled"
     static let selectedPluginIndex = "selectedPluginIndex"
     static let playerQuality = "playerQuality"
@@ -82,6 +86,22 @@ final class SettingsStore {
 
     var themeMode: KazumiThemeMode {
         didSet { persist(themeMode.rawValue, SettingsKey.themeMode) }
+    }
+
+    /// 选中的配色方案（对应原版 `themeColor` 设置，默认绿色）。
+    var themeColor: KazumiThemeColor {
+        didSet {
+            persist(themeColor.id, SettingsKey.themeColor)
+            KazumiThemeColor.current = themeColor
+        }
+    }
+
+    /// 深色模式是否使用纯黑背景（对应原版 `oledEnhance`）。
+    var oledEnhance: Bool {
+        didSet {
+            persist(oledEnhance, SettingsKey.oledEnhance)
+            KazumiThemeColor.oledEnhance = oledEnhance
+        }
     }
 
     /// 是否启用 iOS 26 液态玻璃（对应 KazumiGlass.enabled）。
@@ -183,6 +203,12 @@ final class SettingsStore {
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         themeMode = Self.read(defaults, SettingsKey.themeMode, KazumiThemeMode.system)
+        // 原版把 'default' 视为绿色；这里额外兼容旧备份里可能出现的 ARGB 字符串。
+        let storedThemeColor = defaults.object(forKey: Keys.prefix + SettingsKey.themeColor) as? String
+        themeColor = KazumiThemeColor.named(storedThemeColor ?? KazumiThemeColor.standard.id)
+        oledEnhance = Self.read(defaults, SettingsKey.oledEnhance, false)
+        KazumiThemeColor.current = themeColor
+        KazumiThemeColor.oledEnhance = oledEnhance
         glassEnabled = Self.read(defaults, SettingsKey.glassEnabled, true)
         selectedPluginIndex = Self.read(defaults, SettingsKey.selectedPluginIndex, 0)
         playerEntryFullscreen = Self.read(defaults, SettingsKey.playerEntryFullscreen, true)

@@ -14,6 +14,8 @@ struct SettingsScreen: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(AppRouter.self) private var router
 
+    @State private var isShowingThemeColorSheet = false
+
     var body: some View {
         Form {
             Section("外观") {
@@ -22,7 +24,23 @@ struct SettingsScreen: View {
                         Text(mode.title).tag(mode)
                     }
                 }
+                Button {
+                    isShowingThemeColorSheet = true
+                } label: {
+                    HStack {
+                        Label("配色方案", systemImage: "paintpalette")
+                        Spacer()
+                        Text(settings.themeColor.title)
+                            .foregroundStyle(.secondary)
+                        KazumiThemeColorSwatch(color: settings.themeColor, size: 18)
+                    }
+                }
+                .buttonStyle(.plain)
+                .sheet(isPresented: $isShowingThemeColorSheet) {
+                    ThemeColorSheet(selection: themeColorBinding)
+                }
                 Toggle("液态玻璃效果", isOn: glassBinding)
+                Toggle("OLED 优化", isOn: oledEnhanceBinding)
             }
 
             Section("播放") {
@@ -101,6 +119,14 @@ struct SettingsScreen: View {
 
     private var glassBinding: Binding<Bool> {
         Binding(get: { settings.glassEnabled }, set: { settings.glassEnabled = $0 })
+    }
+
+    private var themeColorBinding: Binding<KazumiThemeColor> {
+        Binding(get: { settings.themeColor }, set: { settings.themeColor = $0 })
+    }
+
+    private var oledEnhanceBinding: Binding<Bool> {
+        Binding(get: { settings.oledEnhance }, set: { settings.oledEnhance = $0 })
     }
 
     private var fullscreenBinding: Binding<Bool> {
