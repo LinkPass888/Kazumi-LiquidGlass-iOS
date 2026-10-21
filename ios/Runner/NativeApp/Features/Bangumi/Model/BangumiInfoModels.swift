@@ -115,13 +115,14 @@ struct BangumiStaffItem: Identifiable, Hashable, Sendable {
             }
             relationsById[id, default: []].append(entry["relation"].stringValue ?? "")
         }
-        return relationsById
-            .map { id, relations in
-                var item = staffById[id] ?? BangumiStaffItem(id: id, name: "", nameCN: "", relations: [])
-                item.relations = relations.sorted { priority(of: $0) < priority(of: $1) }
-                return item
-            }
-            .sorted { priority(of: $0.primaryRelation) < priority(of: $1.primaryRelation) }
+        return relationsById.map { element -> BangumiStaffItem in
+            let id = element.key
+            let relations = element.value.sorted { priority(of: $0) < priority(of: $1) }
+            var item = staffById[id] ?? BangumiStaffItem(id: id, name: "", nameCN: "", relations: [])
+            item.relations = relations
+            return item
+        }
+        .sorted { priority(of: $0.primaryRelation) < priority(of: $1.primaryRelation) }
     }
 
     /// 职务优先级表，与 Dart 的 _staffRelationPriority 一致。
