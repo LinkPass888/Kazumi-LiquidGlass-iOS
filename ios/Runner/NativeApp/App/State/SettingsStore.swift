@@ -1,0 +1,218 @@
+//
+//  SettingsStore.swift
+//  Kazumi
+//
+//  设置项的持久化容器（替代 Hive 中的 settings box）。
+//  存储实现只依赖 UserDefaults，Step 3 会用同一套 API 把 WebDAV 备份的
+//  `settings` 段落写回这里，因此键名刻意与原版保持一致。
+//
+
+import Foundation
+import Observation
+import SwiftUI
+
+/// 主题模式（对照 bean/settings/theme_provider.dart 的 ThemeMode）。
+enum KazumiThemeMode: String, CaseIterable, Codable, Identifiable, Sendable {
+    case system
+    case light
+    case dark
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .system: "跟随系统"
+        case .light: "浅色"
+        case .dark: "深色"
+        }
+    }
+
+    var preferredColorScheme: ColorScheme? {
+        switch self {
+        case .system: nil
+        case .light: .light
+        case .dark: .dark
+        }
+    }
+}
+
+/// 设置键。命名沿用原项目 setting keys 的语义，便于备份文件互通。
+enum SettingsKey {
+    static let themeMode = "themeMode"
+    static let colorType = "colorType"
+    static let glassEnabled = "glassEnabled"
+    static let selectedPluginIndex = "selectedPluginIndex"
+    static let playerQuality = "playerQuality"
+    static let hardwareDecoder = "hardwareDecoder"
+    static let anime4kMode = "anime4kMode"
+    static let autoPlayNext = "autoPlayNext"
+    static let autoSkipOpEd = "autoSkipOpEd"
+    static let playSpeed = "playSpeed"
+    static let danmakuEnabled = "danmakuEnabled"
+    static let danmakuOpacity = "danmakuOpacity"
+    static let danmakuFontSize = "danmakuFontSize"
+    static let danmakuArea = "danmakuArea"
+    static let danmakuFilterRules = "danmakuFilterRules"
+    static let danmakuSourcePriority = "danmakuSourcePriority"
+    static let webDAVURL = "webDAVURL"
+    static let webDAVUser = "webDAVUser"
+    static let webDAVPassword = "webDAVPassword"
+    static let webDAVAutoSync = "webDAVAutoSync"
+    static let bangumiAccessToken = "bangumiAccessToken"
+    static let bangumiUsername = "bangumiUsername"
+    static let bangumiSyncEnabled = "bangumiSyncEnabled"
+    static let danmakuShieldSyncEnabled = "danmakuShieldSyncEnabled"
+    static let proxyEnabled = "proxyEnabled"
+    static let proxyHost = "proxyHost"
+    static let proxyPort = "proxyPort"
+    static let meteredNetworkLimit = "meteredNetworkLimit"
+    static let updateNotificationEnabled = "updateNotificationEnabled"
+    static let playerEntryFullscreen = "playerEntryFullscreen"
+}
+
+/// 可观察的设置存储。所有写入立即同步到磁盘，避免进程被系统回收后丢设置。
+@MainActor
+@Observable
+final class SettingsStore {
+    private enum Keys {
+        static let prefix = "kazumi.settings."
+    }
+
+    private let defaults: UserDefaults
+
+    var themeMode: KazumiThemeMode {
+        didSet { persist(themeMode.rawValue, SettingsKey.themeMode) }
+    }
+
+    /// 是否启用 iOS 26 液态玻璃（对应 KazumiGlass.enabled）。
+    var glassEnabled: Bool {
+        didSet { persist(glassEnabled, SettingsKey.glassEnabled) }
+    }
+
+    /// 当前选中的规则源下标（对应 PluginsController.currentPlugin）。
+    var selectedPluginIndex: Int {
+        didSet { persist(selectedPluginIndex, SettingsKey.selectedPluginIndex) }
+    }
+
+    /// 是否在播放器进入时即全屏。
+    var playerEntryFullscreen: Bool {
+        didSet { persist(playerEntryFullscreen, SettingsKey.playerEntryFullscreen) }
+    }
+
+    var danmakuEnabled: Bool {
+        didSet { persist(danmakuEnabled, SettingsKey.danmakuEnabled) }
+    }
+
+    var danmakuOpacity: Double {
+        didSet { persist(danmakuOpacity, SettingsKey.danmakuOpacity) }
+    }
+
+    var danmakuFontSize: Double {
+        didSet { persist(danmakuFontSize, SettingsKey.danmakuFontSize) }
+    }
+
+    /// 弹幕显示区域（0.25 ~ 1.0 的屏幕高度占比）。
+    var danmakuArea: Double {
+        didSet { persist(danmakuArea, SettingsKey.danmakuArea) }
+    }
+
+    var autoPlayNext: Bool {
+        didSet { persist(autoPlayNext, SettingsKey.autoPlayNext) }
+    }
+
+    var autoSkipOpEd: Bool {
+        didSet { persist(autoSkipOpEd, SettingsKey.autoSkipOpEd) }
+    }
+
+    var playSpeed: Double {
+        didSet { persist(playSpeed, SettingsKey.playSpeed) }
+    }
+
+    var bangumiSyncEnabled: Bool {
+        didSet { persist(bangumiSyncEnabled, SettingsKey.bangumiSyncEnabled) }
+    }
+
+    var danmakuShieldSyncEnabled: Bool {
+        didSet { persist(danmakuShieldSyncEnabled, SettingsKey.danmakuShieldSyncEnabled) }
+    }
+
+    var bangumiAccessToken: String {
+        didSet { persist(bangumiAccessToken, SettingsKey.bangumiAccessToken) }
+    }
+
+    var bangumiUsername: String {
+        didSet { persist(bangumiUsername, SettingsKey.bangumiUsername) }
+    }
+
+    var webDAVURL: String {
+        didSet { persist(webDAVURL, SettingsKey.webDAVURL) }
+    }
+
+    var webDAVUser: String {
+        didSet { persist(webDAVUser, SettingsKey.webDAVUser) }
+    }
+
+    var webDAVPassword: String {
+        didSet { persist(webDAVPassword, SettingsKey.webDAVPassword) }
+    }
+
+    var webDAVAutoSync: Bool {
+        didSet { persist(webDAVAutoSync, SettingsKey.webDAVAutoSync) }
+    }
+
+    var proxyEnabled: Bool {
+        didSet { persist(proxyEnabled, SettingsKey.proxyEnabled) }
+    }
+
+    var proxyHost: String {
+        didSet { persist(proxyHost, SettingsKey.proxyHost) }
+    }
+
+    var proxyPort: Int {
+        didSet { persist(proxyPort, SettingsKey.proxyPort) }
+    }
+
+    var meteredNetworkLimit: Bool {
+        didSet { persist(meteredNetworkLimit, SettingsKey.meteredNetworkLimit) }
+    }
+
+    var updateNotificationEnabled: Bool {
+        didSet { persist(updateNotificationEnabled, SettingsKey.updateNotificationEnabled) }
+    }
+
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        themeMode = Self.read(defaults, SettingsKey.themeMode, KazumiThemeMode.system)
+        glassEnabled = Self.read(defaults, SettingsKey.glassEnabled, true)
+        selectedPluginIndex = Self.read(defaults, SettingsKey.selectedPluginIndex, 0)
+        playerEntryFullscreen = Self.read(defaults, SettingsKey.playerEntryFullscreen, true)
+        danmakuEnabled = Self.read(defaults, SettingsKey.danmakuEnabled, true)
+        danmakuOpacity = Self.read(defaults, SettingsKey.danmakuOpacity, 1.0)
+        danmakuFontSize = Self.read(defaults, SettingsKey.danmakuFontSize, 20.0)
+        danmakuArea = Self.read(defaults, SettingsKey.danmakuArea, 0.5)
+        autoPlayNext = Self.read(defaults, SettingsKey.autoPlayNext, true)
+        autoSkipOpEd = Self.read(defaults, SettingsKey.autoSkipOpEd, false)
+        playSpeed = Self.read(defaults, SettingsKey.playSpeed, 1.0)
+        bangumiSyncEnabled = Self.read(defaults, SettingsKey.bangumiSyncEnabled, false)
+        danmakuShieldSyncEnabled = Self.read(defaults, SettingsKey.danmakuShieldSyncEnabled, false)
+        bangumiAccessToken = Self.read(defaults, SettingsKey.bangumiAccessToken, "")
+        bangumiUsername = Self.read(defaults, SettingsKey.bangumiUsername, "")
+        webDAVURL = Self.read(defaults, SettingsKey.webDAVURL, "")
+        webDAVUser = Self.read(defaults, SettingsKey.webDAVUser, "")
+        webDAVPassword = Self.read(defaults, SettingsKey.webDAVPassword, "")
+        webDAVAutoSync = Self.read(defaults, SettingsKey.webDAVAutoSync, false)
+        proxyEnabled = Self.read(defaults, SettingsKey.proxyEnabled, false)
+        proxyHost = Self.read(defaults, SettingsKey.proxyHost, "")
+        proxyPort = Self.read(defaults, SettingsKey.proxyPort, 0)
+        meteredNetworkLimit = Self.read(defaults, SettingsKey.meteredNetworkLimit, false)
+        updateNotificationEnabled = Self.read(defaults, SettingsKey.updateNotificationEnabled, true)
+    }
+
+    private func persist(_ value: Any?, _ key: String) {
+        defaults.set(value, forKey: Keys.prefix + key)
+    }
+
+    private static func read<Value>(_ defaults: UserDefaults, _ key: String, _ fallback: Value) -> Value {
+        defaults.object(forKey: Keys.prefix + key) as? Value ?? fallback
+    }
+}
