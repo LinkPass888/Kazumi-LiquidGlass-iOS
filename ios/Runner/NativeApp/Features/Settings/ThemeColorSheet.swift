@@ -4,9 +4,9 @@
 //
 //  设置页「配色方案」（对照 lib/pages/settings/theme_settings_page.dart 的
 //  配色对话框与 lib/bean/card/palette_card.dart）。
-//  原版卡片用 primary / tertiary / primaryContainer 三色调拼成双色块；
-//  这里只取该方案的主题色画单色圆，选中时叠一枚勾选圆点，
-//  用系统 Sheet + 自适应网格承载 9 个方案与即时生效的交互。
+//  原版卡片把一个圆裁成三块：上半是 primary 色相的浅色调、左下是色相 +50
+//  的 tertiary 色调、右下是 primaryContainer 色调；选中时中间再叠一枚
+//  勾选圆，圆里画一个 check 图标。这里照搬这个画法。
 //
 
 import SwiftUI
@@ -51,8 +51,17 @@ struct ThemeColorSheet: View {
     }
 }
 
-/// 配色卡片：只用该方案的主题色（浅色 T40 / 深色 T80）画一个实心圆，
-/// 选中时叠一枚勾选圆点。
+/// 配色卡片：一张卡片底 + 中间裁成三块色的圆，选中时叠一枚勾选圆。
+///
+/// 对照 lib/bean/card/palette_card.dart：
+///   * 上半 = `Hct.from(hue, 20.0, 90.0)`
+///   * 左下 = `Hct.from(hue + 50, 20.0, 85.0)`
+///   * 右下 = `Hct.from(hue, 30.0, 50.0)`
+///   * 勾选圆底色 = `Hct.from(hue, 30.0, 40.0)`
+///
+/// 原版是先画一张 Card（底色 = 主题 surface），再在里面留 10 点边距、
+/// 把内容裁成圆；勾选图标用的是当时主题的 surface 色，这里对应
+/// `KazumiPalette.cardSurface`。
 private struct KazumiPaletteCard: View {
     let color: KazumiThemeColor
     let selected: Bool
@@ -61,33 +70,36 @@ private struct KazumiPaletteCard: View {
 
     var body: some View {
         ZStack {
-            Circle()
-                .fill(Color(uiColor: color.accentUIColor))
+            // 卡片底。
+            RoundedRectangle(cornerRadius: KazumiPalette.cardCornerRadius, style: .continuous)
+                .fill(KazumiPalette.cardSurface(for: colorScheme))
+                .frame(width: 62, height: 62)
+
+            // 三块色拼成的圆：上半 / 左下 / 右下。
+            VStack(spacing: 0) {
+                KazumiThemeColor.swiftUIColor(color.cardPrimary)
+                    .frame(height: 21)
+                HStack(spacing: 0) {
+                    KazumiThemeColor.swiftUIColor(color.cardTertiary)
+                    KazumiThemeColor.swiftUIColor(color.cardPrimaryContainer)
+                }
+                .frame(height: 21)
+            }
+            .frame(width: 42, height: 42)
+            .clipShape(Circle())
+
             if selected {
                 Circle()
-                    .fill(checkmarkBackground)
+                    .fill(KazumiThemeColor.swiftUIColor(color.cardCheckbox))
                     .frame(width: 25, height: 25)
                     .overlay {
                         Image(systemName: "checkmark")
                             .font(.system(size: 12, weight: .bold))
-                            .foregroundStyle(checkmarkForeground)
+                            .foregroundStyle(KazumiPalette.cardSurface(for: colorScheme))
                     }
             }
         }
         .frame(width: 70, height: 70)
-        .clipShape(Circle())
-        .overlay {
-            Circle()
-                .strokeBorder(Color.primary.opacity(selected ? 0.45 : 0.08), lineWidth: selected ? 2 : 1)
-        }
-    }
-
-    private var checkmarkBackground: Color {
-        colorScheme == .dark ? .white.opacity(0.9) : KazumiThemeColor.swiftUIColor(color.lightPrimary)
-    }
-
-    private var checkmarkForeground: Color {
-        colorScheme == .dark ? .black : .white
     }
 }
 

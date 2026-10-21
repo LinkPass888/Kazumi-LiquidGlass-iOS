@@ -3,32 +3,56 @@
 //  Kazumi
 //
 //  原版可更换的配色方案（lib/bean/settings/color_type.dart）。
-//  种子色与原版逐一对应；主色由 Material 3 的 `ColorScheme.fromSeed` 规则
-//  预先换算成 T40（浅色）/ T80（深色），与原版界面取到的 primary 完全一致。
+//
+//  每套方案的颜色分两组，都取自原版 Flutter：
+//
+//  1. 强调色 —— `ColorScheme.fromSeed(seedColor:)` 得到的 primary，
+//     浅色模式 T40、深色模式 T80。全 App 的 tint、强调文字都取它。
+//  2. 配色卡片的三色 —— 原版 `lib/bean/card/palette_card.dart` 直接用
+//     `Hct.from(hue, ...)` 从种子色的色相算出来的 primary / tertiary /
+//     primaryContainer，外加一枚勾选圆的底色。这三色与 ColorScheme 无关，
+//     原版就是这个算法，这里照搬。
+//
+//  表里的每个数值都由 `tool/palette_probe` 用 Flutter 自己的
+//  `ColorScheme.fromSeed` 与 `material_color_utilities` 现算现比；升级
+//  Flutter 或调整配色方案后跑一次那个校验，就能确认这张表没有走样。
 //
 
 import SwiftUI
 import UIKit
 
-/// 一套配色：种子色 + 浅色 / 深色下实际使用的强调色。
+/// 一套配色：种子色 + 强调色（浅 / 深）+ 配色卡片的三色。
 struct KazumiThemeColor: Identifiable, Hashable, Sendable {
     /// 持久化用的标识（不落 UIColor，保证 Codable / 备份可读）。
     let id: String
+    /// 设置页显示的名字，与原版 `colorThemeTypes` 的 label 一致。
     let title: String
     /// 原版 `colorThemeTypes` 里的种子色。
     let seed: UInt32
-    /// `ColorScheme.fromSeed` 在浅色模式下的 primary（tonal palette T40）。
+    /// 浅色模式下的强调色（`ColorScheme.fromSeed` 的 primary）。
     let lightPrimary: UInt32
-    /// `ColorScheme.fromSeed` 在深色模式下的 primary（tonal palette T80）。
+    /// 深色模式下的强调色。
     let darkPrimary: UInt32
+    /// 配色卡片上半块的色调（HCT：种子色相、彩度 20、明度 90）。
+    let cardPrimary: UInt32
+    /// 配色卡片左下块的色调（HCT：色相 +50、彩度 20、明度 85）。
+    let cardTertiary: UInt32
+    /// 配色卡片右下块的色调（HCT：种子色相、彩度 30、明度 50）。
+    let cardPrimaryContainer: UInt32
+    /// 选中时中间那枚勾选圆的底色（HCT：种子色相、彩度 30、明度 40）。
+    let cardCheckbox: UInt32
 
     /// 默认项：原版 `Colors.green`，label 为「默认」。
     static let standard = KazumiThemeColor(
         id: "default",
         title: "默认",
         seed: 0xFF4CAF50,
-        lightPrimary: 0xFF006E1C,
-        darkPrimary: 0xFF78DC77
+        lightPrimary: 0xFF3B6939,
+        darkPrimary: 0xFFA1D39A,
+        cardPrimary: 0xFFD1E9C9,
+        cardTertiary: 0xFFB6DCDA,
+        cardPrimaryContainer: 0xFF5B8057,
+        cardCheckbox: 0xFF436740
     )
 
     /// 与 lib/bean/settings/color_type.dart 的 `colorThemeTypes` 顺序、标签、色值一致。
@@ -39,63 +63,95 @@ struct KazumiThemeColor: Identifiable, Hashable, Sendable {
             title: "青色",
             seed: 0xFF009688,
             lightPrimary: 0xFF006A60,
-            darkPrimary: 0xFF67D9C9
+            darkPrimary: 0xFF82D5C8,
+            cardPrimary: 0xFFC5EAE3,
+            cardTertiary: 0xFFBDD8EB,
+            cardPrimaryContainer: 0xFF428278,
+            cardCheckbox: 0xFF276860
         ),
         KazumiThemeColor(
             id: "blue",
             title: "蓝色",
             seed: 0xFF2196F3,
-            lightPrimary: 0xFF0061A4,
-            darkPrimary: 0xFF9ECAFF
+            lightPrimary: 0xFF36618E,
+            darkPrimary: 0xFFA0CAFD,
+            cardPrimary: 0xFFD2E4FE,
+            cardTertiary: 0xFFDDCFEF,
+            cardPrimaryContainer: 0xFF5A799F,
+            cardCheckbox: 0xFF416084
         ),
         KazumiThemeColor(
             id: "indigo",
             title: "靛蓝色",
             seed: 0xFF3F51B5,
-            lightPrimary: 0xFF4355B9,
-            darkPrimary: 0xFFBAC3FF
+            lightPrimary: 0xFF515B92,
+            darkPrimary: 0xFFBAC3FF,
+            cardPrimary: 0xFFDEE0FF,
+            cardTertiary: 0xFFEACBE7,
+            cardPrimaryContainer: 0xFF6D74A2,
+            cardCheckbox: 0xFF555C88
         ),
         KazumiThemeColor(
             id: "violet",
             title: "紫罗兰色",
             seed: 0xFF6750A4,
-            lightPrimary: 0xFF6750A4,
-            darkPrimary: 0xFFCFBCFF
+            lightPrimary: 0xFF65558F,
+            darkPrimary: 0xFFCFBDFE,
+            cardPrimary: 0xFFE9DDFF,
+            cardTertiary: 0xFFF4C9DC,
+            cardPrimaryContainer: 0xFF7D709F,
+            cardCheckbox: 0xFF645785
         ),
         KazumiThemeColor(
             id: "pink",
             title: "粉红色",
             seed: 0xFFE91E63,
-            lightPrimary: 0xFFBC004B,
-            darkPrimary: 0xFFFFB2BE
+            lightPrimary: 0xFF8E4957,
+            darkPrimary: 0xFFFFB2BE,
+            cardPrimary: 0xFFFFD9DE,
+            cardTertiary: 0xFFF8CCAA,
+            cardPrimaryContainer: 0xFFA36670,
+            cardCheckbox: 0xFF874E58
         ),
         KazumiThemeColor(
             id: "yellow",
             title: "黄色",
             seed: 0xFFFFEB3B,
-            lightPrimary: 0xFF695F00,
-            darkPrimary: 0xFFDBC90A
+            lightPrimary: 0xFF685F12,
+            darkPrimary: 0xFFD4C871,
+            cardPrimary: 0xFFECE4B3,
+            cardTertiary: 0xFFBFDCC1,
+            cardPrimaryContainer: 0xFF80783A,
+            cardCheckbox: 0xFF675F23
         ),
         KazumiThemeColor(
             id: "orange",
             title: "橙色",
             seed: 0xFFFF9800,
-            lightPrimary: 0xFF8B5000,
-            darkPrimary: 0xFFFFB870
+            lightPrimary: 0xFF855318,
+            darkPrimary: 0xFFFDB975,
+            cardPrimary: 0xFFFFDCBE,
+            cardTertiary: 0xFFD6D7AA,
+            cardPrimaryContainer: 0xFF9C6D3C,
+            cardCheckbox: 0xFF805527
         ),
         KazumiThemeColor(
             id: "deepOrange",
             title: "深橙色",
             seed: 0xFFFF5722,
-            lightPrimary: 0xFFB02F00,
-            darkPrimary: 0xFFFFB5A0
+            lightPrimary: 0xFF8F4C38,
+            darkPrimary: 0xFFFFB5A0,
+            cardPrimary: 0xFFFFDBD1,
+            cardTertiary: 0xFFEBD1A3,
+            cardPrimaryContainer: 0xFFA56755,
+            cardCheckbox: 0xFF894F3E
         ),
     ]
 
     // MARK: - ARGB 工具
 
     /// 0xAARRGGBB -> SwiftUI Color。
-    /// 供需要非动态色（例如选中态的浅色底）的调用点使用，避免每次手写 UIColor 包装。
+    /// 供需要非动态色（例如配色卡片里的三块色）的调用点使用，避免每次手写 UIColor 包装。
     static func swiftUIColor(_ argb: UInt32) -> Color {
         Color(uiColor: color(argb))
     }
@@ -117,8 +173,8 @@ struct KazumiThemeColor: Identifiable, Hashable, Sendable {
     @MainActor
     var accentUIColor: UIColor {
         if let cached = Self.uiColorCache[id] { return cached }
-        let dark = Self.color(darkPrimary)
         let light = Self.color(lightPrimary)
+        let dark = Self.color(darkPrimary)
         let color = UIColor { traits in
             traits.userInterfaceStyle == .dark ? dark : light
         }
