@@ -41,10 +41,8 @@ struct KSPlayerContainer: UIViewRepresentable {
             options.referer = referer
             options.appendHeader(["Referer": referer])
         }
-        // KSOptions 同名成员既有 `static var isAutoPlay`（全局默认）也有实例属性，
-        // 通过 KeyPath 引用实例成员可以绕开静态成员优先的解析规则。
-        let autoPlay = \KSOptions.isAutoPlay
-        options[keyPath: autoPlay] = true
+        // 上游 2.3.4 的 `KSOptions.isAutoPlay` 只有静态属性（全局默认，默认值为 true），
+        // 不提供实例属性，因此这里直接删除设置语句，依赖默认的自动播放行为。
 
         let definition = KSPlayerResourceDefinition(
             url: url,
