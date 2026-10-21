@@ -109,7 +109,8 @@ final class PluginSearchService {
         }
         await withTaskGroup(of: Void.self) { group in
             for plugin in snapshot {
-                group.addTask { @MainActor in
+                // 子任务只捕获 Sendable 的 Plugin，主 actor 上的状态更新留在 queryPlugin 内完成。
+                group.addTask {
                     await self.queryPlugin(plugin, keyword: keyword)
                 }
             }

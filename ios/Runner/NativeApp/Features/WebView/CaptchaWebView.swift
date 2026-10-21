@@ -211,9 +211,9 @@ final class CaptchaWebView: NSObject {
         guard let webView else { return }
         let store = webView.configuration.websiteDataStore.httpCookieStore
         let cookies = await store.allCookies()
-        // delete(_:) 在 iOS 26 SDK 中是同步方法，不能加 await。
+        // 使用异步版本，避免 iOS 26 SDK 对同步 delete(_:) 的弃用警告。
         for cookie in cookies {
-            store.delete(cookie)
+            await store.delete(cookie)
         }
         emit("[Captcha WebView] Cookies cleared before load")
     }

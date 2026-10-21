@@ -439,6 +439,11 @@ final class PluginsController {
         return UpdateAttempt(result: .updated, plugin: remote)
     }
 
+    /// 批量更新用的取件入口：把下标一并传入，避免子任务捕获 `@MainActor` 属性。
+    private func prepareUpdate(index: Int, names: [String]) async -> UpdateAttempt {
+        await prepareUpdate(named: names[index])
+    }
+
     private func prepareUpdates(names: [String]) async -> [UpdateAttempt] {
         guard !names.isEmpty else { return [] }
         let batchSize = Self.maxConcurrentRuleDownloads
@@ -447,10 +452,13 @@ final class PluginsController {
         while start < names.count {
             let end = min(start + batchSize, names.count)
             // 每批内部并发，批与批之间串行，保证同时最多 4 个下载。
+            // 注意：不能在 addTask 闭包里写 `@MainActor in`，Swift 6 的
+            // region-based isolation 检查器无法分析这种写法（会直接报错），
+            // 因此改成在子任务内 await 主 actor 上的方法。
             let batch = await withTaskGroup(of: (Int, UpdateAttempt).self) { group in
                 for index in start..<end {
-                    group.addTask { @MainActor in
-                        (index, await self.prepareUpdate(named: names[index]))
+                    group.addTask {
+                        (index, await self.prepareUpdate(index: index, names: names))
                     }
                 }
                 var collected: [(Int, UpdateAttempt)] = []
