@@ -45,8 +45,9 @@ private struct KazumiGlassShapeModifier: ViewModifier {
             }
             shape
                 .fill(.ultraThinMaterial)
+            // AnyShape 擦除了 InsettableShape 约束，只能用 stroke（strokeBorder 不可用）。
             shape
-                .strokeBorder(.white.opacity(0.16), lineWidth: 0.5)
+                .stroke(Color.white.opacity(0.16), lineWidth: 0.5)
         }
         .contentShape(shape)
         .modifier(KazumiNativeGlassEffect(shape: shape, tint: tint, interactive: interactive))

@@ -112,9 +112,9 @@ final class VideoSourceWebView: NSObject {
     }
 
     func unloadPage() async {
-        guard let webView else { return }
+        guard let webView, let blank = URL(string: "about:blank") else { return }
         isLoading = false
-        webView.load(URLRequest(url: URL(string: "about:blank")!))
+        webView.load(URLRequest(url: blank))
     }
 
     func dispose() {
@@ -332,10 +332,11 @@ extension VideoSourceWebView: WKNavigationDelegate {
         emit(message)
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(2))
-            guard self.isLoading, !self.isVideoSourceLoaded, let url = webView.url else { return }
+            // 不捕获参数里的 WKWebView（非 Sendable），统一走自身的 webView 引用。
+            guard self.isLoading, !self.isVideoSourceLoaded, let target = self.webView?.url else { return }
             self.isLoading = true
             self.onVideoLoading?(true)
-            self.webView?.load(URLRequest(url: url))
+            self.webView?.load(URLRequest(url: target))
         }
     }
 

@@ -16,11 +16,12 @@ struct RuleEngine: Sendable {
     private let logFailures: Bool
 
     init(
-        requestExecutor: (any RuleRequestExecutor)? = .shared,
+        requestExecutor: (any RuleRequestExecutor)? = nil,
         apiStrategy: ApiRuleStrategy = ApiRuleStrategy(),
         xpathStrategy: XPathRuleStrategy = XPathRuleStrategy(),
         logFailures: Bool = true
     ) {
+        // 协议本身没有 default 实现，缺省时显式退回共享的 HTTP 客户端。
         self.requestExecutor = requestExecutor ?? RuleHTTPClient.shared
         self.apiStrategy = apiStrategy
         self.xpathStrategy = xpathStrategy

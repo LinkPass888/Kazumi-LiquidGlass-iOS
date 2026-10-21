@@ -16,20 +16,30 @@ struct KazumiTabShell: View {
 
     var body: some View {
         TabView(selection: tabSelection) {
-            destinationTab(.popular) {
-                PopularScreen()
+            Tab(AppDestination.popular.title, systemImage: AppDestination.popular.symbolName, value: AppDestination.popular) {
+                navigationStack(for: .popular) {
+                    PopularScreen()
+                }
             }
-            destinationTab(.timeline) {
-                TimelineScreen()
+            Tab(AppDestination.timeline.title, systemImage: AppDestination.timeline.symbolName, value: AppDestination.timeline) {
+                navigationStack(for: .timeline) {
+                    TimelineScreen()
+                }
             }
-            destinationTab(.collect) {
-                LibraryScreen()
+            Tab(AppDestination.collect.title, systemImage: AppDestination.collect.symbolName, value: AppDestination.collect) {
+                navigationStack(for: .collect) {
+                    LibraryScreen()
+                }
             }
-            destinationTab(.trace) {
-                TraceScreen()
+            Tab(AppDestination.trace.title, systemImage: AppDestination.trace.symbolName, value: AppDestination.trace) {
+                navigationStack(for: .trace) {
+                    TraceScreen()
+                }
             }
-            destinationTab(.my) {
-                ProfileScreen()
+            Tab(AppDestination.my.title, systemImage: AppDestination.my.symbolName, value: AppDestination.my) {
+                navigationStack(for: .my) {
+                    ProfileScreen()
+                }
             }
         }
         .tabViewStyle(.sidebarAdaptable)
@@ -45,18 +55,16 @@ struct KazumiTabShell: View {
         )
     }
 
-    @ViewBuilder
-    private func destinationTab<Content: View>(
-        _ destination: AppDestination,
+    /// 每个标签页各自持有 NavigationStack，切换时保留各自的页面层级。
+    private func navigationStack<Content: View>(
+        for destination: AppDestination,
         @ViewBuilder content: () -> Content
     ) -> some View {
-        Tab(destination.title, systemImage: destination.symbolName, value: destination) {
-            NavigationStack(path: pathBinding(for: destination)) {
-                content()
-                    .navigationDestination(for: AppRoute.self) { route in
-                        AppRouteView(route: route)
-                    }
-            }
+        NavigationStack(path: pathBinding(for: destination)) {
+            content()
+                .navigationDestination(for: AppRoute.self) { route in
+                    AppRouteView(route: route)
+                }
         }
     }
 

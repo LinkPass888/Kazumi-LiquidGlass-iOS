@@ -226,9 +226,12 @@ final class PluginsController {
         let revision = reorderRevision &+ 1
         reorderRevision = revision
         do {
+            // enqueue 的闭包要求 @Sendable，这里只把不可变的快照与路径带进去。
+            let snapshotToWrite = snapshot
+            let targetURL = fileURL
             try await enqueue {
                 do {
-                    try self.persist(snapshot)
+                    try Self.write(snapshotToWrite, to: targetURL)
                     return .success(())
                 } catch {
                     return .failure(error)
@@ -252,12 +255,15 @@ final class PluginsController {
         }
     }
 
+    /// 所有变更的统一入口：串行执行 body → 写盘 → 失败回滚内存状态。
     private func mutate(_ errorMessage: String, _ body: @escaping @Sendable @MainActor () -> Void) async throws {
         try await enqueue {
+            // 队列 task 本身就在主 actor 上，可直接读写内存状态。
             let previous = self.pluginList
-            await MainActor.run { @Sendable in body() }
+            body()
+            let snapshot = self.pluginList
             do {
-                try self.persist(self.pluginList)
+                try Self.write(snapshot, to: self.fileURL)
                 return .success(())
             } catch {
                 self.pluginList = previous
@@ -269,7 +275,9 @@ final class PluginsController {
 
     /// 串行队列：把任务接在上一个 task 之后，保证写盘顺序与调用顺序一致。
     /// 队列只用于排序，错误通过返回值交给发起调用的一方。
-    private func enqueue(_ operation: @escaping @Sendable () async -> Result<Void, Error>) async throws {
+    private func enqueue(
+        _ operation: @escaping @MainActor @Sendable () async -> Result<Void, Error>
+    ) async throws {
         let previous = mutations
         let task = Task { @MainActor () -> Result<Void, Error> in
             await previous.value
@@ -281,14 +289,21 @@ final class PluginsController {
         try await task.value.get()
     }
 
-    private func persist(_ plugins: [Plugin]? = nil) throws {
-        let list = plugins ?? pluginList
-        let payload = JSONValue.array(list.map { $0.toJSON() })
+    /// 写盘只剩纯 IO，因此不要求 actor 隔离，可安全地在 @Sendable 闭包里调用。
+    @discardableResult
+    private static func write(_ plugins: [Plugin], to fileURL: URL) throws -> URL {
+        let payload = JSONValue.array(plugins.map { $0.toJSON() })
         let text = payload.serialized(pretty: false)
         let directory = fileURL.deletingLastPathComponent()
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         try Data(text.utf8).write(to: fileURL, options: .atomic)
         KazumiLog.plugin.info("Plugin: updated plugin file plugins.json")
+        return fileURL
+    }
+
+    /// 实例写盘：默认落盘当前内存列表，供同步路径复用。
+    private func persist(_ plugins: [Plugin]? = nil) throws {
+        try Self.write(plugins ?? pluginList, to: fileURL)
     }
 
     // MARK: - 规则目录
@@ -336,8 +351,9 @@ final class PluginsController {
     func tryUpdatePlugin(named name: String) async -> PluginUpdateResult {
         let catalogName = catalogByName[pluginNameKey(name)]?.name ?? name
         let attempt = await prepareUpdate(named: catalogName)
-        guard case .updated(let plugin)? = attempt else {
-            return attempt?.result ?? .failed
+        // prepareUpdate 总是返回非可选结果；只有 .updated 会带回待落盘的规则。
+        guard case .updated = attempt.result, let plugin = attempt.plugin else {
+            return attempt.result
         }
         do {
             try await mutate("Plugin: failed to persist downloaded rule \(catalogName)") {
@@ -388,7 +404,8 @@ final class PluginsController {
         return result
     }
 
-    private struct UpdateAttempt {
+    /// tryUpdatePlugin / tryUpdateAllPlugins 的单次下载结果，会跨 actor 边界返回，故需 Sendable。
+    private struct UpdateAttempt: Sendable {
         var result: PluginUpdateResult
         var plugin: Plugin?
     }
@@ -424,18 +441,30 @@ final class PluginsController {
 
     private func prepareUpdates(names: [String]) async -> [UpdateAttempt] {
         guard !names.isEmpty else { return [] }
-        let workerCount = min(names.count, Self.maxConcurrentRuleDownloads)
-        return await withTaskGroup(of: (Int, UpdateAttempt).self) { group in
-            var results = [UpdateAttempt?](repeating: nil, count: names.count)
-            for index in 0..<workerCount {
-                group.addTask { @MainActor in
-                    (index, await self.prepareUpdate(named: names[index]))
+        let batchSize = Self.maxConcurrentRuleDownloads
+        var results = [UpdateAttempt?](repeating: nil, count: names.count)
+        var start = 0
+        while start < names.count {
+            let end = min(start + batchSize, names.count)
+            // 每批内部并发，批与批之间串行，保证同时最多 4 个下载。
+            let batch = await withTaskGroup(of: (Int, UpdateAttempt).self) { group in
+                for index in start..<end {
+                    group.addTask { @MainActor in
+                        (index, await self.prepareUpdate(named: names[index]))
+                    }
                 }
+                var collected: [(Int, UpdateAttempt)] = []
+                collected.reserveCapacity(end - start)
+                for await item in group {
+                    collected.append(item)
+                }
+                return collected
             }
-            for await (index, attempt) in group {
+            for (index, attempt) in batch {
                 results[index] = attempt
             }
-            return results.compactMap { $0 }
+            start = end
         }
+        return results.compactMap { $0 }
     }
 }

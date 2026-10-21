@@ -229,6 +229,13 @@ struct PluginDraft {
             variables[key] = value.stringValue ?? value.serialized(pretty: false)
         }
         let pageQuery = try parseJSONMap(chapterPageQuery, label: "播放页查询参数")
+        // ApiEpisodePageConfig 只提供 json: 构造器，这里按 toJSON() 的同构形态回填。
+        let episodePage = pageURL.isEmpty
+            ? nil
+            : ApiEpisodePageConfig(json: .object([
+                "url": .string(pageURL),
+                "query": .object(pageQuery)
+            ]))
         let config = ApiChapterConfig(
             request: ApiRequestConfig(
                 method: chapterMethod.uppercased(),
@@ -250,7 +257,7 @@ struct PluginDraft {
             episodeSeparator: chapterEpisodeSeparator,
             fieldSeparator: chapterFieldSeparator,
             variables: variables,
-            episodePage: pageURL.isEmpty ? nil : ApiEpisodePageConfig(url: pageURL, query: pageQuery)
+            episodePage: episodePage
         )
         guard chapterMode == .api else { return config }
         guard !config.request.url.isEmpty else {
