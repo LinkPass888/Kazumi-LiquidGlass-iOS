@@ -23,22 +23,22 @@ struct ApiRuleStrategy: Sendable {
         do {
             return try JSONValue.decode(raw)
         } catch {
-            throw ApiRuleFormatError("API 响应不是有效 JSON: \(error.localizedDescription)")
+            throw ApiRuleFormatError(message: "API 响应不是有效 JSON: \(error.localizedDescription)")
         }
     }
 
     func prepareRequest(_ config: ApiRequestConfig, variables: [String: JSONValue]) throws -> PreparedRuleRequest {
         let method = config.method.uppercased()
         guard method == "GET" || method == "POST" else {
-            throw ApiRuleFormatError("仅支持 GET/POST，当前为 \(method)")
+            throw ApiRuleFormatError(message: "仅支持 GET/POST，当前为 \(method)")
         }
         let trimmedURL = config.url.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedURL.isEmpty else {
-            throw ApiRuleFormatError("API 请求 URL 不能为空")
+            throw ApiRuleFormatError(message: "API 请求 URL 不能为空")
         }
         let url = try renderTemplate(trimmedURL, variables: variables, encode: true)
         guard isValidAbsoluteURL(url) else {
-            throw ApiRuleFormatError("API 请求 URL 无效: \(url)")
+            throw ApiRuleFormatError(message: "API 请求 URL 无效: \(url)")
         }
         let hasBody = method == "POST" && config.bodyType != .none
         return PreparedRuleRequest(
@@ -59,7 +59,7 @@ struct ApiRuleStrategy: Sendable {
         try RestrictedJSONPath.validate(config.sourcePath)
         let template = config.sourceTemplate
         if !template.isEmpty && !template.contains("@source") {
-            throw ApiRuleFormatError("详情页地址模板必须引用 @source")
+            throw ApiRuleFormatError(message: "详情页地址模板必须引用 @source")
         }
     }
 
@@ -107,7 +107,7 @@ struct ApiRuleStrategy: Sendable {
         var rootVariables: [String: JSONValue] = ["source": .string(source)]
         for (key, path) in config.variables {
             guard let value = try RestrictedJSONPath.readFirst(document, expression: path), !value.isNull else {
-                throw ApiRuleFormatError("章节响应变量 \(key) 未匹配到值: \(path)")
+                throw ApiRuleFormatError(message: "章节响应变量 \(key) 未匹配到值: \(path)")
             }
             rootVariables[key] = value
         }
@@ -275,7 +275,7 @@ struct ApiRuleStrategy: Sendable {
         }
         let templateURL = page.url.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !templateURL.isEmpty else {
-            throw ApiRuleFormatError("播放页地址模板不能为空")
+            throw ApiRuleFormatError(message: "播放页地址模板不能为空")
         }
         // 模板语言没有算术能力，故同时提供 0 基与 1 基下标；
         // episodeUrl 承载 episodeUrlPath 抽出的原值且没有替代品。
@@ -288,7 +288,7 @@ struct ApiRuleStrategy: Sendable {
 
         let path = try renderTemplate(templateURL, variables: variables, encode: true)
         guard var components = URLComponents(string: path) else {
-            throw ApiRuleFormatError("剧集页面 URL 无效: \(path)")
+            throw ApiRuleFormatError(message: "剧集页面 URL 无效: \(path)")
         }
         let renderedQuery = try renderMap(page.query, variables: variables)
         var mergedQuery: [String: String] = [:]
@@ -313,7 +313,7 @@ struct ApiRuleStrategy: Sendable {
             try RestrictedJSONPath.validate(config.roadNamesPath)
             try RestrictedJSONPath.validate(config.roadEpisodesPath)
             if config.roadSeparator.isEmpty || config.episodeSeparator.isEmpty || config.fieldSeparator.isEmpty {
-                throw ApiRuleFormatError("章节分隔符不能为空")
+                throw ApiRuleFormatError(message: "章节分隔符不能为空")
             }
             return
         }
@@ -328,11 +328,11 @@ struct ApiRuleStrategy: Sendable {
         if !config.episodeUrlPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             try RestrictedJSONPath.validate(config.episodeUrlPath)
         } else if config.episodePage == nil {
-            throw ApiRuleFormatError("必须配置播放入口地址路径或播放页地址模板")
+            throw ApiRuleFormatError(message: "必须配置播放入口地址路径或播放页地址模板")
         }
         if let page = config.episodePage,
            page.url.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            throw ApiRuleFormatError("播放页地址模板不能为空")
+            throw ApiRuleFormatError(message: "播放页地址模板不能为空")
         }
     }
 
@@ -350,7 +350,7 @@ struct ApiRuleStrategy: Sendable {
         case .string(let text):
             if let name = Self.exactVariableName(in: text) {
                 guard let variable = variables[name] else {
-                    throw ApiRuleFormatError("缺少模板变量 @\(name)")
+                    throw ApiRuleFormatError(message: "缺少模板变量 @\(name)")
                 }
                 return variable
             }
@@ -392,7 +392,7 @@ struct ApiRuleStrategy: Sendable {
                         cursor += 1
                     }
                     guard let value = variables[name] else {
-                        throw ApiRuleFormatError("缺少模板变量 @\(name)")
+                        throw ApiRuleFormatError(message: "缺少模板变量 @\(name)")
                     }
                     let text = value.toStringValue
                     output.append(encode ? encodeComponent(text) : text)

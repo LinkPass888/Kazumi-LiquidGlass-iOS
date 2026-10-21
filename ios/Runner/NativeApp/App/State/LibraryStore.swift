@@ -101,7 +101,7 @@ final class LibraryStore {
 
     /// 正在追的番（对应 main.dart 的 _watchingBangumis）。
     var watchingEntries: [LibraryEntry] {
-        entries.filter { $0.collectType == .在看 }
+        entries.filter { $0.collectType == .watching }
     }
 
     /// 继续观看：按更新时间倒序、去掉已看完的记录。

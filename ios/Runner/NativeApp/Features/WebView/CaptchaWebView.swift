@@ -70,7 +70,7 @@ final class CaptchaWebView: NSObject {
 
     /// 类型1：加载页面并监听验证码图片出现/消失。
     func loadPage(_ url: String, captchaXpath: String, inputXpath: String?) async {
-        guard let webView else { return }
+        guard webView != nil else { return }
         currentCaptchaImageXpath = captchaXpath
         currentInputXpath = inputXpath ?? ""
         captchaWasFound = false
@@ -82,7 +82,7 @@ final class CaptchaWebView: NSObject {
 
     /// 类型2：加载页面并在检测到按钮后自动点击。
     func loadPageForButtonClick(_ url: String, buttonXpath: String) async {
-        guard let webView else { return }
+        guard webView != nil else { return }
         currentCaptchaImageXpath = ""
         currentInputXpath = ""
         captchaWasFound = false
@@ -96,7 +96,7 @@ final class CaptchaWebView: NSObject {
 
     /// 类型3：加载页面并注入规则提供的验证脚本。
     func loadPageForCustomScript(_ url: String, script: String) async {
-        guard let webView else { return }
+        guard webView != nil else { return }
         currentCaptchaImageXpath = ""
         currentInputXpath = ""
         captchaWasFound = false
@@ -110,7 +110,7 @@ final class CaptchaWebView: NSObject {
 
     /// 在页面内填写验证码并点击提交按钮（对应 submitCaptchaInteract）。
     func submitCaptcha(captchaCode: String, inputXpath: String, buttonXpath: String) async {
-        guard let webView else { return }
+        guard webView != nil else { return }
         emit("[Captcha WebView] Filling input and clicking button")
         let source = """
         (function() {
@@ -158,7 +158,7 @@ final class CaptchaWebView: NSObject {
 
     /// 页面仍在加载时返回空串，由调用方决定是否重试。
     func pageHtml() async -> String {
-        guard let webView else { return "" }
+        guard webView != nil else { return "" }
         let source = "document.readyState === 'loading' ? '' : document.documentElement.outerHTML;"
         let result = try? await webView.evaluateJavaScript(source)
         guard let html = result as? String else { return "" }
@@ -166,14 +166,14 @@ final class CaptchaWebView: NSObject {
     }
 
     func userAgentString() async -> String {
-        guard let webView else { return "" }
+        guard webView != nil else { return "" }
         let result = try? await webView.evaluateJavaScript("navigator.userAgent;")
         return (result as? String) ?? userAgent
     }
 
     func unloadPage() async {
-        guard let webView else { return }
-        _ = try? await webView.load(URLRequest(url: URL(string: "about:blank")!))
+        guard webView != nil else { return }
+        webView.load(URLRequest(url: URL(string: "about:blank")!))
     }
 
     func dispose() {
@@ -203,12 +203,12 @@ final class CaptchaWebView: NSObject {
 
     private func load(_ url: String) async {
         guard let webView, let target = URL(string: url) else { return }
-        _ = try? await webView.load(URLRequest(url: target))
+        webView.load(URLRequest(url: target))
     }
 
     /// 与 Dart 端一致：每次加载前清空所有 Cookie，避免旧的 clearance 干扰。
     private func clearCookies() async {
-        guard let webView else { return }
+        guard webView != nil else { return }
         let store = webView.configuration.websiteDataStore.httpCookieStore
         let cookies = await store.allCookies()
         for cookie in cookies {

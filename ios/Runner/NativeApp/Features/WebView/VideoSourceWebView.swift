@@ -108,13 +108,13 @@ final class VideoSourceWebView: NSObject {
             return
         }
         emit("started loading: \(url)")
-        _ = try? await webView.load(URLRequest(url: target))
+        webView.load(URLRequest(url: target))
     }
 
     func unloadPage() async {
         guard let webView else { return }
         isLoading = false
-        _ = try? await webView.load(URLRequest(url: URL(string: "about:blank")!))
+        webView.load(URLRequest(url: URL(string: "about:blank")!))
     }
 
     func dispose() {
@@ -335,7 +335,7 @@ extension VideoSourceWebView: WKNavigationDelegate {
             guard self.isLoading, !self.isVideoSourceLoaded, let url = webView.url else { return }
             self.isLoading = true
             self.onVideoLoading?(true)
-            _ = try? await webView.load(URLRequest(url: url))
+            self.webView?.load(URLRequest(url: url))
         }
     }
 

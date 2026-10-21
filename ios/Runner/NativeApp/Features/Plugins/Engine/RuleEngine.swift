@@ -177,24 +177,15 @@ struct RuleEngine: Sendable {
 
     /// Dio 在 2xx 之外直接抛错，受保护站点常用 403/429/503 返回验证页，
     /// 因此复用配置好的验证码检测器检查响应体，命中则交给验证码流程。
+    ///
+    /// 注意：`searchFailed` 的 `cause` 在 Swift 侧是 `String?`（由 `describe(_:)` 生成），
+    /// 不像 Dart 那样保留原始异常对象，所以这里只能对文本做检测；
+    /// 文本为空说明没有可判定内容，直接放弃。
     private func isCaptchaChallengeResponse(_ error: RuleError, config: RuleExecutionConfig) -> Bool {
         guard config.searchMode == .xpath, config.antiCrawlerConfig.enabled else { return false }
-        guard case .searchFailed(_, let cause) = error else { return false }
-        guard let networkError = cause as? NetworkError,
-              case .badResponse(_, let body, let headers) = networkError else {
-            return false
-        }
-        // Cloudflare 会在托管验证响应上打这个头，响应体为空时也能判定。
-        if headers["cf-mitigated"]?.lowercased() == "challenge" {
-            return true
-        }
+        guard case .searchFailed(_, let cause) = error, let body = cause else { return false }
         if body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return false }
-        do {
-            return xpathStrategy.detectsCaptchaChallenge(body, config: config.antiCrawlerConfig)
-        } catch {
-            logFailure(config, "failed response captcha detection", error)
-            return false
-        }
+        return xpathStrategy.detectsCaptchaChallenge(body, config: config.antiCrawlerConfig)
     }
 
     /// 即使规则整体成功，也把被跳过的节点写入日志，便于排查结果缺失。

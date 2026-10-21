@@ -16,7 +16,10 @@ DerivedData/
 .sconsign.dblite
 .tags*
 **/.vagrant/
-profile
+# 构建产物：仅忽略与 xcodeproj 同级的 profile 目录/文件，
+# 注意不能写成裸 `profile`——那会在大小写不敏感的文件系统上误伤
+# Runner/NativeApp/Features/Profile/（「我的」页面源码）。
+/profile
 **/.generated/
 **/SourcePackages/
 .build/
