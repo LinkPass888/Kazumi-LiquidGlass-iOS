@@ -49,7 +49,10 @@ extension JSONValue {
         }
     }
 
-    static func object(_ pairs: [(String, JSONValue)]) -> JSONValue {
+    /// 按「键值对数组」构造对象字面量（后写的键覆盖先写的键）。
+    /// 注意：不能与 case `.object([String: JSONValue])` 同名，否则调用点会触发
+    /// `ambiguous use of 'object'`，因此单独命名为 `dictionary`。
+    static func dictionary(_ pairs: [(String, JSONValue)]) -> JSONValue {
         .object(Dictionary(pairs, uniquingKeysWith: { _, latest in latest }))
     }
 

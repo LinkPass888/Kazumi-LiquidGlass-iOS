@@ -137,7 +137,7 @@ struct PluginDraft {
         chapterFieldSeparator = chapter.fieldSeparator
         chapterVariables = chapter.variables.isEmpty
             ? ""
-            : JSONValue.object(chapter.variables.map { ($0.key, JSONValue.string($0.value)) }).serialized(pretty: true)
+            : JSONValue.dictionary(chapter.variables.map { ($0.key, JSONValue.string($0.value)) }).serialized(pretty: true)
         chapterPageURL = chapter.episodePage?.url ?? ""
         chapterPageQuery = chapter.episodePage.map { Self.jsonText($0.query) } ?? ""
 
