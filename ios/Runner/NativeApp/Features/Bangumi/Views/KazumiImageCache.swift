@@ -92,8 +92,12 @@ final class KazumiImageLoader: @unchecked Sendable {
 
         let task: Task<Void, Never> = lock.withLock {
             if let existing = inFlight[key] { return existing }
+            // 闭包里必须显式解包 self：`await self?.fetch(key: key)` 是单表达式，
+            // 可选链会让闭包被推断成返回 `Void?`，从而得到 `Task<()?, Never>`，
+            // 和 `[String: Task<Void, Never>]` 对不上。
             let created = Task<Void, Never> { [weak self] in
-                await self?.fetch(key: key)
+                guard let self else { return }
+                await self.fetch(key: key)
             }
             inFlight[key] = created
             return created
@@ -108,7 +112,8 @@ final class KazumiImageLoader: @unchecked Sendable {
             let key = Self.cacheKey(for: url)
             guard !key.isEmpty, memory.object(forKey: key as NSString) == nil else { continue }
             Task(priority: .utility) { [weak self] in
-                await self?.load(key)
+                guard let self else { return }
+                await self.load(key)
             }
         }
     }

@@ -115,7 +115,8 @@ final class BangumiAirTimeService {
             return
         }
         let task = Task { [weak self] in
-            await self?.fetchSeason(id: id)
+            guard let self else { return }
+            await self.fetchSeason(id: id)
         }
         inFlight[id] = task
         await task.value

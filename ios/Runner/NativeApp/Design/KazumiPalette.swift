@@ -29,6 +29,10 @@ enum KazumiPalette {
     /// 动态色最终由 UIKit 的 trait collection 决定，自绘顶栏、隐藏导航栏这些
     /// 场景下它和 SwiftUI 的 colorScheme 可能对不上，就会出现「深色模式用了
     /// 浅色模式的色、浅色模式用了深色模式的色」这种对调。
+    ///
+    /// `KazumiThemeColor.current` 是主线程隔离的全局状态（由 `SettingsStore` 写入），
+    /// 所以这里同样标 `@MainActor`；所有调用点都在 View 的 body 里，天然满足。
+    @MainActor
     static func accent(for scheme: ColorScheme) -> Color {
         let theme = KazumiThemeColor.current
         return KazumiThemeColor.swiftUIColor(
