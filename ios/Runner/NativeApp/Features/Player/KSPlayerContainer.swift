@@ -6,12 +6,13 @@
 //  只使用已确认存在的 API（KSOptions / KSPlayerResourceDefinition /
 //  KSPlayerResource / IOSVideoPlayerView.set(resource:)），
 //  避免依赖未验证的 SwiftUI 组件签名。
+//  2.3.x 起上游只发布单一的 `KSPlayer` 模块（含 UIKit 播放控件），
+//  因此不再 `import KSPlayerUI`。
 //
 
 import SwiftUI
 import UIKit
 import KSPlayer
-import KSPlayerUI
 
 struct KSPlayerContainer: UIViewRepresentable {
     let url: URL

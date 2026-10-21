@@ -141,11 +141,10 @@ targets:
       # XHTML / XPath 解析（libxml2），对应原项目 xpath_selector 的职责。
       - package: Fuzi
       # 播放内核（含 FFmpeg / mpv），支持 http-header-fields 与 GLSL 滤镜注入。
+      # 2.3.x 起上游把 UIKit / SwiftUI 播放控件（IOSVideoPlayerView 等）并入
+      # 唯一的 `KSPlayer` 产品，不再单独发布 `KSPlayerUI`，因此这里只声明一次。
       - package: KSPlayer
         product: KSPlayer
-      # KSPlayer 的 UIKit / SwiftUI 播放控件（IOSVideoPlayerView 等）。
-      - package: KSPlayer
-        product: KSPlayerUI
 
   RunnerTests:
     type: bundle.unit-test
