@@ -205,11 +205,17 @@ final class SettingsStore {
         themeMode = Self.read(defaults, SettingsKey.themeMode, KazumiThemeMode.system)
         // 原版把 'default' 视为绿色；这里额外兼容旧备份里可能出现的 ARGB 字符串。
         let storedThemeColor = defaults.object(forKey: Keys.prefix + SettingsKey.themeColor) as? String
-        themeColor = KazumiThemeColor.named(storedThemeColor ?? KazumiThemeColor.standard.id)
-        oledEnhance = Self.read(defaults, SettingsKey.oledEnhance, false)
-        KazumiThemeColor.current = themeColor
-        KazumiThemeColor.oledEnhance = oledEnhance
-        glassEnabled = Self.read(defaults, SettingsKey.glassEnabled, true)
+        let resolvedThemeColor = KazumiThemeColor.named(storedThemeColor ?? KazumiThemeColor.standard.id)
+        themeColor = resolvedThemeColor
+        // 静态成员不能经由 `self` 读取（等价于访问未初始化完成的实例），
+        // 因此局部变量承载读取结果，等构造结束再同步到全局调色板。
+        let resolvedOLEDEnhance = Self.read(defaults, SettingsKey.oledEnhance, false)
+        let resolvedGlassEnabled = Self.read(defaults, SettingsKey.glassEnabled, true)
+        oledEnhance = resolvedOLEDEnhance
+        glassEnabled = resolvedGlassEnabled
+        // 在全部存储属性初始化完成后再同步全局调色板，避免 'self' 提前访问。
+        KazumiThemeColor.current = resolvedThemeColor
+        KazumiThemeColor.oledEnhance = resolvedOLEDEnhance
         selectedPluginIndex = Self.read(defaults, SettingsKey.selectedPluginIndex, 0)
         playerEntryFullscreen = Self.read(defaults, SettingsKey.playerEntryFullscreen, true)
         danmakuEnabled = Self.read(defaults, SettingsKey.danmakuEnabled, true)

@@ -113,18 +113,14 @@ struct XPathRuleStrategy: Sendable {
                     Array(roadNode.xpath(config.chapterResult))
                 }
                 for (episodeIndex, episode) in episodeNodes.enumerated() {
-                    do {
-                        let source = episode.attr("href")?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-                        if source.isEmpty {
-                            diagnostics.append("线路 \(roadIndex) 的剧集节点 \(episodeIndex) 缺少 URL，已跳过")
-                            continue
-                        }
-                        let name = removeWhitespace(episode.stringValue)
-                        urls.append(EpisodeURL.normalize(baseUrl: config.baseUrl, raw: source))
-                        names.append(name.isEmpty ? "第\(episodeIndex + 1)集" : name)
-                    } catch {
-                        diagnostics.append("线路 \(roadIndex) 的剧集节点 \(episodeIndex) 解析失败: \(error.localizedDescription)")
+                    let source = episode.attr("href")?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                    if source.isEmpty {
+                        diagnostics.append("线路 \(roadIndex) 的剧集节点 \(episodeIndex) 缺少 URL，已跳过")
+                        continue
                     }
+                    let name = removeWhitespace(episode.stringValue)
+                    urls.append(EpisodeURL.normalize(baseUrl: config.baseUrl, raw: source))
+                    names.append(name.isEmpty ? "第\(episodeIndex + 1)集" : name)
                 }
                 if urls.isEmpty {
                     diagnostics.append("线路 \(roadIndex) 没有有效剧集，已跳过")

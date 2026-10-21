@@ -31,7 +31,7 @@ struct KSPlayerContainer: UIViewRepresentable {
         guard context.coordinator.lastURL != url else { return }
         context.coordinator.lastURL = url
 
-        var options = KSOptions()
+        let options = KSOptions()
         // 规则站点普遍校验 UA 与 Referer，缺一不可。
         if let userAgent, !userAgent.isEmpty {
             options.userAgent = userAgent
