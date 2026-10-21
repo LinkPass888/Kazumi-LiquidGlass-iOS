@@ -25,6 +25,8 @@ enum CollectType: Int, Codable, CaseIterable, Sendable, Identifiable {
     /// 可选的收藏状态（排除「未收藏」）。
     static var enabledCases: [CollectType] { [.watching, .wish, .onHold, .watched, .dropped] }
 
+    /// 收藏状态名，对应 lib/modules/collect/collect_type.dart 的 CollectType.label。
+    /// 收藏库卡片、收藏库筛选栏用的是这一套（未收藏 / 在看 / 想看 / 搁置 / 看过 / 抛弃）。
     var title: String {
         switch self {
         case .none: "未收藏"
@@ -36,14 +38,34 @@ enum CollectType: Int, Codable, CaseIterable, Sendable, Identifiable {
         }
     }
 
+    /// 详情页追番按钮与下拉菜单的文案，对应
+    /// lib/bean/widget/collect_button.dart 的 getTypeStringByInt：
+    /// 未追 / 在看 / 想看 / 搁置 / 看过 / 抛弃。
+    ///
+    /// 与 [title] 只差「未追」这一档：按钮上的未收藏状态叫「未追」，
+    /// 收藏库里的分类仍叫「未收藏」，两处不要混用。
+    var buttonTitle: String {
+        switch self {
+        case .none: "未追"
+        case .watching: "在看"
+        case .wish: "想看"
+        case .onHold: "搁置"
+        case .watched: "看过"
+        case .dropped: "抛弃"
+        }
+    }
+
+    /// 详情页追番按钮的图标，对应 lib/bean/widget/collect_button.dart 的
+    /// getIconByInt：favorite_border / favorite / star_rounded / pending_actions /
+    /// done / heart_broken。SF Symbols 里挑语义最接近的几个。
     var symbolName: String {
         switch self {
-        case .none: "plus"
-        case .watching: "play.circle"
-        case .wish: "bookmark"
+        case .none: "heart"
+        case .watching: "heart.fill"
+        case .wish: "star.fill"
         case .onHold: "pause.circle"
         case .watched: "checkmark.circle"
-        case .dropped: "xmark.circle"
+        case .dropped: "heart.slash.fill"
         }
     }
 }

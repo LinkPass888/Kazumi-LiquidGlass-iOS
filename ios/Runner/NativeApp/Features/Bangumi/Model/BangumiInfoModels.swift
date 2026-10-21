@@ -20,7 +20,8 @@ struct BangumiRelationItem: Identifiable, Hashable, Sendable {
     var item: BangumiItem
 
     static func fromJSON(_ json: JSONValue) -> BangumiRelationItem? {
-        guard let id = json["id"].intValue else { return nil }
+        // 对应 bangumi_relation.dart：id 缺失直接丢弃这一条。
+        guard json["id"].intValue != nil else { return nil }
         return BangumiRelationItem(
             relation: json["relation"].stringValue ?? "",
             item: BangumiItem.fromJSON(json)

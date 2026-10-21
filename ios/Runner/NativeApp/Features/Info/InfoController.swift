@@ -17,7 +17,6 @@ final class InfoController {
     private(set) var episodes: [BangumiEpisode] = []
     private(set) var isLoadingDetail = false
     private(set) var isLoadingEpisodes = false
-    private(set) var episodesFailed = false
 
     /// 选源面板的聚合结果，按规则名索引。
     private(set) var sourceGroups: [SourceGroup] = []
@@ -26,6 +25,9 @@ final class InfoController {
     let searchService: PluginSearchService
     private let plugins: PluginsController
     private var sourceKeyword = ""
+    /// 每个来源各自的检索词。对应原版 _SourceSearchGroup.keyword：
+    /// 默认是番剧名，改过检索词或用别名检索后，这个来源就用自己的词。
+    private var sourceKeywords: [String: String] = [:]
 
     struct SourceGroup: Identifiable, Sendable {
         var id: String { name }
@@ -70,11 +72,8 @@ final class InfoController {
     func loadEpisodes() async {
         guard !isLoadingEpisodes, episodes.isEmpty else { return }
         isLoadingEpisodes = true
-        episodesFailed = false
         defer { isLoadingEpisodes = false }
-        let result = await BangumiAPI.episodes(subjectID: item.id)
-        episodes = result
-        episodesFailed = result.isEmpty
+        episodes = await BangumiAPI.episodes(subjectID: item.id)
     }
 
     // MARK: - 详情页分标签
@@ -130,18 +129,33 @@ final class InfoController {
         guard !plugins.pluginList.isEmpty else { return }
         let keyword = item.nameCn.isEmpty ? item.name : item.nameCn
         sourceKeyword = keyword
+        sourceKeywords = [:]
         isSearchingSources = true
         await searchService.queryAllSource(keyword)
         isSearchingSources = false
         refreshSourceGroups()
     }
 
+    /// 对应原版 source_sheet.dart 的 _querySource：只检索指定来源。
     func retrySource(_ name: String, keyword: String? = nil) async {
-        let resolved = (keyword ?? sourceKeyword).trimmingCharacters(in: .whitespacesAndNewlines)
+        let resolved = (keyword ?? sourceKeywords[name] ?? sourceKeyword)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
         guard !resolved.isEmpty else { return }
+        sourceKeywords[name] = resolved
         await searchService.querySource(resolved, pluginName: name)
         refreshSourceGroups()
     }
+
+    /// 对应原版 _showAliasPicker → _querySource(alias, pluginName)：
+    /// 用一个别名去检索指定来源，别名就是那次的检索词。
+    func searchSourceWithAlias(_ alias: String, pluginName: String) async {
+        let trimmed = alias.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        await retrySource(pluginName, keyword: trimmed)
+    }
+
+    /// 当前条目的别名（来自 infobox 的「别名」），对应原版 bangumiItem.alias。
+    var aliases: [String] { item.alias }
 
     func cancelSourceSearch() {
         searchService.cancel()
@@ -155,7 +169,7 @@ final class InfoController {
                 name: plugin.name,
                 status: searchService.status(for: plugin.name) ?? .pending,
                 results: searchService.responses(for: plugin.name),
-                keyword: sourceKeyword
+                keyword: sourceKeywords[plugin.name] ?? sourceKeyword
             )
         }
     }

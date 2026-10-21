@@ -4,10 +4,10 @@
 //
 //  1:1 复刻 lib/pages/info/info_page.dart + bangumi_info_card.dart：
 //  * 顶栏：返回 + 折叠后淡入的番剧名 + 右上角「更多」菜单（保存封面 / 复制标题 / 外部打开）；
-//  * 信息卡：标题就是番剧名称，封面右侧是条目信息（放送开始 / 放送时间 / 剧集数 / 评分 / 排名），
-//    条目信息下面是「追番状态」菜单；
+//  * 信息卡：标题就是番剧名称，封面右侧是条目信息（放送开始 / 放送时间 / 更新进度 / 评分 / 排名），
+//    条目信息下面是「追番状态」菜单（未追 / 在看 / 想看 / 搁置 / 看过 / 抛弃）；
 //  * 横向排列的「概览 / 吐槽 / 角色 / 关联 / 制作人员」标签；
-//  * 别名与剧集是各自独立的区块，不塞在简介下面；
+//  * 别名不是详情页的区块，它在片源弹窗里当检索词用（见 SourceSheet）；
 //  * 右下角是「开始播放」的液态玻璃按钮。
 //
 
@@ -63,8 +63,6 @@ struct BangumiInfoScreen: View {
                         infoCard(controller)
                         tabStrip(controller)
                         tabContent(controller)
-                        aliasSection(controller)
-                        episodesSection(controller)
                     }
                     .padding(.horizontal, 16)
                     .padding(.bottom, 96)
@@ -279,8 +277,11 @@ struct BangumiInfoScreen: View {
                 }
             }
 
-            if !controller.episodes.isEmpty {
-                infoLine(label: "剧集数:", value: "共 \(controller.episodes.count) 话")
+            // 更新进度：原版 bangumi_info_card.dart 里紧跟在「放送时间」之后的一行，
+            // 格式同样是「已更新到第几集/总集数」。原版读 AniList 的时刻服务，
+            // 原生端没有那套服务，改用 Bangumi 自己的剧集列表算：播过的集数 / 总集数。
+            if let progress = updateProgress(controller) {
+                infoLine(label: "更新进度:", value: progress)
             }
 
             if item.ratingScore > 0 {
@@ -335,26 +336,29 @@ struct BangumiInfoScreen: View {
     // MARK: - 追番状态
 
     /// 追番状态：条目信息下面的一个菜单，不是三个分开的按钮。
+    ///
+    /// 文案沿用原版 lib/bean/widget/collect_button.dart 的 getTypeStringByInt：
+    /// 未追 / 在看 / 想看 / 搁置 / 看过 / 抛弃。
     private func collectMenu(_ controller: InfoController) -> some View {
         let current = library.entry(for: controller.item.id)?.collectType ?? .none
         return Menu {
             Button {
                 setCollect(controller, .none)
             } label: {
-                Label("未收藏", systemImage: current == .none ? "checkmark" : "plus")
+                Label(CollectType.none.buttonTitle, systemImage: current == .none ? "checkmark" : "plus")
             }
             ForEach(CollectType.enabledCases) { type in
                 Button {
                     setCollect(controller, type)
                 } label: {
-                    Label(type.title, systemImage: current == type ? "checkmark" : type.symbolName)
+                    Label(type.buttonTitle, systemImage: current == type ? "checkmark" : type.symbolName)
                 }
             }
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: current.symbolName)
                     .font(.system(size: 15, weight: .semibold))
-                Text(current == .none ? "追番状态" : current.title)
+                Text(current.buttonTitle)
                     .font(.subheadline.weight(.semibold))
                 Spacer(minLength: 4)
                 Image(systemName: "chevron.up.chevron.down")
@@ -436,67 +440,24 @@ struct BangumiInfoScreen: View {
 
     // MARK: - 别名 / 剧集
 
-    /// 别名：独立区块，不塞在简介下面。
-    @ViewBuilder
-    private func aliasSection(_ controller: InfoController) -> some View {
-        if !controller.item.alias.isEmpty {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("别名")
-                    .font(.system(size: 18, weight: .bold))
-                ForEach(controller.item.alias, id: \.self) { alias in
-                    Text(alias)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-    }
-
-    /// 剧集：独立区块，不塞在简介下面。
-    @ViewBuilder
-    private func episodesSection(_ controller: InfoController) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("剧集")
-                .font(.system(size: 18, weight: .bold))
-
-            if controller.isLoadingEpisodes {
-                ProgressView()
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 18)
-            } else if controller.episodes.isEmpty {
-                Text(controller.episodesFailed ? "剧集列表加载失败" : "暂无剧集信息")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-            } else {
-                LazyVGrid(
-                    columns: [GridItem(.adaptive(minimum: 64), spacing: 8)],
-                    alignment: .leading,
-                    spacing: 8
-                ) {
-                    ForEach(controller.episodes) { episode in
-                        Button {
-                            router.push(.player(bangumiID: controller.item.id, episode: Int(episode.sort)))
-                        } label: {
-                            Text("\(Int(episode.sort))")
-                                .font(.subheadline.weight(.semibold))
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 10)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                        .fill(KazumiPalette.cardSurface(for: colorScheme))
-                                )
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel(episode.displayName)
-                    }
-                }
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
+    /// 「已更新/总集数」，对应原版 bangumi_info_card.dart 的 _updateProgress。
+    ///
+    /// 原版用 AniList 的时刻服务推「更新到第几集」，原生端没有那套服务，
+    /// 这里改用 Bangumi 自己的剧集列表：播期已过的算已更新，
+    /// 总集数取列表里的最大集号（列表可能缺集，用个数会算少）。
+    /// 还没有任何一集播出时返回 nil，这一行就不显示。
+    private func updateProgress(_ controller: InfoController) -> String? {
+        let episodes = controller.episodes
+        guard !episodes.isEmpty else { return nil }
+        let today = AnimeSeason.format(Date())
+        let aired = episodes.filter { episode in
+            let airdate = episode.airdate.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !airdate.isEmpty else { return false }
+            return airdate <= today
+        }.count
+        guard aired > 0 else { return nil }
+        let total = episodes.map { Int($0.sort) }.max() ?? episodes.count
+        return String(format: "%02d/%02d", aired, total)
     }
 
     // MARK: - 开始播放
@@ -688,7 +649,8 @@ struct BangumiInfoScreen: View {
             do {
                 let (data, _) = try await URLSession.shared.data(from: url)
                 try await PHPhotoLibrary.shared().performChanges {
-                    PHAssetCreationRequest.forAsset().addResource(with: .photo, data: data)
+                    // iOS 26 SDK 起 addResource 必须显式传 options（无默认值的重载已被移除）。
+                    PHAssetCreationRequest.forAsset().addResource(with: .photo, data: data, options: nil)
                 }
                 toastMessage = "已保存到相册"
             } catch {
