@@ -20,6 +20,7 @@ struct SearchScreen: View {
     @State private var isShowingImageSearch = false
     @FocusState private var isInputFocused: Bool
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(AppRouter.self) private var router
 
     private var hasSearched: Bool { submittedQuery != nil }
 

@@ -9,6 +9,7 @@
 //  因此整站屏蔽图片、屏蔽 devtools-detector 脚本与常见广告跳转页。
 //
 
+import Foundation
 import WebKit
 
 @MainActor

@@ -296,6 +296,21 @@ struct BangumiInfoScreen: View {
         }
     }
 
+    // MARK: - 别名
+
+    private func aliasSection(_ controller: InfoController) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("别名")
+                .font(.headline)
+            ForEach(controller.item.alias, id: \.self) { alias in
+                Text(alias)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
     // MARK: - 行为
 
     private func load() async {

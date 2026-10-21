@@ -31,7 +31,7 @@ struct KSPlayerContainer: UIViewRepresentable {
         guard context.coordinator.lastURL != url else { return }
         context.coordinator.lastURL = url
 
-        let options = KSOptions()
+        var options = KSOptions()
         // 规则站点普遍校验 UA 与 Referer，缺一不可。
         if let userAgent, !userAgent.isEmpty {
             options.userAgent = userAgent
@@ -41,6 +41,8 @@ struct KSPlayerContainer: UIViewRepresentable {
             options.referer = referer
             options.appendHeader(["Referer": referer])
         }
+        // KSOptions 同时暴露了同名的静态属性（全局默认）与实例属性，
+        // 在可变局部变量上访问时才会解析到实例属性。
         options.isAutoPlay = true
 
         let definition = KSPlayerResourceDefinition(

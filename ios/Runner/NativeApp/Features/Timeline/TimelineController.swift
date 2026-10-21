@@ -8,6 +8,7 @@
 //  * 支持按热度 / 评分 / 默认顺序排序。
 //
 
+import Foundation
 import Observation
 
 /// 与 Dart 的 TimelineSort 一致。

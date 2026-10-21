@@ -133,7 +133,9 @@ enum RestrictedJSONPath {
             for node in current {
                 switch segment {
                 case .key(let key):
-                    if let value = node[key] { next.append(value) }
+                    // 下标总是返回 JSONValue（缺失时为 .null），用 exists 判断键是否存在。
+                    let value = node[key]
+                    if value.exists { next.append(value) }
                 case .index(let position):
                     if let values = node.arrayValue, values.indices.contains(position) {
                         next.append(values[position])

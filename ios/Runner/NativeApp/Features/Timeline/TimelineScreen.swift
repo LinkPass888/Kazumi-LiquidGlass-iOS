@@ -91,25 +91,33 @@ struct TimelineScreen: View {
         let isSelected = day == selectedWeekday
         let isToday = controller.isCurrentSeason && day == Self.todayIndex
         let count = controller.counts.indices.contains(day) ? controller.counts[day] : 0
+        let title = isToday ? "今天" : "周\(Self.weekdayTitles[day])"
+        // 提前算好颜色与字号，避免较长的三目表达式触发类型推断超时。
+        let foreground: Color = isSelected ? .white : .primary
+        let background: Color = isSelected
+            ? KazumiPalette.accent
+            : KazumiPalette.cardSurface(for: colorScheme)
+        let countText = controller.isLoading ? "—" : "\(count)"
+
         return Button {
             withAnimation(.easeOut(duration: 0.18)) { selectedWeekday = day }
         } label: {
             VStack(spacing: 2) {
-                Text(isToday ? "今天" : "周\(Self.weekdayTitles[day])")
+                Text(title)
                     .font(.system(size: 13, weight: .bold))
-                Text(controller.isLoading ? "—" : "\(count)")
+                Text(countText)
                     .font(.system(size: 11, weight: .medium))
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 8)
-            .foregroundStyle(isSelected ? Color.white : Color.primary)
+            .foregroundStyle(foreground)
             .background {
                 Capsule(style: .continuous)
-                    .fill(isSelected ? KazumiPalette.accent : KazumiPalette.cardSurface(for: colorScheme))
+                    .fill(background)
             }
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("\(isToday ? "今天" : "周\(Self.weekdayTitles[day])")，\(count) 部")
+        .accessibilityLabel("\(title)，\(count) 部")
     }
 
     // MARK: - 列表

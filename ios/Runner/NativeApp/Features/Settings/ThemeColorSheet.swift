@@ -83,7 +83,7 @@ private struct KazumiPaletteCard: View {
     }
 
     private var checkmarkBackground: Color {
-        colorScheme == .dark ? .white.opacity(0.9) : KazumiThemeColor.color(color.lightPrimary)
+        colorScheme == .dark ? .white.opacity(0.9) : KazumiThemeColor.swiftUIColor(color.lightPrimary)
     }
 
     private var checkmarkForeground: Color {

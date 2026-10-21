@@ -9,6 +9,7 @@
 //  * 点选结果把番名回传给搜索页，由搜索页直接检索。
 //
 
+import PhotosUI
 import SwiftUI
 import UniformTypeIdentifiers
 

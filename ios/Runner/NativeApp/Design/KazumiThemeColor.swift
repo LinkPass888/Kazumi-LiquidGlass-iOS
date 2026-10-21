@@ -92,6 +92,14 @@ struct KazumiThemeColor: Identifiable, Hashable, Sendable {
         ),
     ]
 
+    // MARK: - ARGB 工具
+
+    /// 0xAARRGGBB -> SwiftUI Color。
+    /// 供需要非动态色（例如选中态的浅色底）的调用点使用，避免每次手写 UIColor 包装。
+    static func swiftUIColor(_ argb: UInt32) -> Color {
+        Color(uiColor: color(argb))
+    }
+
     /// 按持久化标识查找；未知标识（例如旧版备份里的 ARGB 字符串）回落到默认绿色。
     static func named(_ id: String) -> KazumiThemeColor {
         all.first { $0.id == id } ?? Self.standard

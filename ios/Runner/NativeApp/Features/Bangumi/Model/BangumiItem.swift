@@ -140,7 +140,7 @@ struct BangumiItem: Identifiable, Hashable, Sendable {
         let nameCN = rawNameCn.isEmpty
             ? (fallbackNameCn.isEmpty ? (json["name"].stringValue ?? "") : fallbackNameCn)
             : rawNameCn
-        let interest: BangumiInterest? = json["interest"].objectValue.map(BangumiInterest.fromJSON)
+        let interest = json["interest"].objectValue.map { BangumiInterest.fromJSON(.object($0)) }
 
         return BangumiItem(
             id: json["id"].intValue ?? 0,
@@ -231,7 +231,7 @@ struct BangumiItem: Identifiable, Hashable, Sendable {
         let count = json["rating"]["count"]
         guard count.exists else { return [] }
         if let object = count.objectValue {
-            return (1...10).map { object["\($0)"].intValue ?? 0 }
+            return (1...10).map { JSONValue.object(object)["\($0)"].intValue ?? 0 }
         }
         if let list = count.arrayValue {
             return list.map { $0.intValue ?? 0 }
@@ -288,13 +288,16 @@ enum DateTimeHelper {
         return formatter
     }()
 
-    private static let isoFormatter: ISO8601DateFormatter = {
+    // ISO8601DateFormatter 不是 Sendable，作为 static 常量会被 Swift 6 视为共享可变状态；
+    // 这两处只在解析时读一次配置后使用，因此用 nonisolated(unsafe) 明确其线程安全前提：
+    // 一旦创建完成就不再修改 formatOptions，ISO8601DateFormatter 的 date(from:) 是线程安全的。
+    nonisolated(unsafe) private static let isoFormatter: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return formatter
     }()
 
-    private static let timeFormatter: ISO8601DateFormatter = {
+    nonisolated(unsafe) private static let timeFormatter: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime]
         return formatter
