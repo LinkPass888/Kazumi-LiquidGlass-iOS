@@ -2,17 +2,16 @@
 //  KazumiTabShell.swift
 //  Kazumi
 //
-//  iOS 26 自适应标签栏（.sidebarAdaptable）：
-//   * iPhone 竖屏：底部悬浮液态玻璃胶囊栏；
-//   * iPhone 横屏 / iPad：顶部悬浮胶囊 + 左侧可折叠液态玻璃侧边栏；
-//   * 每个 Tab 各自持有 NavigationStack，切换时保留页面层级。
+//  与 lib/pages/menu/menu.dart 对应的外壳：
+//   * 竖屏：底部标签栏（推荐 / 时间表 / 追番 / 我的），四个入口与原版一致；
+//   * 横屏 / iPad：系统会把同一组标签栏改为侧边栏，对应原版的 _sideMenu；
+//   * 每个 Tab 各自持有 NavigationStack，切换时保留各自的页面层级。
 //
 
 import SwiftUI
 
 struct KazumiTabShell: View {
     @Environment(AppRouter.self) private var router
-    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         TabView(selection: tabSelection) {
@@ -31,20 +30,13 @@ struct KazumiTabShell: View {
                     LibraryScreen()
                 }
             }
-            Tab(AppDestination.trace.title, systemImage: AppDestination.trace.symbolName, value: AppDestination.trace) {
-                navigationStack(for: .trace) {
-                    TraceScreen()
-                }
-            }
             Tab(AppDestination.my.title, systemImage: AppDestination.my.symbolName, value: AppDestination.my) {
                 navigationStack(for: .my) {
                     ProfileScreen()
                 }
             }
         }
-        .tabViewStyle(.sidebarAdaptable)
         .tabBarMinimizeBehavior(.onScrollDown)
-        .background(KazumiPalette.heroBackground(for: colorScheme).ignoresSafeArea())
     }
 
     /// Tab 选中项与 AppDestination 的双向绑定。
@@ -76,7 +68,7 @@ struct KazumiTabShell: View {
     }
 }
 
-/// 二级路由 -> 视图。Step 5 完成全部实现，此处先接好跳转路径。
+/// 二级路由 -> 视图，对应 lib/pages/router.dart 的 RouteModule。
 struct AppRouteView: View {
     let route: AppRoute
 
@@ -88,8 +80,8 @@ struct AppRouteView: View {
             SearchScreen(initialKeyword: keyword)
         case .webSearchHistory:
             SearchHistoryScreen()
-        case .player(let bangumiID, let episode):
-            PlayerScreen(bangumiID: bangumiID, episode: episode)
+        case .player(let bangumiID, let episode, let source):
+            PlayerScreen(bangumiID: bangumiID, episode: episode, source: source)
         case .pluginEditor(let ruleID):
             PluginEditorScreen(ruleID: ruleID)
         case .pluginShop:
@@ -111,3 +103,4 @@ struct AppRouteView: View {
         }
     }
 }
+

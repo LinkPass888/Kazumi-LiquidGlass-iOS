@@ -110,9 +110,37 @@ extension JSONValue {
         return nil
     }
 
-    subscript(key: String) -> JSONValue? {
-        guard case .object(let object) = self else { return nil }
-        return object[key]
+    subscript(key: String) -> JSONValue {
+        guard case .object(let object) = self, let value = object[key] else { return .null }
+        return value
+    }
+
+    /// 数组下标：越界返回 `.null`。
+    subscript(index: Int) -> JSONValue {
+        guard case .array(let array) = self, array.indices.contains(index) else { return .null }
+        return array[index]
+    }
+
+    /// 与 Dart 的 `value as double?` 对齐；整型与数字字符串同样可以取到。
+    var doubleValue: Double? {
+        switch self {
+        case .int(let value): Double(value)
+        case .double(let value): value
+        case .string(let value): Double(value)
+        case .bool(let value): value ? 1 : 0
+        default: nil
+        }
+    }
+
+    /// 与 Dart 的 `json.containsKey(key)` 语义对齐。
+    var exists: Bool {
+        if case .null = self { return false }
+        return true
+    }
+
+    /// 把 JSON 树转换为对象字典（非对象返回空字典）。
+    var dictionaryValue: [String: JSONValue] {
+        objectValue ?? [:]
     }
 
     static func decode(_ data: Data) throws -> JSONValue {
@@ -154,3 +182,5 @@ extension JSONValue {
         }
     }
 }
+
+

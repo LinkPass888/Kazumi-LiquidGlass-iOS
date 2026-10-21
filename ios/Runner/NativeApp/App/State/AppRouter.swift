@@ -3,8 +3,8 @@
 //  Kazumi
 //
 //  与 lib/pages/router.dart + lib/pages/menu/menu.dart 对应的导航状态。
-//  五个一级目的地：推荐 / 新番时间表 / 追番收藏 / 以图搜番 / 我的，
-//  iPhone 由原生 TabView 渲染为底部悬浮胶囊，iPad 自动变为顶部胶囊 + 侧边栏。
+//  一级目的地与 App 底部标签栏一一对应：推荐 / 时间表 / 追番 / 我的。
+//  （原版底部只有这四个入口；搜索是顶栏按钮推入的二级页面，不是标签页。）
 //
 
 import Foundation
@@ -15,27 +15,26 @@ enum AppDestination: String, CaseIterable, Identifiable, Hashable, Sendable {
     case popular
     case timeline
     case collect
-    case trace
     case my
 
     var id: String { rawValue }
 
+    /// 与 menu.dart 的 LiquidGlassBarItem label 一致。
     var title: String {
         switch self {
         case .popular: "推荐"
-        case .timeline: "新番时间表"
+        case .timeline: "时间表"
         case .collect: "追番"
-        case .trace: "以图搜番"
         case .my: "我的"
         }
     }
 
+    /// 与 menu.dart 的 sfSymbol 一致。
     var symbolName: String {
         switch self {
         case .popular: "house"
-        case .timeline: "calendar"
+        case .timeline: "timeline.selection"
         case .collect: "heart"
-        case .trace: "camera.viewfinder"
         case .my: "gearshape"
         }
     }
@@ -43,9 +42,8 @@ enum AppDestination: String, CaseIterable, Identifiable, Hashable, Sendable {
     var selectedSymbolName: String {
         switch self {
         case .popular: "house.fill"
-        case .timeline: "calendar"
+        case .timeline: "timeline.selection"
         case .collect: "heart.fill"
-        case .trace: "camera.viewfinder"
         case .my: "gearshape.fill"
         }
     }
@@ -56,7 +54,14 @@ enum AppRoute: Hashable, Sendable {
     case bangumiInfo(bangumiID: Int)
     case search(keyword: String)
     case webSearchHistory
-    case player(bangumiID: Int, episode: Int)
+    /// 播放：bangumiID + 集数；由选源面板进入时带上规则名与分集页面地址。
+    case player(bangumiID: Int, episode: Int, source: PlaybackSource?)
+
+    /// 兼容原有调用点：只带 bangumiID 与集数时，视为「待选源」。
+    static func player(bangumiID: Int, episode: Int) -> AppRoute {
+        .player(bangumiID: bangumiID, episode: episode, source: nil)
+    }
+
     case pluginEditor(ruleID: String?)
     case pluginShop
     case history
@@ -68,6 +73,20 @@ enum AppRoute: Hashable, Sendable {
     case webDAV
 }
 
+/// 选源结果（对应 lib/pages/video/video_playback_args.dart 的核心字段）。
+struct PlaybackSource: Hashable, Sendable {
+    /// 规则名，用于取出插件的 UA / Referer / 解析器版本。
+    var pluginName: String
+    /// 搜索结果的条目名。
+    var itemName: String
+    /// 条目详情页地址（章节抓取的输入）。
+    var detailURL: String
+    /// 直接可播的媒体地址（旧版解析器已还原出 m3u8/mp4 时）。
+    var directMediaURL: String?
+}
+
+
+
 @MainActor
 @Observable
 final class AppRouter {
@@ -77,7 +96,6 @@ final class AppRouter {
     var popularPath: [AppRoute] = []
     var timelinePath: [AppRoute] = []
     var collectPath: [AppRoute] = []
-    var tracePath: [AppRoute] = []
     var myPath: [AppRoute] = []
 
     func path(for destination: AppDestination) -> [AppRoute] {
@@ -85,7 +103,6 @@ final class AppRouter {
         case .popular: popularPath
         case .timeline: timelinePath
         case .collect: collectPath
-        case .trace: tracePath
         case .my: myPath
         }
     }
@@ -95,7 +112,6 @@ final class AppRouter {
         case .popular: popularPath = path
         case .timeline: timelinePath = path
         case .collect: collectPath = path
-        case .trace: tracePath = path
         case .my: myPath = path
         }
     }

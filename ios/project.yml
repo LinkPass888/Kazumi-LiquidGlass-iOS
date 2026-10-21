@@ -143,6 +143,9 @@ targets:
       # 播放内核（含 FFmpeg / mpv），支持 http-header-fields 与 GLSL 滤镜注入。
       - package: KSPlayer
         product: KSPlayer
+      # KSPlayer 的 UIKit / SwiftUI 播放控件（IOSVideoPlayerView 等）。
+      - package: KSPlayer
+        product: KSPlayerUI
 
   RunnerTests:
     type: bundle.unit-test

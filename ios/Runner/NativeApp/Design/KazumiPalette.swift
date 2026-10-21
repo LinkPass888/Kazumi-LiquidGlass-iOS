@@ -12,6 +12,16 @@ enum KazumiPalette {
     /// 强调色，对齐原项目主题的粉色系主色。
     static let accent = Color(red: 0.94, green: 0.29, blue: 0.55)
 
+    /// 页面背景：与原版 Scaffold 的 surface 一致，浅色近白、深色近黑。
+    static func background(for scheme: ColorScheme) -> Color {
+        scheme == .dark ? Color(white: 0.07) : Color(red: 0.98, green: 0.98, blue: 0.99)
+    }
+
+    /// 卡片底色（对应 Material 的 surfaceContainerLow / 时间表卡片）。
+    static func cardSurface(for scheme: ColorScheme) -> Color {
+        scheme == .dark ? Color(white: 0.12) : .white
+    }
+
     static func heroBackground(for scheme: ColorScheme) -> LinearGradient {
         let base = scheme == .dark ? Color(white: 0.05) : Color(red: 0.97, green: 0.96, blue: 0.97)
         let elevated = scheme == .dark ? Color(white: 0.12) : Color(red: 0.93, green: 0.92, blue: 0.95)

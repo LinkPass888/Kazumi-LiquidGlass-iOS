@@ -10,27 +10,28 @@
 import Foundation
 import Observation
 
-/// 收藏类型，数值与原项目 CollectType 一致（用于 WebDAV 备份兼容）。
+/// 收藏类型，数值与 lib/modules/collect/collect_type.dart 逐一对应，
+/// 保证导出 / WebDAV 备份与 Flutter 版互通（watching = 1，planToWatch(想看) = 2）。
 enum CollectType: Int, Codable, CaseIterable, Sendable, Identifiable {
     case none = 0
-    case wish = 1
-    case watching = 2
-    case watched = 3
-    case onHold = 4
+    case watching = 1
+    case wish = 2
+    case onHold = 3
+    case watched = 4
     case dropped = 5
 
     var id: Int { rawValue }
 
-    /// 与 Bangumi 收藏类型枚举一致（1 想看 / 2 在看 / 3 看过 / 4 搁置 / 5 抛弃）。
-    static var enabledCases: [CollectType] { [.wish, .watching, .watched, .onHold, .dropped] }
+    /// 可选的收藏状态（排除「未收藏」）。
+    static var enabledCases: [CollectType] { [.watching, .wish, .onHold, .watched, .dropped] }
 
     var title: String {
         switch self {
         case .none: "未收藏"
-        case .wish: "想看"
         case .watching: "在看"
-        case .watched: "看过"
+        case .wish: "想看"
         case .onHold: "搁置"
+        case .watched: "看过"
         case .dropped: "抛弃"
         }
     }
@@ -38,14 +39,15 @@ enum CollectType: Int, Codable, CaseIterable, Sendable, Identifiable {
     var symbolName: String {
         switch self {
         case .none: "plus"
-        case .wish: "bookmark"
         case .watching: "play.circle"
-        case .watched: "checkmark.circle"
+        case .wish: "bookmark"
         case .onHold: "pause.circle"
+        case .watched: "checkmark.circle"
         case .dropped: "xmark.circle"
         }
     }
 }
+
 
 /// 追番条目（对应原项目 BangumiItem 中 UI 需要的字段子集）。
 struct LibraryEntry: Identifiable, Codable, Hashable, Sendable {
