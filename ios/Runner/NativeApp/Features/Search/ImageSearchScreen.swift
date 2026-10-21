@@ -33,6 +33,7 @@ struct ImageSearchScreen: View {
     @State private var toast: String?
     @FocusState private var isURLFocused: Bool
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.dismiss) private var dismiss
     @ScaledMetric(relativeTo: .body) private var bodyScale: CGFloat = 1
 
     private var isBusy: Bool { controller.isSearching || isPicking }
