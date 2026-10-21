@@ -17,6 +17,7 @@ struct SearchScreen: View {
     @State private var input = ""
     @State private var submittedQuery: String?
     @State private var isShowingFilters = false
+    @State private var isShowingImageSearch = false
     @FocusState private var isInputFocused: Bool
     @Environment(\.colorScheme) private var colorScheme
 
@@ -46,6 +47,13 @@ struct SearchScreen: View {
                 let query = SearchParser.fromFilterState(state)
                 input = query
                 submit(query)
+            }
+        }
+        .navigationDestination(isPresented: $isShowingImageSearch) {
+            ImageSearchScreen { keyword in
+                // 对应 _imageSearch：拿到番名后直接提交搜索。
+                input = keyword
+                submit(keyword)
             }
         }
         .task {
@@ -84,14 +92,16 @@ struct SearchScreen: View {
                 .accessibilityLabel("清空搜索")
             }
 
+            // 与原版一致：搜索框右侧第二个按钮是「以图搜番」，筛选在发现态的「按条件查找」里。
+            // 图标沿用项目里已验证可用的 photo.on.rectangle。
             Button {
-                isShowingFilters = true
+                openImageSearch()
             } label: {
-                Image(systemName: "slider.horizontal.3")
+                Image(systemName: "photo.on.rectangle")
                     .font(.system(size: 17, weight: .semibold))
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("筛选条件")
+            .accessibilityLabel("以图搜番")
         }
         .padding(.horizontal, 14)
         .frame(minHeight: 52)
@@ -239,6 +249,12 @@ struct SearchScreen: View {
     }
 
     // MARK: - 行为
+
+    /// 对应 _imageSearch：打开以图搜番。
+    private func openImageSearch() {
+        isInputFocused = false
+        isShowingImageSearch = true
+    }
 
     private func submit(_ value: String) {
         let state = SearchParser(value).toFilterState()

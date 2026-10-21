@@ -78,6 +78,8 @@ struct AppRouteView: View {
             BangumiInfoScreen(bangumiID: bangumiID)
         case .search(let keyword):
             SearchScreen(initialKeyword: keyword)
+        case .imageSearch(let onPick):
+            ImageSearchScreen(onPickKeyword: onPick)
         case .webSearchHistory:
             SearchHistoryScreen()
         case .player(let bangumiID, let episode, let source):

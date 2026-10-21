@@ -4,7 +4,8 @@
 //
 //  与 lib/pages/router.dart + lib/pages/menu/menu.dart 对应的导航状态。
 //  一级目的地与 App 底部标签栏一一对应：推荐 / 时间表 / 追番 / 我的。
-//  （原版底部只有这四个入口；搜索是顶栏按钮推入的二级页面，不是标签页。）
+//  （原版底部只有这四个入口；搜索是顶栏按钮推入的二级页面，不是标签页，
+//   以图搜番则是搜索页顶栏里的按钮，同样不是独立入口。）
 //
 
 import Foundation
@@ -54,6 +55,9 @@ enum AppRoute: Hashable, Sendable {
     case bangumiInfo(bangumiID: Int)
     case search(keyword: String)
     case webSearchHistory
+    /// 以图搜番：从搜索页顶栏进入的二级页面（原版路径 /search/image）。
+    /// `onPick` 由 SearchScreen 传入，用于把识别到的番名直接填进搜索框。
+    case imageSearch(onPick: @MainActor @Sendable (String) -> Void)
     /// 播放：bangumiID + 集数；由选源面板进入时带上规则名与分集页面地址。
     case player(bangumiID: Int, episode: Int, source: PlaybackSource?)
 
@@ -71,6 +75,94 @@ enum AppRoute: Hashable, Sendable {
     case logs
     case danmakuShield
     case webDAV
+}
+
+extension AppRoute {
+    /// 与 Dart 的页面路径语义一致：导航栈只比较「去了哪一页」，不比较闭包这类附属数据。
+    /// `.imageSearch` 的回调在页面内部重新绑定，因此这里用分支序号参与哈希与相等比较。
+    static func == (lhs: AppRoute, rhs: AppRoute) -> Bool {
+        lhs.kind == rhs.kind && lhs.associatedValuesEqual(rhs)
+    }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(kind)
+        hashAssociatedValues(into: &hasher)
+    }
+
+    /// 分支序号：声明顺序，新增分支时追加在末尾即可。
+    var kind: Int {
+        switch self {
+        case .bangumiInfo: 0
+        case .search: 1
+        case .webSearchHistory: 2
+        case .imageSearch: 3
+        case .player: 4
+        case .pluginEditor: 5
+        case .pluginShop: 6
+        case .history: 7
+        case .download: 8
+        case .settings: 9
+        case .about: 10
+        case .logs: 11
+        case .danmakuShield: 12
+        case .webDAV: 13
+        }
+    }
+
+    private func associatedValuesEqual(_ other: AppRoute) -> Bool {
+        switch (self, other) {
+        case let (.bangumiInfo(lhs), .bangumiInfo(rhs)):
+            lhs == rhs
+        case let (.search(lhs), .search(rhs)):
+            lhs == rhs
+        case (.webSearchHistory, .webSearchHistory):
+            true
+        case (.imageSearch, .imageSearch):
+            // 回调不参与相等比较，页面自己持有识别状态。
+            true
+        case let (.player(lhsID, lhsEpisode, lhsSource), .player(rhsID, rhsEpisode, rhsSource)):
+            lhsID == rhsID && lhsEpisode == rhsEpisode && lhsSource == rhsSource
+        case let (.pluginEditor(lhs), .pluginEditor(rhs)):
+            lhs == rhs
+        case (.pluginShop, .pluginShop),
+             (.history, .history),
+             (.download, .download),
+             (.settings, .settings),
+             (.about, .about),
+             (.logs, .logs),
+             (.danmakuShield, .danmakuShield),
+             (.webDAV, .webDAV):
+            true
+        default:
+            false
+        }
+    }
+
+    private func hashAssociatedValues(into hasher: inout Hasher) {
+        switch self {
+        case .bangumiInfo(let bangumiID):
+            hasher.combine(bangumiID)
+        case .search(let keyword):
+            hasher.combine(keyword)
+        case .player(let bangumiID, let episode, let source):
+            hasher.combine(bangumiID)
+            hasher.combine(episode)
+            hasher.combine(source)
+        case .pluginEditor(let ruleID):
+            hasher.combine(ruleID)
+        case .webSearchHistory,
+             .imageSearch,
+             .pluginShop,
+             .history,
+             .download,
+             .settings,
+             .about,
+             .logs,
+             .danmakuShield,
+             .webDAV:
+            break
+        }
+    }
 }
 
 /// 选源结果（对应 lib/pages/video/video_playback_args.dart 的核心字段）。
@@ -119,6 +211,11 @@ final class AppRouter {
     /// 在当前 Tab 内推入页面。
     func push(_ route: AppRoute) {
         setPath(path(for: selectedDestination) + [route], for: selectedDestination)
+    }
+
+    /// 从搜索页打开以图搜番（对应原版 context.pushNamed('/search/image')）。
+    func pushImageSearch(onPick: @escaping @MainActor @Sendable (String) -> Void) {
+        push(.imageSearch(onPick: onPick))
     }
 
     func popToRoot() {
