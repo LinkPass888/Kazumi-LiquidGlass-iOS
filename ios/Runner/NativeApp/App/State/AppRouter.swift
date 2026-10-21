@@ -31,10 +31,14 @@ enum AppDestination: String, CaseIterable, Identifiable, Hashable, Sendable {
     }
 
     /// 与 menu.dart 的 sfSymbol 一致。
+    ///
+    /// 时间表用日历符号：原版在详情页里点亮「在时间表展示」时用的就是
+    /// CupertinoIcons.calendar（见 bangumi_info_card.dart），底部入口用同一个符号，
+    /// 两处能对上。原版菜单里的 Icons.timeline 在 SF Symbols 里没有对应图形。
     var symbolName: String {
         switch self {
         case .popular: "house"
-        case .timeline: "timeline.selection"
+        case .timeline: "calendar"
         case .collect: "heart"
         case .my: "gearshape"
         }
@@ -43,9 +47,24 @@ enum AppDestination: String, CaseIterable, Identifiable, Hashable, Sendable {
     var selectedSymbolName: String {
         switch self {
         case .popular: "house.fill"
-        case .timeline: "timeline.selection"
+        case .timeline: "calendar.circle.fill"
         case .collect: "heart.fill"
         case .my: "gearshape.fill"
+        }
+    }
+
+    /// 从原版的启动页路径解析出要打开的标签。
+    ///
+    /// 原版把启动页存成页面路径（'/tab/popular/'、'/tab/timeline/' 这类，
+    /// 见 interface_settings.dart 的 defaultPageMap），这里按最后一段匹配。
+    static func from(startupPage: String) -> AppDestination {
+        let trimmed = startupPage.trimmingCharacters(in: CharacterSet(charactersIn: "/ "))
+        let component = trimmed.split(separator: "/").last.map(String.init) ?? trimmed
+        switch component.lowercased() {
+        case "timeline": return .timeline
+        case "collect": return .collect
+        case "my": return .my
+        default: return .popular
         }
     }
 }
@@ -75,6 +94,8 @@ enum AppRoute: Hashable, Sendable {
     case logs
     case danmakuShield
     case webDAV
+    /// 设置备份：导出 / 导入旧版（Flutter）导出的设置备份文本。
+    case settingsBackup
 }
 
 extension AppRoute {
@@ -106,6 +127,7 @@ extension AppRoute {
         case .logs: 11
         case .danmakuShield: 12
         case .webDAV: 13
+        case .settingsBackup: 14
         }
     }
 
@@ -131,7 +153,8 @@ extension AppRoute {
              (.about, .about),
              (.logs, .logs),
              (.danmakuShield, .danmakuShield),
-             (.webDAV, .webDAV):
+             (.webDAV, .webDAV),
+             (.settingsBackup, .settingsBackup):
             true
         default:
             false
@@ -159,7 +182,8 @@ extension AppRoute {
              .about,
              .logs,
              .danmakuShield,
-             .webDAV:
+             .webDAV,
+             .settingsBackup:
             break
         }
     }
@@ -189,6 +213,11 @@ final class AppRouter {
     var timelinePath: [AppRoute] = []
     var collectPath: [AppRoute] = []
     var myPath: [AppRoute] = []
+
+    /// 启动时打开的标签（对应原版的 defaultStartupPage）。
+    init(defaultStartupPage: String = "/tab/popular/") {
+        selectedDestination = AppDestination.from(startupPage: defaultStartupPage)
+    }
 
     func path(for destination: AppDestination) -> [AppRoute] {
         switch destination {

@@ -77,6 +77,52 @@ final class InfoController {
         episodesFailed = result.isEmpty
     }
 
+    // MARK: - 详情页分标签
+
+    private(set) var comments: [BangumiCommentItem] = []
+    private(set) var commentsTotal = 0
+    private(set) var isLoadingComments = false
+
+    private(set) var characters: [BangumiCharacterItem] = []
+    private(set) var isLoadingCharacters = false
+
+    private(set) var staff: [BangumiStaffItem] = []
+    private(set) var isLoadingStaff = false
+
+    private(set) var relations: [BangumiRelationItem] = []
+    private(set) var isLoadingRelations = false
+
+    /// 与原版一致：标签点开时才去拉数据，拉过一次就不再重复请求。
+    func loadComments() async {
+        guard !isLoadingComments, comments.isEmpty else { return }
+        isLoadingComments = true
+        defer { isLoadingComments = false }
+        let page = await BangumiAPI.comments(subjectID: item.id)
+        comments = page.items
+        commentsTotal = page.total
+    }
+
+    func loadCharacters() async {
+        guard !isLoadingCharacters, characters.isEmpty else { return }
+        isLoadingCharacters = true
+        defer { isLoadingCharacters = false }
+        characters = await BangumiAPI.characters(subjectID: item.id)
+    }
+
+    func loadStaff() async {
+        guard !isLoadingStaff, staff.isEmpty else { return }
+        isLoadingStaff = true
+        defer { isLoadingStaff = false }
+        staff = await BangumiAPI.staff(subjectID: item.id)
+    }
+
+    func loadRelations() async {
+        guard !isLoadingRelations, relations.isEmpty else { return }
+        isLoadingRelations = true
+        defer { isLoadingRelations = false }
+        relations = await BangumiAPI.relations(subjectID: item.id)
+    }
+
     // MARK: - 选源
 
     /// 对应 SourceSheet 的 init：用中文名优先作为检索词。

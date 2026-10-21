@@ -43,7 +43,9 @@ struct PopularScreen: View {
                 }
             }
             .scrollIndicators(.hidden)
-            .background(alignment: .bottomTrailing) {
+            // 回顶按钮用 overlay 而不是 background：background 会被滚动内容盖住，
+            // 卡片滑过去时按钮就消失在海报下面（overlay 在内容之上）。
+            .overlay(alignment: .bottomTrailing) {
                 ScrollToTopButton {
                     withAnimation(.easeOut(duration: 0.35)) {
                         proxy.scrollTo("top", anchor: .top)
@@ -99,29 +101,32 @@ struct PopularScreen: View {
             Spacer(minLength: 8)
 
             // 原版顶栏右侧：搜索 + 历史记录。
-            Button {
+            // 两个按钮都用圆形玻璃，直径与间距取 KazumiGlassMetrics（与原版一致）。
+            barButton(symbol: "magnifyingglass", label: "搜索") {
                 router.push(.search(keyword: ""))
-            } label: {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 18, weight: .semibold))
-                    .frame(width: 36, height: 36)
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("搜索")
 
-            Button {
+            barButton(symbol: "clock.arrow.circlepath", label: "历史记录") {
                 router.push(.history)
-            } label: {
-                Image(systemName: "clock.arrow.circlepath")
-                    .font(.system(size: 18, weight: .semibold))
-                    .frame(width: 36, height: 36)
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("历史记录")
         }
         .padding(.horizontal, 16)
         .padding(.top, 8)
         .padding(.bottom, 12)
+    }
+
+    /// 顶栏圆形玻璃按钮。尺寸、间距、边距全部取自 KazumiGlassMetrics，
+    /// 与详情页的返回 / 更多按钮共用同一套数值。
+    private func barButton(symbol: String, label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 20, weight: .semibold))
+                .frame(width: KazumiGlassMetrics.barButtonSize, height: KazumiGlassMetrics.barButtonSize)
+        }
+        .buttonStyle(.plain)
+        .kazumiGlassCapsule(interactive: true)
+        .padding(.leading, KazumiGlassMetrics.barButtonGap / 2)
+        .accessibilityLabel(label)
     }
 
     // MARK: - 网格
@@ -133,26 +138,42 @@ struct PopularScreen: View {
         } else {
             LazyVGrid(columns: columns, alignment: .leading, spacing: Self.cardSpace - 2) {
                 ForEach(controller.items) { item in
-                    BangumiPosterCard(item: item)
+                    BangumiPosterCard(item: item, width: posterWidth)
                         .task {
                             await loadMoreIfNeeded(current: item)
                         }
                 }
             }
             .padding(.horizontal, 8)
-            .padding(.bottom, 24)
+            .padding(.top, 8)
+            // 底部多留一截，最后一行才能完全滚到回顶按钮上方。
+            .padding(.bottom, 72)
         }
     }
 
     /// 对应 contentGrid 的 crossCount：3 / 5 / 6 列。
-    private var columns: [GridItem] {
+    private var columnCount: Int {
         let width = containerWidth
-        let count = width > KazumiLayout.mediumWidth
-            ? 6
-            : (width > KazumiLayout.compactWidth ? 5 : 3)
-        return Array(
-            repeating: GridItem(.flexible(), spacing: Self.cardSpace, alignment: .top),
-            count: count
+        if width > KazumiLayout.mediumWidth { return 6 }
+        if width > KazumiLayout.compactWidth { return 5 }
+        return 3
+    }
+
+    /// 海报列宽：与原版 SliverGrid 一样由容器宽度平分而来。
+    /// 固定列宽之后每一行的封面底边都在同一条线上，标题长短不会再把行高顶开。
+    private var posterWidth: CGFloat {
+        KazumiLayout.posterColumnWidth(
+            containerWidth: containerWidth,
+            columns: columnCount,
+            spacing: Self.cardSpace,
+            padding: 8
+        )
+    }
+
+    private var columns: [GridItem] {
+        Array(
+            repeating: GridItem(.fixed(posterWidth), spacing: Self.cardSpace, alignment: .top),
+            count: columnCount
         )
     }
 

@@ -46,7 +46,7 @@ final class AppEnvironment {
             try AppEnvironment.prepareStorageDirectories()
             let settings = SettingsStore()
             let library = LibraryStore()
-            let router = AppRouter()
+            let router = AppRouter(defaultStartupPage: settings.defaultStartupPage)
             let environment = AppEnvironment(settings: settings, library: library, router: router)
             return LaunchResult(environment: environment, failure: nil)
         } catch {

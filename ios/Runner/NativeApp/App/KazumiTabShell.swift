@@ -102,6 +102,8 @@ struct AppRouteView: View {
             DanmakuShieldScreen()
         case .webDAV:
             WebDAVScreen()
+        case .settingsBackup:
+            SettingsBackupScreen()
         }
     }
 }

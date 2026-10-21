@@ -55,9 +55,9 @@ struct BangumiTimelineCard: View {
     // MARK: - 封面
 
     private var cover: some View {
-        BangumiRemoteImage(url: item.largeImage)
-            .frame(width: compact ? 80 : 88)
-            .aspectRatio(BangumiPosterCard.coverAspectRatio, contentMode: .fit)
+        let width: CGFloat = compact ? 80 : 88
+        return BangumiRemoteImage(url: item.largeImage)
+            .frame(width: width, height: width / BangumiPosterCard.coverAspectRatio)
             .clipShape(RoundedRectangle(cornerRadius: Self.cornerRadius - Self.contentPadding, style: .continuous))
     }
 

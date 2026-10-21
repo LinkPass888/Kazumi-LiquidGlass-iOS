@@ -36,6 +36,14 @@ enum BangumiEndpoints {
     static let episodes = "/v0/episodes"
     /// 标记单集看到。
     static let setEpisode = "/v0/users/-/collections/-/episodes/{0}"
+    /// 关联条目（续集 / 前传 / 角色等）。
+    static let relations = "/v0/subjects/{0}/subjects"
+    /// 角色列表。
+    static let characters = "/v0/subjects/{0}/characters"
+    /// 制作人员（原作 / 导演 / 声优等）。
+    static let staff = "/v0/subjects/{0}/persons"
+    /// 吐槽（评论），next 域。
+    static let commentsNext = "/p1/subjects/{0}/comments?limit={1}&offset={2}"
 
     /// 对应 ApiEndpoints.formatUrl。
     static func format(_ template: String, _ params: [CustomStringConvertible]) -> String {
@@ -54,6 +62,12 @@ enum BangumiAcceleration: String, Sendable {
 
     /// 与 Dart 的 `BangumiAcceleration.current` 对应，由设置页写入。
     static let current = OSAllocatedUnfairLock(initialState: BangumiAcceleration.direct)
+
+    /// 当前加速方式（读写都要走锁）。
+    static var mode: BangumiAcceleration {
+        get { current.withLock { $0 } }
+        set { current.withLock { $0 = newValue } }
+    }
 
     static var isMirrorEnabled: Bool {
         current.withLock { $0 == .mirror }
@@ -264,6 +278,72 @@ enum BangumiAPI {
         } catch {
             KazumiLog.network.error("Resolve bangumi item failed: \(error.localizedDescription, privacy: .public)")
             return nil
+        }
+    }
+
+    // MARK: - 详情页分标签
+
+    /// 对应 getBangumiRelationsByID：关联条目（续集 / 前传 / 角色…）。
+    static func relations(subjectID: Int) async -> [BangumiRelationItem] {
+        do {
+            let url = BangumiEndpoints.format(
+                BangumiEndpoints.apiDomain + BangumiEndpoints.relations,
+                [subjectID]
+            )
+            let json = try await get(url)
+            return (json.arrayValue ?? []).compactMap(BangumiRelationItem.fromJSON)
+        } catch {
+            KazumiLog.network.error("Resolve bangumi relations failed: \(error.localizedDescription, privacy: .public)")
+            return []
+        }
+    }
+
+    /// 对应 getCharatersByBangumiID：角色列表。
+    static func characters(subjectID: Int) async -> [BangumiCharacterItem] {
+        do {
+            let url = BangumiEndpoints.format(
+                BangumiEndpoints.apiDomain + BangumiEndpoints.characters,
+                [subjectID]
+            )
+            let json = try await get(url)
+            return (json.arrayValue ?? []).map(BangumiCharacterItem.fromJSON)
+        } catch {
+            KazumiLog.network.error("Resolve bangumi characters failed: \(error.localizedDescription, privacy: .public)")
+            return []
+        }
+    }
+
+    /// 对应 getBangumiStaffByID：制作人员。
+    static func staff(subjectID: Int) async -> [BangumiStaffItem] {
+        do {
+            let url = BangumiEndpoints.format(
+                BangumiEndpoints.apiDomain + BangumiEndpoints.staff,
+                [subjectID]
+            )
+            let json = try await get(url)
+            return BangumiStaffItem.merge(json.arrayValue ?? [])
+        } catch {
+            KazumiLog.network.error("Resolve bangumi staff failed: \(error.localizedDescription, privacy: .public)")
+            return []
+        }
+    }
+
+    /// 对应 getBangumiCommentsByID：吐槽列表（next 域，一次 20 条）。
+    static func comments(subjectID: Int, limit: Int = 20, offset: Int = 0) async -> BangumiCommentPage {
+        do {
+            let url = BangumiEndpoints.format(
+                BangumiEndpoints.apiNextDomain + BangumiEndpoints.commentsNext,
+                [subjectID, limit, offset]
+            )
+            let json = try await get(url)
+            let list = json["list"].arrayValue ?? json["data"].arrayValue ?? []
+            return BangumiCommentPage(
+                items: list.map(BangumiCommentItem.fromJSON),
+                total: json["total"].intValue ?? list.count
+            )
+        } catch {
+            KazumiLog.network.error("Resolve bangumi comments failed: \(error.localizedDescription, privacy: .public)")
+            return BangumiCommentPage(items: [], total: 0)
         }
     }
 

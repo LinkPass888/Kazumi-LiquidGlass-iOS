@@ -26,6 +26,27 @@ enum KazumiLayout {
         }
     }
 
+    /// 海报网格的单列宽度。
+    ///
+    /// 原版用 `SliverGridDelegateWithFixedCrossAxisCount` + `crossAxisSpacing: 8`，
+    /// 列宽由容器宽度减掉左右内边距与列间距后平分。这里照搬同一套算式，
+    /// 好处是列宽是确定的：海报不会被文字高度带着抖动，每行的封面底边也在同一条线上。
+    static func posterColumnWidth(
+        containerWidth: CGFloat,
+        columns: Int,
+        spacing: CGFloat = cardSpacing,
+        padding: CGFloat = 8
+    ) -> CGFloat {
+        guard columns > 0 else { return 0 }
+        let usable = max(0, containerWidth - padding * 2 - spacing * CGFloat(columns - 1))
+        return usable / CGFloat(columns)
+    }
+
+    /// 2:3 竖版海报（宽高比 0.65）的高度。
+    static func posterHeight(width: CGFloat) -> CGFloat {
+        width / 0.65
+    }
+
     /// 自适应列数（iPad 上 2:3 海报铺满整行）。
     static func posterColumns(containerWidth: CGFloat) -> Int {
         let target = posterWidth(containerWidth: containerWidth)

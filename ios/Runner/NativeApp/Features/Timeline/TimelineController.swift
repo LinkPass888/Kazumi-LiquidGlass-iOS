@@ -65,15 +65,30 @@ final class TimelineController {
         bangumiCalendar = []
         defer { isLoading = false }
 
+        var calendar: [[BangumiItem]]
         if AnimeSeason.isSameSeason(date, Date()) {
-            let calendar = await BangumiAPI.calendar()
-            bangumiCalendar = applySort(calendar)
-            isTimeOut = bangumiCalendar.allSatisfy(\.isEmpty)
+            calendar = await BangumiAPI.calendar()
         } else {
             let range = AnimeSeason.seasonRange(for: date)
-            let calendar = await seasonCalendar(start: range.start, end: range.end)
-            bangumiCalendar = applySort(calendar)
-            isTimeOut = bangumiCalendar.allSatisfy(\.isEmpty)
+            calendar = await seasonCalendar(start: range.start, end: range.end)
+        }
+        // 详情页里点亮「在时间表展示」的条目，并进对应星期那一列。
+        await mergeCustomEntries(into: &calendar)
+        bangumiCalendar = applySort(calendar)
+        isTimeOut = bangumiCalendar.allSatisfy(\.isEmpty)
+    }
+
+    /// 对应 refreshCustomTimelineEntries：把用户手动点亮的条目并进时间表。
+    /// 官方日历里没有的番，按用户设定的放送星期放到那一列。
+    private func mergeCustomEntries(into calendar: inout [[BangumiItem]]) async {
+        let custom = BangumiTimelineStore.shared.entries.filter { $0.value.showInTimeline }
+        guard !custom.isEmpty else { return }
+        for (bangumiID, entry) in custom {
+            let weekday = max(1, min(7, entry.weekday)) - 1
+            guard calendar.indices.contains(weekday) else { continue }
+            if calendar[weekday].contains(where: { $0.id == bangumiID }) { continue }
+            guard let item = await BangumiAPI.info(id: bangumiID) else { continue }
+            calendar[weekday].append(item)
         }
     }
 

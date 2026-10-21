@@ -9,8 +9,24 @@
 
 import SwiftUI
 
+/// 顶栏玻璃按钮的统一度量（1:1 对照 lib/bean/liquid_glass/kazumi_glass.dart）。
+///
+/// 原版所有顶栏按钮都走同一套数值：按钮 40×40、按钮间距 6、屏幕边距 10，
+/// 推荐页右上角那两个按钮、详情页的返回 / 更多按钮都用它，
+/// 这样换到 iOS 后按钮的直径与间距仍然和原版一致。
+enum KazumiGlassMetrics {
+    /// 圆形玻璃按钮的边长。
+    static let barButtonSize: CGFloat = 40
+    /// 相邻两个顶栏按钮之间的空隙。
+    static let barButtonGap: CGFloat = 6
+    /// 最后一个顶栏按钮离屏幕边缘的留白。
+    static let barEdgeInset: CGFloat = 10
+}
+
 extension View {
     /// 悬浮胶囊：Tab 栏、顶部工具条、播放器 OSD 的通用外观。
+    ///
+    /// 40×40 的正方形用胶囊形状渲染出来就是正圆，顶栏按钮因此不需要另写一份形状。
     func kazumiGlassCapsule(tint: Color? = nil, interactive: Bool = false) -> some View {
         modifier(KazumiGlassShapeModifier(shape: AnyShape(Capsule(style: .continuous)), tint: tint, interactive: interactive))
     }

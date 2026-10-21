@@ -156,9 +156,30 @@ struct KazumiThemeColor: Identifiable, Hashable, Sendable {
         Color(uiColor: color(argb))
     }
 
-    /// 按持久化标识查找；未知标识（例如旧版备份里的 ARGB 字符串）回落到默认绿色。
+    /// 按持久化标识查找；未知标识回落到默认绿色。
+    ///
+    /// 旧版（Flutter）备份里存的是 ARGB 十六进制（见 app_theme.dart 的
+    /// _storedThemeColor：'default' 或 'ff4caf50' 这样的字符串），
+    /// 这里按种子色匹配回对应的配色方案。
     static func named(_ id: String) -> KazumiThemeColor {
-        all.first { $0.id == id } ?? Self.standard
+        if let match = all.first(where: { $0.id == id }) {
+            return match
+        }
+        if let argb = parseARGB(id), let match = all.first(where: { $0.seed == argb }) {
+            return match
+        }
+        return Self.standard
+    }
+
+    /// 解析 "0xff4caf50" / "ff4caf50" / "#4caf50" 形式的颜色字符串。
+    /// 六位按不透明处理，补上 alpha；解析不出来返回 nil。
+    private static func parseARGB(_ text: String) -> UInt32? {
+        var value = text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if value.hasPrefix("#") { value.removeFirst() }
+        if value.hasPrefix("0x") { value.removeFirst(2) }
+        guard value.count == 6 || value.count == 8 else { return nil }
+        guard let parsed = UInt32(value, radix: 16) else { return nil }
+        return value.count == 6 ? 0xFF00_0000 | parsed : parsed
     }
 
     /// 当前选中的配色。由 `SettingsStore` 在读写设置时同步，

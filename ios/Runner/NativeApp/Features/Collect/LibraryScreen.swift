@@ -174,13 +174,18 @@ private struct LibraryEntryCard: View {
 
     @Environment(\.colorScheme) private var colorScheme
 
+    /// 封面宽度与时间表卡片保持一致（88pt），整页的封面尺寸就统一了。
+    private static let coverWidth: CGFloat = 88
+
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
             Button(action: onOpen) {
                 HStack(alignment: .top, spacing: 12) {
                     BangumiRemoteImage(url: entry.imageURL)
-                        .frame(width: 88)
-                        .aspectRatio(BangumiPosterCard.coverAspectRatio, contentMode: .fit)
+                        .frame(
+                            width: Self.coverWidth,
+                            height: Self.coverWidth / BangumiPosterCard.coverAspectRatio
+                        )
                         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
 
                     VStack(alignment: .leading, spacing: 6) {

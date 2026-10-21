@@ -72,6 +72,14 @@ enum SettingsKey {
     static let meteredNetworkLimit = "meteredNetworkLimit"
     static let updateNotificationEnabled = "updateNotificationEnabled"
     static let playerEntryFullscreen = "playerEntryFullscreen"
+    /// 下载并发数，沿用原版 `SettingsKeys.downloadParallelEpisodes` 的键名。
+    static let downloadParallelEpisodes = "downloadParallelEpisodes"
+    /// 是否随下载一起缓存弹幕，沿用原版 `SettingsKeys.downloadDanmaku` 的键名。
+    static let downloadDanmaku = "downloadDanmaku"
+    /// 启动页，沿用原版 `SettingsKeys.defaultStartupPage` 的键名。
+    static let defaultStartupPage = "defaultStartupPage"
+    /// Bangumi 加速（镜像）开关，沿用原版 `SettingsKeys.enableBangumiProxy` 的键名。
+    static let enableBangumiProxy = "enableBangumiProxy"
 }
 
 /// 可观察的设置存储。所有写入立即同步到磁盘，避免进程被系统回收后丢设置。
@@ -200,6 +208,29 @@ final class SettingsStore {
         didSet { persist(updateNotificationEnabled, SettingsKey.updateNotificationEnabled) }
     }
 
+    /// 下载并发数（对应原版 `downloadParallelEpisodes`）。
+    var downloadParallelEpisodes: Int {
+        didSet { persist(downloadParallelEpisodes, SettingsKey.downloadParallelEpisodes) }
+    }
+
+    /// 是否随下载一起缓存弹幕（对应原版 `downloadDanmaku`）。
+    var downloadDanmaku: Bool {
+        didSet { persist(downloadDanmaku, SettingsKey.downloadDanmaku) }
+    }
+
+    /// 启动页（对应原版 `defaultStartupPage`，存的是页面路径）。
+    var defaultStartupPage: String {
+        didSet { persist(defaultStartupPage, SettingsKey.defaultStartupPage) }
+    }
+
+    /// 是否走 Bangumi 镜像加速（对应原版 `enableBangumiProxy`）。
+    var enableBangumiProxy: Bool {
+        didSet {
+            persist(enableBangumiProxy, SettingsKey.enableBangumiProxy)
+            BangumiAcceleration.mode = enableBangumiProxy ? .mirror : .direct
+        }
+    }
+
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         themeMode = Self.read(defaults, SettingsKey.themeMode, KazumiThemeMode.system)
@@ -238,6 +269,12 @@ final class SettingsStore {
         proxyPort = Self.read(defaults, SettingsKey.proxyPort, 0)
         meteredNetworkLimit = Self.read(defaults, SettingsKey.meteredNetworkLimit, false)
         updateNotificationEnabled = Self.read(defaults, SettingsKey.updateNotificationEnabled, true)
+        downloadParallelEpisodes = Self.read(defaults, SettingsKey.downloadParallelEpisodes, 2)
+        downloadDanmaku = Self.read(defaults, SettingsKey.downloadDanmaku, true)
+        defaultStartupPage = Self.read(defaults, SettingsKey.defaultStartupPage, "/tab/popular/")
+        enableBangumiProxy = Self.read(defaults, SettingsKey.enableBangumiProxy, false)
+        // 加速方式在全部存储属性初始化完成后再同步到全局开关。
+        BangumiAcceleration.mode = enableBangumiProxy ? .mirror : .direct
     }
 
     private func persist(_ value: Any?, _ key: String) {
