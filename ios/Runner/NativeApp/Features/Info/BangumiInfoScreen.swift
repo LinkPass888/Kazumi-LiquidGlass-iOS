@@ -3,16 +3,16 @@
 //  Kazumi
 //
 //  1:1 复刻 lib/pages/info/info_page.dart + bangumi_info_card.dart：
-//  * 顶栏：返回 + 折叠后淡入的番剧名 + 右上角「更多」菜单（保存封面 / 复制标题 / 外部打开）；
-//  * 信息卡：标题就是番剧名称，封面右侧是条目信息（放送开始 / 放送时间 / 更新进度 / 评分 / 排名），
-//    条目信息下面是「追番状态」菜单（未追 / 在看 / 想看 / 搁置 / 看过 / 抛弃）；
+//  * 顶栏：返回键 + 左对齐的大标题（字重字号与推荐页「热门番组」一致）+ 右上角「更多」；
+//  * 封面与条目信息直接压在模糊的封面背景上，不再是背景下面另起一块；
+//  * 条目信息：放送开始 / 放送时间（星期菜单 + 具体时刻 + 时间表开关）/ 更新进度 / 评分 / 排名，
+//    最下面一行是收窄的追番状态菜单；
 //  * 横向排列的「概览 / 吐槽 / 角色 / 关联 / 制作人员」标签；
-//  * 别名不是详情页的区块，它在片源弹窗里当检索词用（见 SourceSheet）；
-//  * 右下角是「开始播放」的液态玻璃按钮。
+//  * 别名不是详情页的区块，它在片源弹窗里当检索词用（见 SourceSheet）。
 //
 
-import SwiftUI
 import Photos
+import SwiftUI
 import UIKit
 
 struct BangumiInfoScreen: View {
@@ -22,7 +22,6 @@ struct BangumiInfoScreen: View {
     @State private var isShowingSources = false
     @State private var selectedTab: InfoTab = .overview
     @State private var scrollOffset: CGFloat = 0
-    @State private var isShowingWeekdayPicker = false
     @State private var toastMessage: String?
 
     @Environment(AppEnvironment.self) private var environment
@@ -43,6 +42,11 @@ struct BangumiInfoScreen: View {
         .background(KazumiPalette.background(for: colorScheme).ignoresSafeArea())
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .navigationBar)
+        // 自绘顶栏会连带关掉系统返回手势，这里把它接回来。
+        .background {
+            KazumiSwipeBackEnabler()
+                .frame(width: 0, height: 0)
+        }
         .task {
             if controller == nil {
                 await load()
@@ -59,8 +63,7 @@ struct BangumiInfoScreen: View {
 
                 ScrollView {
                     VStack(alignment: .leading, spacing: 18) {
-                        coverBackdrop(controller)
-                        infoCard(controller)
+                        hero(controller)
                         tabStrip(controller)
                         tabContent(controller)
                     }
@@ -99,32 +102,26 @@ struct BangumiInfoScreen: View {
                 )
             }
         }
-        .sheet(isPresented: $isShowingWeekdayPicker) {
-            weekdayPicker(controller)
-        }
     }
 
     // MARK: - 顶栏
 
+    /// 返回键 + 左对齐标题 + 更多菜单。
+    ///
+    /// 这里不再给顶栏加 `.ultraThinMaterial` 背景条：滚动时那一条灰底会横在
+    /// 内容上方，与页面背景断开。标题始终显示（原来靠折叠淡入的那份已经删掉）。
     private func topBar(_ controller: InfoController) -> some View {
-        HStack(spacing: 0) {
+        HStack(spacing: 10) {
             barButton(symbol: "chevron.left", label: "返回") {
                 dismiss()
             }
 
-            Spacer(minLength: 8)
-
-            // 原版：顶栏标题跟着折叠进度淡入（展开时卡片里已经写着番剧名称）。
             Text(controller.item.displayName)
-                .font(.system(size: 17, weight: .semibold))
+                .font(.system(size: 28, weight: .bold))
                 .foregroundStyle(.primary)
                 .lineLimit(1)
-                .opacity(scrollOffset > 30 ? 1 : 0)
-                .animation(.easeOut(duration: 0.18), value: scrollOffset)
+                .frame(maxWidth: .infinity, alignment: .leading)
 
-            Spacer(minLength: 8)
-
-            // 右上角是「更多」菜单，与原版 info_actions_menu.dart 一致。
             Menu {
                 Button {
                     copyTitle(controller)
@@ -144,20 +141,19 @@ struct BangumiInfoScreen: View {
             } label: {
                 Image(systemName: "ellipsis")
                     .font(.system(size: 20, weight: .semibold))
-                    .frame(width: KazumiGlassMetrics.barButtonSize, height: KazumiGlassMetrics.barButtonSize)
+                    .frame(
+                        width: KazumiGlassMetrics.barButtonSize,
+                        height: KazumiGlassMetrics.barButtonSize
+                    )
             }
             .buttonStyle(.plain)
             .kazumiGlassCapsule(interactive: true)
             .accessibilityLabel("更多")
         }
         .padding(.leading, KazumiGlassMetrics.barEdgeInset)
-        .padding(.trailing, KazumiGlassMetrics.barEdgeInset - KazumiGlassMetrics.barButtonGap / 2)
-        .padding(.vertical, 6)
-        .background {
-            Rectangle()
-                .fill(.ultraThinMaterial)
-                .opacity(scrollOffset > 24 ? 1 : 0)
-        }
+        .padding(.trailing, KazumiGlassMetrics.barEdgeInset)
+        .padding(.top, 4)
+        .padding(.bottom, 8)
     }
 
     /// 顶栏圆形玻璃按钮，尺寸与间距取自 KazumiGlassMetrics。
@@ -165,121 +161,66 @@ struct BangumiInfoScreen: View {
         Button(action: action) {
             Image(systemName: symbol)
                 .font(.system(size: 20, weight: .semibold))
-                .frame(width: KazumiGlassMetrics.barButtonSize, height: KazumiGlassMetrics.barButtonSize)
+                .frame(
+                    width: KazumiGlassMetrics.barButtonSize,
+                    height: KazumiGlassMetrics.barButtonSize
+                )
         }
         .buttonStyle(.plain)
         .kazumiGlassCapsule(interactive: true)
         .accessibilityLabel(label)
     }
+}
 
-    // MARK: - 封面背景
+// MARK: - 封面 + 条目信息
 
-    /// 原版 _InfoHeaderBackground：封面大图打模糊，底部渐隐进背景色。
-    private func coverBackdrop(_ controller: InfoController) -> some View {
-        BangumiRemoteImage(url: controller.item.largeImage)
-            .frame(height: 220)
-            .blur(radius: 15)
-            .opacity(0.4)
-            .overlay(alignment: .bottom) {
-                LinearGradient(
-                    colors: [
-                        KazumiPalette.background(for: colorScheme).opacity(0),
-                        KazumiPalette.background(for: colorScheme),
-                    ],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .frame(height: 80)
-            }
-            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-            .padding(.horizontal, -16)
-            .padding(.top, -8)
-    }
-
-    // MARK: - 信息卡
-
-    /// 信息卡：标题 + 封面 + 右侧条目信息 + 追番状态菜单。
-    private func infoCard(_ controller: InfoController) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // 标题就是番剧名称。
-            Text(controller.item.displayName)
-                .font(.system(size: 24, weight: .bold))
-                .foregroundStyle(.primary)
-                .lineLimit(2)
-                .fixedSize(horizontal: false, vertical: true)
-
-            HStack(alignment: .top, spacing: 16) {
-                cover(controller.item)
-                itemInfoColumn(controller)
-            }
-
-            collectMenu(controller)
+extension BangumiInfoScreen {
+    /// 封面与条目信息一起压在模糊封面上（原版 _InfoHeaderBackground 的做法）。
+    private func hero(_ controller: InfoController) -> some View {
+        HStack(alignment: .top, spacing: 14) {
+            cover(controller.item)
+            infoColumn(controller)
         }
+        .padding(12)
+        .background { backdrop(controller) }
+        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
     }
 
-    /// 封面。宽度按原版的两栏算法：行宽减去 16 的间距再平分两栏。
+    /// 背景：同一张封面放大打模糊，再叠一层页面底色把它压成「磨砂」，
+    /// 保证浅色 / 深色下上面的文字都读得清。
+    private func backdrop(_ controller: InfoController) -> some View {
+        BangumiRemoteImage(url: controller.item.largeImage)
+            .blur(radius: 26)
+            .overlay {
+                KazumiPalette.background(for: colorScheme)
+                    .opacity(colorScheme == .dark ? 0.62 : 0.74)
+            }
+    }
+
     private func cover(_ item: BangumiItem) -> some View {
         BangumiRemoteImage(url: item.largeImage)
-            .frame(
-                width: coverWidth,
-                height: coverWidth / BangumiPosterCard.coverAspectRatio
-            )
+            .frame(width: coverWidth, height: coverWidth / BangumiPosterCard.coverAspectRatio)
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
-    /// 封面宽度：原版把封面与右侧文字列当成两个弹性子项平分行宽（宽屏时是三栏，
-    /// 第三栏是「评分透视」）。这里没有评分透视图表，保持两栏。
+    /// 封面宽度：整块 hero 的宽度分给封面约三分之一，右侧留给条目信息。
     private var coverWidth: CGFloat {
         let screenWidth = UIApplication.shared.connectedScenes
             .compactMap { $0 as? UIWindowScene }
             .first?.screen.bounds.width ?? 390
-        // 详情页的卡片最大宽度与原版一致（950）。
-        let rowWidth = min(screenWidth - 32, 950)
-        return max(80, (rowWidth - 16) / 2)
+        let rowWidth = min(screenWidth - 32, 950) - 24
+        return max(84, min(150, (rowWidth - 14) * 0.34))
     }
 
-    /// 条目信息列。排版与原版一致：标签一行，值一行（值用强调色加粗）。
-    private func itemInfoColumn(_ controller: InfoController) -> some View {
+    /// 条目信息列：标签一行、值一行，最后一行是收窄的追番菜单。
+    private func infoColumn(_ controller: InfoController) -> some View {
         let item = controller.item
         return VStack(alignment: .leading, spacing: 8) {
             infoLine(label: "放送开始:", value: item.airDate.isEmpty ? "未知" : item.airDate)
 
-            // 放送时间：星期可点（换列），右边是时间表开关（原版用日历符号）。
-            VStack(alignment: .leading, spacing: 2) {
-                Text("放送时间:")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                HStack(spacing: 8) {
-                    Button {
-                        isShowingWeekdayPicker = true
-                    } label: {
-                        HStack(spacing: 2) {
-                            Text(weekdayTitle(currentWeekday(controller)))
-                                .font(.system(size: 20, weight: .bold))
-                                .foregroundStyle(KazumiPalette.accent)
-                            Image(systemName: "chevron.down")
-                                .font(.system(size: 13, weight: .bold))
-                                .foregroundStyle(KazumiPalette.accent)
-                        }
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("选择放送星期")
+            broadcastRow(controller)
 
-                    Button {
-                        toggleTimeline(controller)
-                    } label: {
-                        Image(systemName: "calendar")
-                            .font(.system(size: 20, weight: .semibold))
-                            .foregroundStyle(isInTimeline(controller) ? KazumiPalette.accent : Color.secondary)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("在时间表展示")
-                }
-            }
-
-            // 更新进度：原版 bangumi_info_card.dart 里紧跟在「放送时间」之后的一行，
-            // 格式同样是「已更新到第几集/总集数」。原版读 AniList 的时刻服务，
-            // 原生端没有那套服务，改用 Bangumi 自己的剧集列表算：播过的集数 / 总集数。
+            // 更新进度：紧跟在「放送时间」之后。
             if let progress = updateProgress(controller) {
                 infoLine(label: "更新进度:", value: progress)
             }
@@ -291,32 +232,130 @@ struct BangumiInfoScreen: View {
                         .foregroundStyle(.secondary)
                     HStack(spacing: 4) {
                         Image(systemName: "star.fill")
-                            .font(.system(size: 13, weight: .semibold))
+                            .font(.system(size: 12, weight: .semibold))
                             .foregroundStyle(KazumiPalette.accent)
                         Text(String(format: "%.1f", item.ratingScore))
-                            .font(.system(size: 20, weight: .bold))
+                            .font(.system(size: 18, weight: .bold))
                             .foregroundStyle(KazumiPalette.accent)
                         if item.votes > 0 {
                             Text("(\(item.votes) 人)")
-                                .font(.caption)
+                                .font(.caption2)
                                 .foregroundStyle(.secondary)
+                                .lineLimit(1)
                         }
                     }
                 }
             }
 
             if item.rank > 0 {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Bangumi Ranked:")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                    Text("#\(item.rank)")
-                        .font(.system(size: 20, weight: .bold))
-                        .foregroundStyle(KazumiPalette.accent)
-                }
+                infoLine(label: "Bangumi Ranked:", value: "#\(item.rank)")
             }
+
+            collectMenu(controller)
+                .padding(.top, 2)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// 「放送时间」：星期菜单 + 具体时刻 + 时间表开关。
+    private func broadcastRow(_ controller: InfoController) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text("放送时间:")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+
+            HStack(spacing: 8) {
+                weekdayMenu(controller)
+
+                // 具体时刻来自 bangumi-mal 的季度表，取不到就不显示。
+                if let time = controller.airTime {
+                    Text(time)
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundStyle(KazumiPalette.accent)
+                }
+
+                Button {
+                    toggleTimeline(controller)
+                } label: {
+                    Image(systemName: "calendar")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(
+                            isInTimeline(controller) ? KazumiPalette.accent : Color.secondary
+                        )
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("在时间表展示")
+            }
+        }
+    }
+
+    /// 放送星期菜单：七项，收窄成一颗小胶囊（与推荐页的标签菜单同一处理）。
+    private func weekdayMenu(_ controller: InfoController) -> some View {
+        let current = currentWeekday(controller)
+        return Menu {
+            ForEach(1...7, id: \.self) { weekday in
+                Button {
+                    BangumiTimelineStore.shared.setWeekday(weekday, for: controller.item.id)
+                } label: {
+                    Text(weekday == current ? "✓ \(weekdayTitle(weekday))" : weekdayTitle(weekday))
+                }
+            }
+        } label: {
+            HStack(spacing: 2) {
+                Text(weekdayTitle(current))
+                    .font(.system(size: 18, weight: .bold))
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 11, weight: .bold))
+            }
+            .foregroundStyle(KazumiPalette.accent)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("选择放送星期")
+    }
+}
+
+
+// MARK: - 追番菜单 / 信息行
+
+extension BangumiInfoScreen {
+    /// 追番状态菜单：收窄放在条目信息最下方。
+    private func collectMenu(_ controller: InfoController) -> some View {
+        let current = currentType(controller)
+        return Menu {
+            ForEach(CollectType.enabledCases) { type in
+                Button {
+                    collect(controller, type)
+                } label: {
+                    Label(type.buttonTitle, systemImage: type.symbolName)
+                }
+            }
+            if current != .none {
+                Divider()
+                Button(role: .destructive) {
+                    collect(controller, .none)
+                } label: {
+                    Label("取消追番", systemImage: "trash")
+                }
+            }
+        } label: {
+            HStack(spacing: 3) {
+                Image(systemName: current.symbolName)
+                    .font(.system(size: 12, weight: .semibold))
+                Text(current.buttonTitle)
+                    .font(.system(size: 13, weight: .semibold))
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 10, weight: .bold))
+            }
+            .foregroundStyle(current == .none ? Color.primary : KazumiPalette.accent)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(
+                Capsule(style: .continuous)
+                    .fill(Color.primary.opacity(0.08))
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("追番状态：\(current.buttonTitle)")
     }
 
     /// 「标签: 值」一行。值用强调色加粗，与原版一致。
@@ -326,59 +365,34 @@ struct BangumiInfoScreen: View {
                 .font(.footnote)
                 .foregroundStyle(.secondary)
             Text(value)
-                .font(.system(size: 20, weight: .bold))
+                .font(.system(size: 18, weight: .bold))
                 .foregroundStyle(KazumiPalette.accent)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
         }
     }
 
-    // MARK: - 追番状态
-
-    /// 追番状态：条目信息下面的一个菜单，不是三个分开的按钮。
-    ///
-    /// 文案沿用原版 lib/bean/widget/collect_button.dart 的 getTypeStringByInt：
-    /// 未追 / 在看 / 想看 / 搁置 / 看过 / 抛弃。
-    private func collectMenu(_ controller: InfoController) -> some View {
-        let current = library.entry(for: controller.item.id)?.collectType ?? .none
-        return Menu {
-            Button {
-                setCollect(controller, .none)
-            } label: {
-                Label(CollectType.none.buttonTitle, systemImage: current == .none ? "checkmark" : "plus")
-            }
-            ForEach(CollectType.enabledCases) { type in
-                Button {
-                    setCollect(controller, type)
-                } label: {
-                    Label(type.buttonTitle, systemImage: current == type ? "checkmark" : type.symbolName)
-                }
-            }
-        } label: {
-            HStack(spacing: 8) {
-                Image(systemName: current.symbolName)
-                    .font(.system(size: 15, weight: .semibold))
-                Text(current.buttonTitle)
-                    .font(.subheadline.weight(.semibold))
-                Spacer(minLength: 4)
-                Image(systemName: "chevron.up.chevron.down")
-                    .font(.system(size: 11, weight: .semibold))
-            }
-            .foregroundStyle(current == .none ? Color.primary : KazumiPalette.accent)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(KazumiPalette.cardSurface(for: colorScheme))
-            )
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("追番状态")
+    /// 「已更新/总集数」，对应原版 bangumi_info_card.dart 的 _updateProgress。
+    /// 播期已过的算已更新；总集数取列表里的最大集号（列表可能缺集）。
+    private func updateProgress(_ controller: InfoController) -> String? {
+        let episodes = controller.episodes
+        guard !episodes.isEmpty else { return nil }
+        let today = AnimeSeason.format(Date())
+        let aired = episodes.filter { episode in
+            let airdate = episode.airdate.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !airdate.isEmpty else { return false }
+            return airdate <= today
+        }.count
+        guard aired > 0 else { return nil }
+        let total = episodes.map { Int($0.sort) }.max() ?? episodes.count
+        return String(format: "%02d/%02d", aired, total)
     }
+}
 
-    // MARK: - 标签
 
+// MARK: - 标签条
+
+extension BangumiInfoScreen {
     /// 横向排列的标签行：概览 / 吐槽 / 角色 / 关联 / 制作人员。
     private func tabStrip(_ controller: InfoController) -> some View {
         ScrollView(.horizontal) {
@@ -393,10 +407,16 @@ struct BangumiInfoScreen: View {
                             .font(.subheadline.weight(.semibold))
                             .padding(.horizontal, 16)
                             .padding(.vertical, 8)
-                            .foregroundStyle(isSelected ? Color.white : Color.primary)
+                            .foregroundStyle(
+                                isSelected ? KazumiPalette.onAccent(for: colorScheme) : Color.primary
+                            )
                             .background(
                                 Capsule(style: .continuous)
-                                    .fill(isSelected ? KazumiPalette.accent : KazumiPalette.cardSurface(for: colorScheme))
+                                    .fill(
+                                        isSelected
+                                            ? KazumiPalette.accent
+                                            : KazumiPalette.cardSurface(for: colorScheme)
+                                    )
                             )
                     }
                     .buttonStyle(.plain)
@@ -418,8 +438,11 @@ struct BangumiInfoScreen: View {
             InfoCommentsPanel(
                 comments: controller.comments,
                 total: controller.commentsTotal,
-                isLoading: controller.isLoadingComments
-            )
+                isLoading: controller.isLoadingComments,
+                isPosting: controller.isPostingComment
+            ) { text in
+                await controller.postComment(text, type: currentType(controller))
+            }
         case .characters:
             InfoCharactersPanel(
                 characters: controller.characters,
@@ -437,56 +460,52 @@ struct BangumiInfoScreen: View {
             )
         }
     }
+}
 
-    // MARK: - 别名 / 剧集
+// MARK: - 开始播放
 
-    /// 「已更新/总集数」，对应原版 bangumi_info_card.dart 的 _updateProgress。
-    ///
-    /// 原版用 AniList 的时刻服务推「更新到第几集」，原生端没有那套服务，
-    /// 这里改用 Bangumi 自己的剧集列表：播期已过的算已更新，
-    /// 总集数取列表里的最大集号（列表可能缺集，用个数会算少）。
-    /// 还没有任何一集播出时返回 nil，这一行就不显示。
-    private func updateProgress(_ controller: InfoController) -> String? {
-        let episodes = controller.episodes
-        guard !episodes.isEmpty else { return nil }
-        let today = AnimeSeason.format(Date())
-        let aired = episodes.filter { episode in
-            let airdate = episode.airdate.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !airdate.isEmpty else { return false }
-            return airdate <= today
-        }.count
-        guard aired > 0 else { return nil }
-        let total = episodes.map { Int($0.sort) }.max() ?? episodes.count
-        return String(format: "%02d/%02d", aired, total)
-    }
-
-    // MARK: - 开始播放
-
+extension BangumiInfoScreen {
     /// 右下角的「开始播放」按钮（原版是 FloatingActionButton.extended）。
+    ///
+    /// 按压反馈用自定义 ButtonStyle：`.plain` 会在按住时把整个按钮变半透明，
+    /// 深色下看起来像消失了；这里改成轻微缩放 + 压暗。
     private var startPlayingButton: some View {
         Button {
             isShowingSources = true
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: "play.fill")
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(.system(size: 15, weight: .semibold))
                 Text("开始播放")
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(.system(size: 15, weight: .semibold))
             }
-            .foregroundStyle(.white)
+            .foregroundStyle(KazumiPalette.onAccent(for: colorScheme))
             .padding(.horizontal, 18)
             .padding(.vertical, 12)
             .background(Capsule(style: .continuous).fill(KazumiPalette.accent))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(KazumiPressButtonStyle())
         .shadow(color: .black.opacity(0.18), radius: 10, y: 4)
         .padding(.trailing, 18)
         .padding(.bottom, 22)
         .accessibilityLabel("开始播放")
     }
+}
 
-    // MARK: - 提示
+/// 按压时轻微缩放 + 压暗，而不是把按钮变透明。
+struct KazumiPressButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.96 : 1)
+            .brightness(configuration.isPressed ? -0.06 : 0)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+    }
+}
 
+
+// MARK: - 提示
+
+extension BangumiInfoScreen {
     @ViewBuilder
     private var toastView: some View {
         if let toastMessage {
@@ -509,52 +528,11 @@ struct BangumiInfoScreen: View {
                 }
         }
     }
+}
 
-    // MARK: - 放送星期选择
+// MARK: - 加载
 
-    /// 放送星期选择器：与原版 bangumi_info_card.dart 的 _showWeekdayPicker 一致。
-    private func weekdayPicker(_ controller: InfoController) -> some View {
-        let current = currentWeekday(controller)
-        return NavigationStack {
-            VStack(spacing: 12) {
-                ForEach(1...7, id: \.self) { weekday in
-                    Button {
-                        BangumiTimelineStore.shared.setWeekday(weekday, for: controller.item.id)
-                        isShowingWeekdayPicker = false
-                    } label: {
-                        HStack {
-                            Text(weekdayTitle(weekday))
-                                .font(.body.weight(.semibold))
-                            Spacer()
-                            if weekday == current {
-                                Image(systemName: "checkmark")
-                                    .foregroundStyle(KazumiPalette.accent)
-                            }
-                        }
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 12)
-                        .background(
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .fill(KazumiPalette.cardSurface(for: colorScheme))
-                        )
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(16)
-            .navigationTitle("选择放送星期")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("关闭") { isShowingWeekdayPicker = false }
-                }
-            }
-        }
-        .presentationDetents([.medium, .large])
-    }
-
-    // MARK: - 行为
-
+extension BangumiInfoScreen {
     private func load() async {
         let environment = self.environment
         let base = await BangumiAPI.info(id: bangumiID)
@@ -563,6 +541,8 @@ struct BangumiInfoScreen: View {
         controller = created
         await created.loadDetailIfNeeded()
         await created.loadEpisodes()
+        // 播出时刻要单独拉季度表，失败只是不显示时刻。
+        await created.loadAirTime()
     }
 
     /// 标签点开时才去拉对应数据。
@@ -580,8 +560,17 @@ struct BangumiInfoScreen: View {
             await controller.loadStaff()
         }
     }
+}
 
-    private func setCollect(_ controller: InfoController, _ type: CollectType) {
+// MARK: - 追番 / 时间表
+
+extension BangumiInfoScreen {
+    /// 当前追番状态（本地收藏库里的）。
+    private func currentType(_ controller: InfoController) -> CollectType {
+        library.entry(for: controller.item.id)?.collectType ?? .none
+    }
+
+    private func collect(_ controller: InfoController, _ type: CollectType) {
         let item = controller.item
         if type == .none {
             library.remove(bangumiID: item.id)
@@ -633,7 +622,11 @@ struct BangumiInfoScreen: View {
         let titles = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
         return titles[max(1, min(7, weekday)) - 1]
     }
+}
 
+// MARK: - 更多菜单
+
+extension BangumiInfoScreen {
     private func copyTitle(_ controller: InfoController) {
         UIPasteboard.general.string = controller.item.displayName
         toastMessage = "标题已复制"
@@ -666,8 +659,8 @@ struct BangumiInfoScreen: View {
 
     /// Bangumi 的图片地址可能是协议相对地址，统一补成 https。
     private static func imageURL(from raw: String) -> URL? {
-        if raw.hasPrefix("//") { return URL(string: "https:" + raw) }
-        if raw.hasPrefix("http://") { return URL(string: "https://" + raw.dropFirst("http://".count)) }
-        return URL(string: raw)
+        let normalized = KazumiImageLoader.normalizedURLString(raw)
+        return normalized.isEmpty ? nil : URL(string: normalized)
     }
 }
+

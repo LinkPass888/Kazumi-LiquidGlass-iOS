@@ -60,6 +60,8 @@ final class PopularController {
         }
         isLoadingMore = false
         isTimeOut = trendList.isEmpty
+        // 先把这一页的封面预热进缓存：往下滑的时候不用再等一次下载。
+        KazumiImageLoader.shared.prefetch(result.map(\.largeImage))
     }
 
     /// 对应 queryBangumiByTag：官方接口按随机名次抓取，镜像按标签分页。
@@ -78,5 +80,6 @@ final class PopularController {
         bangumiList.append(contentsOf: result)
         isLoadingMore = false
         isTimeOut = bangumiList.isEmpty
+        KazumiImageLoader.shared.prefetch(result.map(\.largeImage))
     }
 }

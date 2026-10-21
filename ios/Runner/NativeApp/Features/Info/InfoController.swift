@@ -119,7 +119,49 @@ final class InfoController {
         guard !isLoadingRelations, relations.isEmpty else { return }
         isLoadingRelations = true
         defer { isLoadingRelations = false }
-        relations = await BangumiAPI.relations(subjectID: item.id)
+        // 与原版 resolveRelatedAnimeChain 一致：只保留动画，并把「前传 / 续集」
+        // 整条主线串起来后按方向重新命名。
+        relations = await RelatedAnimeChain.resolve(currentSubjectID: item.id) { @Sendable subjectID in
+            await BangumiAPI.relations(subjectID: subjectID)
+        }
+    }
+
+    // MARK: - 放送时刻
+
+    /// 播出时刻（本地 "HH:mm"）。原版从 bangumi-mal 的季度表推导，取不到就 nil。
+    var airTime: String? {
+        BangumiAirTimeService.shared.airTime(for: item.id)
+    }
+
+    func loadAirTime() async {
+        await BangumiAirTimeService.shared.ensureLoaded(
+            subjectID: item.id,
+            airDate: item.airDate
+        )
+    }
+
+    // MARK: - 吐槽
+
+    private(set) var isPostingComment = false
+
+    /// 发表一条吐槽。Bangumi 的「吐槽」就是收藏评价，所以要把当前追番状态一起写，
+    /// 否则接口会因为缺少 type 直接 400。
+    func postComment(_ text: String, type: CollectType) async -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !isPostingComment else { return false }
+        isPostingComment = true
+        defer { isPostingComment = false }
+        let ok = await BangumiAPI.updateCollection(
+            subjectID: item.id,
+            type: type,
+            comment: trimmed
+        )
+        guard ok else { return false }
+        // 发表成功后重新拉一遍，列表里就有自己的这条了。
+        comments = []
+        commentsTotal = 0
+        await loadComments()
+        return true
     }
 
     // MARK: - 选源

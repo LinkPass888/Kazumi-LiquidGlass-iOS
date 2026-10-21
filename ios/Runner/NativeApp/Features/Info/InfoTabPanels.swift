@@ -3,15 +3,18 @@
 //  Kazumi
 //
 //  详情页「概览 / 吐槽 / 角色 / 关联 / 制作人员」五个标签的内容面板，
-//  对应原版 lib/pages/info/info_tabview.dart 的五个面板：
-//    * 概览     —— 简介；
-//    * 吐槽     —— /p1/subjects/{id}/comments；
-//    * 角色     —— /v0/subjects/{id}/characters；
-//    * 关联     —— /v0/subjects/{id}/subjects；
-//    * 制作人员 —— /v0/subjects/{id}/persons。
+//  对应原版 lib/pages/info/info_tabview.dart 与 info_comments_view.dart：
+//    * 概览     —— 简介（超过 7 行折叠）+ 标签；标签可点进搜索；
+//    * 吐槽     —— 顶部输入框 + 列表；输入框的占位就是原版的「下面我简单喵两句」；
+//    * 角色     —— 圆头像（取景偏上，露头）、角色名右侧是主角/配角；
+//    * 关联     —— 只显示动画，关系名是遍历出来的前传 / 续集（见 RelatedAnimeChain）；
+//    * 制作人员 —— 左侧头像 + 姓名 + 中文名 + 职务。
+//
+//  标题一律左对齐、28pt 粗体，与推荐页的「热门番组」同一套字重字号。
 //
 
 import SwiftUI
+import UIKit
 
 /// 详情页标签。与原版 info_page.dart 的 _infoTabs 逐条一致。
 enum InfoTab: String, CaseIterable, Identifiable, Sendable {
@@ -31,6 +34,18 @@ enum InfoTab: String, CaseIterable, Identifiable, Sendable {
         case .relations: "关联"
         case .staff: "制作人员"
         }
+    }
+}
+
+/// 详情页里的区块标题：左对齐，字号字重与「热门番组」一致。
+struct InfoSectionTitle: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 28, weight: .bold))
+            .foregroundStyle(.primary)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -55,57 +70,295 @@ struct InfoPanelPlaceholder: View {
 
 // MARK: - 概览
 
-/// 概览面板：简介（对应原版 info_tabview.dart 的第一个面板）。
+/// 概览面板：简介 + 标签（对应 info_tabview.dart 的 infoBody）。
 struct InfoOverviewPanel: View {
     let item: BangumiItem
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("简介")
-                .font(.system(size: 18, weight: .bold))
-                .foregroundStyle(.primary)
+    @Environment(AppRouter.self) private var router
+    @State private var introExpanded = false
+    @State private var tagsExpanded = false
+    /// 简介完整高度的测量值，用来判断要不要给「加载更多」。
+    @State private var fullIntroHeight: CGFloat = 0
 
-            Text(item.summary.isEmpty ? "暂无简介" : item.summary)
-                .font(.callout)
-                .foregroundStyle(item.summary.isEmpty ? .secondary : .primary)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
+    /// 原版固定折叠到 7 行。
+    private static let collapsedLines = 7
+    /// 原版标签最多先铺 13 个（第 13 个换成「更多 +」）。
+    private static let collapsedTags = 12
+
+    private var summary: String {
+        let text = item.summary.trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.isEmpty ? "暂无简介" : text
+    }
+
+    private var needsCollapse: Bool {
+        guard fullIntroHeight > 0 else { return summary.count > 180 }
+        return fullIntroHeight > Self.lineHeight * CGFloat(Self.collapsedLines) + 1
+    }
+
+    private static var lineHeight: CGFloat {
+        UIFont.preferredFont(forTextStyle: .callout).lineHeight
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            InfoSectionTitle(text: "简介")
+            intro
+            InfoSectionTitle(text: "标签")
+                .padding(.top, 8)
+            tags
         }
     }
 }
 
-// MARK: - 吐槽
+extension InfoOverviewPanel {
+    /// 简介：超过 7 行折叠，末尾给「加载更多 / 加载更少」。
+    @ViewBuilder
+    private var intro: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(summary)
+                .font(.callout)
+                .foregroundStyle(summary == "暂无简介" ? .secondary : .primary)
+                .lineLimit(introExpanded ? nil : Self.collapsedLines)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(alignment: .topLeading) { measuringText }
 
-/// 吐槽面板：对应原版 info_comments_view.dart。
-struct InfoCommentsPanel: View {
-    let comments: [BangumiCommentItem]
-    let total: Int
-    let isLoading: Bool
-
-    var body: some View {
-        if isLoading {
-            InfoPanelPlaceholder(symbol: "ellipsis.bubble", text: "正在加载吐槽…")
-        } else if comments.isEmpty {
-            InfoPanelPlaceholder(symbol: "text.bubble", text: "还没有人吐槽这部番")
-        } else {
-            VStack(alignment: .leading, spacing: 14) {
-                ForEach(comments) { comment in
-                    row(comment)
+            if needsCollapse {
+                Button {
+                    withAnimation(.easeOut(duration: 0.2)) { introExpanded.toggle() }
+                } label: {
+                    Text(introExpanded ? "加载更少" : "加载更多")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(KazumiPalette.accent)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
                 }
-                if total > comments.count {
-                    Text("已显示 \(comments.count) / \(total) 条")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                .buttonStyle(.plain)
+                .padding(.top, 2)
+            }
+        }
+        .onPreferenceChange(IntroHeightKey.self) { height in
+            fullIntroHeight = height
+        }
+    }
+
+    /// 隐藏的一份全文，只用来量高度（不受 lineLimit 影响）。
+    private var measuringText: some View {
+        Text(summary)
+            .font(.callout)
+            .fixedSize(horizontal: false, vertical: true)
+            .hidden()
+            .background {
+                GeometryReader { proxy in
+                    Color.clear.preference(key: IntroHeightKey.self, value: proxy.size.height)
+                }
+            }
+    }
+
+    /// 标签：原版用 Wrap，这里用自适应列宽实现同样的流式换行。
+    @ViewBuilder
+    private var tags: some View {
+        if item.tags.isEmpty {
+            Text("暂无标签")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        } else {
+            LazyVGrid(
+                columns: [GridItem(.adaptive(minimum: 84), spacing: 8, alignment: .leading)],
+                alignment: .leading,
+                spacing: 8
+            ) {
+                ForEach(visibleTags, id: \.name) { tag in
+                    tagChip(tag)
+                }
+                if canExpandTags {
+                    moreTagChip
                 }
             }
         }
     }
 
+    private var canExpandTags: Bool {
+        !tagsExpanded && item.tags.count >= Self.collapsedTags + 1
+    }
+
+    private var visibleTags: [BangumiTag] {
+        if canExpandTags { return Array(item.tags.prefix(Self.collapsedTags)) }
+        return item.tags
+    }
+
+    private func tagChip(_ tag: BangumiTag) -> some View {
+        Button {
+            router.push(.search(keyword: tag.name))
+        } label: {
+            HStack(spacing: 4) {
+                Text(tag.name)
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                if tag.count > 0 {
+                    Text("\(tag.count)")
+                        .foregroundStyle(KazumiPalette.accent)
+                }
+            }
+            .font(.footnote)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                Capsule(style: .continuous)
+                    .fill(Color.primary.opacity(0.06))
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var moreTagChip: some View {
+        Button {
+            withAnimation(.easeOut(duration: 0.18)) { tagsExpanded = true }
+        } label: {
+            Text("更多 +")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(KazumiPalette.accent)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    Capsule(style: .continuous)
+                        .fill(KazumiPalette.accent.opacity(0.12))
+                )
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+private struct IntroHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
+// MARK: - 吐槽
+
+/// 吐槽面板：对应 info_comments_view.dart。
+///
+/// 顶部是一个输入框，占位文字就是原版的「下面我简单喵两句」——输入后占位自动
+/// 消失，右侧是发送按钮；发表走 Bangumi 收藏评价接口（吐槽本身就是收藏评论）。
+struct InfoCommentsPanel: View {
+    let comments: [BangumiCommentItem]
+    let total: Int
+    let isLoading: Bool
+    let isPosting: Bool
+    /// 「发送」回调。发表要碰 Bangumi 接口与控制器状态，因此固定在主线程执行。
+    var onSend: @MainActor (String) async -> Bool
+
+    @Environment(\.colorScheme) private var colorScheme
+    @State private var draft = ""
+    @State private var errorText: String?
+    @State private var isSending = false
+    @FocusState private var isFocused: Bool
+
+    private var canSend: Bool {
+        !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isSending && !isPosting
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            composer
+
+            if let errorText {
+                Text(errorText)
+                    .font(.footnote)
+                    .foregroundStyle(.red)
+            }
+
+            if isLoading && comments.isEmpty {
+                InfoPanelPlaceholder(symbol: "ellipsis.bubble", text: "正在加载吐槽…")
+            } else if comments.isEmpty {
+                InfoPanelPlaceholder(symbol: "text.bubble", text: "还没有人吐槽这部番")
+            } else {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(comments) { comment in
+                        row(comment)
+                        Divider().padding(.leading, 42)
+                    }
+                    if total > comments.count {
+                        Text("已显示 \(comments.count) / \(total) 条")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .padding(.top, 10)
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: 输入
+
+    private var composer: some View {
+        HStack(alignment: .bottom, spacing: 8) {
+            TextField("下面我简单喵两句", text: $draft, axis: .vertical)
+                .focused($isFocused)
+                .font(.callout)
+                .lineLimit(1...4)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .fill(KazumiPalette.cardSurface(for: colorScheme))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5)
+                )
+                .onSubmit { send() }
+
+            Button {
+                send()
+            } label: {
+                Group {
+                    if isSending || isPosting {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Image(systemName: "paperplane.fill")
+                            .font(.system(size: 15, weight: .semibold))
+                    }
+                }
+                .frame(width: 40, height: 40)
+                .foregroundStyle(.white)
+                .background(
+                    Circle().fill(
+                        canSend ? KazumiPalette.accent : Color.secondary.opacity(0.3)
+                    )
+                )
+            }
+            .buttonStyle(.plain)
+            .disabled(!canSend)
+            .accessibilityLabel("发送吐槽")
+        }
+    }
+
+    private func send() {
+        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, !isSending else { return }
+        isSending = true
+        errorText = nil
+        Task {
+            let ok = await onSend(text)
+            isSending = false
+            if ok {
+                draft = ""
+                isFocused = false
+            } else {
+                errorText = "发送失败：请先在「我的」里登录 Bangumi 后再试。"
+            }
+        }
+    }
+
+    // MARK: 单条
+
     private func row(_ comment: BangumiCommentItem) -> some View {
         HStack(alignment: .top, spacing: 10) {
-            BangumiRemoteImage(url: comment.userAvatar)
-                .frame(width: 32, height: 32)
-                .clipShape(Circle())
+            KazumiAvatar(url: comment.userAvatar, size: 32, focus: 0.2)
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
                     Text(comment.userName.isEmpty ? "匿名用户" : comment.userName)
@@ -113,155 +366,203 @@ struct InfoCommentsPanel: View {
                         .foregroundStyle(.primary)
                         .lineLimit(1)
                     if comment.rate > 0 {
-                        HStack(spacing: 2) {
-                            Image(systemName: "star.fill")
-                                .font(.system(size: 10, weight: .semibold))
-                            Text(String(format: "%.1f", Double(comment.rate) / 2))
-                                .font(.caption2.weight(.bold))
-                        }
-                        .foregroundStyle(KazumiPalette.accent)
+                        Text("\(comment.rate) 分")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(KazumiPalette.accent)
                     }
+                    Spacer(minLength: 0)
+                    Text(Self.dateText(comment.updatedAt))
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
                 }
                 Text(comment.comment)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .font(.callout)
+                    .foregroundStyle(.primary)
                     .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .padding(.vertical, 10)
+    }
+
+    /// 吐槽时间是 Unix 秒。
+    private static func dateText(_ epoch: Int) -> String {
+        guard epoch > 0 else { return "" }
+        let date = Date(timeIntervalSince1970: TimeInterval(epoch))
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_Hans_CN")
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.string(from: date)
     }
 }
 
 // MARK: - 角色
 
-/// 角色面板：对应原版 character_page.dart 的角色列表。
+/// 角色面板：对应 character_card.dart 的 CharacterCard。
+///
+/// 与原版的差别：头像取景偏上（露出头部而不是从额头裁开），
+/// 角色定位（主角 / 配角）挪到角色名右侧，头像和行高一起收窄。
 struct InfoCharactersPanel: View {
     let characters: [BangumiCharacterItem]
     let isLoading: Bool
 
     var body: some View {
-        if isLoading {
+        if isLoading && characters.isEmpty {
             InfoPanelPlaceholder(symbol: "person.2", text: "正在加载角色…")
         } else if characters.isEmpty {
             InfoPanelPlaceholder(symbol: "person.2", text: "暂无角色信息")
         } else {
-            VStack(alignment: .leading, spacing: 14) {
+            LazyVStack(alignment: .leading, spacing: 0) {
                 ForEach(characters) { character in
-                    HStack(alignment: .top, spacing: 12) {
-                        BangumiRemoteImage(url: character.largeImage)
-                            .frame(width: 56, height: 56)
-                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(character.name)
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(.primary)
-                                .lineLimit(2)
-                            Text(character.relation)
-                                .font(.caption2.weight(.bold))
-                                .foregroundStyle(KazumiPalette.accent)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 3)
-                                .background(Capsule().fill(KazumiPalette.accent.opacity(0.14)))
-                            if !character.actorNames.isEmpty {
-                                Text("CV：\(character.actorNames)")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    }
+                    row(character)
+                    Divider().padding(.leading, 50)
                 }
             }
         }
     }
+
+    private func row(_ character: BangumiCharacterItem) -> some View {
+        HStack(spacing: 10) {
+            KazumiAvatar(url: character.largeImage, size: 40, focus: 0.15)
+
+            VStack(alignment: .leading, spacing: 1) {
+                HStack(spacing: 6) {
+                    Text(character.name)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                    if !character.relation.isEmpty {
+                        Text(character.relation)
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(KazumiPalette.accent)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(
+                                Capsule(style: .continuous)
+                                    .fill(KazumiPalette.accent.opacity(0.14))
+                            )
+                    }
+                    Spacer(minLength: 0)
+                }
+
+                if let actor = character.actors.first, !actor.name.isEmpty {
+                    Text(actor.name)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+        }
+        .padding(.vertical, 6)
+    }
 }
+
 
 // MARK: - 关联
 
-/// 关联面板：前传 / 续集 / 角色等同系列条目。
+/// 关联面板：对应 info_tabview.dart 的 _RelatedBangumiCardH。
+/// 数据已经在 RelatedAnimeChain 里筛成「只有动画 + 前传 / 续集」，这里只负责画。
 struct InfoRelationsPanel: View {
     let relations: [BangumiRelationItem]
     let isLoading: Bool
 
     @Environment(AppRouter.self) private var router
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        if isLoading {
+        if isLoading && relations.isEmpty {
             InfoPanelPlaceholder(symbol: "square.stack", text: "正在加载关联条目…")
         } else if relations.isEmpty {
             InfoPanelPlaceholder(symbol: "square.stack", text: "暂无关联条目")
         } else {
-            VStack(alignment: .leading, spacing: 12) {
+            LazyVStack(spacing: 8) {
                 ForEach(relations) { relation in
                     Button {
                         router.push(.bangumiInfo(bangumiID: relation.item.id))
                     } label: {
-                        HStack(alignment: .top, spacing: 12) {
-                            BangumiRemoteImage(url: relation.item.largeImage)
-                                .frame(width: 52, height: 52)
-                                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(relation.item.displayName)
-                                    .font(.subheadline.weight(.semibold))
-                                    .foregroundStyle(.primary)
-                                    .lineLimit(2)
-                                if !relation.relation.isEmpty {
-                                    Text(relation.relation)
-                                        .font(.caption2.weight(.bold))
-                                        .foregroundStyle(KazumiPalette.accent)
-                                        .padding(.horizontal, 8)
-                                        .padding(.vertical, 3)
-                                        .background(Capsule().fill(KazumiPalette.accent.opacity(0.14)))
-                                }
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-
-                            Image(systemName: "chevron.right")
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(.tertiary)
-                        }
+                        card(relation)
                     }
                     .buttonStyle(.plain)
                 }
             }
         }
     }
+
+    private func card(_ relation: BangumiRelationItem) -> some View {
+        HStack(spacing: 10) {
+            BangumiRemoteImage(url: relation.item.largeImage)
+                .frame(width: 60, height: 92)
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(relation.item.displayName)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                Text(relation.relation.isEmpty ? "关联" : relation.relation)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(KazumiPalette.accent)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(8)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(KazumiPalette.cardSurface(for: colorScheme))
+        )
+    }
 }
 
 // MARK: - 制作人员
 
-/// 制作人员面板：原作 / 导演 / 声优等。
+/// 制作人员面板：对应 staff_card.dart 的 StaffCard（左侧头像）。
 struct InfoStaffPanel: View {
     let staff: [BangumiStaffItem]
     let isLoading: Bool
 
     var body: some View {
-        if isLoading {
+        if isLoading && staff.isEmpty {
             InfoPanelPlaceholder(symbol: "person.text.rectangle", text: "正在加载制作人员…")
         } else if staff.isEmpty {
             InfoPanelPlaceholder(symbol: "person.text.rectangle", text: "暂无制作人员信息")
         } else {
-            VStack(alignment: .leading, spacing: 12) {
+            LazyVStack(alignment: .leading, spacing: 0) {
                 ForEach(staff) { member in
-                    HStack(alignment: .top, spacing: 10) {
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(member.displayName)
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(.primary)
-                            if !member.relations.isEmpty {
-                                Text(member.relations.joined(separator: " · "))
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    }
+                    row(member)
+                    Divider().padding(.leading, 50)
                 }
             }
         }
     }
+
+    private func row(_ member: BangumiStaffItem) -> some View {
+        HStack(spacing: 10) {
+            KazumiAvatar(url: member.avatarURL, size: 40, focus: 0.15)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(member.name)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                if !member.nameCN.isEmpty {
+                    Text(member.nameCN)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+
+            Spacer(minLength: 8)
+
+            Text(member.primaryRelation)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+        .padding(.vertical, 6)
+    }
 }
+

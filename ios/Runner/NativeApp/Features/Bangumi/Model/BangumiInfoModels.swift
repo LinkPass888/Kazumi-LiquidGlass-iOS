@@ -88,6 +88,27 @@ struct BangumiStaffItem: Identifiable, Hashable, Sendable {
     var nameCN: String
     /// 同一个人可能担多个职务，按优先级排好。
     var relations: [String]
+    /// 头像。对应 Dart 的 Staff.images，卡片里取的是 grid 那一档。
+    var images: [String: String]
+
+    init(
+        id: Int,
+        name: String,
+        nameCN: String,
+        relations: [String],
+        images: [String: String] = [:]
+    ) {
+        self.id = id
+        self.name = name
+        self.nameCN = nameCN
+        self.relations = relations
+        self.images = images
+    }
+
+    /// 头像地址：与原版 StaffCard 一致，优先 grid。
+    var avatarURL: String {
+        images["grid"] ?? images["medium"] ?? images["small"] ?? images["large"] ?? ""
+    }
 
     var displayName: String {
         let translated = nameCN.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -110,8 +131,9 @@ struct BangumiStaffItem: Identifiable, Hashable, Sendable {
                 staffById[id] = BangumiStaffItem(
                     id: id,
                     name: entry["name"].stringValue ?? "",
-                    nameCN: entry["nameCN"].stringValue ?? "",
-                    relations: []
+                    nameCN: entry["nameCN"].stringValue ?? entry["name_cn"].stringValue ?? "",
+                    relations: [],
+                    images: BangumiInfoModels.parseImages(entry["images"])
                 )
             }
             relationsById[id, default: []].append(entry["relation"].stringValue ?? "")

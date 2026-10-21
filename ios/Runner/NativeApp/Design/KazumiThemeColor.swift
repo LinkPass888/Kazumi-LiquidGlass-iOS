@@ -197,7 +197,12 @@ struct KazumiThemeColor: Identifiable, Hashable, Sendable {
         let light = Self.color(lightPrimary)
         let dark = Self.color(darkPrimary)
         let color = UIColor { traits in
-            traits.userInterfaceStyle == .dark ? dark : light
+            // `.unspecified` 出现在没有视图体系上下文的时候（例如在后台线程
+            // 建立动态色）；此时退回当前 trait 集合，避免默认落到浅色分支。
+            let style = traits.userInterfaceStyle == .unspecified
+                ? UITraitCollection.current.userInterfaceStyle
+                : traits.userInterfaceStyle
+            return style == .dark ? dark : light
         }
         Self.uiColorCache[id] = color
         return color

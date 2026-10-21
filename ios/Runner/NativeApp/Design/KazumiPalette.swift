@@ -22,6 +22,26 @@ enum KazumiPalette {
         Color(uiColor: KazumiThemeColor.current.accentUIColor)
     }
 
+    /// 按当前浅色 / 深色取的强调色。
+    ///
+    /// 主题色的两档数值来自 Material 3：浅色模式是 T40（深），深色模式是 T80（浅）。
+    /// 这里**显式**按 `colorScheme` 取，不走 `UIColor` 的动态解析 ——
+    /// 动态色最终由 UIKit 的 trait collection 决定，自绘顶栏、隐藏导航栏这些
+    /// 场景下它和 SwiftUI 的 colorScheme 可能对不上，就会出现「深色模式用了
+    /// 浅色模式的色、浅色模式用了深色模式的色」这种对调。
+    static func accent(for scheme: ColorScheme) -> Color {
+        let theme = KazumiThemeColor.current
+        return KazumiThemeColor.swiftUIColor(
+            scheme == .dark ? theme.darkPrimary : theme.lightPrimary
+        )
+    }
+
+    /// 强调色上的前景色（对应 Material 的 onPrimary）：
+    /// 浅色模式强调色深 → 白字；深色模式强调色浅 → 黑字。
+    static func onAccent(for scheme: ColorScheme) -> Color {
+        scheme == .dark ? .black : .white
+    }
+
     /// 页面背景：与原版 Scaffold 的 surface 一致，浅色近白、深色近黑。
     /// 深色下默认取近黑（`Color(white: 0.07)`），开启 OLED 优化时用纯黑。
     static func background(for scheme: ColorScheme) -> Color {

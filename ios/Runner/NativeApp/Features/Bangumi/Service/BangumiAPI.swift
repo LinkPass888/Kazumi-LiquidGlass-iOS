@@ -45,6 +45,11 @@ enum BangumiEndpoints {
     /// 吐槽（评论），next 域。
     static let commentsNext = "/p1/subjects/{0}/comments?limit={1}&offset={2}"
 
+    /// 写收藏（追番状态 / 吐槽 / 评分）。与原版 api_endpoints.dart 一致：
+    /// 写操作走 bgmapi 这个认证镜像域，读操作走 api.bgm.tv。
+    static let authMirrorDomain = "https://api.bgmapi.com"
+    static let setCollection = "/v0/users/-/collections/{0}"
+
     /// 对应 ApiEndpoints.formatUrl。
     static func format(_ template: String, _ params: [CustomStringConvertible]) -> String {
         var url = template
@@ -344,6 +349,41 @@ enum BangumiAPI {
         } catch {
             KazumiLog.network.error("Resolve bangumi comments failed: \(error.localizedDescription, privacy: .public)")
             return BangumiCommentPage(items: [], total: 0)
+        }
+    }
+
+    // MARK: - 写收藏 / 吐槽
+
+    /// 对应 addOrUpdateBangumiEvaluationBySubjectID：把「追番状态 + 吐槽 + 评分」
+    /// 写回 Bangumi。
+    ///
+    /// 原版的写操作走 bgmapi 认证镜像域，且必须带用户令牌；没有令牌直接返回
+    /// false，让调用方提示先登录，而不是发一个必然 401 的请求。
+    static func updateCollection(
+        subjectID: Int,
+        type: CollectType,
+        comment: String? = nil,
+        rate: Int? = nil
+    ) async -> Bool {
+        guard let bangumiType = type.bangumiCollectionType, accessToken != nil else {
+            return false
+        }
+        var body: [String: JSONValue] = ["type": .int(bangumiType)]
+        if let comment { body["comment"] = .string(comment) }
+        if let rate { body["rate"] = .int(rate) }
+        let url = BangumiEndpoints.format(
+            BangumiEndpoints.authMirrorDomain + BangumiEndpoints.setCollection,
+            [subjectID]
+        )
+        do {
+            _ = try await post(url, body: .object(body))
+            KazumiLog.network.debug("Update bangumi collection: \(subjectID, privacy: .public)")
+            return true
+        } catch {
+            KazumiLog.network.error(
+                "Update bangumi collection failed: \(error.localizedDescription, privacy: .public)"
+            )
+            return false
         }
     }
 
