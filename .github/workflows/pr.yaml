@@ -84,7 +84,12 @@
         needs: [flutter-test, flutter-analyze]
         if: ${{ github.event_name == 'workflow_dispatch' || ! github.event.pull_request.draft }}
         name: "Release for iOS"
-        runs-on: "macos-26"
+        # native_glass_navbar 1.2.0 的 Swift 侧用了 UITab / setTabs /
+        # prominentTabIdentifier —— 这些是 iOS 27 SDK 的符号，插件自己
+        # 也写明「iOS builds require Xcode 27 or later」。macos-26 镜像
+        # 最高只有 Xcode 26.6，编译直接失败。@available(iOS 27.0, *)
+        # 只做运行时判断，SDK 里没有符号时救不了编译。
+        runs-on: "xcode-27"
         permissions: write-all
 
         steps:

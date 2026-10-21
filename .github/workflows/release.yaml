@@ -65,7 +65,9 @@
       flutter-build-ios:
         name: "Release for iOS"
         needs: [flutter-test, flutter-analyze]
-        runs-on: "macos-26"
+        # native_glass_navbar 1.2.0 需要 Xcode 27（iOS 27 SDK 的 UITab /
+        # setTabs / prominentTabIdentifier）；macos-26 最高只有 Xcode 26.6。
+        runs-on: "xcode-27"
         permissions: write-all
 
         steps:
