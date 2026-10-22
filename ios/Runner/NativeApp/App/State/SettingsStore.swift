@@ -90,6 +90,12 @@ enum SuperResolutionMode: Int, CaseIterable, Identifiable, Sendable {
 
 /// 设置键。命名沿用原项目 setting keys 的语义，便于备份文件互通。
 enum SettingsKey {
+    /// 设置键在 UserDefaults 里的统一前缀。
+    ///
+    /// 放在这个非隔离的枚举里：设置备份扩展与静态工具方法都要在
+    /// `SettingsStore`（`@MainActor`）之外读取它，避免 Swift 6
+    /// 严格并发下的 actor 隔离报错。
+    static let keyPrefix = "kazumi.settings."
     static let themeMode = "themeMode"
     static let colorType = "colorType"
     /// 配色方案标识，沿用原版 `SettingsKeys.themeColor` 的键名。
@@ -142,11 +148,10 @@ enum SettingsKey {
 @MainActor
 @Observable
 final class SettingsStore {
-    private enum Keys {
-        /// 与 [SettingsStore.keyPrefix] 同一份前缀（后者供备份扩展读取）。
-        static let prefix = SettingsStore.keyPrefix
-    }
-
+    // 键名前缀统一由非隔离的 `SettingsKey.keyPrefix` 提供（备份扩展也读它）。
+    // 这里不再包一层嵌套类型或 `@MainActor` 静态属性：`@MainActor` 类型里的
+    // 静态属性受 actor 隔离，经由非隔离上下文（如嵌套类型初始化器）读取会触发
+    // Swift 6 的「main actor-isolated default value in a nonisolated context」编译错误。
     private let defaults: UserDefaults
 
     var themeMode: KazumiThemeMode {
@@ -310,7 +315,7 @@ final class SettingsStore {
         self.defaults = defaults
         themeMode = Self.read(defaults, SettingsKey.themeMode, KazumiThemeMode.system)
         // 原版把 'default' 视为绿色；这里额外兼容旧备份里可能出现的 ARGB 字符串。
-        let storedThemeColor = defaults.object(forKey: Keys.prefix + SettingsKey.themeColor) as? String
+        let storedThemeColor = defaults.object(forKey: SettingsKey.keyPrefix + SettingsKey.themeColor) as? String
         let resolvedThemeColor = KazumiThemeColor.named(storedThemeColor ?? KazumiThemeColor.standard.id)
         themeColor = resolvedThemeColor
         // 静态成员不能经由 `self` 读取（等价于访问未初始化完成的实例），
@@ -361,13 +366,10 @@ final class SettingsStore {
     }
 
     private func persist(_ value: Any?, _ key: String) {
-        defaults.set(value, forKey: Keys.prefix + key)
+        defaults.set(value, forKey: SettingsKey.keyPrefix + key)
     }
 
     // MARK: - 原始快照（设置备份用）
-
-    /// 键名前缀。设置备份按原版键名读写，需要把前缀拼回去。
-    static let keyPrefix = "kazumi.settings."
 
     /// 已落盘的设置快照：键名（去掉前缀）-> 值。
     ///
@@ -378,8 +380,8 @@ final class SettingsStore {
     func rawSettingsSnapshot() -> [String: JSONValue] {
         var result: [String: JSONValue] = [:]
         for (key, value) in defaults.dictionaryRepresentation() {
-            guard key.hasPrefix(Self.keyPrefix) else { continue }
-            let name = String(key.dropFirst(Self.keyPrefix.count))
+            guard key.hasPrefix(SettingsKey.keyPrefix) else { continue }
+            let name = String(key.dropFirst(SettingsKey.keyPrefix.count))
             guard let json = Self.jsonValue(fromStored: value) else { continue }
             result[name] = json
         }
@@ -392,7 +394,7 @@ final class SettingsStore {
     /// 认不得的先存着，下次导出还能原样带出去。
     func persistRawSetting(_ value: JSONValue, forKey key: String) {
         guard let stored = Self.storedValue(from: value) else { return }
-        defaults.set(stored, forKey: Self.keyPrefix + key)
+        defaults.set(stored, forKey: SettingsKey.keyPrefix + key)
     }
 
     /// UserDefaults 里的值 -> JSONValue。只认标量与字符串列表，
@@ -468,6 +470,6 @@ final class SettingsStore {
     }
 
     private static func read<Value>(_ defaults: UserDefaults, _ key: String, _ fallback: Value) -> Value {
-        defaults.object(forKey: Keys.prefix + key) as? Value ?? fallback
+        defaults.object(forKey: SettingsKey.keyPrefix + key) as? Value ?? fallback
     }
 }

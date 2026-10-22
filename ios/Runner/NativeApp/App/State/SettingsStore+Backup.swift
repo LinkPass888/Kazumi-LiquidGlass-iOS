@@ -446,7 +446,7 @@ extension SettingsStore {
         //      否则「导出 → 恢复 → 再导出」会一路缩水；
         //   2. 恢复后的项数按备份实际内容统计，与原版 toast 的
         //      「已恢复 N 项设置」对齐。
-        for (key, rawValue) in settings where !consumedKeys.contains(key) {
+        for (key, rawValue) in settings where !Self.consumedKeys.contains(key) {
             guard !Self.isExcludedKey(key) else { continue }
             guard Self.storedSettingKeys.contains(key) else { continue }
             persistRawSetting(rawValue, forKey: key)
