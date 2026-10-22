@@ -33,16 +33,8 @@ extension SettingsStore {
         legacyKeys[localKey] ?? localKey
     }
 
-    /// 凭据类键，对应原版 backup_settings.dart 的 `_credentialKeys`：
-    /// 「不含账号与密码」的导出会跳过这些键。
-    private static let credentialKeys: Set<String> = [
-        "bangumiAccessToken",
-        "webDavUsername",
-        "webDavPasswd",
-        "webDavURL",
-        "proxyUrl",
-        "proxyTestUrl",
-    ]
+    // 凭据类键统一由 `SettingsBackup.credentialKeys` 提供（非隔离枚举，
+    // 导出时的范围过滤与恢复确认弹窗的提示读同一份清单，不会两处走偏）。
 
     /// 不参与备份的键，对应 lib/services/storage/settings_backup.dart 的
     /// `excludedKeys`：
@@ -280,7 +272,7 @@ extension SettingsStore {
         for (localKey, value) in rawSettingsSnapshot() {
             let key = Self.backupKey(localKey)
             guard !Self.isExcludedKey(key) else { continue }
-            if omitCredentials, Self.credentialKeys.contains(key) { continue }
+            if omitCredentials, SettingsBackup.credentialKeys.contains(key) { continue }
             result[key] = value
         }
         for (localKey, value) in propertySnapshot(omitCredentials: omitCredentials) {

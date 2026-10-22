@@ -53,7 +53,7 @@ struct WebDAVScreen: View {
             } header: {
                 Text("多设备同步 · WebDAV")
             } footer: {
-                Text("备份内容：追番收藏与观看记录。服务器上保存在 kazumiSync/kazumi_backup.json，与 Flutter 版使用同一个同步目录，可直接互通。")
+                Text("备份内容：追番收藏与观看记录，存到服务器的 kazumiSync 目录下。目录与 Flutter 版相同，但文件名与格式不同，两边的备份互相不识别。")
             }
 
             Section {

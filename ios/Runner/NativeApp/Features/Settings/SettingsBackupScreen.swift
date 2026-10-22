@@ -65,11 +65,11 @@ struct SettingsBackupScreen: View {
         .navigationBarTitleDisplayMode(.inline)
         .scrollContentBackground(.hidden)
         .background(KazumiPalette.background(for: colorScheme).ignoresSafeArea())
-        .confirmationDialog("恢复设置", isPresented: $isShowingConfirm, titleVisibility: .visible) {
+        .confirmationDialog("恢复这些设置？", isPresented: $isShowingConfirm, titleVisibility: .visible) {
             Button("恢复设置") { applyPending() }
             Button("取消", role: .cancel) { pendingPayload = nil }
         } message: {
-            Text("恢复后会覆盖当前的应用设置。备份里如果包含账号或代理密码，恢复后请到同步设置里确认凭据仍然有效。")
+            Text(confirmMessage)
         }
     }
 
@@ -110,5 +110,33 @@ struct SettingsBackupScreen: View {
         pendingPayload = nil
         let count = settings.applyBackup(payload.settings)
         message = "已恢复 \(count) 项设置"
+    }
+
+    // MARK: - 确认文案
+
+    /// 恢复确认弹窗的正文，逐句对应原版 backup_settings.dart:132-138：
+    /// 备份时间与项数、凭据提示（仅当备份里真有凭据时）、
+    /// 以及「引导步骤、通知权限、设备同步状态不会被改动」这句承诺。
+    private var confirmMessage: String {
+        guard let payload = pendingPayload else { return "" }
+        var blocks = [
+            "备份时间：\(Self.timestampText(payload.exportedAt))\n"
+                + "共 \(payload.count) 项设置，将覆盖当前设置。",
+        ]
+        if payload.settings.keys.contains(where: SettingsBackup.credentialKeys.contains) {
+            blocks.append("备份包含账号或代理密码。恢复后请到同步设置里确认凭据仍然有效。")
+        }
+        blocks.append("引导步骤、通知权限、设备同步状态不会被改动。")
+        return blocks.joined(separator: "\n\n")
+    }
+
+    /// 备份时间的展示格式：`2026-10-22 13:04`，与原版一致；
+    /// 备份里没写时间或格式不对时显示「时间未知」。
+    private static func timestampText(_ date: Date?) -> String {
+        guard let date else { return "时间未知" }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd HH:mm"
+        return formatter.string(from: date)
     }
 }

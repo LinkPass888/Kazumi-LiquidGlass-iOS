@@ -18,6 +18,23 @@ enum SettingsBackup {
     /// 备份文件的应用标识。
     static let appIdentifier = "Kazumi"
 
+    /// 凭据类键（键名用的是原版 Hive 键名）：对应原版 backup_settings.dart 的
+    /// `_credentialKeys` ——「不含账号与密码」的导出会跳过这些键，
+    /// 恢复前的确认弹窗也据它提示用户重新确认凭据。
+    ///
+    /// 原版这份清单里写的是 `webDavPassword`，而设置箱里实际的键名是
+    /// `webDavPasswd`（见 lib/services/storage/settings_keys.dart:760），
+    /// 于是原版那句「备份包含账号或代理密码」的提示永远不会触发。
+    /// 这边按真实键名列出，提示才真的有用；导出的范围仍与原版一致。
+    static let credentialKeys: Set<String> = [
+        "bangumiAccessToken",
+        "webDavUsername",
+        "webDavPasswd",
+        "webDavURL",
+        "proxyUrl",
+        "proxyTestUrl",
+    ]
+
     /// 解析后的备份内容。
     struct Payload {
         /// 键名 -> 设置值。

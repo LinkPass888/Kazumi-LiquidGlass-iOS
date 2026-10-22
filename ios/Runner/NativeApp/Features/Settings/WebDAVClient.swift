@@ -14,12 +14,19 @@ import Foundation
 struct WebDAVClient {
     /// 与 Flutter 版一致的同步根目录。
     ///
-    /// 原版的服务端布局（见 lib/services/sync/webdav.dart）：
-    ///   /kazumiSync/                    追番与历史（Hive 箱备份 + 历史事件日志）
-    ///   /kazumiSync/history/            ...
-    ///   /kazumiSync/danmakuShield/      ...
-    /// 这边沿用同一个根目录，两端的同步文件放在同一处，
-    /// 用户换回 Flutter 版时不会看到两套互不相干的目录。
+    /// 原版的服务端布局（见 lib/services/sync/webdav.dart:16-20）：
+    ///   /kazumiSync/collectibles.tmp               追番收藏（Hive 箱文件）
+    ///   /kazumiSync/collectchanges.tmp             收藏变更队列
+    ///   /kazumiSync/histories.tmp                  旧版观看记录
+    ///   /kazumiSync/history/snapshot.json          观看记录快照
+    ///   /kazumiSync/history/changes/<设备>.jsonl    观看记录事件日志
+    ///   /kazumiSync/danmakuShield/<设备>.json       弹幕屏蔽词
+    ///
+    /// 本端只实现「整包备份」这一个子集：往同一个根目录写
+    /// `kazumi_backup.json`。两边目录同名、文件不同名也不同格式，因此
+    /// **互不识别** —— 不过也不会互相干扰：原版读根目录时按文件名精确匹配
+    /// （webdav.dart:203-207 只找 collectibles.tmp / collectchanges.tmp），
+    /// 多出这个文件既不会被解析，也不会让同步报错。
     static let directoryName = "kazumiSync"
     static let backupFileName = "kazumi_backup.json"
 
