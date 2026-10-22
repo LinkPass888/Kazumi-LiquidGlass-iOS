@@ -55,7 +55,7 @@ final class PlayerSurfaceModel {
 
     func seek(to time: Double) {
         guard time.isFinite, time >= 0 else { return }
-        playerView?.seek(time: time)
+        playerView?.seek(time: time) { _ in }
         currentTime = time
     }
 
@@ -101,8 +101,8 @@ final class PlayerSurfaceCoordinator: NSObject, PlayerControllerDelegate {
 
     private var lastURL: URL?
     private var lastFilters: [String] = []
-    /// 切到 FFmpeg 内核之前的默认播放器类型，关闭超分时还原。
-    @MainActor private static var originalFirstPlayerType: (any MediaPlayerProtocol.Type)?
+    /// 当前挂在 `PlayerView` 上的视频视图，换集时用来摘掉上一路。
+    private weak var attachedVideoView: UIView?
 
     /// 只在地址或超分档位真的变了的时候重建资源，普通的状态刷新不打断播放。
     @MainActor
@@ -130,35 +130,50 @@ final class PlayerSurfaceCoordinator: NSObject, PlayerControllerDelegate {
             options.referer = referer
             options.appendHeader(["Referer": referer])
         }
+        options.videoFilters = filters
 
-        if filters.isEmpty {
-            options.videoFilters = []
-            if let original = Self.originalFirstPlayerType {
-                KSOptions.firstPlayerType = original
-                Self.originalFirstPlayerType = nil
-            }
-        } else {
-            options.videoFilters = filters
-            // FFmpeg 滤镜只在 MEPlayer 内核下生效；AVPlayer 会直接忽略。
-            if Self.originalFirstPlayerType == nil {
-                Self.originalFirstPlayerType = KSOptions.firstPlayerType
-            }
-            KSOptions.firstPlayerType = KSMEPlayer.self
+        // FFmpeg 滤镜链只在 MEPlayer 内核下生效，AVPlayer 会直接忽略。
+        //
+        // 这里刻意不去改 `KSOptions.firstPlayerType`：那是 KSPlayer 的全局静态
+        // 可变属性，在 Swift 6 严格并发下客户端读写会被判定为不安全。
+        // 改成自己建 layer（`isAutoPlay: false`）后替换 `playerLayer.player`，
+        // 既绕开全局状态，也避免先按默认内核起播再换掉的双重加载。
+        //
+        // 换集 / 换档位时先把上一路停掉，否则旧内核会继续出声。
+        view.playerLayer?.stop()
+
+        let layer = KSPlayerLayer(url: url, isAutoPlay: false, options: options)
+        view.playerLayer = layer
+        if !filters.isEmpty {
+            let previous = layer.player
+            layer.player = KSMEPlayer(url: url, options: options)
+            previous.shutdown()
         }
 
-        view.set(url: url, options: options)
+        // 与 `PlayerView.set(url:options:)` 保持一致：清掉上一集的进度与字幕源。
+        view.srtControl.url = url
+        view.toolBar.currentTime = 0
+        view.totalTime = 0
+
         attachVideoView(to: view)
+        layer.play()
 
         if resumeTime > 1 {
-            view.seek(time: resumeTime)
+            view.seek(time: resumeTime) { _ in }
         }
     }
 
     /// 把 `player.view` 铺满整个 PlayerView（弹幕层在它上面，仍然可见）。
+    ///
+    /// 换集 / 换内核都会产生新的 `player.view`，旧的必须显式摘掉：
+    /// `PlayerView` 是 superview，会一直强持有它，内核自己析构也带不走。
     @MainActor
     private func attachVideoView(to view: PlayerView) {
-        guard let layer = view.playerLayer else { return }
-        let videoView = layer.player.view
+        guard let layer = view.playerLayer, let videoView = layer.player.view else { return }
+        if let previous = attachedVideoView, previous !== videoView {
+            previous.removeFromSuperview()
+        }
+        attachedVideoView = videoView
         guard videoView.superview !== view else { return }
         videoView.translatesAutoresizingMaskIntoConstraints = false
         view.insertSubview(videoView, at: 0)

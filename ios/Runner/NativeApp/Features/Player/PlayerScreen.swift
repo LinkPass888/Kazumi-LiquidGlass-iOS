@@ -154,12 +154,11 @@ struct PlayerScreen: View {
     }
 
     private func danmakuNotice(_ controller: PlayerController) -> String? {
-        guard danmakuEnabled else { return "弹幕已关闭" }
         switch controller.danmakuStatus {
         case .loading:
-            return "正在加载弹幕…"
+            return danmakuEnabled ? "正在加载弹幕…" : nil
         case .unavailable, .failed:
-            return controller.danmakuMessage
+            return danmakuEnabled ? controller.danmakuMessage : nil
         case .idle, .ready:
             return nil
         }
