@@ -13,6 +13,9 @@
 import SwiftUI
 
 struct TimelineScreen: View {
+    /// 卡片 → 详情页缩放转场所属的命名空间（由所在导航栈提供）。
+    var zoomNamespace: Namespace.ID?
+
     @State private var controller = TimelineController()
     @State private var selectedWeekday = TimelineScreen.todayIndex
     @State private var isShowingSeasonPicker = false
@@ -268,7 +271,8 @@ struct TimelineScreen: View {
                             item: item,
                             isWatching: watchingIDs.contains(item.id),
                             updateText: controller.updateText(for: item),
-                            currentEpisode: controller.currentEpisode(for: item)
+                            currentEpisode: controller.currentEpisode(for: item),
+                            zoomNamespace: zoomNamespace
                         )
                     }
                 }

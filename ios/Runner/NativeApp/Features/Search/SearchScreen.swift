@@ -12,6 +12,8 @@ import SwiftUI
 
 struct SearchScreen: View {
     var initialKeyword: String = ""
+    /// 卡片 → 详情页缩放转场所属的命名空间（由所在导航栈提供）。
+    var zoomNamespace: Namespace.ID?
 
     @State private var controller = SearchController()
     @State private var input = ""
@@ -232,7 +234,7 @@ struct SearchScreen: View {
         } else {
             LazyVGrid(columns: columns, alignment: .leading, spacing: 6) {
                 ForEach(controller.bangumiList) { item in
-                    BangumiPosterCard(item: item)
+                    BangumiPosterCard(item: item, zoomNamespace: zoomNamespace)
                         .task { await loadMoreIfNeeded(current: item) }
                 }
             }

@@ -17,6 +17,9 @@ import UIKit
 
 struct BangumiInfoScreen: View {
     var bangumiID: Int
+    /// 卡片 → 详情页缩放转场所属的命名空间（由所在导航栈提供）。
+    /// 传 nil 或开启「减弱动态效果」时退回系统默认推入。
+    var zoomNamespace: Namespace.ID?
 
     @State private var controller: InfoController?
     @State private var isShowingSources = false
@@ -44,6 +47,9 @@ struct BangumiInfoScreen: View {
         .background(KazumiPalette.background(for: colorScheme).ignoresSafeArea())
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .navigationBar)
+        // 与列表卡片同 ID、同命名空间：从卡片点进来时原地放大，返回时收回去。
+        // 找不到对应源视图（如从播放页推入）时系统自动回落到默认转场。
+        .kazumiZoomDestination(id: bangumiID, namespace: zoomNamespace)
         // 自绘顶栏会连带关掉系统返回手势，这里把它接回来。
         .background {
             KazumiSwipeBackEnabler()
@@ -470,7 +476,8 @@ extension BangumiInfoScreen {
         case .relations:
             InfoRelationsPanel(
                 relations: controller.relations,
-                isLoading: controller.isLoadingRelations
+                isLoading: controller.isLoadingRelations,
+                zoomNamespace: zoomNamespace
             )
         case .staff:
             InfoStaffPanel(

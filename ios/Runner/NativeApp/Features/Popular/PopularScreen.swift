@@ -12,6 +12,9 @@
 import SwiftUI
 
 struct PopularScreen: View {
+    /// 卡片 → 详情页缩放转场所属的命名空间（由所在导航栈提供）。
+    var zoomNamespace: Namespace.ID?
+
     @State private var controller = PopularController()
     @Environment(AppRouter.self) private var router
     @Environment(\.colorScheme) private var colorScheme
@@ -148,7 +151,8 @@ struct PopularScreen: View {
                     BangumiPosterCard(
                         item: item,
                         width: posterWidth,
-                        titleAreaHeight: Self.titleAreaHeight
+                        titleAreaHeight: Self.titleAreaHeight,
+                        zoomNamespace: zoomNamespace
                     )
                     .frame(width: posterWidth, height: cardHeight, alignment: .top)
                     .task {

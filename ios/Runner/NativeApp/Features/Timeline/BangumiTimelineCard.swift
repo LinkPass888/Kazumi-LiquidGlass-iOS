@@ -18,6 +18,9 @@ struct BangumiTimelineCard: View {
     var updateText: String?
     var currentEpisode: Int?
     var onTap: (() -> Void)?
+    /// 卡片 → 详情页缩放转场所属的命名空间（由所在导航栈提供）。
+    /// 传 nil 或开启「减弱动态效果」时不登记转场源，退回系统默认推入。
+    var zoomNamespace: Namespace.ID?
 
     @Environment(AppRouter.self) private var router
     @Environment(\.colorScheme) private var colorScheme
@@ -48,6 +51,8 @@ struct BangumiTimelineCard: View {
             )
         }
         .buttonStyle(.plain)
+        // 整张卡片作为缩放转场的源，放大时形变成详情页。
+        .kazumiZoomSource(id: item.id, namespace: zoomNamespace)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(item.displayName)
     }

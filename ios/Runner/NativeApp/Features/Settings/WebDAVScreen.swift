@@ -53,10 +53,17 @@ struct WebDAVScreen: View {
             } header: {
                 Text("多设备同步 · WebDAV")
             } footer: {
-                Text("备份内容：追番收藏与观看记录。服务器上保存在 Kazumi/kazumi_backup.json，与 Flutter 版使用同一路径，可直接互通。")
+                Text("备份内容：追番收藏与观看记录。服务器上保存在 kazumiSync/kazumi_backup.json，与 Flutter 版使用同一个同步目录，可直接互通。")
             }
 
             Section {
+                Button {
+                    Task { await testConnection() }
+                } label: {
+                    Label("测试连接", systemImage: "network")
+                }
+                .disabled(isBusy || !isConfigured)
+
                 Button {
                     Task { await backup() }
                 } label: {
@@ -72,6 +79,8 @@ struct WebDAVScreen: View {
                 .disabled(isBusy || !isConfigured)
             } header: {
                 Text("备份与恢复")
+            } footer: {
+                Text("「测试连接」只发一次只读请求，确认地址与账号可用；不会写入任何内容。")
             }
 
             if let statusMessage {
@@ -148,6 +157,20 @@ struct WebDAVScreen: View {
     }
 
     // MARK: - 备份 / 恢复
+
+    private func testConnection() async {
+        isBusy = true
+        statusMessage = nil
+        defer { isBusy = false }
+        do {
+            try await WebDAVClient(settings: settings).ping()
+            statusMessage = "连接正常，可以备份或恢复"
+            KazumiLogBuffer.network("WebDAV 连接测试通过")
+        } catch {
+            statusMessage = "连接失败：\(error.localizedDescription)"
+            KazumiLogBuffer.network("WebDAV 连接测试失败：\(error.localizedDescription)")
+        }
+    }
 
     private func backup() async {
         isBusy = true

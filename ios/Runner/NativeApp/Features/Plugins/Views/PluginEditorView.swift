@@ -51,6 +51,7 @@ struct PluginEditorView: View {
     }
 
     @Environment(PluginsController.self) private var plugins
+    @Environment(AppRouter.self) private var router
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
 
@@ -60,7 +61,6 @@ struct PluginEditorView: View {
     @State private var section: Section = .basic
     @State private var errorMessage: String?
     @State private var isSaving = false
-    @State private var isTesting = false
     @State private var testResult: String?
 
     var body: some View {
@@ -122,6 +122,17 @@ struct PluginEditorView: View {
                         Label("复制分享链接", systemImage: "link")
                     }
                     .disabled(original.name.isEmpty)
+                    if !original.name.isEmpty {
+                        Divider()
+                        // 原版编辑器底部的「测试规则」：先保存再跳测试页，
+                        // 否则测的是改动前那份规则。
+                        Button {
+                            Task { await saveAndTest() }
+                        } label: {
+                            Label("保存并测试规则", systemImage: "testtube.2")
+                        }
+                        .disabled(isSaving)
+                    }
                 } label: {
                     if isSaving { ProgressView() } else { Image(systemName: "ellipsis.circle") }
                 }
@@ -300,6 +311,28 @@ struct PluginEditorView: View {
             defer { isSaving = false }
             try await plugins.updatePlugin(plugin)
             dismiss()
+        } catch {
+            errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
+    /// 保存当前改动，然后跳到规则测试页。
+    ///
+    /// 原版在编辑器里点「测试规则」也是先落到已保存的规则上（测试页按名字取规则），
+    /// 这里同理：先保存再推入，测试的就是刚改完的这份。
+    private func saveAndTest() async {
+        do {
+            let plugin = try draft.build(apiLevel: KazumiAppInfo.ruleAPILevel)
+            guard !plugin.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                throw EditorError.emptyName
+            }
+            if plugin.requiresNewerClient {
+                throw EditorError.requiresNewerClient
+            }
+            isSaving = true
+            defer { isSaving = false }
+            try await plugins.updatePlugin(plugin)
+            router.push(.pluginTest(ruleID: plugin.name))
         } catch {
             errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
         }

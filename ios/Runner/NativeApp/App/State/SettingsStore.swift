@@ -7,6 +7,7 @@
 //  `settings` 段落写回这里，因此键名刻意与原版保持一致。
 //
 
+import CoreFoundation
 import Foundation
 import Observation
 import SwiftUI
@@ -142,13 +143,17 @@ enum SettingsKey {
 @Observable
 final class SettingsStore {
     private enum Keys {
-        static let prefix = "kazumi.settings."
+        /// 与 [SettingsStore.keyPrefix] 同一份前缀（后者供备份扩展读取）。
+        static let prefix = SettingsStore.keyPrefix
     }
 
     private let defaults: UserDefaults
 
     var themeMode: KazumiThemeMode {
-        didSet { persist(themeMode.rawValue, SettingsKey.themeMode) }
+        didSet {
+            persist(themeMode.rawValue, SettingsKey.themeMode)
+            syncAppearance()
+        }
     }
 
     /// 选中的配色方案（对应原版 `themeColor` 设置，默认绿色）。
@@ -317,6 +322,9 @@ final class SettingsStore {
         // 在全部存储属性初始化完成后再同步全局调色板，避免 'self' 提前访问。
         KazumiThemeColor.current = resolvedThemeColor
         KazumiThemeColor.oledEnhance = resolvedOLEDEnhance
+        // 应用主题的明暗要同步给调色板：强调色按它取 T40 / T80 那一档，
+        // 不跟随窗口 trait（见 KazumiThemeColor.darkAppearanceOverride）。
+        KazumiThemeColor.darkAppearanceOverride = Self.darkAppearance(for: themeMode)
         selectedPluginIndex = Self.read(defaults, SettingsKey.selectedPluginIndex, 0)
         playerEntryFullscreen = Self.read(defaults, SettingsKey.playerEntryFullscreen, true)
         superResolutionMode = SuperResolutionMode(
@@ -354,6 +362,109 @@ final class SettingsStore {
 
     private func persist(_ value: Any?, _ key: String) {
         defaults.set(value, forKey: Keys.prefix + key)
+    }
+
+    // MARK: - 原始快照（设置备份用）
+
+    /// 键名前缀。设置备份按原版键名读写，需要把前缀拼回去。
+    static let keyPrefix = "kazumi.settings."
+
+    /// 已落盘的设置快照：键名（去掉前缀）-> 值。
+    ///
+    /// 对应原版 `GStorage.rawSettingsSnapshot()`。备份导出以它为底，
+    /// 这样本地没有建模、但确实在磁盘上的设置项（旧版留下的快捷键、
+    /// 时间表过滤条件、低内存策略等）也能原样带走，
+    /// 不会因为「这边没有对应属性」就被静默丢掉。
+    func rawSettingsSnapshot() -> [String: JSONValue] {
+        var result: [String: JSONValue] = [:]
+        for (key, value) in defaults.dictionaryRepresentation() {
+            guard key.hasPrefix(Self.keyPrefix) else { continue }
+            let name = String(key.dropFirst(Self.keyPrefix.count))
+            guard let json = Self.jsonValue(fromStored: value) else { continue }
+            result[name] = json
+        }
+        return result
+    }
+
+    /// 把「本地没有建模」的设置项原样落盘（键名沿用原版 Hive 键名）。
+    ///
+    /// 原版恢复备份是整段写回设置箱，这边同样不挑键：认得的键由各属性接收，
+    /// 认不得的先存着，下次导出还能原样带出去。
+    func persistRawSetting(_ value: JSONValue, forKey key: String) {
+        guard let stored = Self.storedValue(from: value) else { return }
+        defaults.set(stored, forKey: Self.keyPrefix + key)
+    }
+
+    /// UserDefaults 里的值 -> JSONValue。只认标量与字符串列表，
+    /// 与 SettingsBackup 支持的取值范围保持一致。
+    private static func jsonValue(fromStored value: Any) -> JSONValue? {
+        switch value {
+        case let string as String:
+            return .string(string)
+        case let number as NSNumber:
+            // UserDefaults 把布尔、整数、浮点都包成 NSNumber，
+            // 且 Bool 也会以 NSNumber 的身份回来，所以先按 CFBoolean 的类型区分，
+            // 否则 true 会被写成 1。
+            if CFGetTypeID(number) == CFBooleanGetTypeID() {
+                return .bool(number.boolValue)
+            }
+            // 整数值按 Int 存（备份里 2 与 2.0 对 Flutter 是两种类型），
+            // 带小数的才写 double。
+            let doubleValue = number.doubleValue
+            if doubleValue == doubleValue.rounded(),
+               doubleValue <= Double(Int.max),
+               doubleValue >= Double(Int.min) {
+                return .int(number.intValue)
+            }
+            return .double(doubleValue)
+        case let array as [Any]:
+            // 只认字符串列表：混合类型数组不是设置项（与原版 _encodeValue 一致）。
+            var strings: [String] = []
+            for item in array {
+                guard let text = item as? String else { return nil }
+                strings.append(text)
+            }
+            return .array(strings.map(JSONValue.string))
+        default:
+            return nil
+        }
+    }
+
+    /// JSONValue -> 可写入 UserDefaults 的值。对象与 null 不是设置项，返回 nil。
+    private static func storedValue(from value: JSONValue) -> Any? {
+        switch value {
+        case .null, .object:
+            return nil
+        case .bool(let flag):
+            return flag
+        case .int(let number):
+            return number
+        case .double(let number):
+            return number
+        case .string(let text):
+            return text
+        case .array(let items):
+            let strings: [String] = items.compactMap { item in
+                if case .string(let text) = item { return text }
+                return nil
+            }
+            guard strings.count == items.count else { return nil }
+            return strings
+        }
+    }
+
+    /// 应用主题对应的明暗（跟随系统时返回 nil，交给 trait collection 判断）。
+    private static func darkAppearance(for mode: KazumiThemeMode) -> Bool? {
+        switch mode {
+        case .system: nil
+        case .light: false
+        case .dark: true
+        }
+    }
+
+    /// 把当前主题模式同步给全局调色板（强调色 / 页面背景都按它取色）。
+    private func syncAppearance() {
+        KazumiThemeColor.darkAppearanceOverride = Self.darkAppearance(for: themeMode)
     }
 
     private static func read<Value>(_ defaults: UserDefaults, _ key: String, _ fallback: Value) -> Value {

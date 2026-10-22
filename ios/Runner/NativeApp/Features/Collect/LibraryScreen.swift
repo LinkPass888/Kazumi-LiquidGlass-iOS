@@ -12,6 +12,9 @@
 import SwiftUI
 
 struct LibraryScreen: View {
+    /// 卡片 → 详情页缩放转场所属的命名空间（由所在导航栈提供）。
+    var zoomNamespace: Namespace.ID?
+
     @Environment(LibraryStore.self) private var library
     @Environment(AppRouter.self) private var router
     @Environment(\.colorScheme) private var colorScheme
@@ -145,6 +148,7 @@ struct LibraryScreen: View {
                         LibraryEntryCard(
                             entry: entry,
                             isPending: pendingID == entry.id,
+                            zoomNamespace: zoomNamespace,
                             onOpen: { router.push(.bangumiInfo(bangumiID: entry.id)) },
                             onChangeType: { type in changeType(entry, to: type) }
                         )
@@ -172,6 +176,8 @@ struct LibraryScreen: View {
 private struct LibraryEntryCard: View {
     let entry: LibraryEntry
     let isPending: Bool
+    /// 卡片 → 详情页缩放转场所属的命名空间（由所在导航栈提供）。
+    var zoomNamespace: Namespace.ID?
     var onOpen: () -> Void
     var onChangeType: (CollectType) -> Void
 
@@ -226,6 +232,9 @@ private struct LibraryEntryCard: View {
                 }
             }
             .buttonStyle(.plain)
+            // 只有「封面 + 文字」这块可点区域参与缩放转场，
+            // 右侧的收藏状态菜单不跟着放大。
+            .kazumiZoomSource(id: entry.id, namespace: zoomNamespace)
 
             Menu {
                 ForEach(CollectType.enabledCases) { type in

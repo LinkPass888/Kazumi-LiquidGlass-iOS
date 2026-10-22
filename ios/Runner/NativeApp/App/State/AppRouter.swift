@@ -86,6 +86,9 @@ enum AppRoute: Hashable, Sendable {
     }
 
     case pluginEditor(ruleID: String?)
+    /// 规则测试：对一条规则跑一次「搜索 → 取第一集的播放线路」（对应原版
+    /// /settings/plugin/test）。用已保存的规则为输入，测试结果不影响规则本身。
+    case pluginTest(ruleID: String)
     /// 规则管理：已安装规则列表（对应原版 /settings/plugin）。
     case pluginList
     /// 规则仓库：可安装的规则目录（对应原版 /settings/plugin/shop）。
@@ -132,6 +135,7 @@ extension AppRoute {
         case .pluginEditor: 5
         case .pluginList: 15
         case .pluginShop: 6
+        case .pluginTest: 20
         case .history: 7
         case .download: 8
         case .settings: 9
@@ -161,6 +165,8 @@ extension AppRoute {
         case let (.player(lhsID, lhsEpisode, lhsSource), .player(rhsID, rhsEpisode, rhsSource)):
             lhsID == rhsID && lhsEpisode == rhsEpisode && lhsSource == rhsSource
         case let (.pluginEditor(lhs), .pluginEditor(rhs)):
+            lhs == rhs
+        case let (.pluginTest(lhs), .pluginTest(rhs)):
             lhs == rhs
         case (.pluginShop, .pluginShop),
              (.pluginList, .pluginList),
@@ -193,6 +199,8 @@ extension AppRoute {
             hasher.combine(episode)
             hasher.combine(source)
         case .pluginEditor(let ruleID):
+            hasher.combine(ruleID)
+        case .pluginTest(let ruleID):
             hasher.combine(ruleID)
         case .webSearchHistory,
              .imageSearch,

@@ -23,7 +23,8 @@ struct ProfileScreen: View {
             VStack(alignment: .leading, spacing: 20) {
                 watchStats
                 quickTools
-                rulesTile
+                // 「规则设置」只保留「内容与偏好」里的那一行：原先这里还有一张
+                // 异形强调卡直达同一页，同屏两个入口反而让人怀疑是两个不同的功能。
                 section("内容与偏好", rows: [
                     Row(symbol: "puzzlepiece.extension", title: "规则设置", subtitle: "管理番剧来源", route: .pluginList),
                     Row(symbol: "bell", title: "通知设置", subtitle: "追番更新提醒", route: .notificationSettings),
@@ -144,41 +145,6 @@ struct ProfileScreen: View {
             .background(
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
                     .fill(KazumiPalette.cardSurface(for: colorScheme))
-            )
-        }
-        .buttonStyle(.plain)
-    }
-
-    // MARK: - 规则设置（原版的异形强调卡）
-
-    private var rulesTile: some View {
-        Button {
-            router.push(.pluginList)
-        } label: {
-            HStack(spacing: 14) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("规则设置")
-                        .font(.headline.weight(.bold))
-                    Text("管理番剧来源")
-                        .font(.caption)
-                        .opacity(0.85)
-                }
-                Spacer(minLength: 0)
-                Image(systemName: "puzzlepiece.extension")
-                    .font(.system(size: 26, weight: .semibold))
-            }
-            .foregroundStyle(KazumiPalette.onAccent(for: colorScheme))
-            .padding(18)
-            .frame(maxWidth: .infinity)
-            .background(
-                UnevenRoundedRectangle(
-                    topLeadingRadius: KazumiPalette.cardCornerRadius,
-                    bottomLeadingRadius: KazumiPalette.cardCornerRadius,
-                    bottomTrailingRadius: KazumiPalette.cardCornerRadius,
-                    topTrailingRadius: 64,
-                    style: .continuous
-                )
-                .fill(KazumiPalette.accent)
             )
         }
         .buttonStyle(.plain)

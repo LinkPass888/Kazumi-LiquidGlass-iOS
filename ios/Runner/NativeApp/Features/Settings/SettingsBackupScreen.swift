@@ -27,6 +27,11 @@ struct SettingsBackupScreen: View {
         Form {
             Section("导出") {
                 Toggle("不含账号与密码", isOn: $omitCredentials)
+                Text(omitCredentials
+                     ? "跳过追番同步、WebDAV、代理等凭据，其余设置照常恢复。"
+                     : "包含同步账号、WebDAV 与代理密码，请只存放在自己可信的地方。")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
                 Button {
                     export()
                 } label: {

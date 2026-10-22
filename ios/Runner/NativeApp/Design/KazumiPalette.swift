@@ -40,10 +40,30 @@ enum KazumiPalette {
         )
     }
 
-    /// 强调色上的前景色（对应 Material 的 onPrimary）：
-    /// 浅色模式强调色深 → 白字；深色模式强调色浅 → 黑字。
+    /// 强调色上的前景色（对应 Material 的 onPrimary）。
+    ///
+    /// 数值同样取自 `ColorScheme.fromSeed` 的 onPrimary（见
+    /// `KazumiThemeColor.onPrimary(dark:)`），不用黑白硬编码 ——
+    /// 深色档的 onPrimary 会是该色相很深的一档（默认绿是 0xFF0A390F），
+    /// 并不是纯黑。
+    @MainActor
     static func onAccent(for scheme: ColorScheme) -> Color {
-        scheme == .dark ? .black : .white
+        let theme = KazumiThemeColor.current
+        return KazumiThemeColor.swiftUIColor(theme.onPrimary(dark: scheme == .dark))
+    }
+
+    /// secondaryContainer：时间表胶囊、星期选择器、追番分类标签的底色。
+    @MainActor
+    static func secondaryContainer(for scheme: ColorScheme) -> Color {
+        let tone = KazumiThemeColor.current.secondaryTone(dark: scheme == .dark)
+        return KazumiThemeColor.swiftUIColor(tone.container)
+    }
+
+    /// onSecondaryContainer：上面那些胶囊里的文字与图标颜色。
+    @MainActor
+    static func onSecondaryContainer(for scheme: ColorScheme) -> Color {
+        let tone = KazumiThemeColor.current.secondaryTone(dark: scheme == .dark)
+        return KazumiThemeColor.swiftUIColor(tone.onContainer)
     }
 
     /// 页面背景：与原版 Scaffold 的 surface 一致，浅色近白、深色近黑。

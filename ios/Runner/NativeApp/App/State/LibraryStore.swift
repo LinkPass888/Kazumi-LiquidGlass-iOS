@@ -192,8 +192,10 @@ final class LibraryStore {
         do {
             let data = try Data(contentsOf: fileURL)
             let snapshot = try Self.decoder().decode(Snapshot.self, from: data)
-            entries = snapshot.entries
-            history = snapshot.history
+            // 读回时就收敛重复 ID：旧版本可能已经写进过重复记录，
+            // 展示层拿到的必须是一份干净的、ID 唯一的数据。
+            entries = Self.deduplicated(snapshot.entries)
+            history = Self.deduplicated(snapshot.history)
             KazumiLog.storage.info(
                 "Library: 载入 \(self.entries.count, privacy: .public) 条追番 / \(self.history.count, privacy: .public) 条历史"
             )
@@ -225,14 +227,17 @@ final class LibraryStore {
     // MARK: - 变更
 
     func replace(entries: [LibraryEntry], history: [WatchRecord]) {
-        self.entries = entries
-        self.history = history
+        self.entries = Self.deduplicated(entries)
+        self.history = Self.deduplicated(history)
         save()
     }
 
     func upsert(_ entry: LibraryEntry) {
         if let index = entries.firstIndex(where: { $0.id == entry.id }) {
             entries[index] = entry
+            // 同一部番如果因为合并 / 恢复被写进多份，这里顺手并掉多余的几份：
+            // `ForEach` 遇到重复 ID 会直接崩溃，列表里也会出现两张一样的卡片。
+            entries = Self.deduplicated(entries)
         } else {
             entries.append(entry)
         }
@@ -256,6 +261,46 @@ final class LibraryStore {
     func removeHistory(bangumiID: Int) {
         history.removeAll { $0.bangumiID == bangumiID }
         save()
+    }
+
+    // MARK: - 去重
+
+    /// 按 ID 去重，保留更新时间较新的那一条（顺序取首次出现的位置）。
+    ///
+    /// 追番与历史都是以番剧 ID 为主键的表：WebDAV 恢复、Bangumi 同步与本地写入
+    /// 三条路径都可能带进同一 ID 的两条记录。SwiftUI 的 `ForEach` 用 ID 做
+    /// 身份，重复 ID 会让列表的差量更新错乱（表现为切换筛选后闪退），
+    /// 因此在数据进入 store 的那一刻就收敛掉。
+    static func deduplicated(_ entries: [LibraryEntry]) -> [LibraryEntry] {
+        var indexByID: [Int: Int] = [:]
+        var result: [LibraryEntry] = []
+        for entry in entries {
+            if let index = indexByID[entry.id] {
+                if entry.updatedAt > result[index].updatedAt {
+                    result[index] = entry
+                }
+            } else {
+                indexByID[entry.id] = result.count
+                result.append(entry)
+            }
+        }
+        return result
+    }
+
+    static func deduplicated(_ history: [WatchRecord]) -> [WatchRecord] {
+        var indexByID: [Int: Int] = [:]
+        var result: [WatchRecord] = []
+        for record in history {
+            if let index = indexByID[record.bangumiID] {
+                if record.updatedAt > result[index].updatedAt {
+                    result[index] = record
+                }
+            } else {
+                indexByID[record.bangumiID] = result.count
+                result.append(record)
+            }
+        }
+        return result
     }
 
     // MARK: - 编解码

@@ -70,7 +70,15 @@ struct AboutScreen: View {
                 }
 
                 actionRow(
-                    title: "查看日志",
+                    title: "查看更新日志",
+                    symbol: "list.bullet.rectangle",
+                    detail: "跳到 GitHub Releases 看每个版本的改动"
+                ) {
+                    openURL(KazumiAppInfo.releasesURL)
+                }
+
+                actionRow(
+                    title: "运行日志",
                     symbol: "doc.text.magnifyingglass",
                     detail: "排查问题时使用"
                 ) {

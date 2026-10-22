@@ -148,6 +148,89 @@ struct KazumiThemeColor: Identifiable, Hashable, Sendable {
         ),
     ]
 
+    // MARK: - Material 3 容器色
+
+    /// 一组容器色（容器底色 + 其上的前景色）。
+    struct ContainerTone: Hashable, Sendable {
+        var container: UInt32
+        var onContainer: UInt32
+    }
+
+    /// secondaryContainer / onSecondaryContainer。
+    ///
+    /// 原版时间表的「xx 更新」「第 N 话」胶囊、星期选择器、追番分类标签、
+    /// 详情页标签条都用这一组色（见 bangumi_timeline_card.dart 的 `_buildPill`、
+    /// timeline_page.dart 的选中态）。色值同样是 `ColorScheme.fromSeed` 的产出，
+    /// 由 tool/palette_probe 现算校验，不手填。
+    static func secondaryTone(for id: String, dark: Bool) -> ContainerTone {
+        secondaryTones[id].map { dark ? $0.dark : $0.light }
+            ?? (dark ? ContainerTone(container: 0xFF3B4B38, onContainer: 0xFFD5E8CF)
+                     : ContainerTone(container: 0xFFD5E8CF, onContainer: 0xFF3B4B38))
+    }
+
+    /// 按实例查 secondaryContainer（供 Palette 之外的调用点使用）。
+    func secondaryTone(dark: Bool) -> ContainerTone {
+        Self.secondaryTone(for: id, dark: dark)
+    }
+
+    /// 按实例查 onPrimary。
+    func onPrimary(dark: Bool) -> UInt32 {
+        let tones = Self.onPrimaryTones[id] ?? Self.onPrimaryTones[KazumiThemeColor.standard.id]
+        guard let tones else { return dark ? 0xFF000000 : 0xFFFFFFFF }
+        return dark ? tones.dark : tones.light
+    }
+
+    private static let onPrimaryTones: [String: (light: UInt32, dark: UInt32)] = [
+        "default": (light: 0xFFFFFFFF, dark: 0xFF0A390F),
+        "teal": (light: 0xFFFFFFFF, dark: 0xFF003731),
+        "blue": (light: 0xFFFFFFFF, dark: 0xFF003258),
+        "indigo": (light: 0xFFFFFFFF, dark: 0xFF222C61),
+        "violet": (light: 0xFFFFFFFF, dark: 0xFF36275D),
+        "pink": (light: 0xFFFFFFFF, dark: 0xFF561D2A),
+        "yellow": (light: 0xFFFFFFFF, dark: 0xFF363100),
+        "orange": (light: 0xFFFFFFFF, dark: 0xFF4A2800),
+        "deepOrange": (light: 0xFFFFFFFF, dark: 0xFF561F0F),
+    ]
+
+    private static let secondaryTones: [String: (light: ContainerTone, dark: ContainerTone)] = [
+        "default": (
+            light: ContainerTone(container: 0xFFD5E8CF, onContainer: 0xFF3B4B38),
+            dark: ContainerTone(container: 0xFF3B4B38, onContainer: 0xFFD5E8CF)
+        ),
+        "teal": (
+            light: ContainerTone(container: 0xFFCCE8E2, onContainer: 0xFF334B47),
+            dark: ContainerTone(container: 0xFF334B47, onContainer: 0xFFCCE8E2)
+        ),
+        "blue": (
+            light: ContainerTone(container: 0xFFD7E3F7, onContainer: 0xFF3B4858),
+            dark: ContainerTone(container: 0xFF3B4858, onContainer: 0xFFD7E3F7)
+        ),
+        "indigo": (
+            light: ContainerTone(container: 0xFFE0E1F9, onContainer: 0xFF434659),
+            dark: ContainerTone(container: 0xFF434659, onContainer: 0xFFE0E1F9)
+        ),
+        "violet": (
+            light: ContainerTone(container: 0xFFE8DEF8, onContainer: 0xFF4A4458),
+            dark: ContainerTone(container: 0xFF4A4458, onContainer: 0xFFE8DEF8)
+        ),
+        "pink": (
+            light: ContainerTone(container: 0xFFFFD9DE, onContainer: 0xFF5C3F43),
+            dark: ContainerTone(container: 0xFF5C3F43, onContainer: 0xFFFFD9DE)
+        ),
+        "yellow": (
+            light: ContainerTone(container: 0xFFEBE3BD, onContainer: 0xFF4B472B),
+            dark: ContainerTone(container: 0xFF4B472B, onContainer: 0xFFEBE3BD)
+        ),
+        "orange": (
+            light: ContainerTone(container: 0xFFFFDCBE, onContainer: 0xFF59422C),
+            dark: ContainerTone(container: 0xFF59422C, onContainer: 0xFFFFDCBE)
+        ),
+        "deepOrange": (
+            light: ContainerTone(container: 0xFFFFDBD1, onContainer: 0xFF5D4037),
+            dark: ContainerTone(container: 0xFF5D4037, onContainer: 0xFFFFDBD1)
+        ),
+    ]
+
     // MARK: - ARGB 工具
 
     /// 0xAARRGGBB -> SwiftUI Color。
@@ -187,12 +270,44 @@ struct KazumiThemeColor: Identifiable, Hashable, Sendable {
     @MainActor
     static var current: KazumiThemeColor = .standard
 
+    /// 应用主题强制的明暗（深色 = true，浅色 = false）。
+    ///
+    /// 原版强调色是按**应用主题**的亮度取的：浅色主题取 T40（深），深色主题取
+    /// T80（浅）。iOS 的动态色却按**窗口 trait** 解析 —— 系统是深色、应用设成
+    /// 浅色（或反过来）时，窗口 trait 与界面亮度并不一致，动态色就会取到另一
+    /// 个档位，界面上表现为「浅色模式用了深色模式的强调色、深色模式用了浅色
+    /// 模式的强调色」，也就是强调色整体对调。
+    ///
+    /// `SettingsStore` 在启动与切换主题时写入这里（跟随系统时为 nil，交回
+    /// trait collection 判断）；`KazumiPalette.accent` 只认这个值，不再让
+    /// UIKit 决定亮度档位。
+    @MainActor
+    static var darkAppearanceOverride: Bool?
+
+    /// 当前是否处于深色外观：优先用应用主题的强制值，其次看 trait 集合。
+    @MainActor
+    static var isDarkAppearance: Bool {
+        if let darkAppearanceOverride { return darkAppearanceOverride }
+        return UITraitCollection.current.userInterfaceStyle == .dark
+    }
+
+    /// 按当前外观取强调色（浅色主题 → 深色档，深色主题 → 浅色档）。
+    @MainActor
+    func accentARGB() -> UInt32 {
+        Self.isDarkAppearance ? darkPrimary : lightPrimary
+    }
+
     /// 该配色对应的动态强调色（浅色 / 深色自动切换）。
     ///
     /// 动态色由 UIKit 在解析时按 `userInterfaceStyle` 取亮/暗分支，
     /// 必须是稳定且长期存活的同一个实例，因此在主线程按配色缓存。
+    ///
+    /// 应用主题强制了亮 / 暗时（`darkAppearanceOverride`），直接用对应的那一档
+    /// 静态色：此时窗口 trait 可能还停留在系统亮度上（例如系统深色、应用浅色），
+    /// 交给 UIKit 解析会把强调色取反 —— 这正是「浅色 / 深色配色反了」的来源。
     @MainActor
     var accentUIColor: UIColor {
+        if let forced = Self.forcedUIColor(id: id) { return forced }
         if let cached = Self.uiColorCache[id] { return cached }
         let light = Self.color(lightPrimary)
         let dark = Self.color(darkPrimary)
@@ -207,6 +322,21 @@ struct KazumiThemeColor: Identifiable, Hashable, Sendable {
         Self.uiColorCache[id] = color
         return color
     }
+
+    /// 强制外观下的强调色（未强制时返回 nil，交回动态色）。
+    @MainActor
+    private static func forcedUIColor(id: String) -> UIColor? {
+        guard let isDark = darkAppearanceOverride else { return nil }
+        let cacheKey = isDark ? "\(id)-dark" : "\(id)-light"
+        if let cached = forcedColorCache[cacheKey] { return cached }
+        guard let theme = all.first(where: { $0.id == id }) else { return nil }
+        let resolved = color(isDark ? theme.darkPrimary : theme.lightPrimary)
+        forcedColorCache[cacheKey] = resolved
+        return resolved
+    }
+
+    @MainActor
+    private static var forcedColorCache: [String: UIColor] = [:]
 
     @MainActor
     private static var uiColorCache: [String: UIColor] = [:]

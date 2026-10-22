@@ -93,4 +93,58 @@ void main() {
       reason: 'Swift 配色表里的方案数量与原版不一致',
     );
   });
+
+  test('onPrimary 表与 Flutter 原版一致', () {
+    final source = _swiftFile.readAsStringSync();
+
+    for (final entry in _seeds.entries) {
+      final light = ColorScheme.fromSeed(seedColor: entry.value);
+      final dark = ColorScheme.fromSeed(
+        seedColor: entry.value,
+        brightness: Brightness.dark,
+      );
+
+      final pattern = RegExp(
+        '"${entry.key}": \\(light: 0x([0-9A-F]{8}), '
+        r'dark: 0x([0-9A-F]{8})\)',
+      );
+      final match = pattern.firstMatch(source);
+      expect(match, isNotNull, reason: '${entry.key} 缺少 onPrimary 表项');
+      expect(match!.group(1), _argb(light.onPrimary),
+          reason: '${entry.key} 的浅色 onPrimary 不一致');
+      expect(match.group(2), _argb(dark.onPrimary),
+          reason: '${entry.key} 的深色 onPrimary 不一致');
+    }
+  });
+
+  test('secondaryContainer 表与 Flutter 原版一致', () {
+    final source = _swiftFile.readAsStringSync();
+
+    for (final entry in _seeds.entries) {
+      final light = ColorScheme.fromSeed(seedColor: entry.value);
+      final dark = ColorScheme.fromSeed(
+        seedColor: entry.value,
+        brightness: Brightness.dark,
+      );
+
+      final pattern = RegExp(
+        '"${entry.key}": \\(\\s*'
+        r'light: ContainerTone\(container: 0x([0-9A-F]{8}), '
+        r'onContainer: 0x([0-9A-F]{8})\),\s*'
+        r'dark: ContainerTone\(container: 0x([0-9A-F]{8}), '
+        r'onContainer: 0x([0-9A-F]{8})\),?\s*\)',
+      );
+      final match = pattern.firstMatch(source);
+      expect(match, isNotNull,
+          reason: '${entry.key} 缺少 secondaryContainer 表项');
+      expect(match!.group(1), _argb(light.secondaryContainer),
+          reason: '${entry.key} 的浅色 secondaryContainer 不一致');
+      expect(match.group(2), _argb(light.onSecondaryContainer),
+          reason: '${entry.key} 的浅色 onSecondaryContainer 不一致');
+      expect(match.group(3), _argb(dark.secondaryContainer),
+          reason: '${entry.key} 的深色 secondaryContainer 不一致');
+      expect(match.group(4), _argb(dark.onSecondaryContainer),
+          reason: '${entry.key} 的深色 onSecondaryContainer 不一致');
+    }
+  });
 }

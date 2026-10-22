@@ -12,8 +12,15 @@ import Foundation
 
 @MainActor
 struct WebDAVClient {
-    /// 与 Flutter 版一致的目录与文件名，保证两端可互相读取。
-    static let directoryName = "Kazumi"
+    /// 与 Flutter 版一致的同步根目录。
+    ///
+    /// 原版的服务端布局（见 lib/services/sync/webdav.dart）：
+    ///   /kazumiSync/                    追番与历史（Hive 箱备份 + 历史事件日志）
+    ///   /kazumiSync/history/            ...
+    ///   /kazumiSync/danmakuShield/      ...
+    /// 这边沿用同一个根目录，两端的同步文件放在同一处，
+    /// 用户换回 Flutter 版时不会看到两套互不相干的目录。
+    static let directoryName = "kazumiSync"
     static let backupFileName = "kazumi_backup.json"
 
     struct Payload: Codable, Sendable {
@@ -27,6 +34,8 @@ struct WebDAVClient {
         case notConfigured
         case invalidURL(String)
         case unauthorized
+        /// 服务器上还没有备份文件（首次使用）。
+        case notFound
         case badStatus(Int)
         case decoding(String)
 
@@ -35,6 +44,7 @@ struct WebDAVClient {
             case .notConfigured: "请先填写 WebDAV 服务器地址"
             case .invalidURL(let url): "WebDAV 地址无效：\(url)"
             case .unauthorized: "认证失败，请检查用户名与密码"
+            case .notFound: "服务器上还没有备份，先点「立即备份」上传一份"
             case .badStatus(let status): "服务器返回 HTTP \(status)"
             case .decoding(let message): message
             }
@@ -70,6 +80,24 @@ struct WebDAVClient {
         }
     }
 
+    /// 连通性检查：对应原版 `WebDav().ping()`。
+    ///
+    /// 只做一次根目录的 PROPFIND，不发任何写请求，
+    /// 用来在填完地址后先确认「地址 / 账号 / 密码」这三样是对的。
+    func ping() async throws {
+        let raw = settings.webDAVURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !raw.isEmpty else { throw WebDAVError.notConfigured }
+        guard var url = URL(string: raw) else { throw WebDAVError.invalidURL(raw) }
+        if !url.absoluteString.hasSuffix("/") {
+            url.append(path: "")
+        }
+        var request = try authorizedRequest(url: url, method: "PROPFIND")
+        request.setValue("0", forHTTPHeaderField: "depth")
+        request.setValue("application/xml", forHTTPHeaderField: "content-type")
+        let (_, response) = try await URLSession.shared.data(for: request)
+        try Self.validate(response)
+    }
+
     // MARK: - 内部
 
     private func folderURL() throws -> URL {
@@ -82,14 +110,22 @@ struct WebDAVClient {
         return base.appending(path: Self.directoryName, directoryHint: .isDirectory)
     }
 
-    /// MKCOL 建目录；已存在时服务器返回 405，视为成功。
+    /// MKCOL 建目录。
+    ///
+    /// 已存在时各家的返回并不统一：RFC 4918 规定是 405，
+    /// 也有服务器返回 301 / 409，还有直接回 204 的 —— 这些都算「目录已在」，
+    /// 不能当成失败上报（否则第一次之后每次备份都报错）。
     private func ensureDirectory(_ url: URL) async throws {
         var request = try authorizedRequest(url: url, method: "MKCOL")
         request.setValue("0", forHTTPHeaderField: "content-length")
         let (_, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse else { return }
-        if http.statusCode == 405 || (200..<300).contains(http.statusCode) { return }
-        try Self.validate(response)
+        switch http.statusCode {
+        case 200..<300, 301, 405, 409:
+            return
+        default:
+            try Self.validate(response)
+        }
     }
 
     private func authorizedRequest(url: URL, method: String) throws -> URLRequest {
@@ -111,6 +147,10 @@ struct WebDAVClient {
             return
         case 401, 403:
             throw WebDAVError.unauthorized
+        case 404:
+            // 首次使用时目录或备份文件还不存在，这不是网络故障，
+            // 要给用户一句能照着做的话，而不是「服务器返回 HTTP 404」。
+            throw WebDAVError.notFound
         default:
             throw WebDAVError.badStatus(http.statusCode)
         }

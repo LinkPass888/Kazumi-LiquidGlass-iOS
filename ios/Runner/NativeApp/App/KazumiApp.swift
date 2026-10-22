@@ -39,9 +39,9 @@ struct KazumiApp: App {
                 // 窗口 trait 已同步，动态色 `KazumiPalette.accent` 此时解析到的是
                 // 与界面一致的亮度档位，这里可以直接用。
                 .tint(KazumiPalette.accent)
-                // 配色方案与 OLED 纯黑是全局状态（`KazumiPalette` 为静态取值），
+                // 配色方案、OLED 纯黑与主题模式都是全局状态（`KazumiPalette` 为静态取值），
                 // 用 id 让视图树在切换后整体重建，背景与强调色立即生效。
-                .id("\(environment.settings.themeColor.id)-\(environment.settings.oledEnhance)")
+                .id("\(environment.settings.themeColor.id)-\(environment.settings.oledEnhance)-\(environment.settings.themeMode.rawValue)")
         }
     }
 }

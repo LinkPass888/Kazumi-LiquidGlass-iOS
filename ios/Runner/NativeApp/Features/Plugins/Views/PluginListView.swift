@@ -11,6 +11,7 @@ import UniformTypeIdentifiers
 
 struct PluginListView: View {
     @Environment(PluginsController.self) private var plugins
+    @Environment(AppRouter.self) private var router
     @Environment(\.colorScheme) private var colorScheme
 
     @State private var isShowingImporter = false
@@ -178,6 +179,12 @@ struct PluginListView: View {
                 selectedRule = plugin
             } label: {
                 Label("编辑规则", systemImage: "square.and.pencil")
+            }
+            // 原版 _menu 的第二项就是「测试规则」，跳独立的测试页。
+            Button {
+                router.push(.pluginTest(ruleID: plugin.name))
+            } label: {
+                Label("测试规则", systemImage: "testtube.2")
             }
             Button {
                 Task { await checkUpdate(plugin) }

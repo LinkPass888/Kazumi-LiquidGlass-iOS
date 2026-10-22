@@ -465,6 +465,8 @@ struct InfoCharactersPanel: View {
 struct InfoRelationsPanel: View {
     let relations: [BangumiRelationItem]
     let isLoading: Bool
+    /// 关联卡片 → 关联条目详情页的缩放转场命名空间（沿用当前导航栈的那一份）。
+    var zoomNamespace: Namespace.ID?
 
     @Environment(AppRouter.self) private var router
     @Environment(\.colorScheme) private var colorScheme
@@ -483,6 +485,8 @@ struct InfoRelationsPanel: View {
                         card(relation)
                     }
                     .buttonStyle(.plain)
+                    // 关联条目也能从卡片放大进入，ID 用被点的那一条，不会和当前页撞号。
+                    .kazumiZoomSource(id: relation.item.id, namespace: zoomNamespace)
                 }
             }
         }
