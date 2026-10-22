@@ -477,7 +477,6 @@ struct NetworkSettingsScreen: View {
 }
 
 // MARK: - 更新设置
-// MARK: - 更新设置
 
 struct UpdateSettingsScreen: View {
     @Environment(SettingsStore.self) private var settings
