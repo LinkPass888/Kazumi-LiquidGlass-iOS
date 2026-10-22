@@ -24,6 +24,8 @@ extension SettingsStore {
         SettingsKey.proxyEnabled: "proxyEnable",
         SettingsKey.proxyHost: "proxyUrl",
         SettingsKey.updateNotificationEnabled: "bangumiUpdateNotifyEnable",
+        SettingsKey.anime4kMode: "defaultSuperResolutionType",
+        SettingsKey.danmakuShieldSyncEnabled: "webDavEnableDanmakuShield",
     ]
 
     /// 备份里使用的键名：有原版键名就用原版的。
@@ -43,14 +45,22 @@ extension SettingsStore {
             (Self.backupKey(SettingsKey.glassEnabled), .bool(glassEnabled)),
             (Self.backupKey(SettingsKey.autoPlayNext), .bool(autoPlayNext)),
             (Self.backupKey(SettingsKey.autoSkipOpEd), .bool(autoSkipOpEd)),
+            (Self.backupKey(SettingsKey.playerEntryFullscreen), .bool(playerEntryFullscreen)),
+            (Self.backupKey(SettingsKey.anime4kMode), .int(superResolutionMode.rawValue)),
+            (Self.backupKey(SettingsKey.playSpeed), .double(playSpeed)),
             (Self.backupKey(SettingsKey.danmakuEnabled), .bool(danmakuEnabled)),
             (Self.backupKey(SettingsKey.danmakuOpacity), .double(danmakuOpacity)),
             (Self.backupKey(SettingsKey.danmakuFontSize), .double(danmakuFontSize)),
             (Self.backupKey(SettingsKey.danmakuArea), .double(danmakuArea)),
-            (Self.backupKey(SettingsKey.playSpeed), .double(playSpeed)),
-            (Self.backupKey(SettingsKey.playerEntryFullscreen), .bool(playerEntryFullscreen)),
+            (Self.backupKey(SettingsKey.downloadParallelEpisodes), .int(downloadParallelEpisodes)),
+            (Self.backupKey(SettingsKey.downloadDanmaku), .bool(downloadDanmaku)),
+            (Self.backupKey(SettingsKey.defaultStartupPage), .string(defaultStartupPage)),
+            (Self.backupKey(SettingsKey.enableBangumiProxy), .bool(enableBangumiProxy)),
             (Self.backupKey(SettingsKey.meteredNetworkLimit), .bool(meteredNetworkLimit)),
             (Self.backupKey(SettingsKey.updateNotificationEnabled), .bool(updateNotificationEnabled)),
+            (Self.backupKey(SettingsKey.selectedPluginIndex), .int(selectedPluginIndex)),
+            (Self.backupKey(SettingsKey.autoUpdate), .bool(autoUpdateCheck)),
+            (Self.backupKey(SettingsKey.checkPluginUpdateOnStartup), .bool(checkPluginUpdateOnStartup)),
         ]
         if !omitCredentials {
             pairs += [
@@ -134,6 +144,39 @@ extension SettingsStore {
         }
         if let flag = value(SettingsKey.playerEntryFullscreen)?.boolValue {
             playerEntryFullscreen = flag
+            restored += 1
+        }
+        if let raw = value(SettingsKey.anime4kMode)?.intValue,
+           let mode = SuperResolutionMode(rawValue: raw) {
+            superResolutionMode = mode
+            restored += 1
+        }
+        if let number = value(SettingsKey.downloadParallelEpisodes)?.intValue {
+            downloadParallelEpisodes = min(8, max(1, number))
+            restored += 1
+        }
+        if let flag = value(SettingsKey.downloadDanmaku)?.boolValue {
+            downloadDanmaku = flag
+            restored += 1
+        }
+        if let text = value(SettingsKey.defaultStartupPage)?.stringValue, !text.isEmpty {
+            defaultStartupPage = text
+            restored += 1
+        }
+        if let flag = value(SettingsKey.enableBangumiProxy)?.boolValue {
+            enableBangumiProxy = flag
+            restored += 1
+        }
+        if let number = value(SettingsKey.selectedPluginIndex)?.intValue {
+            selectedPluginIndex = max(0, number)
+            restored += 1
+        }
+        if let flag = value(SettingsKey.autoUpdate)?.boolValue {
+            autoUpdateCheck = flag
+            restored += 1
+        }
+        if let flag = value(SettingsKey.checkPluginUpdateOnStartup)?.boolValue {
+            checkPluginUpdateOnStartup = flag
             restored += 1
         }
         if let flag = value(SettingsKey.meteredNetworkLimit)?.boolValue {

@@ -131,6 +131,10 @@ enum SettingsKey {
     static let defaultStartupPage = "defaultStartupPage"
     /// Bangumi 加速（镜像）开关，沿用原版 `SettingsKeys.enableBangumiProxy` 的键名。
     static let enableBangumiProxy = "enableBangumiProxy"
+    /// 启动时检查应用更新，沿用原版 `SettingsKeys.autoUpdate` 的键名。
+    static let autoUpdate = "autoUpdate"
+    /// 启动时检查规则更新，沿用原版 `checkPluginUpdateOnStartup` 的键名。
+    static let checkPluginUpdateOnStartup = "checkPluginUpdateOnStartup"
 }
 
 /// 可观察的设置存储。所有写入立即同步到磁盘，避免进程被系统回收后丢设置。
@@ -287,6 +291,16 @@ final class SettingsStore {
         }
     }
 
+    /// 启动时检查应用更新（对应原版 `autoUpdate`，默认开启）。
+    var autoUpdateCheck: Bool {
+        didSet { persist(autoUpdateCheck, SettingsKey.autoUpdate) }
+    }
+
+    /// 启动时检查规则更新（对应原版 `checkPluginUpdateOnStartup`，默认开启）。
+    var checkPluginUpdateOnStartup: Bool {
+        didSet { persist(checkPluginUpdateOnStartup, SettingsKey.checkPluginUpdateOnStartup) }
+    }
+
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         themeMode = Self.read(defaults, SettingsKey.themeMode, KazumiThemeMode.system)
@@ -332,6 +346,8 @@ final class SettingsStore {
         downloadDanmaku = Self.read(defaults, SettingsKey.downloadDanmaku, true)
         defaultStartupPage = Self.read(defaults, SettingsKey.defaultStartupPage, "/tab/popular/")
         enableBangumiProxy = Self.read(defaults, SettingsKey.enableBangumiProxy, false)
+        autoUpdateCheck = Self.read(defaults, SettingsKey.autoUpdate, true)
+        checkPluginUpdateOnStartup = Self.read(defaults, SettingsKey.checkPluginUpdateOnStartup, true)
         // 加速方式在全部存储属性初始化完成后再同步到全局开关。
         BangumiAcceleration.mode = enableBangumiProxy ? .mirror : .direct
     }

@@ -23,6 +23,8 @@ struct BangumiInfoScreen: View {
     @State private var selectedTab: InfoTab = .overview
     @State private var scrollOffset: CGFloat = 0
     @State private var toastMessage: String?
+    /// 点亮「在时间表展示」但番剧还没标成在看时，先弹确认。
+    @State private var pendingTimelineItem: BangumiItem?
 
     @Environment(AppEnvironment.self) private var environment
     @Environment(LibraryStore.self) private var library
@@ -101,6 +103,23 @@ struct BangumiInfoScreen: View {
                     )
                 )
             }
+        }
+        .confirmationDialog(
+            "在时间表展示",
+            isPresented: Binding(
+                get: { pendingTimelineItem != nil },
+                set: { if !$0 { pendingTimelineItem = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("标记为在看并开启") {
+                guard let item = pendingTimelineItem else { return }
+                pendingTimelineItem = nil
+                markWatchingAndEnableTimeline(item)
+            }
+            Button("取消", role: .cancel) { pendingTimelineItem = nil }
+        } message: {
+            Text("该功能需要番剧处于「在看」状态，是否标记为在看并开启？")
         }
     }
 
@@ -574,6 +593,8 @@ extension BangumiInfoScreen {
         let item = controller.item
         if type == .none {
             library.remove(bangumiID: item.id)
+            // 与原版一致：不再处于「在看」时，时间表条目一并删除。
+            BangumiTimelineStore.shared.dropIfNotWatching(item.id, collectType: CollectType.none)
             return
         }
         library.upsert(
@@ -594,6 +615,8 @@ extension BangumiInfoScreen {
                 updatedAt: Date()
             )
         )
+        // 改成「在看」以外的状态时，时间表条目随之失效（原版 dropIfNotWatching）。
+        BangumiTimelineStore.shared.dropIfNotWatching(item.id, collectType: type)
     }
 
     /// 当前放送星期：用户手动改过就用手动的，否则用条目的开播日。
@@ -610,11 +633,64 @@ extension BangumiInfoScreen {
     }
 
     /// 时间表开关：点亮即在时间表展示（与原版 _setShowInTimeline 一致）。
+    ///
+    /// 原版点亮前要求番剧处于「在看」状态：不在看就先弹确认，确认后顺手
+    /// 标成在看。之前这里直接写存储，既缺这一步，写入路径本身还会崩
+    /// （存储层用非字符串键做 JSONSerialization，见 BangumiTimelineStore）。
     private func toggleTimeline(_ controller: InfoController) {
-        let store = BangumiTimelineStore.shared
         let next = !isInTimeline(controller)
-        store.setShowInTimeline(next, for: controller.item.id, weekday: currentWeekday(controller))
-        toastMessage = next ? "已在时间表展示" : "已从时间表移除"
+        guard next else {
+            BangumiTimelineStore.shared.setShowInTimeline(
+                false,
+                for: controller.item.id,
+                weekday: currentWeekday(controller)
+            )
+            toastMessage = "已从时间表移除"
+            return
+        }
+        if currentType(controller) != .watching {
+            pendingTimelineItem = controller.item
+            return
+        }
+        enableTimeline(controller)
+    }
+
+    /// 真正写入「在时间表展示」。
+    private func enableTimeline(_ controller: InfoController) {
+        BangumiTimelineStore.shared.setShowInTimeline(
+            true,
+            for: controller.item.id,
+            weekday: currentWeekday(controller)
+        )
+        toastMessage = "已在时间表展示"
+    }
+
+    /// 确认「标记为在看并开启」后：先写收藏，再点亮时间表。
+    private func markWatchingAndEnableTimeline(_ item: BangumiItem) {
+        library.upsert(
+            LibraryEntry(
+                id: item.id,
+                type: CollectType.watching.rawValue,
+                name: item.name,
+                nameCn: item.nameCn,
+                summary: item.summary,
+                airDate: item.airDate,
+                imageURL: item.largeImage,
+                rating: item.ratingScore,
+                rank: item.rank,
+                tags: item.tags.map(\.name),
+                totalEpisodes: 0,
+                currentEpisode: 0,
+                addedAt: library.entry(for: item.id)?.addedAt ?? Date(),
+                updatedAt: Date()
+            )
+        )
+        BangumiTimelineStore.shared.setShowInTimeline(
+            true,
+            for: item.id,
+            weekday: max(1, min(7, item.airWeekday))
+        )
+        toastMessage = "已标记为在看，并在时间表展示"
     }
 
     /// 星期序号（1 = 周一 ... 7 = 周日）的中文标题。

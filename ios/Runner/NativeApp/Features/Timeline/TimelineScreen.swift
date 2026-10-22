@@ -33,6 +33,13 @@ struct TimelineScreen: View {
         count: 4
     )
 
+    /// 派生数据：追番状态表，供合并手动条目与筛选共用。
+    private var collectTypes: [Int: CollectType] {
+        library.entries.reduce(into: [Int: CollectType]()) { result, entry in
+            result[entry.id] = entry.collectType
+        }
+    }
+
     // MARK: - 派生数据
 
     private var watchingIDs: Set<Int> {
@@ -82,6 +89,10 @@ struct TimelineScreen: View {
         .task {
             await loadInitialSeason()
         }
+        // 详情页改完放送星期 / 点亮「在时间表展示」后，回到这里立刻重排。
+        .onChange(of: BangumiTimelineStore.shared.revision) { _, _ in
+            Task { await controller.refreshCustomEntries(collectTypes: collectTypes) }
+        }
     }
 
     // MARK: - 头部
@@ -98,22 +109,39 @@ struct TimelineScreen: View {
     }
 
     /// 顶栏标题就是当前季度，和原版 `_buildSeasonPicker(inAppBar: true)` 一致。
+    /// 标题下面补一行当日条目数，顶栏因此同时给出「哪一季、这天有几部」。
     private var seasonTitleButton: some View {
         Button {
             isShowingSeasonPicker = true
         } label: {
-            HStack(spacing: 4) {
-                Text(controller.seasonLabel)
-                    .font(.system(size: 24, weight: .bold))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 13, weight: .bold))
+            VStack(alignment: .leading, spacing: 1) {
+                HStack(spacing: 4) {
+                    Text(controller.seasonLabel)
+                        .font(.system(size: 24, weight: .bold))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(.secondary)
+                }
+                Text(dayCountText)
+                    .font(.caption2.weight(.medium))
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("切换放送季度，当前 \(controller.seasonLabel)")
+        .accessibilityLabel("切换放送季度，当前 \(controller.seasonLabel)，\(dayCountText)")
+    }
+
+    /// 「今天 12 部」/「周二 8 部」。
+    private var dayCountText: String {
+        let title = selectedWeekday == Self.todayIndex && controller.isCurrentSeason
+            ? "今天"
+            : "周\(Self.weekdayTitles[max(0, min(6, selectedWeekday))])"
+        if controller.isLoading { return "\(title) · 加载中" }
+        return "\(title) · \(dayItems.count) 部"
     }
 
     /// 右上角：排序与筛选（图标 + 当前排序名 + 筛选角标）。
@@ -124,7 +152,7 @@ struct TimelineScreen: View {
         } label: {
             HStack(spacing: 6) {
                 ZStack(alignment: .topTrailing) {
-                    Image(systemName: "tune")
+                    Image(systemName: "slider.horizontal.3")
                         .font(.system(size: 15, weight: .semibold))
                     if filterCount > 0 {
                         Text("\(filterCount)")
@@ -223,7 +251,7 @@ struct TimelineScreen: View {
                     .font(.headline)
                 Button("重试") {
                     Task {
-                        await controller.loadSeason(controller.selectedDate)
+                        await controller.loadSeason(controller.selectedDate, collectTypes: collectTypes)
                         prefetchCovers()
                     }
                 }
@@ -249,7 +277,7 @@ struct TimelineScreen: View {
             }
             .scrollIndicators(.hidden)
             .refreshable {
-                await controller.loadSeason(controller.selectedDate)
+                await controller.loadSeason(controller.selectedDate, collectTypes: collectTypes)
                 prefetchCovers()
             }
         }
@@ -453,14 +481,14 @@ struct TimelineScreen: View {
     private func loadInitialSeason() async {
         guard controller.bangumiCalendar.isEmpty else { return }
         selectedWeekday = Self.todayIndex
-        await controller.loadSeason(Date())
+        await controller.loadSeason(Date(), collectTypes: collectTypes)
         prefetchCovers()
     }
 
     private func selectSeason(_ date: Date) {
         isShowingSeasonPicker = false
         Task {
-            await controller.loadSeason(date)
+            await controller.loadSeason(date, collectTypes: collectTypes)
             prefetchCovers()
         }
     }

@@ -39,14 +39,22 @@ enum KazumiAppInfo {
 
     static let projectURL = URL(string: "https://kazumi.app/")!
     static let sourceURL = URL(string: "https://github.com/LinkPass888/Kazumi-LiquidGlass-iOS")!
-    static let telegramURL = URL(string: "https://t.me/KLGI66")!
+    static let issuesURL = URL(string: "https://github.com/LinkPass888/Kazumi-LiquidGlass-iOS/issues")!
+    static let releasesURL = URL(string: "https://github.com/LinkPass888/Kazumi-LiquidGlass-iOS/releases")!
+    /// 官方频道（原版的 Telegram 入口）。
+    static let telegramURL = URL(string: "https://t.me/linkpass666")!
     static let iconAuthorURL = URL(string: "https://www.pixiv.net/users/66219277")!
     static let dandanIndexURL = URL(string: "https://www.dandanplay.com/")!
+    static let traceMoeURL = URL(string: "https://trace.moe")!
     static let bangumiIndexURL = URL(string: "https://bangumi.tv/")!
     static let bangumiDataIndexURL = URL(string: "https://github.com/bangumi-data/bangumi-data")!
     static let bangumiMALIndexURL = URL(string: "https://github.com/LinkPass888/bangumi-mal")!
     static let bangumiExtLinkerURL = URL(string: "https://github.com/Rhilip/BangumiExtLinker")!
     static let aniSkipIndexURL = URL(string: "https://github.com/aniskip")!
     static let aniListIndexURL = URL(string: "https://anilist.co")!
+    static let ksPlayerURL = URL(string: "https://github.com/kingslay/KSPlayer")!
+    static let fuziURL = URL(string: "https://github.com/cezheng/Fuzi")!
+    static let anime4KURL = URL(string: "https://github.com/bloc97/Anime4K")!
+    static let licenseURL = URL(string: "https://github.com/LinkPass888/Kazumi-LiquidGlass-iOS/blob/main/LICENSE")!
     static let latestReleaseAPIURL = URL(string: "https://api.github.com/repos/LinkPass888/Kazumi-LiquidGlass-iOS/releases/latest")!
 }

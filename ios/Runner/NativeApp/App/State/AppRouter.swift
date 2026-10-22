@@ -86,6 +86,9 @@ enum AppRoute: Hashable, Sendable {
     }
 
     case pluginEditor(ruleID: String?)
+    /// 规则管理：已安装规则列表（对应原版 /settings/plugin）。
+    case pluginList
+    /// 规则仓库：可安装的规则目录（对应原版 /settings/plugin/shop）。
     case pluginShop
     case history
     case download
@@ -96,6 +99,14 @@ enum AppRoute: Hashable, Sendable {
     case webDAV
     /// 设置备份：导出 / 导入旧版（Flutter）导出的设置备份文本。
     case settingsBackup
+    /// 存储管理：图片缓存与运行日志（对应原版 /settings/storage）。
+    case storage
+    /// 通知设置（对应原版 /settings/notification）。
+    case notificationSettings
+    /// 播放设置（对应原版 /settings/player）。
+    case playerSettings
+    /// 弹幕设置（对应原版 /settings/danmaku）。
+    case danmakuSettings
 }
 
 extension AppRoute {
@@ -119,6 +130,7 @@ extension AppRoute {
         case .imageSearch: 3
         case .player: 4
         case .pluginEditor: 5
+        case .pluginList: 15
         case .pluginShop: 6
         case .history: 7
         case .download: 8
@@ -128,6 +140,10 @@ extension AppRoute {
         case .danmakuShield: 12
         case .webDAV: 13
         case .settingsBackup: 14
+        case .storage: 16
+        case .notificationSettings: 17
+        case .playerSettings: 18
+        case .danmakuSettings: 19
         }
     }
 
@@ -147,6 +163,7 @@ extension AppRoute {
         case let (.pluginEditor(lhs), .pluginEditor(rhs)):
             lhs == rhs
         case (.pluginShop, .pluginShop),
+             (.pluginList, .pluginList),
              (.history, .history),
              (.download, .download),
              (.settings, .settings),
@@ -154,7 +171,11 @@ extension AppRoute {
              (.logs, .logs),
              (.danmakuShield, .danmakuShield),
              (.webDAV, .webDAV),
-             (.settingsBackup, .settingsBackup):
+             (.settingsBackup, .settingsBackup),
+             (.storage, .storage),
+             (.notificationSettings, .notificationSettings),
+             (.playerSettings, .playerSettings),
+             (.danmakuSettings, .danmakuSettings):
             true
         default:
             false
@@ -176,6 +197,7 @@ extension AppRoute {
         case .webSearchHistory,
              .imageSearch,
              .pluginShop,
+             .pluginList,
              .history,
              .download,
              .settings,
@@ -183,7 +205,11 @@ extension AppRoute {
              .logs,
              .danmakuShield,
              .webDAV,
-             .settingsBackup:
+             .settingsBackup,
+             .storage,
+             .notificationSettings,
+             .playerSettings,
+             .danmakuSettings:
             break
         }
     }

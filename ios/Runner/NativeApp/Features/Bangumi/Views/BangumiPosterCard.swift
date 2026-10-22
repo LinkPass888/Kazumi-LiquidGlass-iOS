@@ -14,6 +14,9 @@ struct BangumiPosterCard: View {
     /// 固定的海报宽度。网格里传列宽，保证每一列等宽、每一行底边对齐；
     /// 搜索结果这类自适应布局传 nil，按容器宽度铺满。
     var width: CGFloat?
+    /// 标题区固定高度。网格里传 32（与原版 mainAxisExtent 的加数一致），
+    /// 搜索结果这类自适应布局传 nil，按两行文字的自然高度。
+    var titleAreaHeight: CGFloat?
     var canTap: Bool = true
     var onTap: ((BangumiItem) -> Void)?
 
@@ -25,7 +28,7 @@ struct BangumiPosterCard: View {
     static let coverAspectRatio: CGFloat = 0.65
     /// 标题区高度：两行 15pt 文字 + 原版 EdgeInsets.fromLTRB(5, 3, 5, 1) 的上下留白。
     /// 固定住之后，海报底边到下一行海报顶边的高度是恒定的，排版不会因标题长短跳动。
-    static let titleAreaHeight: CGFloat = 40
+    static let defaultTitleAreaHeight: CGFloat = 40
 
     var body: some View {
         Button {
@@ -37,11 +40,7 @@ struct BangumiPosterCard: View {
             }
         } label: {
             VStack(alignment: .leading, spacing: 0) {
-                BangumiRemoteImage(url: item.largeImage)
-                    .aspectRatio(Self.coverAspectRatio, contentMode: .fill)
-                    .frame(maxWidth: .infinity)
-                    .clipShape(RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous))
-
+                cover
                 Text(item.displayName)
                     .font(.subheadline)
                     .fontWeight(.medium)
@@ -52,12 +51,32 @@ struct BangumiPosterCard: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     // 与 Dart 版 EdgeInsets.fromLTRB(5, 3, 5, 1) 一致。
                     .padding(.init(top: 3, leading: 5, bottom: 1, trailing: 5))
-                    .frame(height: Self.titleAreaHeight, alignment: .topLeading)
+                    .frame(height: titleAreaHeight ?? Self.defaultTitleAreaHeight, alignment: .topLeading)
             }
             .frame(width: width)
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(item.displayName)
+    }
+
+    /// 封面：网格里给了固定宽度时按 2:3 算出确切高度。
+    ///
+    /// 用 `aspectRatio(_:contentMode: .fill)` 让 SwiftUI 自己推高度时，图片的
+    /// 原始尺寸会参与布局，同一行里不同比例的封面会把行高顶得不一致；
+    /// 这里在宽度已知时直接给高度，每一行的封面底边就严格对齐了。
+    @ViewBuilder
+    private var cover: some View {
+        let image = BangumiRemoteImage(url: item.largeImage)
+        if let width {
+            image
+                .frame(width: width, height: width / Self.coverAspectRatio)
+                .clipShape(RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous))
+        } else {
+            image
+                .aspectRatio(Self.coverAspectRatio, contentMode: .fill)
+                .frame(maxWidth: .infinity)
+                .clipShape(RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous))
+        }
     }
 }

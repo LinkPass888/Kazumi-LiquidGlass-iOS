@@ -29,6 +29,7 @@ final class AppEnvironment {
     let router: AppRouter
     let plugins: PluginsController
     let pluginSearch: PluginSearchService
+    let updates: AppUpdateService
 
     private init(settings: SettingsStore, library: LibraryStore, router: AppRouter) {
         self.settings = settings
@@ -38,6 +39,7 @@ final class AppEnvironment {
         plugins.load()
         self.plugins = plugins
         self.pluginSearch = PluginSearchService(plugins: plugins)
+        self.updates = AppUpdateService()
     }
 
     /// 与原 main.dart 一致：先确保存储目录可用，失败时返回错误页而不是崩溃。

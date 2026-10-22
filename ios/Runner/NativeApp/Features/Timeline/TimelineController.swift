@@ -42,6 +42,10 @@ final class TimelineController {
 
     /// 7 天的番剧，下标 0 为周一。
     private(set) var bangumiCalendar: [[BangumiItem]] = []
+
+    /// 接口返回的原始日历（未经用户自定义条目合并）。
+    /// 每次合并都从它重新开始，改掉星期的番才能从原来那一天挪走。
+    private(set) var baseCalendar: [[BangumiItem]] = []
     private(set) var selectedDate = Date()
     private(set) var isLoading = false
     private(set) var isTimeOut = false
@@ -104,17 +108,12 @@ final class TimelineController {
 
     /// 卡片底部的集数胶囊：已经播出到第几集（1-based）。
     ///
-    /// 原版用 AniList / bangumi-mal 的实测数据，这里按 Bangumi 的 `air_date`
-    /// 与每周一集推算 —— 只对当前季度生效，往季不显示（否则会算出几十集）。
+    /// 与 Dart 的 `BangumiUpdateTimesService.currentEpisode` 同源：用 bangumi-mal
+    /// 季度表里的首播时刻与播出周期推算（`((now - first) ~/ period) + 1`），
+    /// 往季同样适用 —— 往季的首播时刻就在那一年，算出来的集数是对的。
+    /// 数据还没加载到时返回 nil，卡片少一个胶囊，不影响其余内容。
     func currentEpisode(for item: BangumiItem) -> Int? {
-        guard isCurrentSeason else { return nil }
-        guard let first = DateTimeHelper.parseISO(item.airDate) else { return nil }
-        let calendar = Calendar(identifier: .gregorian)
-        let start = calendar.startOfDay(for: first)
-        let today = calendar.startOfDay(for: Date())
-        guard today >= start else { return nil }
-        let days = calendar.dateComponents([.day], from: start, to: today).day ?? 0
-        return days / 7 + 1
+        BangumiAirTimeService.shared.schedules[item.id]?.currentEpisode()
     }
 
     // MARK: - 显示范围
@@ -149,7 +148,7 @@ final class TimelineController {
     }
 
     /// 对应 loadSeason。
-    func loadSeason(_ date: Date) async {
+    func loadSeason(_ date: Date, collectTypes: [Int: CollectType] = [:]) async {
         guard !isLoading else { return }
         isLoading = true
         isTimeOut = false
@@ -164,28 +163,68 @@ final class TimelineController {
             let range = AnimeSeason.seasonRange(for: date)
             calendar = await seasonCalendar(start: range.start, end: range.end)
         }
-        // 详情页里点亮「在时间表展示」的条目，并进对应星期那一列。
-        await mergeCustomEntries(into: &calendar)
-        bangumiCalendar = applySort(calendar)
-        isTimeOut = bangumiCalendar.allSatisfy(\.isEmpty)
 
-        // 卡片的「HH:mm 更新」胶囊：数据来自 bangumi-mal 的季度表，
-        // 拉取失败时保持空表（只少了时间胶囊，不影响列表）。
+        // 先取季度时刻表：卡片上的「HH:mm 更新」与「第 N 话」、以及默认顺序的
+        // 排序都依赖它。拉取失败时保持空表，只是少两个胶囊，不影响列表。
         await BangumiAirTimeService.shared.ensureLoaded(forSeasonOf: date)
+
+        baseCalendar = calendar
+        let merged = await mergeCustomEntries(into: calendar, collectTypes: collectTypes)
+        bangumiCalendar = applySort(merged)
+        isTimeOut = bangumiCalendar.allSatisfy(\.isEmpty)
     }
 
-    /// 对应 refreshCustomTimelineEntries：把用户手动点亮的条目并进时间表。
-    /// 官方日历里没有的番，按用户设定的放送星期放到那一列。
-    private func mergeCustomEntries(into calendar: inout [[BangumiItem]]) async {
-        let custom = BangumiTimelineStore.shared.entries.filter { $0.value.showInTimeline }
-        guard !custom.isEmpty else { return }
-        for (bangumiID, entry) in custom {
-            let weekday = max(1, min(7, entry.weekday)) - 1
-            guard calendar.indices.contains(weekday) else { continue }
-            if calendar[weekday].contains(where: { $0.id == bangumiID }) { continue }
-            guard let item = await BangumiAPI.info(id: bangumiID) else { continue }
-            calendar[weekday].append(item)
+    /// 对应 refreshCustomTimelineEntries：详情页改完星期 / 开关展示后立刻生效。
+    ///
+    /// 每次都从接口返回的原始日历重新合并，改掉星期的番才能从原来那一天挪走，
+    /// 而不是两处都留一份。
+    func refreshCustomEntries(collectTypes: [Int: CollectType]) async {
+        guard !baseCalendar.isEmpty else { return }
+        let merged = await mergeCustomEntries(into: baseCalendar, collectTypes: collectTypes)
+        bangumiCalendar = applySort(merged)
+    }
+
+    /// 把用户设置过的条目并进日历（对应 _applyCustomTimelineEntries）。
+    ///
+    /// 星期只看两处：bangumi 日历的分组，以及用户点选过的放送星期。
+    /// 哪一条算「用户选的」由 `BangumiTimelineStore.resolveWeekdays` 决定。
+    private func mergeCustomEntries(
+        into calendar: [[BangumiItem]],
+        collectTypes: [Int: CollectType]
+    ) async -> [[BangumiItem]] {
+        guard !calendar.isEmpty else { return calendar }
+        let store = BangumiTimelineStore.shared
+        guard !store.entries.isEmpty else { return calendar }
+
+        // 日历里已有的番：手动改星期时不用去收藏里找副本。
+        var items: [Int: BangumiItem] = [:]
+        for day in calendar {
+            for item in day {
+                items[item.id] = item
+            }
         }
+        let inCalendar = Set(items.keys)
+
+        let weekdays = store.resolveWeekdays(inCalendar: inCalendar, collectTypes: collectTypes)
+        guard !weekdays.isEmpty else { return calendar }
+
+        // 手动添加的条目：日历里没有的番要单独拉一次详情，拉不到的跳过。
+        for bangumiID in weekdays.keys where items[bangumiID] == nil {
+            if let item = await BangumiAPI.info(id: bangumiID) {
+                items[bangumiID] = item
+            }
+        }
+
+        var merged: [[BangumiItem]] = calendar.map { day in
+            day.filter { weekdays[$0.id] == nil }
+        }
+        while merged.count < 7 { merged.append([]) }
+        for (bangumiID, weekday) in weekdays {
+            guard let item = items[bangumiID] else { continue }
+            let column = BangumiTimelineEntry.normalize(weekday) - 1
+            merged[column].append(item)
+        }
+        return merged
     }
 
     /// 对应 _getSchedulesBySeason：每页 20 条、最多 4 页，按放送星期分列。
@@ -221,7 +260,20 @@ final class TimelineController {
     private func applySort(_ calendar: [[BangumiItem]]) -> [[BangumiItem]] {
         switch sort {
         case .defaultOrder:
-            return calendar
+            // 与 Dart 的 compareTimelineUpdateTime 一致：同一列内按当天时刻从早到晚，
+            // 无时刻的排最后，同序回退 id。时刻来自卡片的同一个 HH:mm。
+            let times = BangumiAirTimeService.shared.times
+            return calendar.map { day in
+                day.sorted { lhs, rhs in
+                    let left = times[lhs.id]
+                    let right = times[rhs.id]
+                    if left == nil, right == nil { return lhs.id < rhs.id }
+                    if left == nil { return false }
+                    if right == nil { return true }
+                    if left == right { return lhs.id < rhs.id }
+                    return (left ?? "") < (right ?? "")
+                }
+            }
         case .popularity:
             return calendar.map { day in
                 day.sorted { lhs, rhs in

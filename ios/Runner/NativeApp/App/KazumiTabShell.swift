@@ -86,6 +86,8 @@ struct AppRouteView: View {
             PlayerScreen(bangumiID: bangumiID, episode: episode, source: source)
         case .pluginEditor(let ruleID):
             PluginEditorScreen(ruleID: ruleID)
+        case .pluginList:
+            PluginListView()
         case .pluginShop:
             PluginShopScreen()
         case .history:
@@ -104,6 +106,14 @@ struct AppRouteView: View {
             WebDAVScreen()
         case .settingsBackup:
             SettingsBackupScreen()
+        case .storage:
+            StorageScreen()
+        case .notificationSettings:
+            NotificationSettingsScreen()
+        case .playerSettings:
+            PlayerSettingsScreen()
+        case .danmakuSettings:
+            DanmakuSettingsScreen()
         }
     }
 }

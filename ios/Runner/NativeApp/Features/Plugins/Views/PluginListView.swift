@@ -16,6 +16,8 @@ struct PluginListView: View {
     @State private var isShowingImporter = false
     @State private var isShowingImportSheet = false
     @State private var isShowingShop = false
+    /// 新建规则：推入编辑器并带上模板。
+    @State private var isShowingNewRule = false
     @State private var selectedRule: Plugin?
     @State private var pendingDeletion: Plugin?
     @State private var isEditingSelection = false
@@ -23,49 +25,45 @@ struct PluginListView: View {
     @State private var isUpdating = false
     @State private var updateSummary: String?
     @State private var errorMessage: String?
+    /// 搜索关键词：按规则名 / 站点地址 / 作者过滤。
+    @State private var keyword = ""
+
+    /// 过滤后的规则列表。
+    private var visiblePlugins: [Plugin] {
+        let trimmed = keyword.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return plugins.pluginList }
+        return plugins.pluginList.filter { plugin in
+            plugin.name.localizedCaseInsensitiveContains(trimmed)
+                || plugin.baseUrl.localizedCaseInsensitiveContains(trimmed)
+        }
+    }
 
     var body: some View {
         List {
-            Section {
-                ForEach(plugins.pluginList) { plugin in
-                    Button {
-                        if isEditingSelection {
-                            toggle(plugin)
-                        } else {
-                            selectedRule = plugin
-                        }
-                    } label: {
-                        PluginRowView(
-                            plugin: plugin,
-                            status: plugins.pluginUpdateStatus(plugin),
-                            isSearchValid: plugins.validityTracker.isSearchValid(plugin.name),
-                            isSelecting: isEditingSelection,
-                            isSelected: selection.contains(plugin.name)
-                        )
-                    }
-                    .buttonStyle(.plain)
-                    .swipeActions(edge: .trailing) {
-                        Button(role: .destructive) {
-                            pendingDeletion = plugin
-                        } label: {
-                            Label("删除", systemImage: "trash")
-                        }
-                    }
-                    .swipeActions(edge: .leading) {
-                        Button {
-                            selectedRule = plugin
-                        } label: {
-                            Label("编辑", systemImage: "square.and.pencil")
-                        }
-                        .tint(KazumiPalette.accent)
-                    }
+            if plugins.pluginList.isEmpty {
+                Section {
+                    ContentUnavailableView(
+                        "还没有规则",
+                        systemImage: "puzzlepiece.extension",
+                        description: Text("可以从规则仓库安装，或导入 JSON / kazumi:// 链接。")
+                    )
                 }
-                .onMove(perform: move)
-            } footer: {
-                if plugins.pluginList.isEmpty {
-                    Text("还没有规则。可以从规则仓库安装，或导入 JSON / kazumi:// 链接。")
-                } else {
-                    Text("共 \(plugins.pluginList.count) 条规则\(plugins.updatablePluginCount > 0 ? "，\(plugins.updatablePluginCount) 条可更新" : "")。")
+            } else if visiblePlugins.isEmpty {
+                Section {
+                    ContentUnavailableView(
+                        "没有匹配的规则",
+                        systemImage: "magnifyingglass",
+                        description: Text("换个关键词试试。")
+                    )
+                }
+            } else {
+                Section {
+                    ForEach(visiblePlugins) { plugin in
+                        row(plugin)
+                    }
+                    .onMove(perform: move)
+                } footer: {
+                    Text(footerText)
                 }
             }
         }
@@ -73,6 +71,11 @@ struct PluginListView: View {
         .scrollContentBackground(.hidden)
         .background(KazumiPalette.heroBackground(for: colorScheme).ignoresSafeArea())
         .navigationTitle("规则管理")
+        .searchable(
+            text: $keyword,
+            placement: .navigationBarDrawer(displayMode: .always),
+            prompt: "搜索规则名或站点"
+        )
         .toolbar { toolbarContent }
         .navigationDestination(isPresented: Binding(
             get: { selectedRule != nil },
@@ -84,6 +87,9 @@ struct PluginListView: View {
         }
         .navigationDestination(isPresented: $isShowingShop) {
             PluginShopView()
+        }
+        .navigationDestination(isPresented: $isShowingNewRule) {
+            PluginEditorView(original: Plugin.template(apiLevel: KazumiAppInfo.ruleAPILevel))
         }
         .sheet(isPresented: $isShowingImportSheet) {
             PluginImportSheet { summary in
@@ -129,6 +135,131 @@ struct PluginListView: View {
             if plugins.pluginList.isEmpty { plugins.load() }
         }
     }
+    // MARK: - 行
+
+    /// 单行规则：点击进编辑，右侧溢出菜单（原版 KazumiMenuButton）。
+    @ViewBuilder
+    private func row(_ plugin: Plugin) -> some View {
+        HStack(spacing: 8) {
+            Button {
+                if isEditingSelection {
+                    toggle(plugin)
+                } else {
+                    selectedRule = plugin
+                }
+            } label: {
+                PluginRowView(
+                    plugin: plugin,
+                    status: plugins.pluginUpdateStatus(plugin),
+                    isSearchValid: plugins.validityTracker.isSearchValid(plugin.name),
+                    isSelecting: isEditingSelection,
+                    isSelected: selection.contains(plugin.name)
+                )
+            }
+            .buttonStyle(.plain)
+
+            if !isEditingSelection {
+                rowMenu(plugin)
+            }
+        }
+        .swipeActions(edge: .trailing) {
+            Button(role: .destructive) {
+                pendingDeletion = plugin
+            } label: {
+                Label("删除", systemImage: "trash")
+            }
+        }
+    }
+
+    /// 行内溢出菜单，条目与原版 plugin_view_page 的 _menu 一一对应。
+    private func rowMenu(_ plugin: Plugin) -> some View {
+        Menu {
+            Button {
+                selectedRule = plugin
+            } label: {
+                Label("编辑规则", systemImage: "square.and.pencil")
+            }
+            Button {
+                Task { await checkUpdate(plugin) }
+            } label: {
+                Label("检查更新", systemImage: "arrow.triangle.2.circlepath")
+            }
+            .disabled(isUpdating)
+            Button {
+                UIPasteboard.general.string = PluginImportExport.ruleLink(for: plugin)
+                updateSummary = "已复制「\(plugin.name)」的分享链接"
+            } label: {
+                Label("分享规则", systemImage: "square.and.arrow.up")
+            }
+            Divider()
+            Button {
+                moveUp(plugin)
+            } label: {
+                Label("上移", systemImage: "arrow.up")
+            }
+            .disabled(index(of: plugin) == 0)
+            Button {
+                moveDown(plugin)
+            } label: {
+                Label("下移", systemImage: "arrow.down")
+            }
+            .disabled(index(of: plugin) == plugins.pluginList.count - 1)
+            Divider()
+            Button(role: .destructive) {
+                pendingDeletion = plugin
+            } label: {
+                Label("删除规则", systemImage: "trash")
+            }
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.system(size: 16, weight: .semibold))
+                .frame(width: 34, height: 34)
+                .contentShape(Rectangle())
+        }
+        .accessibilityLabel("\(plugin.name) 的更多操作")
+    }
+
+    private var footerText: String {
+        if keyword.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            let updatable = plugins.updatablePluginCount
+            return "共 \(plugins.pluginList.count) 条规则\(updatable > 0 ? "，\(updatable) 条可更新" : "")。行内菜单的「上移 / 下移」可以调整优先级。"
+        }
+        return "匹配 \(visiblePlugins.count) / \(plugins.pluginList.count) 条规则。"
+    }
+
+    private func index(of plugin: Plugin) -> Int {
+        plugins.pluginList.firstIndex { $0.id == plugin.id } ?? 0
+    }
+
+    private func moveUp(_ plugin: Plugin) {
+        let current = index(of: plugin)
+        guard current > 0 else { return }
+        move(from: IndexSet(integer: current), to: current - 1)
+    }
+
+    private func moveDown(_ plugin: Plugin) {
+        let current = index(of: plugin)
+        guard current < plugins.pluginList.count - 1 else { return }
+        move(from: IndexSet(integer: current), to: current + 2)
+    }
+
+    /// 单条规则检查更新。
+    private func checkUpdate(_ plugin: Plugin) async {
+        isUpdating = true
+        defer { isUpdating = false }
+        let result = await plugins.tryUpdatePlugin(named: plugin.name)
+        switch result {
+        case .updated:
+            updateSummary = "已更新「\(plugin.name)」"
+        case .notNewer:
+            updateSummary = "「\(plugin.name)」已是最新版本"
+        case .requiresNewerClient:
+            updateSummary = "「\(plugin.name)」需要更高版本的客户端"
+        case .failed:
+            errorMessage = "检查「\(plugin.name)」更新失败，请稍后重试"
+        }
+    }
+
     // MARK: - 工具栏
 
     @ToolbarContentBuilder
@@ -140,48 +271,71 @@ struct PluginListView: View {
                     selection.removeAll()
                 }
             } else {
-                EditButton()
+                // 原版顶栏左侧是「添加规则」菜单。
+                Menu {
+                    Button {
+                        isShowingShop = true
+                    } label: {
+                        Label("规则仓库", systemImage: "shippingbox")
+                    }
+                    Button {
+                        isShowingImportSheet = true
+                    } label: {
+                        Label("从剪贴板导入", systemImage: "doc.on.clipboard")
+                    }
+                    Button {
+                        isShowingImporter = true
+                    } label: {
+                        Label("从文件导入", systemImage: "folder.badge.plus")
+                    }
+                    Divider()
+                    Button {
+                        isShowingNewRule = true
+                    } label: {
+                        Label("新建规则", systemImage: "square.and.pencil")
+                    }
+                } label: {
+                    Label("添加规则", systemImage: "plus")
+                }
+                .accessibilityLabel("添加规则")
             }
         }
         ToolbarItem(placement: .topBarTrailing) {
-            Menu {
-                Button {
-                    isShowingShop = true
-                } label: {
-                    Label("规则仓库", systemImage: "shippingbox")
+            if isEditingSelection {
+                let count = selection.count
+                Button(count == 0 ? "删除" : "删除 \(count)", role: .destructive) {
+                    let targets = plugins.pluginList.filter { selection.contains($0.name) }
+                    Task { await remove(targets) }
                 }
-                Button {
-                    isShowingImportSheet = true
-                } label: {
-                    Label("粘贴导入", systemImage: "doc.on.clipboard")
-                }
-                Button {
-                    isShowingImporter = true
-                } label: {
-                    Label("从文件导入", systemImage: "folder.badge.plus")
-                }
-                Divider()
-                Button {
-                    copyAllRules()
-                } label: {
-                    Label("复制全部规则", systemImage: "doc.on.doc")
-                }
-                .disabled(plugins.pluginList.isEmpty)
-                Button {
-                    Task { await checkForUpdates() }
-                } label: {
-                    Label(isUpdating ? "正在检查更新…" : "检查规则更新", systemImage: "arrow.triangle.2.circlepath")
-                }
-                .disabled(isUpdating || plugins.pluginList.isEmpty)
-                if !plugins.pluginList.isEmpty {
+                .disabled(selection.isEmpty)
+            } else {
+                Menu {
                     Button {
                         isEditingSelection = true
                     } label: {
-                        Label("批量选择", systemImage: "checkmark.circle")
+                        Label("批量编辑", systemImage: "checkmark.circle")
+                    }
+                    .disabled(plugins.pluginList.isEmpty)
+                    Button {
+                        Task { await checkForUpdates() }
+                    } label: {
+                        Label(isUpdating ? "正在检查更新…" : "检查规则更新", systemImage: "arrow.triangle.2.circlepath")
+                    }
+                    .disabled(isUpdating || plugins.pluginList.isEmpty)
+                    Button {
+                        copyAllRules()
+                    } label: {
+                        Label("复制全部规则", systemImage: "doc.on.doc")
+                    }
+                    .disabled(plugins.pluginList.isEmpty)
+                } label: {
+                    if isUpdating {
+                        ProgressView()
+                    } else {
+                        Image(systemName: "ellipsis.circle")
                     }
                 }
-            } label: {
-                Image(systemName: isUpdating ? "hourglass" : "ellipsis.circle")
+                .accessibilityLabel("更多操作")
             }
         }
     }

@@ -20,6 +20,7 @@ struct SettingsCategory: Identifiable, Hashable {
     enum Destination: Hashable {
         case player
         case danmaku
+        case pluginList
         case pluginShop
         case download
         case notification
@@ -30,6 +31,7 @@ struct SettingsCategory: Identifiable, Hashable {
         case settingsBackup
         case update
         case logs
+        case storage
         case about
     }
 
@@ -58,7 +60,7 @@ extension SettingsGroup {
                     id: "player",
                     label: "播放设置",
                     description: "解码、渲染与播放行为",
-                    symbol: "displaysettings",
+                    symbol: "play.rectangle.on.rectangle",
                     destination: .player
                 ),
                 SettingsCategory(
@@ -79,7 +81,7 @@ extension SettingsGroup {
                     label: "规则管理",
                     description: "番剧资源规则",
                     symbol: "puzzlepiece.extension",
-                    destination: .pluginShop
+                    destination: .pluginList
                 ),
                 SettingsCategory(
                     id: "download",
@@ -154,7 +156,7 @@ extension SettingsGroup {
                     label: "存储与日志",
                     description: "图片缓存与错误日志",
                     symbol: "externaldrive",
-                    destination: .logs
+                    destination: .storage
                 ),
                 SettingsCategory(
                     id: "about",
@@ -214,6 +216,9 @@ struct SettingsScreen: View {
         case .download:
             NavigationLink { DownloadSettingsScreen() } label: { tile(category) }
         // 已经有独立页面的分类，直接推入既有路由。
+        case .pluginList:
+            Button { router.push(.pluginList) } label: { tile(category) }
+                .buttonStyle(.plain)
         case .pluginShop:
             Button { router.push(.pluginShop) } label: { tile(category) }
                 .buttonStyle(.plain)
@@ -222,6 +227,9 @@ struct SettingsScreen: View {
                 .buttonStyle(.plain)
         case .logs:
             Button { router.push(.logs) } label: { tile(category) }
+                .buttonStyle(.plain)
+        case .storage:
+            Button { router.push(.storage) } label: { tile(category) }
                 .buttonStyle(.plain)
         case .about:
             Button { router.push(.about) } label: { tile(category) }

@@ -4,8 +4,11 @@
 //
 //  1:1 复刻 lib/pages/my/my_space_view.dart 的分组结构：
 //  * 顶栏「我的」+ 右侧「全部设置」按钮；
-//  * 观看足迹（看过番剧 / 观看集数 / 正在追）；
-//  * 历史记录、离线下载；同步备份、存储管理；规则设置、播放、弹幕；关于、日志。
+//  * 观看足迹（看过番剧 / 观看集数）；
+//  * 历史记录、离线下载（并排两块工具卡）；
+//  * 规则设置（原版的异形强调卡）；
+//  * 内容与偏好：规则设置 / 通知设置 / 播放设置 / 弹幕设置；
+//  * 数据与应用：同步备份 / 存储管理 / 关于 Kazumi。
 //
 
 import SwiftUI
@@ -17,24 +20,20 @@ struct ProfileScreen: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
+            VStack(alignment: .leading, spacing: 20) {
                 watchStats
-                section("历史与下载", rows: [
-                    Row(symbol: "clock.arrow.circlepath", title: "历史记录", subtitle: "查看观看记录", route: .history),
-                    Row(symbol: "arrow.down.circle", title: "离线下载", subtitle: "管理离线内容", route: .download),
-                ])
-                section("同步与存储", rows: [
-                    Row(symbol: "icloud", title: "同步备份", subtitle: "跨设备同步数据", route: .webDAV),
-                    Row(symbol: "externaldrive", title: "存储管理", subtitle: "缓存与日志", route: .settings),
-                ])
+                quickTools
+                rulesTile
                 section("内容与偏好", rows: [
-                    Row(symbol: "puzzlepiece.extension", title: "规则设置", subtitle: "管理番剧来源", route: .pluginShop),
-                    Row(symbol: "play.rectangle", title: "播放", subtitle: "播放器与画质", route: .settings),
-                    Row(symbol: "text.bubble", title: "弹幕", subtitle: "弹幕与屏蔽规则", route: .danmakuShield),
+                    Row(symbol: "puzzlepiece.extension", title: "规则设置", subtitle: "管理番剧来源", route: .pluginList),
+                    Row(symbol: "bell", title: "通知设置", subtitle: "追番更新提醒", route: .notificationSettings),
+                    Row(symbol: "play.rectangle", title: "播放设置", subtitle: "播放器与画质", route: .playerSettings),
+                    Row(symbol: "captions.bubble", title: "弹幕设置", subtitle: "弹幕与屏蔽规则", route: .danmakuSettings),
                 ])
-                section("关于", rows: [
+                section("数据与应用", rows: [
+                    Row(symbol: "icloud", title: "同步备份", subtitle: "跨设备同步数据", route: .webDAV),
+                    Row(symbol: "externaldrive", title: "存储管理", subtitle: "缓存与日志", route: .storage),
                     Row(symbol: "info.circle", title: "关于 Kazumi", subtitle: "版本与开源许可", route: .about),
-                    Row(symbol: "doc.text.magnifyingglass", title: "运行日志", subtitle: "排查问题时使用", route: .logs),
                 ])
             }
             .padding(.horizontal, 16)
@@ -74,28 +73,115 @@ struct ProfileScreen: View {
     // MARK: - 观看足迹
 
     private var watchStats: some View {
-        HStack(spacing: 12) {
-            stat(value: "\(library.entries.count)", title: "看过番剧")
-            stat(value: "\(library.history.count)", title: "观看集数")
-            stat(value: "\(library.watchingEntries.count)", title: "正在追")
+        VStack(alignment: .leading, spacing: 10) {
+            Text("观看足迹")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .padding(.leading, 4)
+
+            HStack(spacing: 12) {
+                stat(value: "\(library.entries.count)", title: "看过番剧")
+                stat(value: "\(library.history.count)", title: "观看集数")
+            }
         }
     }
 
     private func stat(value: String, title: String) -> some View {
         VStack(spacing: 4) {
             Text(value)
-                .font(.system(size: 22, weight: .bold))
+                .font(.system(size: 26, weight: .bold))
+                .monospacedDigit()
                 .foregroundStyle(KazumiPalette.accent)
             Text(title)
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 14)
+        .padding(.vertical, 16)
         .background(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .fill(KazumiPalette.cardSurface(for: colorScheme))
         )
+    }
+
+    // MARK: - 历史 / 下载
+
+    private var quickTools: some View {
+        HStack(spacing: 12) {
+            toolCard(
+                symbol: "clock.arrow.circlepath",
+                title: "历史记录",
+                caption: library.history.isEmpty ? "暂无观看记录" : "查看观看记录",
+                route: .history
+            )
+            toolCard(
+                symbol: "arrow.down.circle",
+                title: "离线下载",
+                caption: "管理离线内容",
+                route: .download
+            )
+        }
+    }
+
+    private func toolCard(symbol: String, title: String, caption: String, route: AppRoute) -> some View {
+        Button {
+            router.push(route)
+        } label: {
+            VStack(alignment: .leading, spacing: 8) {
+                Image(systemName: symbol)
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(KazumiPalette.accent)
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                Text(caption)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(14)
+            .background(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(KazumiPalette.cardSurface(for: colorScheme))
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - 规则设置（原版的异形强调卡）
+
+    private var rulesTile: some View {
+        Button {
+            router.push(.pluginList)
+        } label: {
+            HStack(spacing: 14) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("规则设置")
+                        .font(.headline.weight(.bold))
+                    Text("管理番剧来源")
+                        .font(.caption)
+                        .opacity(0.85)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "puzzlepiece.extension")
+                    .font(.system(size: 26, weight: .semibold))
+            }
+            .foregroundStyle(KazumiPalette.onAccent(for: colorScheme))
+            .padding(18)
+            .frame(maxWidth: .infinity)
+            .background(
+                UnevenRoundedRectangle(
+                    topLeadingRadius: KazumiPalette.cardCornerRadius,
+                    bottomLeadingRadius: KazumiPalette.cardCornerRadius,
+                    bottomTrailingRadius: KazumiPalette.cardCornerRadius,
+                    topTrailingRadius: 64,
+                    style: .continuous
+                )
+                .fill(KazumiPalette.accent)
+            )
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - 分组列表
@@ -156,4 +242,3 @@ struct ProfileScreen: View {
         }
     }
 }
-

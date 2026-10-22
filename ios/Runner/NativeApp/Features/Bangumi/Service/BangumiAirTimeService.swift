@@ -17,6 +17,25 @@
 import Foundation
 import Observation
 
+/// 某部番的放送时刻表（对应 Dart 的 BangumiUpdateEntry 子集）。
+struct BangumiAirSchedule: Hashable, Sendable {
+    /// 首播时刻（本地时区，含具体钟点）。
+    var first: Date
+    /// 播出周期（秒），即 `R/<ISO>/P7D` 里的 7 天。
+    var period: TimeInterval
+
+    /// 已经播出到第几集（1-based）；尚未开播返回 nil。
+    ///
+    /// 与 Dart 的 `currentEpisode` 同一套算式：`((now - first) ~/ period) + 1`。
+    func currentEpisode(now: Date = Date()) -> Int? {
+        guard period > 0 else { return nil }
+        let elapsed = now.timeIntervalSince(first)
+        guard elapsed >= 0 else { return nil }
+        return Int(elapsed / period) + 1
+    }
+}
+
+
 @MainActor
 @Observable
 final class BangumiAirTimeService {
@@ -24,6 +43,8 @@ final class BangumiAirTimeService {
 
     /// bangumi id -> "20:00"
     private(set) var times: [Int: String] = [:]
+    /// bangumi id -> 首播时刻 + 周期（时间表卡片的「第 N 话」用它推算）。
+    private(set) var schedules: [Int: BangumiAirSchedule] = [:]
     private(set) var isLoading = false
 
     /// 已经成功加载过的季度（"2025-10"）。
@@ -35,7 +56,6 @@ final class BangumiAirTimeService {
 
     private let directory: URL
     private let session: URLSession
-    private let timeFormatter: DateFormatter
 
     private init() {
         let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
@@ -46,11 +66,6 @@ final class BangumiAirTimeService {
         let configuration = URLSessionConfiguration.default
         configuration.timeoutIntervalForRequest = 15
         session = URLSession(configuration: configuration)
-
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "HH:mm"
-        timeFormatter = formatter
     }
 
     // MARK: - 查询
@@ -184,22 +199,26 @@ final class BangumiAirTimeService {
     }
 
     private func apply(_ data: Data) {
-        for (subjectID, time) in Self.parse(data) {
-            times[subjectID] = time
+        for (subjectID, schedule) in Self.parse(data) {
+            times[subjectID] = Self.timeText(schedule.first)
+            schedules[subjectID] = schedule
         }
     }
 
-    /// 解析季度 JSON，返回「bangumi id -> 本地 HH:mm」。
-    private static func parse(_ data: Data) -> [Int: String] {
+    private static func timeText(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "HH:mm"
+        return formatter.string(from: date)
+    }
+
+    /// 解析季度 JSON，返回「bangumi id -> 首播时刻 + 周期」。
+    private static func parse(_ data: Data) -> [Int: BangumiAirSchedule] {
         guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let items = root["items"] as? [String: Any]
         else { return [:] }
 
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "HH:mm"
-
-        var result: [Int: String] = [:]
+        var result: [Int: BangumiAirSchedule] = [:]
         for (key, value) in items {
             guard let subjectID = Int(key), let entry = value as? [String: Any] else { continue }
             let beginText = entry["begin"] as? String ?? ""
@@ -207,9 +226,9 @@ final class BangumiAirTimeService {
             // 与原版 deriveBangumiMalEntry 一致：begin 只有日期（或年月）时
             // 拿不出可信的播出时刻，不显示。
             guard beginText.count > 10 else { continue }
-            guard parseBroadcastPeriod(broadcast) != nil else { continue }
+            guard let period = parseBroadcastPeriod(broadcast) else { continue }
             guard let begin = parseInstant(beginText) else { continue }
-            result[subjectID] = formatter.string(from: begin)
+            result[subjectID] = BangumiAirSchedule(first: begin, period: period)
         }
         return result
     }

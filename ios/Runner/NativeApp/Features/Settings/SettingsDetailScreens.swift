@@ -477,19 +477,37 @@ struct NetworkSettingsScreen: View {
 }
 
 // MARK: - 更新设置
+// MARK: - 更新设置
 
 struct UpdateSettingsScreen: View {
+    @Environment(SettingsStore.self) private var settings
+
     var body: some View {
         Form {
+            Section {
+                Toggle("应用更新", isOn: autoUpdateBinding)
+                Toggle("规则更新", isOn: pluginUpdateBinding)
+            } header: {
+                Text("启动时检查更新")
+            } footer: {
+                Text("应用更新会在启动时比对最新版本并提示更新日志；规则更新会检查已安装规则的版本。")
+            }
             Section("应用") {
                 LabeledContent("当前版本", value: KazumiAppInfo.fullVersion)
-            }
-            Section {
-                Text("原生版暂未接入自动更新与规则订阅检查，规则请在「规则管理」里手动更新。")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                LabeledContent("规则 API 级别", value: "\(KazumiAppInfo.ruleAPILevel)")
             }
         }
         .kazumiSettingsDetail("更新设置")
+    }
+
+    private var autoUpdateBinding: Binding<Bool> {
+        Binding(get: { settings.autoUpdateCheck }, set: { settings.autoUpdateCheck = $0 })
+    }
+
+    private var pluginUpdateBinding: Binding<Bool> {
+        Binding(
+            get: { settings.checkPluginUpdateOnStartup },
+            set: { settings.checkPluginUpdateOnStartup = $0 }
+        )
     }
 }

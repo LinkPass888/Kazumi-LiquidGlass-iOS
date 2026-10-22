@@ -22,8 +22,15 @@ struct PopularScreen: View {
         "热血", "后宫", "机战", "轻改", "偶像", "治愈", "异世界",
     ]
 
-    /// 与 StyleString.cardSpace 一致。
+    /// 与 constants.dart 的 StyleString.cardSpace 一致。
     private static let cardSpace: CGFloat = 8
+
+    /// 与 bangumi_card.dart 的标题区一致：`EdgeInsets.fromLTRB(5, 3, 5, 1)`
+    /// 上下留白 4 + 两行副标题行高。原版的网格用
+    /// `mainAxisExtent: width / crossCount / 0.65 + scale(32)`，
+    /// 这里的 32 就是标题区的固定高度，两边必须用同一个数，否则每一行
+    /// 海报的底边与标题会互相挤压。
+    private static let titleAreaHeight: CGFloat = 32
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -138,10 +145,15 @@ struct PopularScreen: View {
         } else {
             LazyVGrid(columns: columns, alignment: .leading, spacing: Self.cardSpace - 2) {
                 ForEach(controller.items) { item in
-                    BangumiPosterCard(item: item, width: posterWidth)
-                        .task {
-                            await loadMoreIfNeeded(current: item)
-                        }
+                    BangumiPosterCard(
+                        item: item,
+                        width: posterWidth,
+                        titleAreaHeight: Self.titleAreaHeight
+                    )
+                    .frame(width: posterWidth, height: cardHeight, alignment: .top)
+                    .task {
+                        await loadMoreIfNeeded(current: item)
+                    }
                 }
             }
             .padding(.horizontal, 8)
@@ -181,6 +193,13 @@ struct PopularScreen: View {
         UIApplication.shared.connectedScenes
             .compactMap { $0 as? UIWindowScene }
             .first?.screen.bounds.width ?? 390
+    }
+
+    /// 卡片总高：与 Dart 版 `mainAxisExtent` 完全一致的算式
+    /// （`列宽 / 0.65 + 32`）。网格行高固定后，每一行海报底边对齐，
+    /// 标题也不会被压成一行。
+    private var cardHeight: CGFloat {
+        KazumiLayout.posterHeight(width: posterWidth) + Self.titleAreaHeight
     }
 
     private var mirrorErrorView: some View {
