@@ -36,6 +36,57 @@ enum KazumiThemeMode: String, CaseIterable, Codable, Identifiable, Sendable {
     }
 }
 
+/// 超分辨率档位。数值与 lib/pages/player/controller/player_super_resolution.dart
+/// 的 storageValue 对齐（1=关闭，2=效率档，3=质量档），便于设置备份互通。
+///
+/// 原版在 mpv 上加载 Anime4K 的 GLSL 着色器；KSPlayer 走 FFmpeg，无法直接吃
+/// mpv 着色器，这里用等效的 FFmpeg 滤镜链（lanczos 放大 + 锐化）实现同一档位：
+/// 效率档 1.5×，质量档 2×。滤镜只在 KSPlayer 的 FFmpeg 内核下生效。
+enum SuperResolutionMode: Int, CaseIterable, Identifiable, Sendable {
+    case off = 1
+    case efficiency = 2
+    case quality = 3
+
+    var id: Int { rawValue }
+
+    var title: String {
+        switch self {
+        case .off: "关闭"
+        case .efficiency: "效率档"
+        case .quality: "质量档"
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .off: "默认禁用超分辨率"
+        case .efficiency: "基于 Anime4K 的超分辨率（效率优先）"
+        case .quality: "基于 Anime4K 的超分辨率（质量优先）"
+        }
+    }
+
+    /// 交给 KSOptions.videoFilters 的 FFmpeg 滤镜链。
+    ///
+    /// 放大用 lanczos（质量优于默认 bicubic），锐化用 unsharp 找回线条；
+    /// 关闭时返回空数组，不改变原始管线。
+    var videoFilters: [String] {
+        switch self {
+        case .off:
+            return []
+        case .efficiency:
+            return [
+                "scale=iw*1.5:ih*1.5:flags=lanczos",
+                "unsharp=5:5:0.6:5:5:0.0",
+            ]
+        case .quality:
+            return [
+                "scale=iw*2:ih*2:flags=lanczos",
+                "unsharp=5:5:0.9:5:5:0.0",
+            ]
+        }
+    }
+}
+
 /// 设置键。命名沿用原项目 setting keys 的语义，便于备份文件互通。
 enum SettingsKey {
     static let themeMode = "themeMode"
@@ -125,6 +176,11 @@ final class SettingsStore {
     /// 是否在播放器进入时即全屏。
     var playerEntryFullscreen: Bool {
         didSet { persist(playerEntryFullscreen, SettingsKey.playerEntryFullscreen) }
+    }
+
+    /// 默认超分辨率档位（对应原版 `defaultSuperResolutionMode`，沿用 `anime4kMode` 键名）。
+    var superResolutionMode: SuperResolutionMode {
+        didSet { persist(superResolutionMode.rawValue, SettingsKey.anime4kMode) }
     }
 
     var danmakuEnabled: Bool {
@@ -249,6 +305,9 @@ final class SettingsStore {
         KazumiThemeColor.oledEnhance = resolvedOLEDEnhance
         selectedPluginIndex = Self.read(defaults, SettingsKey.selectedPluginIndex, 0)
         playerEntryFullscreen = Self.read(defaults, SettingsKey.playerEntryFullscreen, true)
+        superResolutionMode = SuperResolutionMode(
+            rawValue: Self.read(defaults, SettingsKey.anime4kMode, 1)
+        ) ?? .off
         danmakuEnabled = Self.read(defaults, SettingsKey.danmakuEnabled, true)
         danmakuOpacity = Self.read(defaults, SettingsKey.danmakuOpacity, 1.0)
         danmakuFontSize = Self.read(defaults, SettingsKey.danmakuFontSize, 20.0)

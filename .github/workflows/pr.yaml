@@ -51,6 +51,9 @@ jobs:
             -clonedSourcePackagesDirPath "$RUNNER_TEMP/spm" | xcbeautify
 
       - name: Build (no codesign)
+        env:
+          DANDAN_APP_ID: ${{ secrets.DANDANAPI_APPID }}
+          DANDAN_APP_SECRET: ${{ secrets.DANDANAPI_KEY }}
         run: |
           set -o pipefail
           xcodebuild build \
@@ -64,6 +67,8 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
             DEVELOPMENT_TEAM="" \
+            DANDAN_APP_ID="${DANDAN_APP_ID:-}" \
+            DANDAN_APP_SECRET="${DANDAN_APP_SECRET:-}" \
             | xcbeautify
 
       - name: Package canary IPA

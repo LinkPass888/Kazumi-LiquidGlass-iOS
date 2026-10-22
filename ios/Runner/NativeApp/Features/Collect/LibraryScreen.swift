@@ -43,6 +43,9 @@ struct LibraryScreen: View {
         .background(KazumiPalette.background(for: colorScheme).ignoresSafeArea())
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .navigationBar)
+        .task {
+            KazumiImageLoader.shared.prefetch(library.entries.map(\.imageURL))
+        }
     }
 
     // MARK: - 头部

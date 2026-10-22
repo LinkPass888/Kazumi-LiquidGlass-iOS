@@ -8,6 +8,7 @@
 //   * 最终媒体地址附带规则要求的 UA / Referer，交给 KSPlayer 播放。
 //
 
+import Foundation
 import Observation
 
 @MainActor
@@ -22,6 +23,15 @@ final class PlayerController {
         case failed(String)
     }
 
+    /// 弹幕加载状态。
+    enum DanmakuStatus: Equatable {
+        case idle
+        case loading
+        case ready
+        case unavailable
+        case failed
+    }
+
     private(set) var phase: Phase = .idle
     private(set) var roads: [Road] = []
     private(set) var selectedRoad = 0
@@ -31,6 +41,11 @@ final class PlayerController {
     private(set) var referer: String?
     private(set) var userAgent: String?
     private(set) var logLines: [String] = []
+
+    /// 当前这一集的弹幕与加载状态（对应 PlayerDanmakuController）。
+    private(set) var danmakuComments: [DanmakuComment] = []
+    private(set) var danmakuStatus: DanmakuStatus = .idle
+    private(set) var danmakuMessage: String?
 
     let bangumiID: Int
     let source: PlaybackSource?
@@ -67,6 +82,7 @@ final class PlayerController {
             applyHeaders(plugin: plugin)
             playbackURL = direct
             phase = .ready
+            await loadDanmaku()
             return
         }
 
@@ -114,18 +130,21 @@ final class PlayerController {
         currentEpisode = min(currentEpisode, max(1, episodes.count))
         phase = .idle
         playbackURL = nil
+        resetDanmaku()
     }
 
     func selectEpisode(_ number: Int) async {
         currentEpisode = max(1, number)
         phase = .idle
         playbackURL = nil
+        resetDanmaku()
         await start()
     }
 
     func retry() async {
         phase = .idle
         playbackURL = nil
+        resetDanmaku()
         await start()
     }
 
@@ -147,6 +166,38 @@ final class PlayerController {
         playbackURL = event.url
         phase = .ready
         KazumiLogBuffer.player("解析到媒体地址（\(event.format)）")
+        Task { await loadDanmaku() }
+    }
+
+    // MARK: - 弹幕
+
+    /// 对应 PlayerDanmakuController.fetchDanmaku：按 Bangumi id + 集数取弹幕。
+    func loadDanmaku() async {
+        guard danmakuStatus != .loading else { return }
+        danmakuStatus = .loading
+        danmakuMessage = nil
+
+        let result = await DanmakuAPI.fetch(bangumiID: bangumiID, episode: currentEpisode)
+        switch result {
+        case .success(let comments):
+            danmakuComments = comments
+            danmakuStatus = .ready
+            KazumiLogBuffer.player("弹幕已加载：\(comments.count) 条")
+        case .unavailable(let message):
+            danmakuComments = []
+            danmakuStatus = .unavailable
+            danmakuMessage = message
+        case .failed(let message):
+            danmakuComments = []
+            danmakuStatus = .failed
+            danmakuMessage = message
+        }
+    }
+
+    private func resetDanmaku() {
+        danmakuComments = []
+        danmakuStatus = .idle
+        danmakuMessage = nil
     }
 
     private func appendLog(_ line: String) {

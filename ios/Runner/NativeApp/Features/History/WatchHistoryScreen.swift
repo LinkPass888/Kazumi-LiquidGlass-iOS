@@ -64,6 +64,9 @@ struct WatchHistoryScreen: View {
             }
             Button("取消", role: .cancel) {}
         }
+        .task {
+            KazumiImageLoader.shared.prefetch(library.history.map(\.imageURL))
+        }
     }
 
     private func card(_ record: WatchRecord) -> some View {

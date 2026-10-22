@@ -60,6 +60,17 @@ struct PlayerSettingsScreen: View {
             } header: {
                 Text("默认倍速")
             }
+            Section {
+                Picker("超分辨率", selection: superResolutionBinding) {
+                    ForEach(SuperResolutionMode.allCases) { mode in
+                        Text(mode.title).tag(mode)
+                    }
+                }
+            } header: {
+                Text("超分辨率")
+            } footer: {
+                Text("效率档 1.5× 放大并轻度锐化，质量档 2×。滤镜由 FFmpeg 内核执行，播放器里也能随时切换。")
+            }
         }
         .kazumiSettingsDetail("播放设置")
     }
@@ -82,6 +93,13 @@ struct PlayerSettingsScreen: View {
     private var playSpeedBinding: Binding<Double> {
         Binding(get: { settings.playSpeed }, set: { settings.playSpeed = $0 })
     }
+
+    private var superResolutionBinding: Binding<SuperResolutionMode> {
+        Binding(
+            get: { settings.superResolutionMode },
+            set: { settings.superResolutionMode = $0 }
+        )
+    }
 }
 
 // MARK: - 弹幕设置
@@ -89,6 +107,10 @@ struct PlayerSettingsScreen: View {
 struct DanmakuSettingsScreen: View {
     @Environment(SettingsStore.self) private var settings
     @Environment(AppRouter.self) private var router
+
+    /// DanDanPlay 凭据。构建时未注入（Info.plist 为空）时，用户可以在这里手填。
+    @AppStorage(DanDanCredentials.appIDKey) private var danDanAppID = ""
+    @AppStorage(DanDanCredentials.secretKey) private var danDanSecret = ""
 
     var body: some View {
         Form {
@@ -115,6 +137,16 @@ struct DanmakuSettingsScreen: View {
                     range: 0.25...1.0,
                     step: 0.05
                 )
+            }
+            Section {
+                TextField("AppId", text: $danDanAppID)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                SecureField("密钥", text: $danDanSecret)
+            } header: {
+                Text("DanDanPlay")
+            } footer: {
+                Text("弹幕取自 DanDanPlay，需要 AppId 与密钥签名。留空时使用构建时注入的凭据；两者都为空就无法加载弹幕。")
             }
             Section {
                 Button {

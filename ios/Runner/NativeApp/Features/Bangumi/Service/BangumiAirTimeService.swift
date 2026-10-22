@@ -71,12 +71,34 @@ final class BangumiAirTimeService {
         }
     }
 
+    /// 加载某个日期所属季度（以及当前季度）的时刻表。
+    ///
+    /// 时间表页整季展示时会一次性需要几十部番的时刻，逐部调用
+    /// `ensureLoaded(subjectID:airDate:)` 会重复建任务；这里按季度去重，
+    /// 一个季度只发一次请求。
+    func ensureLoaded(forSeasonOf date: Date) async {
+        let target = Self.season(of: date)
+        let current = Self.currentSeason()
+        for season in [target, current] where !loadedSeasons.contains(season.id) {
+            await loadSeason(id: season.id)
+        }
+    }
+
     // MARK: - 季度
 
     private struct Season: Hashable {
         let year: Int
         let month: Int
         var id: String { String(format: "%04d-%02d", year, month) }
+    }
+
+    /// Date -> 所在季度。
+    private static func season(of date: Date) -> Season {
+        let components = Calendar(identifier: .gregorian)
+            .dateComponents([.year, .month], from: date)
+        let year = components.year ?? 2024
+        let month = components.month ?? 1
+        return Season(year: year, month: ((month - 1) / 3) * 3 + 1)
     }
 
     /// "yyyy-MM-dd" -> 所在季度；解析不出来返回 nil。

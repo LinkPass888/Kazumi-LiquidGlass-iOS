@@ -34,9 +34,15 @@ final class KazumiImageLoader: @unchecked Sendable {
     private let session: URLSession
 
     private init() {
-        let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
+        // 放在 Application Support 而不是 Caches：Caches 会被系统在存储紧张时整目录清掉，
+        // 表现就是「重启几次之后封面又全部重新下载」。图片属于可再生数据，但重新
+        // 下载的流量与等待完全没必要。
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSTemporaryDirectory())
-        directory = caches.appendingPathComponent("KazumiImages", isDirectory: true)
+        directory = base
+            .appendingPathComponent("Kazumi", isDirectory: true)
+            .appendingPathComponent("Images", isDirectory: true)
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
 
         memory.countLimit = 800
@@ -45,6 +51,13 @@ final class KazumiImageLoader: @unchecked Sendable {
         let configuration = URLSessionConfiguration.default
         configuration.requestCachePolicy = .returnCacheDataElseLoad
         configuration.timeoutIntervalForRequest = 20
+        // 除了自己按 SHA256 落盘，再叠一层 HTTP 缓存：即便磁盘文件被外部清理，
+        // URLCache 仍可能给出同一张图。
+        configuration.urlCache = URLCache(
+            memoryCapacity: 32 * 1024 * 1024,
+            diskCapacity: 256 * 1024 * 1024,
+            diskPath: "KazumiHTTPCache"
+        )
         session = URLSession(configuration: configuration)
 
         // 启动时清一轮过期文件；放后台，不阻塞首屏。

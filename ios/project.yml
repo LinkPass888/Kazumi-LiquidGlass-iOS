@@ -86,6 +86,10 @@ targets:
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleSignature: "????"
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        # DanDanPlay 弹幕接口的凭据（构建时通过 DANDAN_APP_ID / DANDAN_APP_SECRET 注入）。
+        # 留空时可以在「设置 → 弹幕设置」里手填。
+        DanDanAppId: $(DANDAN_APP_ID)
+        DanDanAppSecret: $(DANDAN_APP_SECRET)
         LSRequiresIPhoneOS: true
         UILaunchStoryboardName: LaunchScreen
         UIApplicationSupportsIndirectInputEvents: true
@@ -124,6 +128,9 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.example.kazumi
         PRODUCT_NAME: $(TARGET_NAME)
+        # DanDanPlay 凭据占位；CI 通过 xcodebuild 覆盖，未提供时为空（可在设置里手填）。
+        DANDAN_APP_ID: ""
+        DANDAN_APP_SECRET: ""
         # 版本号与 pubspec.yaml 的 `version: 2.4.8+20408` 保持一致。
         MARKETING_VERSION: "2.4.8"
         CURRENT_PROJECT_VERSION: "20408"

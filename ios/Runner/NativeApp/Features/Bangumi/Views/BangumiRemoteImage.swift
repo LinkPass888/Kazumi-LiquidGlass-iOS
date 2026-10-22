@@ -52,6 +52,12 @@ struct BangumiRemoteImage: View {
         .task(id: key) {
             await loadIfNeeded()
         }
+        .onChange(of: key) { _, newValue in
+            // 同一个视图被复用到另一张封面时（分页刷新、列表重排），
+            // 先把上一张图清掉，否则 .task 里会因 image != nil 直接返回。
+            image = newValue.isEmpty ? nil : KazumiImageLoader.shared.cachedImage(for: newValue)
+            failed = false
+        }
     }
 
     /// 占位底：很淡的一层，图片淡入时几乎看不出切换，也不会整块发灰。
