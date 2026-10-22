@@ -188,13 +188,14 @@ final class PlayerSurfaceCoordinator: NSObject, PlayerControllerDelegate {
     // MARK: PlayerControllerDelegate
 
     func playerController(state: KSPlayerState) {
+        // KSPlayerState 不是 Sendable，不能直接捕获进 Task。
+        // 先在当前 actor 上折成三个 Bool，再交给主线程写状态。
+        let isPlaying = state.isPlaying
+        let isReady = state == .readyToPlay
+        let isFailed = state == .error
         let target = surface
         Task { @MainActor in
-            target?.handleState(
-                isPlaying: state.isPlaying,
-                isReady: state == .readyToPlay,
-                isFailed: state == .error
-            )
+            target?.handleState(isPlaying: isPlaying, isReady: isReady, isFailed: isFailed)
         }
     }
 
