@@ -313,7 +313,18 @@ final class SettingsStore {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        themeMode = Self.read(defaults, SettingsKey.themeMode, KazumiThemeMode.system)
+        // 主题模式也要用局部变量承载：初始化阶段读实例属性（`themeMode`）
+        // 会触发「self 在全部存储属性就绪前被访问」的编译错误。
+        //
+        // 存的是 rawValue 字符串（见 `themeMode.didSet`），因此不能用
+        // `Self.read(..., KazumiThemeMode.system)` —— 那是 `as? KazumiThemeMode`
+        // 强转，字符串永远转不过去，重启后会静默回落到「跟随系统」。
+        let storedThemeMode = defaults.object(
+            forKey: SettingsKey.keyPrefix + SettingsKey.themeMode
+        ) as? String
+        let resolvedThemeMode = storedThemeMode
+            .flatMap { KazumiThemeMode(rawValue: $0) } ?? .system
+        themeMode = resolvedThemeMode
         // 原版把 'default' 视为绿色；这里额外兼容旧备份里可能出现的 ARGB 字符串。
         let storedThemeColor = defaults.object(forKey: SettingsKey.keyPrefix + SettingsKey.themeColor) as? String
         let resolvedThemeColor = KazumiThemeColor.named(storedThemeColor ?? KazumiThemeColor.standard.id)
@@ -329,7 +340,7 @@ final class SettingsStore {
         KazumiThemeColor.oledEnhance = resolvedOLEDEnhance
         // 应用主题的明暗要同步给调色板：强调色按它取 T40 / T80 那一档，
         // 不跟随窗口 trait（见 KazumiThemeColor.darkAppearanceOverride）。
-        KazumiThemeColor.darkAppearanceOverride = Self.darkAppearance(for: themeMode)
+        KazumiThemeColor.darkAppearanceOverride = Self.darkAppearance(for: resolvedThemeMode)
         selectedPluginIndex = Self.read(defaults, SettingsKey.selectedPluginIndex, 0)
         playerEntryFullscreen = Self.read(defaults, SettingsKey.playerEntryFullscreen, true)
         superResolutionMode = SuperResolutionMode(
