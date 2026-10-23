@@ -139,8 +139,25 @@ struct WebDAVClient {
     /// 那天才发现没得恢复。所以成功与否以「读得回来」为准，不以「传完了」为准。
     func uploadAndVerify(_ payload: Payload) async throws {
         try await upload(payload)
-        let readBack = try await download()
-        guard readBack.matches(payload) else { throw WebDAVError.notReadableBack }
+        // 有些服务器写完不是立刻可读（最终一致、或写入后还在落盘）。
+        // 立刻读一次就判失败会冤枉它，所以给几次机会再下结论。
+        var lastError: Error = WebDAVError.notReadableBack
+        for attempt in 1...3 {
+            do {
+                let readBack = try await download()
+                guard readBack.matches(payload) else {
+                    lastError = WebDAVError.notReadableBack
+                    continue
+                }
+                return
+            } catch {
+                lastError = error
+            }
+            if attempt < 3 {
+                try? await Task.sleep(for: .milliseconds(400))
+            }
+        }
+        throw lastError
     }
 
     /// 连通性检查：对应原版 `WebDav().ping()`。
