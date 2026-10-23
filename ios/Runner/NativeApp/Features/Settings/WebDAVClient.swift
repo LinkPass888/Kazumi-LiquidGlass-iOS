@@ -56,6 +56,26 @@ struct WebDAVClient {
             history = try container.decodeIfPresent([WatchRecord].self, forKey: .history) ?? []
             danmakuRules = try container.decodeIfPresent(String.self, forKey: .danmakuRules) ?? ""
         }
+
+        /// 服务器上读回来的那份，跟刚写上去的那份是不是同一份。
+        ///
+        /// 只比「恢复之后用户能看到什么」：条数、每条的 ID、屏蔽词原文、
+        /// 记录的更新时间。时间按秒比——`.iso8601` 编码会把小数秒截掉，
+        /// 直接比 `Date` 相等会永远不成立。
+        func matches(_ other: Payload) -> Bool {
+            guard danmakuRules == other.danmakuRules else { return false }
+            guard entries.count == other.entries.count,
+                  history.count == other.history.count else { return false }
+            guard entries.map(\.id).sorted() == other.entries.map(\.id).sorted() else { return false }
+            guard history.map(\.bangumiID).sorted() == other.history.map(\.bangumiID).sorted() else { return false }
+            guard Self.sameInstants(entries.map(\.updatedAt), other.entries.map(\.updatedAt)) else { return false }
+            return Self.sameInstants(history.map(\.updatedAt), other.history.map(\.updatedAt))
+        }
+
+        private static func sameInstants(_ lhs: [Date], _ rhs: [Date]) -> Bool {
+            guard lhs.count == rhs.count else { return false }
+            return zip(lhs, rhs).allSatisfy { pair in abs(pair.0.timeIntervalSince(pair.1)) < 1 }
+        }
     }
 
     enum WebDAVError: Error, LocalizedError {
@@ -66,6 +86,8 @@ struct WebDAVClient {
         case notFound
         case badStatus(Int)
         case decoding(String)
+        /// 写上去了，但按恢复那条路读回来对不上——这次不能算备份成功。
+        case notReadableBack
 
         var errorDescription: String? {
             switch self {
@@ -75,6 +97,8 @@ struct WebDAVClient {
             case .notFound: "服务器上还没有备份，先点「立即备份」上传一份"
             case .badStatus(let status): "服务器返回 HTTP \(status)"
             case .decoding(let message): message
+            case .notReadableBack:
+                "文件已经写上去了，但读回来核对不上，这次不算备份成功。"
             }
         }
     }
@@ -106,6 +130,17 @@ struct WebDAVClient {
         } catch {
             throw WebDAVError.decoding("备份文件解析失败：\(error.localizedDescription)")
         }
+    }
+
+    /// 备份：写上去，再**用恢复那条路**读回来对一遍。
+    ///
+    /// 安全网自己坏了必须当场知道：以前这里 `upload` 一返回就说「备份完成」，
+    /// 可服务器没存全、或者存的格式我们自己读不回来时，用户要到真正恢复的
+    /// 那天才发现没得恢复。所以成功与否以「读得回来」为准，不以「传完了」为准。
+    func uploadAndVerify(_ payload: Payload) async throws {
+        try await upload(payload)
+        let readBack = try await download()
+        guard readBack.matches(payload) else { throw WebDAVError.notReadableBack }
     }
 
     /// 连通性检查：对应原版 `WebDav().ping()`。

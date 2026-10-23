@@ -135,11 +135,11 @@ struct WebDAVScreen: View {
                 history: library.history,
                 danmakuRules: settings.danmakuFilterRulesText
             )
-            try await WebDAVClient(settings: settings).upload(payload)
-            statusMessage = "备份完成：\(library.entries.count) 条追番 / \(library.history.count) 条记录 / \(ruleCount(payload.danmakuRules)) 条屏蔽词"
-            KazumiLogBuffer.network("WebDAV 备份完成")
+            try await WebDAVClient(settings: settings).uploadAndVerify(payload)
+            statusMessage = "备份完成：\(library.entries.count) 部追番 / \(library.history.count) 条观看历史 / \(ruleCount(payload.danmakuRules)) 条屏蔽词"
+            KazumiLogBuffer.network("WebDAV 备份完成（已读回核对）")
         } catch {
-            statusMessage = "备份失败：\(error.localizedDescription)"
+            statusMessage = "备份没有完成。原因记在「存储与日志」的「运行日志」里。"
             KazumiLogBuffer.network("WebDAV 备份失败：\(error.localizedDescription)")
         }
     }
@@ -152,10 +152,10 @@ struct WebDAVScreen: View {
             let payload = try await WebDAVClient(settings: settings).download()
             library.replace(entries: payload.entries, history: payload.history)
             settings.danmakuFilterRulesText = payload.danmakuRules
-            statusMessage = "恢复完成：\(payload.entries.count) 条追番 / \(payload.history.count) 条记录 / \(ruleCount(payload.danmakuRules)) 条屏蔽词"
+            statusMessage = "恢复完成：\(payload.entries.count) 部追番 / \(payload.history.count) 条观看历史 / \(ruleCount(payload.danmakuRules)) 条屏蔽词"
             KazumiLogBuffer.network("WebDAV 恢复完成")
         } catch {
-            statusMessage = "恢复失败：\(error.localizedDescription)"
+            statusMessage = "恢复没有完成。原因记在「存储与日志」的「运行日志」里。"
             KazumiLogBuffer.network("WebDAV 恢复失败：\(error.localizedDescription)")
         }
     }

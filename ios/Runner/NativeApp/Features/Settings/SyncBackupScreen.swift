@@ -260,10 +260,16 @@ struct SyncBackupScreen: View {
         // 就拿到内容。以前这里借 `detectValues` 走同一套授权，但那个调用本身
         // 会把 App 打死——模拟器上点一次就原地回主屏，连空回调、不改任何状态
         // 都死（探针己验过），所以不再碰它。
+        //
+        // 下面三行日志是为了“点一下就退”这类崩溃：它们走 os.Logger，进系统
+        // 日志，App 死了也还在。屏上的日志页是内存里的，崩了就没了。
+        KazumiLogBuffer.network("剪贴板恢复：已按下，准备读剪贴板")
         guard let raw = UIPasteboard.general.string else {
+            KazumiLogBuffer.network("剪贴板恢复：读到空（无内容或未授权）")
             backupMessage = Self.clipboardEmptyMessage
             return
         }
+        KazumiLogBuffer.network("剪贴板恢复：读到 \(raw.count) 字")
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else {
             backupMessage = Self.clipboardEmptyMessage
