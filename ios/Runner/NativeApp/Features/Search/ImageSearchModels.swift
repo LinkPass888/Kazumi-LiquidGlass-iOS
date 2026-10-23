@@ -89,7 +89,8 @@ struct TraceResultItem: Identifiable, Sendable {
         let numbers = episode.map { value -> String in
             value.truncatingRemainder(dividingBy: 1) == 0 ? String(Int(value)) : String(value)
         }
-        return "第 \(numbers.joined(separator: " / ")) 集"
+        // 带序号的集数用「话」，与播放器、历史页一致（不带序号的指代才用「集」）。
+        return "第 \(numbers.joined(separator: " / ")) 话"
     }
 
     /// 相似度文案：对应 _similarity(result)。

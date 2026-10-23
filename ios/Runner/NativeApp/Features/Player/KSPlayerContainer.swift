@@ -15,6 +15,7 @@
 //  只有 `VideoPlayerView` 才会。
 //
 
+import AVFoundation
 import KSPlayer
 import Observation
 import SwiftUI
@@ -29,15 +30,32 @@ import UIKit
 final class PlayerSurfaceModel {
     var currentTime: Double = 0
     var duration: Double = 0
+    /// 已缓冲到的时间点（相对视频开头），进度条据此画出缓冲段。
+    var bufferedTime: Double = 0
     var isPlaying = false
     var isReady = false
     var errorMessage: String?
 
     weak var playerView: PlayerView?
 
+    /// 期望的播放速率。AVPlayer 在暂停再播 / 换集后会回到 1.0，
+    /// 因此就绪或重新起播时要按这个值再补一次，默认倍速才真正生效。
+    var desiredRate: Float = 1.0
+
+    /// 进入播放器时待恢复的进度：播放器就绪后只 seek 一次，
+    /// 避免抢在加载完成前 seek，结果被内核回落到 0。
+    var pendingResumeTime: Double?
+
+    /// 正常播完（非出错）时的回调，交给页面处理自动连播。
+    var onFinish: (@MainActor (PlayerSurfaceModel) -> Void)?
+
+    /// 需要在播放区浮现的临时提示（首 / 末集提示等）；页面渲染并在 2 秒后清空。
+    var toastMessage: String?
+
     func play() {
         playerView?.play()
         isPlaying = true
+        applyDesiredRate()
     }
 
     func pause() {
@@ -60,7 +78,32 @@ final class PlayerSurfaceModel {
     }
 
     func setPlaybackRate(_ rate: Float) {
-        playerView?.playerLayer?.player.playbackRate = rate
+        guard rate.isFinite, rate > 0 else { return }
+        desiredRate = rate
+        applyDesiredRate()
+    }
+
+    /// 只在正在播放时下发速率：暂停时给 AVPlayer 设非零 rate 会直接把它拉起来。
+    private func applyDesiredRate() {
+        guard isPlaying else { return }
+        playerView?.playerLayer?.player.playbackRate = desiredRate
+    }
+
+    /// 快进指定秒数：已知总时长时夹在时长内，未知时就按当前时间往后加。
+    func skipForward(seconds: Double) {
+        guard seconds.isFinite, seconds > 0 else { return }
+        let target = duration > 0
+            ? min(duration, currentTime + seconds)
+            : currentTime + seconds
+        seek(to: target)
+    }
+
+    /// 从内核读一次已缓冲位置（进度条的缓冲段用）；读不到就保持原值。
+    func refreshBufferedTime() {
+        guard let player = playerView?.playerLayer?.player else { return }
+        let value = player.playableTime
+        guard value.isFinite, value >= 0 else { return }
+        bufferedTime = value
     }
 
     /// 关闭播放器：先停内核再断引用，避免 KSPlayer 在析构时仍持有渲染线程。
@@ -73,16 +116,43 @@ final class PlayerSurfaceModel {
 
     func handleState(isPlaying: Bool, isReady: Bool, isFailed: Bool) {
         self.isPlaying = isPlaying
+        if isPlaying {
+            applyDesiredRate()
+        }
         if isReady {
             self.isReady = true
             self.errorMessage = nil
+            applyPendingResume()
         }
         if isFailed {
             self.isPlaying = false
             if errorMessage == nil {
-                errorMessage = "播放器加载失败，请换一条线路重试"
+                errorMessage = "播放器加载失败，请重试"
             }
         }
+    }
+
+    /// 播放结束（正常播完或出错）的收尾，由协调器调用。
+    /// 出错只报错；只有确实播到结尾才触发 `onFinish`——
+    /// 停止 / 换集也会走 finish 回调，那时当前时间离结尾很远，不能误触自动连播。
+    func handleFinish(errorMessage: String?) {
+        isPlaying = false
+        isReady = false
+        if let errorMessage {
+            self.errorMessage = errorMessage
+            return
+        }
+        guard duration > 0, currentTime >= duration - 3 else { return }
+        onFinish?(self)
+    }
+
+    /// 切换分集前清掉上一集的展示状态，避免旧的时长 / 进度闪一下。
+    func prepareForNewEpisode() {
+        currentTime = 0
+        duration = 0
+        bufferedTime = 0
+        isReady = false
+        pendingResumeTime = nil
     }
 
     func updateTime(current: Double, total: Double) {
@@ -90,6 +160,15 @@ final class PlayerSurfaceModel {
         if total.isFinite, total > 0 {
             duration = total
         }
+    }
+
+    /// 就绪后恢复一次待续播位置；太短或落在结尾 5 秒内（视为已看完）就丢掉。
+    private func applyPendingResume() {
+        guard let resume = pendingResumeTime else { return }
+        pendingResumeTime = nil
+        guard resume > 1 else { return }
+        if duration > 0, resume >= duration - 5 { return }
+        seek(to: resume)
     }
 }
 
@@ -101,6 +180,8 @@ final class PlayerSurfaceCoordinator: NSObject, PlayerControllerDelegate {
 
     private var lastURL: URL?
     private var lastFilters: [String] = []
+    /// 画面填充方式（对应原版 PlayerAspectRatio 的 BoxFit）。
+    private var videoGravity: AVLayerVideoGravity = .resizeAspect
     /// 当前挂在 `PlayerView` 上的视频视图，换集时用来摘掉上一路。
     private weak var attachedVideoView: UIView?
 
@@ -183,6 +264,39 @@ final class PlayerSurfaceCoordinator: NSObject, PlayerControllerDelegate {
             videoView.topAnchor.constraint(equalTo: view.topAnchor),
             videoView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
+        Self.setVideoGravity(videoGravity, in: videoView)
+    }
+
+    /// 切换画面填充方式（自动 / 裁切 / 拉伸 / 4:3 共用同一套处理）。
+    @MainActor
+    func applyVideoGravity(_ gravity: AVLayerVideoGravity) {
+        videoGravity = gravity
+        guard let view = attachedVideoView else { return }
+        Self.setVideoGravity(gravity, in: view)
+    }
+
+    /// KSPlayer 的视频视图由内核创建，AVPlayerLayer 可能就在它自己的 layer 上，
+    /// 也可能包在一两层子视图里；两种都找一遍。
+    /// FFmpeg 内核（超分开启时）没有 AVPlayerLayer，这里会自然退化为不处理。
+    private static func setVideoGravity(
+        _ gravity: AVLayerVideoGravity,
+        in view: UIView,
+        depth: Int = 0
+    ) {
+        if let layer = view.layer as? AVPlayerLayer {
+            layer.videoGravity = gravity
+            return
+        }
+        for sublayer in view.layer.sublayers ?? [] {
+            if let layer = sublayer as? AVPlayerLayer {
+                layer.videoGravity = gravity
+                return
+            }
+        }
+        guard depth < 3 else { return }
+        for subview in view.subviews {
+            setVideoGravity(gravity, in: subview, depth: depth + 1)
+        }
     }
 
     // MARK: PlayerControllerDelegate
@@ -203,6 +317,7 @@ final class PlayerSurfaceCoordinator: NSObject, PlayerControllerDelegate {
         let target = surface
         Task { @MainActor in
             target?.updateTime(current: currentTime, total: totalTime)
+            target?.refreshBufferedTime()
         }
     }
 
@@ -210,10 +325,7 @@ final class PlayerSurfaceCoordinator: NSObject, PlayerControllerDelegate {
         let message = error?.localizedDescription
         let target = surface
         Task { @MainActor in
-            target?.handleState(isPlaying: false, isReady: false, isFailed: false)
-            if let message {
-                target?.errorMessage = message
-            }
+            target?.handleFinish(errorMessage: message)
         }
     }
 
@@ -234,6 +346,8 @@ struct KSPlayerContainer: UIViewRepresentable {
     let userAgent: String?
     /// 超分辨率滤镜链（空数组表示关闭）。
     let videoFilters: [String]
+    /// 画面填充方式（自动 = 等比适配，裁切 = 等比填满，拉伸 = 不保持比例）。
+    let videoGravity: AVLayerVideoGravity
     let danmaku: [DanmakuComment]
     let danmakuEnabled: Bool
     let danmakuOpacity: Double
@@ -272,6 +386,7 @@ struct KSPlayerContainer: UIViewRepresentable {
             filters: videoFilters,
             to: uiView
         )
+        context.coordinator.applyVideoGravity(videoGravity)
         context.coordinator.overlay?.apply(
             comments: danmaku,
             enabled: danmakuEnabled,

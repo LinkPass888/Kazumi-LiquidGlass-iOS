@@ -25,7 +25,7 @@ struct WatchHistoryScreen: View {
                     Image(systemName: "clock.arrow.circlepath")
                         .font(.system(size: 38, weight: .semibold))
                         .foregroundStyle(.tertiary)
-                    Text("暂无观看记录")
+                    Text("暂无观看历史")
                         .font(.headline)
                     Button("去推荐看看") {
                         router.selectedDestination = .popular
@@ -44,10 +44,12 @@ struct WatchHistoryScreen: View {
                     .padding(.bottom, 24)
                 }
                 .scrollIndicators(.hidden)
+                // 顶部滚动边缘：渐进模糊（.soft）。
+                .scrollEdgeEffectStyle(.soft, for: .top)
             }
         }
         .background(KazumiPalette.background(for: colorScheme).ignoresSafeArea())
-        .navigationTitle("历史记录")
+        .navigationTitle("观看历史")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             if !records.isEmpty {
@@ -56,7 +58,7 @@ struct WatchHistoryScreen: View {
                 }
             }
         }
-        .confirmationDialog("确定清空全部观看记录？", isPresented: $isConfirmingClear, titleVisibility: .visible) {
+        .confirmationDialog("确定清空全部观看历史？", isPresented: $isConfirmingClear, titleVisibility: .visible) {
             Button("清空全部", role: .destructive) {
                 for record in records {
                     library.removeHistory(bangumiID: record.bangumiID)
@@ -93,7 +95,7 @@ struct WatchHistoryScreen: View {
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
 
-                    KazumiGlassProgressBar(progress: record.fraction, tint: KazumiPalette.accent)
+                    KazumiGlassProgressBar(progress: record.fraction, tint: KazumiPalette.accent(for: colorScheme))
 
                     HStack(spacing: 6) {
                         Text(record.updatedAt, format: Date.FormatStyle(date: .abbreviated, time: .shortened))
@@ -117,7 +119,8 @@ struct WatchHistoryScreen: View {
         }
         .buttonStyle(.plain)
         .contextMenu {
-            Button("继续观看") {
+            // 已看完的从头播，就不能再叫「继续观看」——名字要跟代码做的事一致。
+            Button(record.isFinished ? "重新观看" : "继续观看") {
                 router.push(.player(bangumiID: record.bangumiID, episode: record.episodeNumber))
             }
             Button("删除记录", role: .destructive) {

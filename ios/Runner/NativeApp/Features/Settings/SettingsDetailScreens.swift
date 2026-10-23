@@ -9,7 +9,6 @@
 //    * 通知设置   —— lib/pages/settings/notification_settings.dart
 //    * 外观设置   —— lib/pages/settings/theme_settings_page.dart
 //    * 界面设置   —— lib/pages/settings/interface_settings.dart
-//    * 同步设置   —— lib/pages/settings/sync/sync_settings_page.dart
 //    * 网络设置   —— lib/pages/settings/proxy/proxy_settings_page.dart
 //    * 更新设置   —— lib/pages/settings/update_settings.dart
 //
@@ -42,23 +41,47 @@ extension View {
 struct PlayerSettingsScreen: View {
     @Environment(SettingsStore.self) private var settings
 
-    private static let speeds: [Double] = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0]
-
     var body: some View {
         Form {
             Section("播放行为") {
                 Toggle("进入播放器即全屏", isOn: fullscreenBinding)
-                Toggle("自动连播下一集", isOn: autoPlayNextBinding)
-                Toggle("自动跳过片头片尾", isOn: autoSkipBinding)
-            }
-            Section {
-                Picker("默认倍速", selection: playSpeedBinding) {
-                    ForEach(Self.speeds, id: \.self) { speed in
-                        Text("\(speed, specifier: "%.2g")").tag(speed)
+                Toggle(isOn: autoPlayNextBinding) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("自动连播")
+                        Text("当前视频播放完毕后自动播放下一集")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
                 }
-            } header: {
-                Text("默认倍速")
+                Toggle(isOn: playResumeBinding) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("自动跳转")
+                        Text("跳转到上次播放位置")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            Section("播放") {
+                Picker("默认倍速", selection: playSpeedBinding) {
+                    // 与原版播放器菜单同一份档位：0.25 → 3.0，每档 0.25。
+                    ForEach(PlaybackSpeed.all, id: \.self) { speed in
+                        Text(PlaybackSpeed.label(speed)).tag(speed)
+                    }
+                }
+                Stepper(value: buttonSkipTimeBinding, in: 5...300, step: 5) {
+                    LabeledContent("顶部按钮快进时长", value: "\(settings.buttonSkipTime) 秒")
+                }
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Text("控制栏消失时间")
+                        Spacer(minLength: 8)
+                        Text(controlBarHideLabel)
+                            .foregroundStyle(.secondary)
+                    }
+                    // 原版滑杆范围 1–10 秒、0.5 秒一档（divisions 18），默认 4 秒。
+                    Slider(value: controlBarHideBinding, in: 1...10, step: 0.5)
+                }
             }
             Section {
                 Picker("超分辨率", selection: superResolutionBinding) {
@@ -86,12 +109,34 @@ struct PlayerSettingsScreen: View {
         Binding(get: { settings.autoPlayNext }, set: { settings.autoPlayNext = $0 })
     }
 
-    private var autoSkipBinding: Binding<Bool> {
-        Binding(get: { settings.autoSkipOpEd }, set: { settings.autoSkipOpEd = $0 })
+    private var playResumeBinding: Binding<Bool> {
+        Binding(get: { settings.playResume }, set: { settings.playResume = $0 })
     }
 
     private var playSpeedBinding: Binding<Double> {
         Binding(get: { settings.playSpeed }, set: { settings.playSpeed = $0 })
+    }
+
+    private var buttonSkipTimeBinding: Binding<Int> {
+        Binding(
+            get: { settings.buttonSkipTime },
+            set: { settings.buttonSkipTime = max(1, $0) }
+        )
+    }
+
+    /// 设置页用秒展示，存储沿用原版的毫秒（`playerControllerLayerDisappearTime`）。
+    private var controlBarHideBinding: Binding<Double> {
+        Binding(
+            get: { Double(settings.playerControllerLayerDisappearTime) / 1000 },
+            set: { settings.playerControllerLayerDisappearTime = Int(($0 * 1000).rounded()) }
+        )
+    }
+
+    private var controlBarHideLabel: String {
+        let seconds = Double(settings.playerControllerLayerDisappearTime) / 1000
+        return seconds == seconds.rounded()
+            ? "\(Int(seconds)) 秒"
+            : String(format: "%.1f 秒", seconds)
     }
 
     private var superResolutionBinding: Binding<SuperResolutionMode> {
@@ -203,25 +248,25 @@ struct DownloadSettingsScreen: View {
 
     var body: some View {
         Form {
-            Section("下载") {
+            Section("缓存") {
                 Picker("并发数", selection: parallelBinding) {
                     ForEach(1...8, id: \.self) { value in
                         Text("\(value)").tag(value)
                     }
                 }
-                Toggle("下载弹幕", isOn: danmakuBinding)
+                Toggle("缓存弹幕", isOn: danmakuBinding)
             }
             Section {
                 Button {
                     router.push(.download)
                 } label: {
-                    Label("下载管理", systemImage: "arrow.down.circle")
+                    Label("缓存管理", systemImage: "arrow.down.circle")
                 }
             } footer: {
-                Text("下载管理里可以查看已下载的剧集与弹幕缓存。")
+                Text("缓存管理里可以查看已缓存的剧集与弹幕。")
             }
         }
-        .kazumiSettingsDetail("下载设置")
+        .kazumiSettingsDetail("缓存设置")
     }
 
     private var parallelBinding: Binding<Int> {
@@ -245,7 +290,7 @@ struct NotificationSettingsScreen: View {
         Form {
             Section("提醒") {
                 Toggle("追番更新提醒", isOn: notifyBinding)
-                Toggle("移动网络下限制下载", isOn: meteredBinding)
+                Toggle("移动网络下限制缓存", isOn: meteredBinding)
             }
         }
         .kazumiSettingsDetail("通知设置")
@@ -352,80 +397,6 @@ struct InterfaceSettingsScreen: View {
             get: { settings.defaultStartupPage },
             set: { settings.defaultStartupPage = $0 }
         )
-    }
-}
-
-// MARK: - 同步设置
-
-struct SyncSettingsScreen: View {
-    @Environment(SettingsStore.self) private var settings
-    @Environment(AppRouter.self) private var router
-
-    var body: some View {
-        Form {
-            Section("追番同步") {
-                Toggle("同步追番状态", isOn: bangumiSyncBinding)
-                TextField("Bangumi 用户名", text: bangumiUsernameBinding)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                SecureField("Bangumi 访问令牌", text: bangumiTokenBinding)
-            }
-            Section("弹幕屏蔽同步") {
-                Toggle("同步弹幕屏蔽规则", isOn: shieldSyncBinding)
-            }
-            Section("WebDAV") {
-                TextField("服务器地址", text: webDAVURLBinding)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .keyboardType(.URL)
-                TextField("用户名", text: webDAVUserBinding)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                SecureField("密码", text: webDAVPasswordBinding)
-                Toggle("自动同步", isOn: webDAVAutoSyncBinding)
-                Button {
-                    router.push(.webDAV)
-                } label: {
-                    Label("打开同步备份", systemImage: "icloud")
-                }
-            }
-        }
-        .kazumiSettingsDetail("同步设置")
-    }
-
-    private var bangumiSyncBinding: Binding<Bool> {
-        Binding(get: { settings.bangumiSyncEnabled }, set: { settings.bangumiSyncEnabled = $0 })
-    }
-
-    private var bangumiUsernameBinding: Binding<String> {
-        Binding(get: { settings.bangumiUsername }, set: { settings.bangumiUsername = $0 })
-    }
-
-    private var bangumiTokenBinding: Binding<String> {
-        Binding(get: { settings.bangumiAccessToken }, set: { settings.bangumiAccessToken = $0 })
-    }
-
-    private var shieldSyncBinding: Binding<Bool> {
-        Binding(
-            get: { settings.danmakuShieldSyncEnabled },
-            set: { settings.danmakuShieldSyncEnabled = $0 }
-        )
-    }
-
-    private var webDAVURLBinding: Binding<String> {
-        Binding(get: { settings.webDAVURL }, set: { settings.webDAVURL = $0 })
-    }
-
-    private var webDAVUserBinding: Binding<String> {
-        Binding(get: { settings.webDAVUser }, set: { settings.webDAVUser = $0 })
-    }
-
-    private var webDAVPasswordBinding: Binding<String> {
-        Binding(get: { settings.webDAVPassword }, set: { settings.webDAVPassword = $0 })
-    }
-
-    private var webDAVAutoSyncBinding: Binding<Bool> {
-        Binding(get: { settings.webDAVAutoSync }, set: { settings.webDAVAutoSync = $0 })
     }
 }
 

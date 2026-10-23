@@ -88,6 +88,37 @@ enum SuperResolutionMode: Int, CaseIterable, Identifiable, Sendable {
     }
 }
 
+/// 播放倍速档位。对应原版 `lib/utils/constants.dart` 的 `defaultPlaySpeedList`：
+/// 0.25 → 3.0，每档 0.25，共 12 档。播放器菜单与设置页的「默认倍速」共用这一份，
+/// 避免两处档位再次走偏。
+enum PlaybackSpeed {
+    static let all: [Double] = (1...12).map { Double($0) * 0.25 }
+
+    /// 档位文案：整数写 `2x`，小数写 `1.25x`（原版菜单是 `${value}x`）。
+    static func label(_ value: Double) -> String {
+        if value == value.rounded() {
+            return "\(Int(value))x"
+        }
+        var text = String(format: "%.2f", value)
+        while text.hasSuffix("0") {
+            text.removeLast()
+        }
+        return "\(text)x"
+    }
+
+    /// 播放器按钮文案：1 倍时写「倍速」，其余写档位（对应原版的按钮用字）。
+    static func buttonLabel(_ value: Double) -> String {
+        abs(value - 1) < 0.001 ? "倍速" : label(value)
+    }
+
+    /// 把任意倍速归到最近的档位（越界自然取首 / 末档）。
+    /// 旧备份或旧安装里可能写着不在档位表上的值，直接拿来会让设置页的选择项对不上。
+    static func nearest(_ value: Double) -> Double {
+        guard value.isFinite else { return 1 }
+        return all.min { abs($0 - value) < abs($1 - value) } ?? 1
+    }
+}
+
 /// 设置键。命名沿用原项目 setting keys 的语义，便于备份文件互通。
 enum SettingsKey {
     /// 设置键在 UserDefaults 里的统一前缀。
@@ -110,6 +141,13 @@ enum SettingsKey {
     static let autoPlayNext = "autoPlayNext"
     static let autoSkipOpEd = "autoSkipOpEd"
     static let playSpeed = "playSpeed"
+    /// 顶部快进按钮的秒数，沿用原版 `SettingsKeys.buttonSkipTime` 的键名，默认 80。
+    static let buttonSkipTime = "buttonSkipTime"
+    /// 进入播放器时跳到上次播放位置，沿用原版 `SettingsKeys.playResume` 的键名，默认开启。
+    static let playResume = "playResume"
+    /// 控制栏自动隐藏前的停留时长（毫秒），沿用原版
+    /// `SettingsKeys.playerControllerLayerDisappearTime` 的键名，默认 4000。
+    static let playerControllerLayerDisappearTime = "playerControllerLayerDisappearTime"
     static let danmakuEnabled = "danmakuEnabled"
     static let danmakuOpacity = "danmakuOpacity"
     static let danmakuFontSize = "danmakuFontSize"
@@ -124,6 +162,16 @@ enum SettingsKey {
     static let bangumiUsername = "bangumiUsername"
     static let bangumiSyncEnabled = "bangumiSyncEnabled"
     static let danmakuShieldSyncEnabled = "danmakuShieldSyncEnabled"
+    /// 以下键名与默认值对齐 Flutter `lib/services/storage/settings_keys.dart`，
+    /// 便于双方生成的设置备份互相恢复。
+    static let bangumiSyncEnable = "bangumiSyncEnable"
+    static let bangumiSyncPriority = "bangumiSyncPriority"
+    static let bangumiImmediateSyncToastEnable = "bangumiImmediateSyncToastEnable"
+    static let bangumiAutoMarkWatched = "bangumiAutoMarkWatched"
+    static let webDavEnable = "webDavEnable"
+    static let webDavEnableHistory = "webDavEnableHistory"
+    static let webDavEnableCollect = "webDavEnableCollect"
+    static let webDavEnableDanmakuShield = "webDavEnableDanmakuShield"
     static let proxyEnabled = "proxyEnabled"
     static let proxyHost = "proxyHost"
     static let proxyPort = "proxyPort"
@@ -157,7 +205,6 @@ final class SettingsStore {
     var themeMode: KazumiThemeMode {
         didSet {
             persist(themeMode.rawValue, SettingsKey.themeMode)
-            syncAppearance()
         }
     }
 
@@ -226,16 +273,59 @@ final class SettingsStore {
         didSet { persist(playSpeed, SettingsKey.playSpeed) }
     }
 
+    /// 播放器进入时自动跳到上次播放位置（对应原版「自动跳转」开关）。
+    var playResume: Bool {
+        didSet { persist(playResume, SettingsKey.playResume) }
+    }
+
+    /// 顶部快进按钮的跳转秒数（对应原版 `buttonSkipTime`，默认 80 秒）。
+    var buttonSkipTime: Int {
+        didSet { persist(buttonSkipTime, SettingsKey.buttonSkipTime) }
+    }
+
+    /// 控制栏自动隐藏前的停留时长（毫秒，对应原版
+    /// `playerControllerLayerDisappearTime`，默认 4000；设置页按 1–10 秒、0.5 秒步进调）。
+    var playerControllerLayerDisappearTime: Int {
+        didSet {
+            persist(playerControllerLayerDisappearTime, SettingsKey.playerControllerLayerDisappearTime)
+        }
+    }
+
     var bangumiSyncEnabled: Bool {
-        didSet { persist(bangumiSyncEnabled, SettingsKey.bangumiSyncEnabled) }
+        didSet {
+            persist(bangumiSyncEnabled, SettingsKey.bangumiSyncEnabled)
+            bangumiSyncEnable = bangumiSyncEnabled
+        }
     }
 
     var danmakuShieldSyncEnabled: Bool {
-        didSet { persist(danmakuShieldSyncEnabled, SettingsKey.danmakuShieldSyncEnabled) }
+        didSet {
+            persist(danmakuShieldSyncEnabled, SettingsKey.danmakuShieldSyncEnabled)
+            webDavEnableDanmakuShield = danmakuShieldSyncEnabled
+        }
+    }
+
+    var bangumiSyncEnable: Bool {
+        didSet { persist(bangumiSyncEnable, SettingsKey.bangumiSyncEnable) }
+    }
+
+    var bangumiSyncPriority: Int {
+        didSet { persist(bangumiSyncPriority, SettingsKey.bangumiSyncPriority) }
+    }
+
+    var bangumiImmediateSyncToastEnable: Bool {
+        didSet { persist(bangumiImmediateSyncToastEnable, SettingsKey.bangumiImmediateSyncToastEnable) }
+    }
+
+    var bangumiAutoMarkWatched: Bool {
+        didSet { persist(bangumiAutoMarkWatched, SettingsKey.bangumiAutoMarkWatched) }
     }
 
     var bangumiAccessToken: String {
-        didSet { persist(bangumiAccessToken, SettingsKey.bangumiAccessToken) }
+        didSet {
+            persist(bangumiAccessToken, SettingsKey.bangumiAccessToken)
+            BangumiAPI.accessToken = bangumiAccessToken
+        }
     }
 
     var bangumiUsername: String {
@@ -255,7 +345,26 @@ final class SettingsStore {
     }
 
     var webDAVAutoSync: Bool {
-        didSet { persist(webDAVAutoSync, SettingsKey.webDAVAutoSync) }
+        didSet {
+            persist(webDAVAutoSync, SettingsKey.webDAVAutoSync)
+            webDavEnable = webDAVAutoSync
+        }
+    }
+
+    var webDavEnable: Bool {
+        didSet { persist(webDavEnable, SettingsKey.webDavEnable) }
+    }
+
+    var webDavEnableHistory: Bool {
+        didSet { persist(webDavEnableHistory, SettingsKey.webDavEnableHistory) }
+    }
+
+    var webDavEnableCollect: Bool {
+        didSet { persist(webDavEnableCollect, SettingsKey.webDavEnableCollect) }
+    }
+
+    var webDavEnableDanmakuShield: Bool {
+        didSet { persist(webDavEnableDanmakuShield, SettingsKey.webDavEnableDanmakuShield) }
     }
 
     var proxyEnabled: Bool {
@@ -313,6 +422,15 @@ final class SettingsStore {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        // 旧版 Swift 键 -> Flutter 键的一次性迁移。只在目标键从未写过时复制，
+        // 原键保留不删，旧属性仍可读取；旧 UI 改值时由 didSet 同步到新键。
+        Self.migrateLegacySetting(defaults, from: SettingsKey.bangumiSyncEnabled, to: SettingsKey.bangumiSyncEnable)
+        Self.migrateLegacySetting(defaults, from: SettingsKey.webDAVAutoSync, to: SettingsKey.webDavEnable)
+        Self.migrateLegacySetting(
+            defaults,
+            from: SettingsKey.danmakuShieldSyncEnabled,
+            to: SettingsKey.webDavEnableDanmakuShield
+        )
         // 主题模式也要用局部变量承载：初始化阶段读实例属性（`themeMode`）
         // 会触发「self 在全部存储属性就绪前被访问」的编译错误。
         //
@@ -338,9 +456,8 @@ final class SettingsStore {
         // 在全部存储属性初始化完成后再同步全局调色板，避免 'self' 提前访问。
         KazumiThemeColor.current = resolvedThemeColor
         KazumiThemeColor.oledEnhance = resolvedOLEDEnhance
-        // 应用主题的明暗要同步给调色板：强调色按它取 T40 / T80 那一档，
-        // 不跟随窗口 trait（见 KazumiThemeColor.darkAppearanceOverride）。
-        KazumiThemeColor.darkAppearanceOverride = Self.darkAppearance(for: resolvedThemeMode)
+        // 应用主题的明暗不再需要额外注明：强调色按 SwiftUI 的 `colorScheme` 显式取，
+        // 而 `colorScheme` 就是下面那个 `preferredColorScheme` 的结果。
         selectedPluginIndex = Self.read(defaults, SettingsKey.selectedPluginIndex, 0)
         playerEntryFullscreen = Self.read(defaults, SettingsKey.playerEntryFullscreen, true)
         superResolutionMode = SuperResolutionMode(
@@ -352,15 +469,35 @@ final class SettingsStore {
         danmakuArea = Self.read(defaults, SettingsKey.danmakuArea, 0.5)
         autoPlayNext = Self.read(defaults, SettingsKey.autoPlayNext, true)
         autoSkipOpEd = Self.read(defaults, SettingsKey.autoSkipOpEd, false)
-        playSpeed = Self.read(defaults, SettingsKey.playSpeed, 1.0)
+        playSpeed = PlaybackSpeed.nearest(Self.read(defaults, SettingsKey.playSpeed, 1.0))
+        playResume = Self.read(defaults, SettingsKey.playResume, true)
+        // 秒数必须为正：备份或旧数据里若写进了 0 / 负数，快进按钮会变成空操作。
+        buttonSkipTime = max(1, Self.read(defaults, SettingsKey.buttonSkipTime, 80))
+        // 与原版滑杆的上下限一致（1–10 秒）；越界值夹回范围内，避免控制栏永不隐藏或瞬间消失。
+        playerControllerLayerDisappearTime = min(
+            10_000,
+            max(1_000, Self.read(defaults, SettingsKey.playerControllerLayerDisappearTime, 4000))
+        )
         bangumiSyncEnabled = Self.read(defaults, SettingsKey.bangumiSyncEnabled, false)
         danmakuShieldSyncEnabled = Self.read(defaults, SettingsKey.danmakuShieldSyncEnabled, false)
+        bangumiSyncEnable = Self.read(defaults, SettingsKey.bangumiSyncEnable, false)
+        bangumiSyncPriority = Self.read(defaults, SettingsKey.bangumiSyncPriority, 0)
+        bangumiImmediateSyncToastEnable = Self.read(
+            defaults,
+            SettingsKey.bangumiImmediateSyncToastEnable,
+            true
+        )
+        bangumiAutoMarkWatched = Self.read(defaults, SettingsKey.bangumiAutoMarkWatched, true)
         bangumiAccessToken = Self.read(defaults, SettingsKey.bangumiAccessToken, "")
         bangumiUsername = Self.read(defaults, SettingsKey.bangumiUsername, "")
         webDAVURL = Self.read(defaults, SettingsKey.webDAVURL, "")
         webDAVUser = Self.read(defaults, SettingsKey.webDAVUser, "")
         webDAVPassword = Self.read(defaults, SettingsKey.webDAVPassword, "")
         webDAVAutoSync = Self.read(defaults, SettingsKey.webDAVAutoSync, false)
+        webDavEnable = Self.read(defaults, SettingsKey.webDavEnable, false)
+        webDavEnableHistory = Self.read(defaults, SettingsKey.webDavEnableHistory, false)
+        webDavEnableCollect = Self.read(defaults, SettingsKey.webDavEnableCollect, false)
+        webDavEnableDanmakuShield = Self.read(defaults, SettingsKey.webDavEnableDanmakuShield, false)
         proxyEnabled = Self.read(defaults, SettingsKey.proxyEnabled, false)
         proxyHost = Self.read(defaults, SettingsKey.proxyHost, "")
         proxyPort = Self.read(defaults, SettingsKey.proxyPort, 0)
@@ -374,6 +511,9 @@ final class SettingsStore {
         checkPluginUpdateOnStartup = Self.read(defaults, SettingsKey.checkPluginUpdateOnStartup, true)
         // 加速方式在全部存储属性初始化完成后再同步到全局开关。
         BangumiAcceleration.mode = enableBangumiProxy ? .mirror : .direct
+        // init 中给存储属性赋初值不会触发 didSet，这里补一次启动时的令牌注入；
+        // 之后设置页改令牌、恢复备份都会走 `bangumiAccessToken.didSet`。
+        BangumiAPI.accessToken = bangumiAccessToken
     }
 
     private func persist(_ value: Any?, _ key: String) {
@@ -381,6 +521,16 @@ final class SettingsStore {
     }
 
     // MARK: - 原始快照（设置备份用）
+
+    /// 弹幕屏蔽词的原文（一条一行）。
+    ///
+    /// 这个键不在本类建模的属性里：屏蔽词页（DanmakuShieldScreen）自己按同一个
+    /// 键名读写，WebDAV 同步也需要整串带出去，所以在这里开一个读写口，
+    /// 让两处用同一份键名，避免再出现「写得进、读不出」的偏差。
+    var danmakuFilterRulesText: String {
+        get { defaults.string(forKey: SettingsKey.keyPrefix + SettingsKey.danmakuFilterRules) ?? "" }
+        set { defaults.set(newValue, forKey: SettingsKey.keyPrefix + SettingsKey.danmakuFilterRules) }
+    }
 
     /// 已落盘的设置快照：键名（去掉前缀）-> 值。
     ///
@@ -403,9 +553,11 @@ final class SettingsStore {
     ///
     /// 原版恢复备份是整段写回设置箱，这边同样不挑键：认得的键由各属性接收，
     /// 认不得的先存着，下次导出还能原样带出去。
-    func persistRawSetting(_ value: JSONValue, forKey key: String) {
-        guard let stored = Self.storedValue(from: value) else { return }
+    @discardableResult
+    func persistRawSetting(_ value: JSONValue, forKey key: String) -> Bool {
+        guard let stored = Self.storedValue(from: value) else { return false }
         defaults.set(stored, forKey: SettingsKey.keyPrefix + key)
+        return true
     }
 
     /// UserDefaults 里的值 -> JSONValue。只认标量与字符串列表，
@@ -466,21 +618,23 @@ final class SettingsStore {
         }
     }
 
-    /// 应用主题对应的明暗（跟随系统时返回 nil，交给 trait collection 判断）。
-    private static func darkAppearance(for mode: KazumiThemeMode) -> Bool? {
-        switch mode {
-        case .system: nil
-        case .light: false
-        case .dark: true
-        }
-    }
-
-    /// 把当前主题模式同步给全局调色板（强调色 / 页面背景都按它取色）。
-    private func syncAppearance() {
-        KazumiThemeColor.darkAppearanceOverride = Self.darkAppearance(for: themeMode)
-    }
-
     private static func read<Value>(_ defaults: UserDefaults, _ key: String, _ fallback: Value) -> Value {
         defaults.object(forKey: SettingsKey.keyPrefix + key) as? Value ?? fallback
+    }
+
+    /// 目标键从未写入、且旧键有值时，把旧值按原类型复制到新键。
+    ///
+    /// 旧键保持原样，既能被旧属性继续读取，也不会丢失用户已存的值。
+    private static func migrateLegacySetting(
+        _ defaults: UserDefaults,
+        from oldKey: String,
+        to newKey: String
+    ) {
+        let newFullKey = SettingsKey.keyPrefix + newKey
+        guard defaults.object(forKey: newFullKey) == nil,
+              let legacyValue = defaults.object(forKey: SettingsKey.keyPrefix + oldKey) else {
+            return
+        }
+        defaults.set(legacyValue, forKey: newFullKey)
     }
 }

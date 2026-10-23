@@ -17,15 +17,20 @@ extension SettingsStore {
         SettingsKey.webDAVURL: "webDavURL",
         SettingsKey.webDAVUser: "webDavUsername",
         SettingsKey.webDAVPassword: "webDavPasswd",
-        SettingsKey.webDAVAutoSync: "webDavEnable",
-        SettingsKey.bangumiSyncEnabled: "bangumiSyncEnable",
+        SettingsKey.webDAVAutoSync: SettingsKey.webDavEnable,
+        SettingsKey.bangumiSyncEnabled: SettingsKey.bangumiSyncEnable,
         SettingsKey.danmakuEnabled: "danmakuEnabledByDefault",
         SettingsKey.playSpeed: "defaultPlaySpeed",
+        // 以下三项在原版设置箱里就是同名键，写出来是为了让导出 / 恢复走同一条
+        // 「本地键 -> 原版键」通道，而不是被当成未建模的透传键。
+        SettingsKey.playResume: "playResume",
+        SettingsKey.buttonSkipTime: "buttonSkipTime",
+        SettingsKey.playerControllerLayerDisappearTime: "playerControllerLayerDisappearTime",
         SettingsKey.proxyEnabled: "proxyEnable",
         SettingsKey.proxyHost: "proxyUrl",
         SettingsKey.updateNotificationEnabled: "bangumiUpdateNotifyEnable",
         SettingsKey.anime4kMode: "defaultSuperResolutionType",
-        SettingsKey.danmakuShieldSyncEnabled: "webDavEnableDanmakuShield",
+        SettingsKey.danmakuShieldSyncEnabled: SettingsKey.webDavEnableDanmakuShield,
     ]
 
     /// 备份里使用的键名：有原版键名就用原版的。
@@ -69,108 +74,6 @@ extension SettingsStore {
         excludedKeys.contains(key) || excludedPrefixes.contains { key.hasPrefix($0) }
     }
 
-    /// 原版设置箱里出现过的全部键名（lib/services/storage/settings_keys.dart）。
-    ///
-    /// 恢复备份时，本地没有对应属性的键也会照这个白名单落盘：
-    /// 备份里带进来的键必须真的是设置项，而不是别人塞进来的任意键。
-    private static let storedSettingKeys: Set<String> = [
-        "alwaysOntop",
-        "androidAutoEnterPIP",
-        "androidEnableOpenSLES",
-        "androidVideoRenderer",
-        "aniSkipLookup",
-        "arrowKeySkipTime",
-        "autoPlay",
-        "autoPlayNext",
-        "autoUpdate",
-        "backgroundPlayback",
-        "bangumiAcceleration",
-        "bangumiAccessToken",
-        "bangumiAutoMarkWatched",
-        "bangumiImmediateSyncToastEnable",
-        "bangumiSyncEnable",
-        "bangumiSyncPriority",
-        "bangumiTimelineEntries",
-        "bangumiUpdateNotifyEnable",
-        "brightnessVolumeGesture",
-        "buttonSkipTime",
-        "checkPluginUpdateOnStartup",
-        "danmakuArea",
-        "danmakuBiliBiliSource",
-        "danmakuBorder",
-        "danmakuBorderSize",
-        "danmakuBottom",
-        "danmakuChConvert",
-        "danmakuColor",
-        "danmakuDanDanSource",
-        "danmakuDeduplication",
-        "danmakuDuration",
-        "danmakuEnabledByDefault",
-        "danmakuEnhance",
-        "danmakuFollowSpeed",
-        "danmakuFontSize",
-        "danmakuFontWeight",
-        "danmakuGamerSource",
-        "danmakuLineHeight",
-        "danmakuMassive",
-        "danmakuOpacity",
-        "danmakuScroll",
-        "danmakuTimeOffset",
-        "danmakuTop",
-        "defaultAspectRatioType",
-        "defaultCollectLayout",
-        "defaultCollectSort",
-        "defaultPlaySpeed",
-        "defaultShortcutForwardPlaySpeed",
-        "defaultStartupPage",
-        "defaultSuperResolutionType",
-        "defaultVolume",
-        "superResolutionWarn",
-        "displayMode",
-        "downloadDanmaku",
-        "downloadParallelEpisodes",
-        "downloadParallelSegments",
-        "enableBangumiProxy",
-        "enableGitProxy",
-        "enableSystemProxy",
-        "exitBehavior",
-        "forceAdBlocker",
-        "hAenable",
-        "hardwareDecoder",
-        "imageAcceleration",
-        "lowMemoryMode",
-        "lowMemoryPolicy",
-        "oledEnhance",
-        "playResume",
-        "playerControllerLayerDisappearTime",
-        "playerDebugMode",
-        "playerDisableAnimations",
-        "playerLogLevel",
-        "playerMuted",
-        "privateMode",
-        "proxyEnable",
-        "proxyTestUrl",
-        "proxyUrl",
-        "searchEnhanceEnable",
-        "showPlayerError",
-        "showRating",
-        "showWindowButton",
-        "syncPlayEndPoint",
-        "syncPlayUserName",
-        "themeColor",
-        "themeMode",
-        "timelineNotShowAbandonedBangumis",
-        "timelineNotShowWatchedBangumis",
-        "timelineOnlyShowWatchingBangumis",
-        "webDavEnable",
-        "webDavEnableCollect",
-        "webDavEnableDanmakuShield",
-        "webDavEnableHistory",
-        "webDavPasswd",
-        "webDavURL",
-        "webDavUsername",
-    ]
-
     /// 已经由具体属性接收的键（原版键名与本地键名都算），
     /// 恢复时剩下的键才走透传落盘。
     private static let consumedKeys: Set<String> = {
@@ -181,6 +84,9 @@ extension SettingsStore {
             SettingsKey.glassEnabled,
             SettingsKey.autoPlayNext,
             SettingsKey.autoSkipOpEd,
+            SettingsKey.playResume,
+            SettingsKey.buttonSkipTime,
+            SettingsKey.playerControllerLayerDisappearTime,
             SettingsKey.playerEntryFullscreen,
             SettingsKey.danmakuOpacity,
             SettingsKey.danmakuFontSize,
@@ -197,6 +103,14 @@ extension SettingsStore {
             SettingsKey.bangumiAccessToken,
             SettingsKey.bangumiUsername,
             SettingsKey.proxyPort,
+            SettingsKey.bangumiSyncEnable,
+            SettingsKey.bangumiSyncPriority,
+            SettingsKey.bangumiImmediateSyncToastEnable,
+            SettingsKey.bangumiAutoMarkWatched,
+            SettingsKey.webDavEnable,
+            SettingsKey.webDavEnableHistory,
+            SettingsKey.webDavEnableCollect,
+            SettingsKey.webDavEnableDanmakuShield,
         ]
         for (local, legacy) in legacyKeys {
             keys.insert(local)
@@ -218,6 +132,9 @@ extension SettingsStore {
             (SettingsKey.playerEntryFullscreen, .bool(playerEntryFullscreen)),
             (SettingsKey.anime4kMode, .int(superResolutionMode.rawValue)),
             (SettingsKey.playSpeed, .double(playSpeed)),
+            (SettingsKey.playResume, .bool(playResume)),
+            (SettingsKey.buttonSkipTime, .int(buttonSkipTime)),
+            (SettingsKey.playerControllerLayerDisappearTime, .int(playerControllerLayerDisappearTime)),
             (SettingsKey.danmakuEnabled, .bool(danmakuEnabled)),
             (SettingsKey.danmakuOpacity, .double(danmakuOpacity)),
             (SettingsKey.danmakuFontSize, .double(danmakuFontSize)),
@@ -231,17 +148,22 @@ extension SettingsStore {
             (SettingsKey.selectedPluginIndex, .int(selectedPluginIndex)),
             (SettingsKey.autoUpdate, .bool(autoUpdateCheck)),
             (SettingsKey.checkPluginUpdateOnStartup, .bool(checkPluginUpdateOnStartup)),
+            (SettingsKey.bangumiSyncEnable, .bool(bangumiSyncEnable)),
+            (SettingsKey.bangumiSyncPriority, .int(bangumiSyncPriority)),
+            (SettingsKey.bangumiImmediateSyncToastEnable, .bool(bangumiImmediateSyncToastEnable)),
+            (SettingsKey.bangumiAutoMarkWatched, .bool(bangumiAutoMarkWatched)),
+            (SettingsKey.webDavEnable, .bool(webDavEnable)),
+            (SettingsKey.webDavEnableHistory, .bool(webDavEnableHistory)),
+            (SettingsKey.webDavEnableCollect, .bool(webDavEnableCollect)),
+            (SettingsKey.webDavEnableDanmakuShield, .bool(webDavEnableDanmakuShield)),
         ]
         if !omitCredentials {
             pairs += [
                 (SettingsKey.webDAVURL, .string(webDAVURL)),
                 (SettingsKey.webDAVUser, .string(webDAVUser)),
                 (SettingsKey.webDAVPassword, .string(webDAVPassword)),
-                (SettingsKey.webDAVAutoSync, .bool(webDAVAutoSync)),
                 (SettingsKey.bangumiAccessToken, .string(bangumiAccessToken)),
                 (SettingsKey.bangumiUsername, .string(bangumiUsername)),
-                (SettingsKey.bangumiSyncEnabled, .bool(bangumiSyncEnabled)),
-                (SettingsKey.danmakuShieldSyncEnabled, .bool(danmakuShieldSyncEnabled)),
                 (SettingsKey.proxyEnabled, .bool(proxyEnabled)),
                 (SettingsKey.proxyHost, .string(proxyHost)),
                 (SettingsKey.proxyPort, .int(proxyPort)),
@@ -341,6 +263,18 @@ extension SettingsStore {
             playSpeed = number
             restored += 1
         }
+        if let flag = value(SettingsKey.playResume)?.boolValue {
+            playResume = flag
+            restored += 1
+        }
+        if let number = value(SettingsKey.buttonSkipTime)?.intValue {
+            buttonSkipTime = max(1, number)
+            restored += 1
+        }
+        if let number = value(SettingsKey.playerControllerLayerDisappearTime)?.intValue {
+            playerControllerLayerDisappearTime = min(10_000, max(1_000, number))
+            restored += 1
+        }
         if let flag = value(SettingsKey.playerEntryFullscreen)?.boolValue {
             playerEntryFullscreen = flag
             restored += 1
@@ -398,7 +332,8 @@ extension SettingsStore {
             webDAVPassword = text
             restored += 1
         }
-        if let flag = value(SettingsKey.webDAVAutoSync)?.boolValue {
+        if let flag = value(SettingsKey.webDavEnable)?.boolValue {
+            webDavEnable = flag
             webDAVAutoSync = flag
             restored += 1
         }
@@ -410,11 +345,33 @@ extension SettingsStore {
             bangumiUsername = text
             restored += 1
         }
-        if let flag = value(SettingsKey.bangumiSyncEnabled)?.boolValue {
+        if let flag = value(SettingsKey.bangumiSyncEnable)?.boolValue {
+            bangumiSyncEnable = flag
             bangumiSyncEnabled = flag
             restored += 1
         }
-        if let flag = value(SettingsKey.danmakuShieldSyncEnabled)?.boolValue {
+        if let number = value(SettingsKey.bangumiSyncPriority)?.intValue {
+            bangumiSyncPriority = number
+            restored += 1
+        }
+        if let flag = value(SettingsKey.bangumiImmediateSyncToastEnable)?.boolValue {
+            bangumiImmediateSyncToastEnable = flag
+            restored += 1
+        }
+        if let flag = value(SettingsKey.bangumiAutoMarkWatched)?.boolValue {
+            bangumiAutoMarkWatched = flag
+            restored += 1
+        }
+        if let flag = value(SettingsKey.webDavEnableHistory)?.boolValue {
+            webDavEnableHistory = flag
+            restored += 1
+        }
+        if let flag = value(SettingsKey.webDavEnableCollect)?.boolValue {
+            webDavEnableCollect = flag
+            restored += 1
+        }
+        if let flag = value(SettingsKey.webDavEnableDanmakuShield)?.boolValue {
+            webDavEnableDanmakuShield = flag
             danmakuShieldSyncEnabled = flag
             restored += 1
         }
@@ -438,10 +395,13 @@ extension SettingsStore {
         //      否则「导出 → 恢复 → 再导出」会一路缩水；
         //   2. 恢复后的项数按备份实际内容统计，与原版 toast 的
         //      「已恢复 N 项设置」对齐。
+        //
+        // 这里不按白名单挑键：原版是整段覆盖设置箱，挑键会让本机自己的键
+        // （弹幕屏蔽规则 danmakuFilterRules 等）导出后恢复不回来，
+        // 项数也会比备份里少。
         for (key, rawValue) in settings where !Self.consumedKeys.contains(key) {
             guard !Self.isExcludedKey(key) else { continue }
-            guard Self.storedSettingKeys.contains(key) else { continue }
-            persistRawSetting(rawValue, forKey: key)
+            guard persistRawSetting(rawValue, forKey: key) else { continue }
             restored += 1
         }
         return restored
