@@ -42,6 +42,9 @@ struct LibraryScreen: View {
 
     @FocusState private var searchFocused: Bool
 
+    /// 网格列数。改列数只改这一个数，排版不重写（规格 §四）。
+    private static let gridColumns = 3
+
     // MARK: - 数据
 
     /// 去掉首尾空白后的搜索词；判空和过滤都用它。
@@ -483,18 +486,27 @@ struct LibraryScreen: View {
             }
         } else {
             ScrollView {
-                LazyVStack(spacing: 10) {
+                // 三列海报网格（规格 §四）：列间距 10、行间距 14、左右 16、底部 24。
+                // 卡片宽不写死，按屏宽和列数算；同一行等高。
+                LazyVGrid(
+                    columns: Array(
+                        repeating: GridItem(.flexible(), spacing: 10),
+                        count: Self.gridColumns
+                    ),
+                    spacing: 14
+                ) {
                     ForEach(filteredEntries) { entry in
-                        LibraryEntryCard(
+                        LibraryPosterCard(
                             entry: entry,
                             isPending: pendingID == entry.id,
+                            showsStatus: selectedType == nil,
                             zoomNamespace: zoomNamespace,
                             onOpen: { router.push(.bangumiInfo(bangumiID: entry.id)) },
                             onChangeType: { type in changeType(entry, to: type) }
                         )
                     }
                 }
-                .padding(.horizontal, 12)
+                .padding(.horizontal, 16)
                 .padding(.bottom, 24)
             }
             .scrollIndicators(.hidden)
