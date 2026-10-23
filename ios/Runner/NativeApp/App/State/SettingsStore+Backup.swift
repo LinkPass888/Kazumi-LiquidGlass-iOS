@@ -48,6 +48,9 @@ extension SettingsStore {
     ///   * 代理「已测试通过」标记 —— 换设备后网络环境不同，必须重新测试；
     ///   * 下载目录与安全作用域书签 —— 都是这台设备的沙箱状态；
     ///   * 引导与提示条「已显示」标记 —— 那份体验跟着设备走。
+    ///   * Bangumi 用户名与用户 ID —— **只是缓存，不是设置**。每次连上都会
+    ///     用令牌重新换回来（main 根本不落盘，只在内存里），令牌一改就作废。
+    ///     带进备份等于把一张可能已经失效的身份带到另一台设备上显示。
     private static let excludedKeys: Set<String> = [
         "historySyncDeviceId",
         "historySyncSequence",
@@ -56,6 +59,8 @@ extension SettingsStore {
         "danmakuShieldSyncState",
         "danmakuShieldSyncCorruptState",
         "bangumiProgressQueue",
+        "bangumiUsername",
+        "bangumiUserId",
         "proxyConfigured",
         "downloadDirectory",
         "downloadDirectoryBookmark",
