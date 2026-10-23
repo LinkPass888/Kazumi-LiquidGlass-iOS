@@ -183,6 +183,9 @@ enum SettingsKey {
     static let downloadDanmaku = "downloadDanmaku"
     /// 启动页，沿用原版 `SettingsKeys.defaultStartupPage` 的键名。
     static let defaultStartupPage = "defaultStartupPage"
+    /// 追番页「在看」列表记住的排序，存 `CollectSort.rawValue`，默认 `updateTime`。
+    /// 切分类不写这个键：它只记「在看」里选的排序。
+    static let librarySort = "librarySort"
     /// Bangumi 加速（镜像）开关，沿用原版 `SettingsKeys.enableBangumiProxy` 的键名。
     static let enableBangumiProxy = "enableBangumiProxy"
     /// 启动时检查应用更新，沿用原版 `SettingsKeys.autoUpdate` 的键名。
@@ -396,6 +399,11 @@ final class SettingsStore {
         didSet { persist(defaultStartupPage, SettingsKey.defaultStartupPage) }
     }
 
+    /// 追番页「在看」列表上次选的排序（`CollectSort.rawValue`）。
+    var librarySort: String {
+        didSet { persist(librarySort, SettingsKey.librarySort) }
+    }
+
     /// 是否走 Bangumi 镜像加速（对应原版 `enableBangumiProxy`）。
     var enableBangumiProxy: Bool {
         didSet {
@@ -499,6 +507,7 @@ final class SettingsStore {
         downloadParallelEpisodes = Self.read(defaults, SettingsKey.downloadParallelEpisodes, 2)
         downloadDanmaku = Self.read(defaults, SettingsKey.downloadDanmaku, true)
         defaultStartupPage = Self.read(defaults, SettingsKey.defaultStartupPage, "/tab/popular/")
+        librarySort = Self.read(defaults, SettingsKey.librarySort, "updateTime")
         enableBangumiProxy = Self.read(defaults, SettingsKey.enableBangumiProxy, false)
         autoUpdateCheck = Self.read(defaults, SettingsKey.autoUpdate, true)
         checkPluginUpdateOnStartup = Self.read(defaults, SettingsKey.checkPluginUpdateOnStartup, true)
