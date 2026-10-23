@@ -19,6 +19,8 @@ struct BangumiAccountScreen: View {
     @Environment(\.colorScheme) private var colorScheme
 
     /// 「用户 ID」行现在是什么状态。默认「未验证」：这一页打开时我们还没问过服务器。
+    /// 打开后若缓存里有 ID，`restoreCachedIdentity()` 会把它接上来，
+    /// 免得用户只是离开这页再回来，一个已经确认过的 ID 就变回「未验证」。
     @State private var identity: BangumiIdentity = .unverified
 
     var body: some View {
@@ -62,6 +64,7 @@ struct BangumiAccountScreen: View {
         .navigationBarTitleDisplayMode(.inline)
         .scrollContentBackground(.hidden)
         .background(KazumiPalette.background(for: colorScheme).ignoresSafeArea())
+        .onAppear { restoreCachedIdentity() }
     }
 
     // MARK: - 绑定
@@ -72,9 +75,28 @@ struct BangumiAccountScreen: View {
     /// 不能拿这里的值去拼收藏列表地址——它是可能过期的。
     private func applyIdentity(_ new: BangumiIdentity) {
         identity = new
-        if case let .confirmed(_, username) = new, !username.isEmpty {
-            settings.bangumiUsername = username
+        switch new {
+        case let .confirmed(id, username):
+            if !username.isEmpty { settings.bangumiUsername = username }
+            settings.bangumiUserId = id
+        case .unconfirmed:
+            // 问过但没问到：之前缓存的 ID 已经不能代表现在这个令牌了。
+            settings.bangumiUserId = ""
+        case .unverified:
+            break
         }
+    }
+
+    /// 进页时把上一次确认过的 ID 接上来。
+    ///
+    /// 只在「有令牌」且「缓存里有 ID」时接：没令牌的时候接上来，
+    /// 屏上会显示一个当前令牌其实并没有被验证过的身份。
+    private func restoreCachedIdentity() {
+        guard identity == .unverified else { return }
+        let token = settings.bangumiAccessToken.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cachedID = settings.bangumiUserId
+        guard !token.isEmpty, !cachedID.isEmpty else { return }
+        identity = .confirmed(id: cachedID, username: settings.bangumiUsername)
     }
 
     /// 令牌的 didSet 会同步注入 BangumiAPI，改完立即对请求生效。

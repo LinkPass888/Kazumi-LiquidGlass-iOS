@@ -160,6 +160,9 @@ enum SettingsKey {
     static let webDAVAutoSync = "webDAVAutoSync"
     static let bangumiAccessToken = "bangumiAccessToken"
     static let bangumiUsername = "bangumiUsername"
+    /// 令牌换回来的数字 ID 的缓存。只当缓存用：同步引擎合并前必须自己再问一次
+    /// `/v0/me`，不能拿它去拼收藏列表地址——它可能过期。
+    static let bangumiUserId = "bangumiUserId"
     static let bangumiSyncEnabled = "bangumiSyncEnabled"
     static let danmakuShieldSyncEnabled = "danmakuShieldSyncEnabled"
     /// 以下键名与默认值对齐 Flutter `lib/services/storage/settings_keys.dart`，
@@ -319,11 +322,21 @@ final class SettingsStore {
         didSet {
             persist(bangumiAccessToken, SettingsKey.bangumiAccessToken)
             BangumiAPI.accessToken = bangumiAccessToken
+            // 令牌一改，之前那个 ID 就不再代表当前令牌了，清掉免得屏上留着旧身份。
+            if bangumiAccessToken != oldValue, !bangumiUserId.isEmpty {
+                bangumiUserId = ""
+            }
         }
     }
 
     var bangumiUsername: String {
         didSet { persist(bangumiUsername, SettingsKey.bangumiUsername) }
+    }
+
+    /// 令牌换回来的数字 ID，缓存用。令牌清空时一并清掉：没有令牌就没有身份，
+    /// 留着一串数字会让「用户 ID」那行替一个已经失效的令牌担保。
+    var bangumiUserId: String {
+        didSet { persist(bangumiUserId, SettingsKey.bangumiUserId) }
     }
 
     var webDAVURL: String {
@@ -483,6 +496,7 @@ final class SettingsStore {
         bangumiAutoMarkWatched = Self.read(defaults, SettingsKey.bangumiAutoMarkWatched, true)
         bangumiAccessToken = Self.read(defaults, SettingsKey.bangumiAccessToken, "")
         bangumiUsername = Self.read(defaults, SettingsKey.bangumiUsername, "")
+        bangumiUserId = Self.read(defaults, SettingsKey.bangumiUserId, "")
         webDAVURL = Self.read(defaults, SettingsKey.webDAVURL, "")
         webDAVUser = Self.read(defaults, SettingsKey.webDAVUser, "")
         webDAVPassword = Self.read(defaults, SettingsKey.webDAVPassword, "")
