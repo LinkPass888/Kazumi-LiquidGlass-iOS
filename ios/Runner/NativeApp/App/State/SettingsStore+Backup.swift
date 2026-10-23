@@ -87,7 +87,6 @@ extension SettingsStore {
             SettingsKey.playResume,
             SettingsKey.buttonSkipTime,
             SettingsKey.playerControllerLayerDisappearTime,
-            SettingsKey.playerEntryFullscreen,
             SettingsKey.danmakuOpacity,
             SettingsKey.danmakuFontSize,
             SettingsKey.danmakuArea,
@@ -129,7 +128,6 @@ extension SettingsStore {
             (SettingsKey.glassEnabled, .bool(glassEnabled)),
             (SettingsKey.autoPlayNext, .bool(autoPlayNext)),
             (SettingsKey.autoSkipOpEd, .bool(autoSkipOpEd)),
-            (SettingsKey.playerEntryFullscreen, .bool(playerEntryFullscreen)),
             (SettingsKey.anime4kMode, .int(superResolutionMode.rawValue)),
             (SettingsKey.playSpeed, .double(playSpeed)),
             (SettingsKey.playResume, .bool(playResume)),
@@ -273,10 +271,6 @@ extension SettingsStore {
         }
         if let number = value(SettingsKey.playerControllerLayerDisappearTime)?.intValue {
             playerControllerLayerDisappearTime = min(10_000, max(1_000, number))
-            restored += 1
-        }
-        if let flag = value(SettingsKey.playerEntryFullscreen)?.boolValue {
-            playerEntryFullscreen = flag
             restored += 1
         }
         if let raw = value(SettingsKey.anime4kMode)?.intValue,

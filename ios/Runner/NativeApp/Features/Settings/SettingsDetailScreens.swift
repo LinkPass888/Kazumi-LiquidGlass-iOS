@@ -44,7 +44,6 @@ struct PlayerSettingsScreen: View {
     var body: some View {
         Form {
             Section("播放行为") {
-                Toggle("进入播放器即全屏", isOn: fullscreenBinding)
                 Toggle(isOn: autoPlayNextBinding) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("自动连播")
@@ -62,7 +61,7 @@ struct PlayerSettingsScreen: View {
                     }
                 }
             }
-            Section("播放") {
+            Section("播放参数") {
                 Picker("默认倍速", selection: playSpeedBinding) {
                     // 与原版播放器菜单同一份档位：0.25 → 3.0，每档 0.25。
                     ForEach(PlaybackSpeed.all, id: \.self) { speed in
@@ -96,13 +95,6 @@ struct PlayerSettingsScreen: View {
             }
         }
         .kazumiSettingsDetail("播放设置")
-    }
-
-    private var fullscreenBinding: Binding<Bool> {
-        Binding(
-            get: { settings.playerEntryFullscreen },
-            set: { settings.playerEntryFullscreen = $0 }
-        )
     }
 
     private var autoPlayNextBinding: Binding<Bool> {

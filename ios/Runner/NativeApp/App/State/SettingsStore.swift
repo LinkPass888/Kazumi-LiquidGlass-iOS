@@ -60,9 +60,9 @@ enum SuperResolutionMode: Int, CaseIterable, Identifiable, Sendable {
 
     var detail: String {
         switch self {
-        case .off: "默认禁用超分辨率"
-        case .efficiency: "基于 Anime4K 的超分辨率（效率优先）"
-        case .quality: "基于 Anime4K 的超分辨率（质量优先）"
+        case .off: "原画质，不做处理"
+        case .efficiency: "放大 1.5×，轻度锐化"
+        case .quality: "放大 2×，锐化更明显"
         }
     }
 
@@ -177,7 +177,6 @@ enum SettingsKey {
     static let proxyPort = "proxyPort"
     static let meteredNetworkLimit = "meteredNetworkLimit"
     static let updateNotificationEnabled = "updateNotificationEnabled"
-    static let playerEntryFullscreen = "playerEntryFullscreen"
     /// 下载并发数，沿用原版 `SettingsKeys.downloadParallelEpisodes` 的键名。
     static let downloadParallelEpisodes = "downloadParallelEpisodes"
     /// 是否随下载一起缓存弹幕，沿用原版 `SettingsKeys.downloadDanmaku` 的键名。
@@ -232,11 +231,6 @@ final class SettingsStore {
     /// 当前选中的规则源下标（对应 PluginsController.currentPlugin）。
     var selectedPluginIndex: Int {
         didSet { persist(selectedPluginIndex, SettingsKey.selectedPluginIndex) }
-    }
-
-    /// 是否在播放器进入时即全屏。
-    var playerEntryFullscreen: Bool {
-        didSet { persist(playerEntryFullscreen, SettingsKey.playerEntryFullscreen) }
     }
 
     /// 默认超分辨率档位（对应原版 `defaultSuperResolutionMode`，沿用 `anime4kMode` 键名）。
@@ -459,7 +453,6 @@ final class SettingsStore {
         // 应用主题的明暗不再需要额外注明：强调色按 SwiftUI 的 `colorScheme` 显式取，
         // 而 `colorScheme` 就是下面那个 `preferredColorScheme` 的结果。
         selectedPluginIndex = Self.read(defaults, SettingsKey.selectedPluginIndex, 0)
-        playerEntryFullscreen = Self.read(defaults, SettingsKey.playerEntryFullscreen, true)
         superResolutionMode = SuperResolutionMode(
             rawValue: Self.read(defaults, SettingsKey.anime4kMode, 1)
         ) ?? .off

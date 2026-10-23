@@ -10,6 +10,7 @@
 
 import AVFoundation
 import SwiftUI
+import UIKit
 
 /// 视频比例（对应原版 `lib/pages/player/controller/player_aspect_ratio.dart` 的四档）。
 /// 与原版一样，播放器里的选择只在本次播放内生效，不写回设置。
@@ -71,6 +72,9 @@ struct PlayerScreen: View {
     @State private var rateBeforeTemporarySpeed: Float = 1.0
     /// 本次按压是否已经进入长按状态（用来区分「松手时是短按还是长按结束」）。
     @State private var longPressFired = false
+    /// 全屏：画面占满窗口、横屏、隐藏状态栏，选集与线路区收起。
+    /// 对应原版 `fillsWindow = fullscreen || (maxWidth > maxHeight)`。
+    @State private var isFullscreen = false
 
     @Environment(AppEnvironment.self) private var environment
     @Environment(SettingsStore.self) private var settings
@@ -80,10 +84,18 @@ struct PlayerScreen: View {
     var body: some View {
         Group {
             if let controller {
-                VStack(spacing: 0) {
-                    playerArea(controller)
-                    controlsLayer
-                    detailArea(controller)
+                if isFullscreen {
+                    // 全屏：只留画面与控制栏，选集/线路收起（原版 fullscreen 时同此）。
+                    ZStack {
+                        playerArea(controller)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
+                } else {
+                    VStack(spacing: 0) {
+                        playerArea(controller)
+                        controlsLayer
+                        detailArea(controller)
+                    }
                 }
             } else {
                 ProgressView()
@@ -91,6 +103,8 @@ struct PlayerScreen: View {
             }
         }
         .background(Color.black.ignoresSafeArea())
+        .statusBarHidden(isFullscreen)
+        .persistentSystemOverlays(isFullscreen ? .hidden : .automatic)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .navigationBar)
         .overlay(alignment: .top) { toastView }
@@ -185,6 +199,11 @@ struct PlayerScreen: View {
             surface.onFinish = nil
             // 长按手势若被系统取消，松手回调不会来，退出时兜一次恢复。
             endTemporarySpeed()
+            // 带着全屏状态离开会把整个 App 锁在横屏，退出时一定回竖屏。
+            if isFullscreen {
+                isFullscreen = false
+                requestOrientation(.portrait)
+            }
             if let controller { persistProgress(controller) }
             surface.stop()
             controller?.stop()
@@ -248,6 +267,29 @@ struct PlayerScreen: View {
     ///
     /// 用 `onLongPressGesture` 的 pressing 回调而不是两个手势叠加：
     /// 同一次按压只会走一条分支，长按松手不会再触发一次短按。
+    /// 全屏开关：进横屏 + 隐藏状态栏；退出回竖屏（原版 `DisplayModeService` 也是
+    /// 退出时显式回 portraitUp，而不是「系统默认」）。
+    ///
+    /// 方向请求走 `requestGeometryUpdate`，只影响本次会话，不改 Info.plist 里
+    /// 声明的支持方向（竖屏/横屏本来都支持）。
+    private func toggleFullscreen() {
+        isFullscreen.toggle()
+        requestOrientation(isFullscreen ? .landscapeRight : .portrait)
+        showControls()
+        noteInteraction()
+    }
+
+    private func requestOrientation(_ mask: UIInterfaceOrientationMask) {
+        guard let scene = UIApplication.shared.connectedScenes
+            .compactMap({ $0 as? UIWindowScene })
+            .first(where: { $0.activationState == .foregroundActive })
+            ?? UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first
+        else { return }
+        scene.requestGeometryUpdate(.iOS(interfaceOrientations: mask))
+        // 让 `supportedInterfaceOrientations` 跟着变，否则请求会被忽略。
+        OrientationLock.mask = mask
+    }
+
     private func handleSurfacePressing(_ pressing: Bool) {
         guard !isLocked else { return }
         if pressing {
@@ -391,6 +433,22 @@ struct PlayerScreen: View {
             Spacer(minLength: 4)
 
             skipForwardButton
+
+            // 全屏：原版没有「进入即全屏」开关，全屏是画面上的一个按钮（进横屏、隐藏状态栏）。
+            Button {
+                toggleFullscreen()
+            } label: {
+                Image(systemName: isFullscreen
+                    ? "arrow.down.right.and.arrow.up.left"
+                    : "arrow.up.left.and.arrow.down.right")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 32, height: 32)
+                    .background(Circle().fill(.black.opacity(0.35)))
+                    .hitTarget44()
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(isFullscreen ? "退出全屏" : "全屏")
         }
         .padding(.horizontal, 12)
         .padding(.top, 6)
