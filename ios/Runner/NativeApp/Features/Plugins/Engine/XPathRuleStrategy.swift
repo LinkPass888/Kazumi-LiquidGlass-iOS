@@ -61,7 +61,12 @@ struct XPathRuleStrategy: Sendable {
     }
 
     func parseSearch(_ raw: String, config: RuleExecutionConfig) throws -> RuleSearchParseResult {
-        let root = try documentElement(raw)
+        let html = try documentElement(raw)
+        // Fuzi 的节点用 unowned 指向所属文档：文档必须先于节点活着。
+        // 若文档只是 documentElement 里的局部变量，它会在函数返回时释放，
+        // 下面第一次 root.xpath(...) 就会撞上「read an unowned reference … already destroyed」。
+        defer { withExtendedLifetime(html) {} }
+        let root = html.root
         if detectsCaptchaChallenge(raw, config: config.antiCrawlerConfig, htmlElement: root) {
             throw RuleError.captchaRequired(plugin: config.pluginName)
         }
@@ -98,7 +103,10 @@ struct XPathRuleStrategy: Sendable {
     }
 
     func parseChapters(_ raw: String, config: RuleExecutionConfig) throws -> RuleChapterParseResult {
-        let root = try documentElement(raw)
+        let html = try documentElement(raw)
+        // 同 parseSearch：文档必须由这里持有，不能随 documentElement 返回一起释放。
+        defer { withExtendedLifetime(html) {} }
+        let root = html.root
         var roads: [Road] = []
         var diagnostics: [String] = []
         let roadNodes = try runSelector(.chapterRoads, expression: config.chapterRoads) {
@@ -161,7 +169,9 @@ struct XPathRuleStrategy: Sendable {
                 let range = NSRange(raw.startIndex..<raw.endIndex, in: raw)
                 return regex.firstMatch(in: raw, options: [], range: range) != nil
             case .xpath:
-                guard let root = htmlElement ?? (try? documentElement(raw)) else { return false }
+                let parsed = htmlElement == nil ? (try? documentElement(raw)) : nil
+                defer { withExtendedLifetime(parsed) {} }
+                guard let root = htmlElement ?? parsed?.root else { return false }
                 let node: XMLElement? = try? runSelector(.captchaDetectValue, expression: detectValue) {
                     root.xpath(detectValue).first
                 }
@@ -169,7 +179,9 @@ struct XPathRuleStrategy: Sendable {
             }
         }
 
-        guard let root = htmlElement ?? (try? documentElement(raw)) else { return false }
+        let parsedFallback = htmlElement == nil ? (try? documentElement(raw)) : nil
+        defer { withExtendedLifetime(parsedFallback) {} }
+        guard let root = htmlElement ?? parsedFallback?.root else { return false }
         let fallbackSelectors: [(XPathRuleField, String)] = [
             (.captchaImage, config.captchaImage),
             (.captchaButton, config.captchaButton)
@@ -186,13 +198,25 @@ struct XPathRuleStrategy: Sendable {
 
     // MARK: - Helpers
 
-    private func documentElement(_ raw: String) throws -> XMLElement {
+    /// 解析出的文档与它的根节点。两者必须一起被持有。
+    struct ParsedHTML {
+        let document: HTMLDocument
+        let root: XMLElement
+    }
+
+    /// 解析 HTML，并**连同文档一起**返回。
+    ///
+    /// Fuzi 的节点内部用 unowned 指向所属文档，文档一释放，节点上任何一次
+    /// XPath 查询都会以「read an unowned reference but object was already
+    /// destroyed」硬崩——这不是能 catch 的错误，是运行时 fatalError。
+    /// 所以文档不能是这里的局部变量，必须由调用方持有到用完为止。
+    private func documentElement(_ raw: String) throws -> ParsedHTML {
         do {
             let document = try HTMLDocument(data: Data(raw.utf8))
             guard let root = document.root else {
                 throw XPathRuleFormatError(message: "HTML 响应没有根节点", kind: .invalidDocument)
             }
-            return root
+            return ParsedHTML(document: document, root: root)
         } catch let error as XPathRuleFormatError {
             throw error
         } catch {
