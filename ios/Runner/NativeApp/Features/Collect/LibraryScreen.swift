@@ -4,7 +4,8 @@
 //
 //  对应 lib/pages/collect/collect_page.dart + collect_library_view.dart：
 //  * 顶栏是「追番」+ 右侧「同步」按钮；
-//  * 分类标签：全部 / 在看 / 想看 / 看过 / 搁置 / 抛弃，默认停在「在看」；
+//  * 控制条：分类菜单（全部 / 在看 / 想看 / 看过 / 搁置 / 抛弃，默认「在看」）
+//    ＋ 排序菜单 ＋ 当前部数，右侧常驻搜索条；
 //  * 主体是收藏卡片列表，点开进详情，右侧菜单可改收藏状态；
 //  * 没有收藏时给出引导，而不是空白页。
 //
@@ -17,6 +18,7 @@ struct LibraryScreen: View {
 
     @Environment(LibraryStore.self) private var library
     @Environment(AppRouter.self) private var router
+    @Environment(SettingsStore.self) private var settings
     @Environment(\.colorScheme) private var colorScheme
 
     /// nil 表示「全部」。
@@ -25,33 +27,77 @@ struct LibraryScreen: View {
     ]
 
     @State private var selectedType: CollectType? = .watching
+    /// 「在看」里记住的排序，存进 `SettingsStore.librarySort`。
+    @State private var sort: CollectSort = .updateTime
+    /// 其它分类里选的排序（只在本页会话里记），默认「最近变更」。
+    @State private var otherSort: CollectSort = .recentlyChanged
+    @State private var query = ""
+    @State private var isSearching = false
     @State private var pendingID: Int?
 
+    /// 「更新时间」排序用的时刻表：进页先算好，比较器只查表。
+    @State private var updateTimes: [Int: Date] = [:]
+    /// 季度时刻表是否已经跑完一轮。没跑完之前先按「最近变更」排，不转圈。
+    @State private var updateTimesLoaded = false
+
+    @FocusState private var searchFocused: Bool
+
+    // MARK: - 数据
+
+    /// 去掉首尾空白后的搜索词；判空和过滤都用它。
+    private var trimmedQuery: String {
+        query.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// 当前分类名，菜单按钮与无障碍文案共用。
+    private var categoryTitle: String {
+        selectedType?.title ?? "全部"
+    }
+
+    /// 实际生效的排序。
+    ///
+    /// 其它分类默认按 `updatedAt` 降序（也可以改成另外四档）；「在看」里如果
+    /// 时刻表还没到，也先用最近变更把列表正常排出来，数据到了再切回用户选的排序。
+    private var effectiveSort: CollectSort {
+        guard selectedType == .watching else { return otherSort }
+        if sort == .updateTime, !updateTimesLoaded { return .recentlyChanged }
+        return sort
+    }
+
     private var filteredEntries: [LibraryEntry] {
-        let entries = library.entries
-        guard let selectedType else {
-            return entries.sorted { $0.updatedAt > $1.updatedAt }
-        }
-        return entries
-            .filter { $0.collectType == selectedType }
-            .sorted { $0.updatedAt > $1.updatedAt }
+        let filtered = CollectLibraryQuery.filter(library.entries, type: selectedType, query: query)
+        return CollectLibraryQuery.sort(filtered, by: effectiveSort, updateTimes: updateTimes)
     }
 
     var body: some View {
         content
-            // 头部与分类条合成一块吸附在顶部：两块都跟着固定，
-            // 只提 header 的话内容会从分类条下面硬切过去。
+            // 头部与控制条合成一块吸附在顶部：两块都跟着固定，
+            // 只提 header 的话内容会从控制条下面硬切过去。
             .safeAreaInset(edge: .top, spacing: 0) {
                 VStack(spacing: 0) {
                     header
-                    categoryBar
+                    controlBar
                 }
             }
             .background(KazumiPalette.background(for: colorScheme).ignoresSafeArea())
             .navigationBarTitleDisplayMode(.inline)
             .toolbar(.hidden, for: .navigationBar)
             .task {
+                sort = CollectSort(rawValue: settings.librarySort) ?? .updateTime
                 KazumiImageLoader.shared.prefetch(library.entries.map(\.imageURL))
+            }
+            // 追番条目变化时补齐时刻表：新加入「在看」的番也要拿到时刻。
+            .task(id: library.watchingEntries.map(\.id)) {
+                await loadUpdateTimes()
+            }
+            // 详情页改了放送星期 / 时间表加载完成后，按新的星期重排一次。
+            .onChange(of: BangumiTimelineStore.shared.revision) { _, _ in
+                guard updateTimesLoaded else { return }
+                updateTimes = makeUpdateTimes(for: library.watchingEntries)
+            }
+            // 搜索栏是在 `if isSearching` 里才出现的，等它进布局再拿焦点。
+            .onChange(of: isSearching) { _, value in
+                searchFocused = value
             }
     }
 
@@ -91,91 +137,350 @@ struct LibraryScreen: View {
         .padding(.bottom, 10)
     }
 
-    // MARK: - 分类
+    // MARK: - 控制条
 
-    /// 六颗分类胶囊一律交给 `KazumiFlowLayout` 排，上限三颗一行（Colo 1185）。
-    /// 为什么不横滑：六颗胶囊在 390 点宽的屏上放不进一行（六颗约 396 点 ＋
-    /// 空隙 64 ＋ 右边的部数，可用只有 358），而一颗要横滑才看得见的分类等于
-    /// 没有这颗——LP 就以为「抛弃」被删了。
-    /// 为什么不用 ViewThatFits 两态：第二态要等流式布局那个件落地，件没到就会
-    /// 溢出；一态到底，任何字号都不溢出、不横滑、不截断、不缩字号。
-    private var categoryBar: some View {
-        KazumiFlowLayout(maxColumns: 3, spacing: 8, rowSpacing: 10) {
-            ForEach(Array(Self.categories.enumerated()), id: \.offset) { _, type in
-                categoryChip(type)
+    /// 一行控制条：分类菜单 ＋ 排序菜单 ＋ 部数，右侧搜索。
+    /// 搜索展开时两个菜单和部数从布局里移除（不是盖住），整行高度不变。
+    private var controlBar: some View {
+        Group {
+            if isSearching {
+                searchRow
+                    .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .trailing)))
+            } else {
+                defaultRow
+                    .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .trailing)))
             }
         }
-        // 右边留出部数自己的宽 ＋ 间距，六颗的可用宽就少这么多。
-        // 84 不是 74：最大字号下「1 部」两个字符就有 71 宽，加 12 的间距要 83；
-        // 74 没撞上只是因为库里现在只有三位数，四位数一到就压上胶囊了（Colo 1247）。
-        .padding(.trailing, 84)
-        // 部数贴整条右上，不跟某一行走：流式布局里点不出「某一行」的右端，
-        // 而整条右上在任何字号下位置都不变，也就不会跟任何一颗重叠、
-        // 不会长成第七颗分类。
-        .overlay(alignment: .topTrailing) { categoryCount }
+        // LP 2026-10-23：切换原来是一帧跳过去，「太快太突兀」。
+        .animation(.smooth(duration: 0.32), value: isSearching)
         .padding(.horizontal, 16)
+        .padding(.top, 2)
         .padding(.bottom, 12)
     }
 
-    private func categoryChip(_ type: CollectType?) -> some View {
-        let isSelected = selectedType == type
-        let title = type?.title ?? "全部"
-        // 与时间表星期胶囊同一套取色：按 colorScheme 显式取
-        // （`KazumiPalette.accent(for:)`）。切分类时颜色要在动画事务里
-        // 插值，别在这里引入会回到 trait collection 解析的动态色 ——
-        // 那正是之前点分类闪退的位置。
-        let foreground: Color = isSelected
-            ? KazumiPalette.onAccent(for: colorScheme)
-            : .primary
-        let background: Color = isSelected
-            ? KazumiPalette.accent(for: colorScheme)
-            : KazumiPalette.cardSurface(for: colorScheme)
-        return Button {
-            selectedType = type
-        } label: {
-            Text(title)
-                .font(.subheadline.weight(.semibold))
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
-                .foregroundStyle(foreground)
-                .background(
-                    Capsule(style: .continuous).fill(background)
-                )
+    private var defaultRow: some View {
+        HStack(spacing: 8) {
+            categoryMenu
+            sortMenu
+            categoryCount
+
+            // LP 2026-10-23：默认就只是一颗放大镜按钮，点了才长成搜索条。
+            searchIconButton
         }
-        .buttonStyle(.plain)
-        // 胶囊视觉 34，命中区撑到 44（`Design/HitTarget.swift` 那条全库规矩）。
-        // 不用 `hitTarget44()`：那个把框本身撑到 44，两行就成 44+10+44＝98，
-        // 而定的整条高度是 78（胶囊 34＋行间 10＋胶囊 34）。所以这里把命中区
-        // 向外胀 5 点再收回去：命中区 44、框仍是 34、整条 78。
-        // 代价说清楚：这样量无障碍树，胶囊的框依旧是 34——**高度 44 只能用手按出来验**，
-        // 不能靠量框。验法：按两行之间的缝，看落中的是哪一颗。
-        .padding(.vertical, 5)
-        .contentShape(Rectangle())
-        .padding(.vertical, -5)
-        // 屏上把数字收掉了，读屏还得念出来：收起来的是数字，不是数据。
-        .accessibilityLabel(Text("\(title)，\(count(for: type)) 部"))
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(height: 44)
     }
 
-    /// 当前选中分类的部数。只这一处，不是六个数字、也不是合计（原版
-    /// `collect_library_view.dart:280` 就是 `'\(count(_selectedType)) 部'`）。
+    private var categoryMenu: some View {
+        Menu {
+            Picker("分类", selection: categoryBinding) {
+                ForEach(Array(Self.categories.enumerated()), id: \.offset) { index, type in
+                    Text(type?.title ?? "全部").tag(index)
+                }
+            }
+        } label: {
+            menuCapsule(title: categoryTitle)
+        }
+        .accessibilityLabel(Text("筛选，\(categoryTitle)"))
+        .accessibilityHint(Text("选择追番状态"))
+    }
+
+    /// 「更新时间」只对「在看」有意义：其它分类里菜单照常可点，只有这一项
+    /// 灰掉；用户改选的另外四档都照常生效。灰掉的那一项用禁用的菜单项
+    /// 单独排在最前，其余四项仍交给 Picker 打勾（不自己画对勾）。
+    private var sortMenu: some View {
+        Menu {
+            if selectedType != .watching {
+                Button {} label: {
+                    Text(CollectSort.updateTime.label)
+                }
+                .disabled(true)
+                .accessibilityHint(Text("只有「在看」里能按放送时间排"))
+            }
+
+            Picker("排序", selection: sortBinding) {
+                ForEach(availableSorts) { option in
+                    Text(option.label).tag(option)
+                }
+            }
+        } label: {
+            menuCapsule(title: effectiveSort.label)
+        }
+        .accessibilityLabel(Text("排序，\(effectiveSort.label)"))
+        .accessibilityHint(Text("选择排序方式"))
+    }
+
+    /// 「在看」里五档全给；其它分类只给可选的四档（更新时间单独灰在最前）。
+    private var availableSorts: [CollectSort] {
+        selectedType == .watching
+            ? CollectSort.allCases
+            : CollectSort.allCases.filter { $0 != .updateTime }
+    }
+
+    /// 玻璃菜单底：视觉高度 36、命中区 44（外面撑出来，不加高亮）。
+    /// LP 2026-10-23：原来写死 70/100 宽，「在看」两个字被挤成三个点；
+    /// 现在按字撑开，多出来的宽度让给部数。
+    private func menuCapsule(title: String) -> some View {
+        HStack(spacing: 4) {
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
+            Image(systemName: "chevron.down")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 12)
+        .frame(height: 36)
+        .kazumiGlassCapsule(interactive: true)
+        .fixedSize(horizontal: true, vertical: false)
+        .frame(height: 44)
+        .contentShape(Rectangle())
+    }
+
+    /// 当前筛选结果的部数；搜索时跟着筛后条数走。
     private var categoryCount: some View {
-        let total = count(for: selectedType)
+        let total = filteredEntries.count
         return Text("\(total) 部")
             .font(.footnote)
             .foregroundStyle(.secondary)
+            .lineLimit(1)
+            // 1024 部也不许被搜索条挤压。
+            .fixedSize(horizontal: true, vertical: false)
             .accessibilityLabel(Text("当前分类，\(total) 部"))
-            // 跟第一行胶囊对齐：overlay 的 `.topTrailing` 对的是顶边，胶囊高 34、
-            // 这行行高 16，顶边一平中心就差 9 点，看着像浮在那一排上面的 header。
-            // 补成和胶囊一样的内边距，字中心就落在第一行胶囊的中线上；大字模式下
-            // 两者一起长，对齐关系不会跑（Colo 1192）。
-            .padding(.vertical, 8)
-            .padding(.top, 1)
     }
 
-    private func count(for type: CollectType?) -> Int {
-        guard let type else { return library.entries.count }
-        return library.entries.filter { $0.collectType == type }.count
+    private var categoryBinding: Binding<Int> {
+        Binding(
+            get: { Self.categories.firstIndex(of: selectedType) ?? 0 },
+            set: { index in
+                let newType = Self.categories[index]
+                // 切到其它分类时，**只有当前排的是「更新时间」才降级**成「最近变更」；
+                // 其余四档在任何分类都能用，用户选的那档跟着走，不许切个分类就丢掉。
+                // 切回「在看」时 `sort` 原样保留。
+                if newType != selectedType, newType != .watching {
+                    let current = effectiveSort
+                    otherSort = current == .updateTime ? .recentlyChanged : current
+                }
+                selectedType = newType
+            }
+        )
+    }
+
+    private var sortBinding: Binding<CollectSort> {
+        Binding(
+            get: { effectiveSort },
+            set: { newValue in
+                // 「更新时间」只属于「在看」；灰掉的那一项即使被触发也不改状态。
+                guard newValue != .updateTime || selectedType == .watching else { return }
+                if selectedType == .watching {
+                    sort = newValue
+                    // 只记「在看」里选的排序；切分类不写这个键。
+                    settings.librarySort = newValue.rawValue
+                } else {
+                    otherSort = newValue
+                }
+            }
+        )
+    }
+
+    private var searchHint: String {
+        "在「\(categoryTitle)」里搜索"
+    }
+
+    // MARK: - 搜索
+
+    /// 常驻的 36 高搜索条。视觉 36，外面补到 44 的命中区。
+    private var searchEntryButton: some View {
+        Button {
+            isSearching = true
+            searchFocused = true
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 15, weight: .regular))
+                    .foregroundStyle(.secondary)
+                Text("搜索追番")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 12)
+            .frame(height: 36)
+            .frame(maxWidth: .infinity)
+            .kazumiGlassCapsule(interactive: true)
+            .frame(height: 44)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text("搜索追番"))
+        .accessibilityHint(Text(searchHint))
+    }
+
+    /// 最大字号装不下整条搜索时的 44 放大镜。
+    private var searchIconButton: some View {
+        Button {
+            withAnimation(.smooth(duration: 0.32)) { isSearching = true }
+            searchFocused = true
+        } label: {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 16, weight: .regular))
+                .foregroundStyle(.secondary)
+                // LP 2026-10-23：视觉 36，跟左边两个菜单胶囊一样高；命中区仍是 44。
+                .frame(width: 44, height: 36)
+                .contentShape(Rectangle())
+                .kazumiGlassCapsule(interactive: true)
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text("搜索追番"))
+        .accessibilityHint(Text(searchHint))
+    }
+
+    /// 展开态：搜索条占满整行，「取消」在右；整行仍是 44 高。
+    private var searchRow: some View {
+        HStack(spacing: 8) {
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 15, weight: .regular))
+                    .foregroundStyle(.secondary)
+                TextField("搜索追番", text: $query)
+                    .font(.subheadline)
+                    .foregroundStyle(.primary)
+                    .textFieldStyle(.plain)
+                    .focused($searchFocused)
+                    .submitLabel(.search)
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+                    .accessibilityLabel(Text("搜索追番"))
+                    .accessibilityHint(Text(searchHint))
+                if !query.isEmpty {
+                    Button {
+                        query = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 15))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 22, height: 22)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(Text("清空搜索"))
+                }
+            }
+            .padding(.horizontal, 12)
+            .frame(height: 36)
+            .frame(maxWidth: .infinity)
+            .kazumiGlassCapsule()
+            .frame(height: 44)
+            .contentShape(Rectangle())
+
+            Button {
+                cancelSearch()
+            } label: {
+                // LP 2026-10-23：字边上点不动 —— 可点范围只有字那么大。
+                // 撑满 44 × 44，字居中。
+                Text("取消")
+                    .font(.subheadline)
+                    .foregroundStyle(.tint)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Text("取消"))
+        }
+        .frame(height: 44)
+    }
+
+    private func cancelSearch() {
+        query = ""
+        searchFocused = false
+        withAnimation(.smooth(duration: 0.32)) { isSearching = false }
+    }
+
+    // MARK: - 时刻表
+
+    /// 进页 / 「在看」条目变化时补齐季度时刻表，然后一次性重排。
+    /// 拉不到数据就保持空表 —— 调用方已经先用「最近变更」排好了，不转圈。
+    private func loadUpdateTimes() async {
+        let entries = library.watchingEntries
+        for entry in entries {
+            await BangumiAirTimeService.shared.ensureLoaded(
+                subjectID: entry.id,
+                airDate: entry.airDate
+            )
+            if Task.isCancelled { return }
+        }
+        let times = makeUpdateTimes(for: entries)
+        updateTimes = times
+        // 一部时刻都没拿到（季度 JSON 没到 / 没有匹配项）时继续按最近变更排，
+        // 不要切成一堆 nil 的 id 序，那对用户没有意义。
+        updateTimesLoaded = !times.isEmpty
+    }
+
+    /// 把「星期 + HH:mm」拼成本周这一集的时刻；较早于首播的由查询层丢成 nil。
+    private func makeUpdateTimes(for entries: [LibraryEntry]) -> [Int: Date] {
+        let service = BangumiAirTimeService.shared
+        let weekdays = resolvedWeekdays(for: entries)
+        let now = Date()
+        var result: [Int: Date] = [:]
+
+        for entry in entries {
+            guard let weekday = weekdays[entry.id],
+                  let text = service.airTime(for: entry.id),
+                  let time = Self.hourMinute(text),
+                  let schedule = service.schedules[entry.id],
+                  let epoch = CollectLibraryQuery.updateTimeForWeekday(
+                      hour: time.hour,
+                      minute: time.minute,
+                      weekday: weekday,
+                      now: now,
+                      firstAir: schedule.first
+                  )
+            else { continue }
+            result[entry.id] = epoch
+        }
+        return result
+    }
+
+    /// 放送星期：用户手改 → 时间表分组 → bangumi 日历 airWeekday
+    /// （iOS 收藏条目没有该字段，用同源的 `DateTimeHelper` 从开播日算）。
+    ///
+    /// 收藏条目都在「时间表日历」里，所以把它们的 id 全交给 `resolveWeekdays`，
+    /// 用户手动点过的星期才会全部生效；没点过的落到开播日星期。
+    private func resolvedWeekdays(for entries: [LibraryEntry]) -> [Int: Int] {
+        let store = BangumiTimelineStore.shared
+        let collectTypes = library.entries.reduce(into: [Int: CollectType]()) { result, entry in
+            result[entry.id] = entry.collectType
+        }
+        let custom = store.resolveWeekdays(
+            inCalendar: Set(entries.map(\.id)),
+            collectTypes: collectTypes
+        )
+
+        var weekdays: [Int: Int] = [:]
+        for entry in entries {
+            let airWeekday = DateTimeHelper.dateStringToWeekday(
+                entry.airDate.isEmpty ? "2000-11-11" : entry.airDate
+            )
+            weekdays[entry.id] = custom[entry.id] ?? airWeekday
+        }
+        return weekdays
+    }
+
+    private static func hourMinute(_ text: String) -> (hour: Int, minute: Int)? {
+        let parts = text.split(separator: ":")
+        guard parts.count == 2,
+              let hour = Int(parts[0]),
+              let minute = Int(parts[1]),
+              (0...23).contains(hour),
+              (0...59).contains(minute)
+        else { return nil }
+        return (hour, minute)
     }
 
     // MARK: - 列表
@@ -183,28 +488,11 @@ struct LibraryScreen: View {
     @ViewBuilder
     private var content: some View {
         if filteredEntries.isEmpty {
-            VStack(spacing: 12) {
-                Image(systemName: "heart.text.square")
-                    .font(.system(size: 38, weight: .semibold))
-                    .foregroundStyle(.tertiary)
-                Text(library.entries.isEmpty ? "还没有追番" : "这个分类还没有番剧")
-                    .font(.headline)
-                // 两种空要说两套话：整个库为空时告诉用户怎么加；
-                // 只是这个分类为空时，库里明明有番，再劝他去详情页点「追番」会让人以为记错了。
-                Text(library.entries.isEmpty
-                     ? "在番剧详情页点「追番」即可加入这里。"
-                     : "换一个分类，或者去推荐页找番剧。")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                if library.entries.isEmpty {
-                    Button("去推荐看看") {
-                        router.selectedDestination = .popular
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .padding(.top, 4)
-                }
+            if !trimmedQuery.isEmpty {
+                searchEmptyState
+            } else {
+                libraryEmptyState
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             ScrollView {
                 LazyVStack(spacing: 10) {
@@ -221,10 +509,54 @@ struct LibraryScreen: View {
                 .padding(.horizontal, 12)
                 .padding(.bottom, 24)
             }
+            // LP 2026-10-23：点空白处也该能取消搜索，不能只有那颗「取消」能退出。
+            .contentShape(Rectangle())
+            .onTapGesture {
+                guard isSearching else { return }
+                cancelSearch()
+            }
             .scrollIndicators(.hidden)
             // 顶部滚动边缘：内容从吸附的头部下方滚过，模糊盖住那一行。
             .scrollEdgeEffectStyle(.soft, for: .top)
         }
+    }
+
+    private var libraryEmptyState: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "heart.text.square")
+                .font(.system(size: 38, weight: .semibold))
+                .foregroundStyle(.tertiary)
+            Text(library.entries.isEmpty ? "还没有追番" : "这个分类还没有番剧")
+                .font(.headline)
+            // 两种空要说两套话：整个库为空时告诉用户怎么加；
+            // 只是这个分类为空时，库里明明有番，再劝他去详情页点「追番」会让人以为记错了。
+            Text(library.entries.isEmpty
+                 ? "在番剧详情页点「追番」即可加入这里。"
+                 : "换一个分类，或者去推荐页找番剧。")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+            if library.entries.isEmpty {
+                Button("去推荐看看") {
+                    router.selectedDestination = .popular
+                }
+                .buttonStyle(.borderedProminent)
+                .padding(.top, 4)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// 搜索无命中：不沿用「这个分类还没有番剧」，直接给清空搜索的出口。
+    private var searchEmptyState: some View {
+        VStack(spacing: 12) {
+            Text("没有匹配的番剧")
+                .font(.headline)
+            Button("清空搜索") {
+                query = ""
+            }
+            .buttonStyle(.bordered)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private func changeType(_ entry: LibraryEntry, to type: CollectType) {
@@ -321,6 +653,9 @@ private struct LibraryEntryCard: View {
             RoundedRectangle(cornerRadius: 28, style: .continuous)
                 .fill(KazumiPalette.cardSurface(for: colorScheme))
         )
+        // LP 2026-10-23：整张卡片都能点开，不再只有封面那一小块。
+        // 右侧那颗「修改状态」是自己的按钮，会先吃掉它范围内的点击。
+        .contentShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .onTapGesture { onOpen() }
     }
 }
-
