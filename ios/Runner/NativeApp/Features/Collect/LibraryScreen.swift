@@ -38,17 +38,21 @@ struct LibraryScreen: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            header
-            categoryBar
-            content
-        }
-        .background(KazumiPalette.background(for: colorScheme).ignoresSafeArea())
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar(.hidden, for: .navigationBar)
-        .task {
-            KazumiImageLoader.shared.prefetch(library.entries.map(\.imageURL))
-        }
+        content
+            // 头部与分类条合成一块吸附在顶部：两块都跟着固定，
+            // 只提 header 的话内容会从分类条下面硬切过去。
+            .safeAreaInset(edge: .top, spacing: 0) {
+                VStack(spacing: 0) {
+                    header
+                    categoryBar
+                }
+            }
+            .background(KazumiPalette.background(for: colorScheme).ignoresSafeArea())
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar(.hidden, for: .navigationBar)
+            .task {
+                KazumiImageLoader.shared.prefetch(library.entries.map(\.imageURL))
+            }
     }
 
     // MARK: - 头部
@@ -56,21 +60,28 @@ struct LibraryScreen: View {
     private var header: some View {
         HStack(alignment: .center) {
             Text("追番")
-                .font(.system(size: 24, weight: .bold))
+                .font(.system(size: 34, weight: .semibold))
 
             Spacer(minLength: 8)
 
+            // 叫「同步」：LP 2026-10-23 明确要求跟原版一致，字改回来了。
+            // 早先它叫过「备份」，理由是按下去只会到「账号与备份」主页、不会立刻开始同步；
+            // 这个歧义由那一页承担（「立即同步追番」会落在里面），不在按钮名上改。
+            // MP: 未验证 —— 引擎落地后这颗按下去是否该直接开跑，等页面定了再说。
             Button {
-                router.push(.webDAV)
+                router.push(.syncBackup)
             } label: {
                 HStack(spacing: 6) {
+                    // 原版是循环箭头（lib/pages/collect/collect_page.dart:130 的
+                    // Icons.sync_rounded），不是云。云是当初把字改成「备份」时
+                    // 字、图标、去向一起翻的遗留物；字已退回「同步」，图标跟着退。
                     Image(systemName: "arrow.triangle.2.circlepath")
-                        .font(.system(size: 15, weight: .semibold))
+                        .font(.system(size: 22, weight: .semibold))
                     Text("同步")
                         .font(.subheadline.weight(.semibold))
                 }
                 .padding(.horizontal, 14)
-                .padding(.vertical, 8)
+                .padding(.vertical, 11)
             }
             .buttonStyle(.plain)
             .kazumiGlassCapsule(interactive: true)
@@ -82,37 +93,84 @@ struct LibraryScreen: View {
 
     // MARK: - 分类
 
+    /// 六颗分类胶囊一律交给 `KazumiFlowLayout` 排，上限三颗一行（Colo 1185）。
+    /// 为什么不横滑：六颗胶囊在 390 点宽的屏上放不进一行（六颗约 396 点 ＋
+    /// 空隙 64 ＋ 右边的部数，可用只有 358），而一颗要横滑才看得见的分类等于
+    /// 没有这颗——LP 就以为「抛弃」被删了。
+    /// 为什么不用 ViewThatFits 两态：第二态要等流式布局那个件落地，件没到就会
+    /// 溢出；一态到底，任何字号都不溢出、不横滑、不截断、不缩字号。
     private var categoryBar: some View {
-        ScrollView(.horizontal) {
-            HStack(spacing: 8) {
-                ForEach(Array(Self.categories.enumerated()), id: \.offset) { _, type in
-                    let isSelected = selectedType == type
-                    let count = count(for: type)
-                    Button {
-                        withAnimation(.easeOut(duration: 0.18)) { selectedType = type }
-                    } label: {
-                        HStack(spacing: 5) {
-                            Text(type?.title ?? "全部")
-                                .font(.subheadline.weight(.semibold))
-                            Text("\(count)")
-                                .font(.caption.weight(.medium))
-                                .opacity(0.7)
-                        }
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 8)
-                        .foregroundStyle(isSelected ? Color.white : Color.primary)
-                        .background(
-                            Capsule(style: .continuous)
-                                .fill(isSelected ? KazumiPalette.accent : KazumiPalette.cardSurface(for: colorScheme))
-                        )
-                    }
-                    .buttonStyle(.plain)
-                }
+        KazumiFlowLayout(maxColumns: 3, spacing: 8, rowSpacing: 10) {
+            ForEach(Array(Self.categories.enumerated()), id: \.offset) { _, type in
+                categoryChip(type)
             }
-            .padding(.horizontal, 16)
         }
-        .scrollIndicators(.hidden)
+        // 右边留出部数自己的宽 ＋ 间距，六颗的可用宽就少这么多。
+        // 84 不是 74：最大字号下「1 部」两个字符就有 71 宽，加 12 的间距要 83；
+        // 74 没撞上只是因为库里现在只有三位数，四位数一到就压上胶囊了（Colo 1247）。
+        .padding(.trailing, 84)
+        // 部数贴整条右上，不跟某一行走：流式布局里点不出「某一行」的右端，
+        // 而整条右上在任何字号下位置都不变，也就不会跟任何一颗重叠、
+        // 不会长成第七颗分类。
+        .overlay(alignment: .topTrailing) { categoryCount }
+        .padding(.horizontal, 16)
         .padding(.bottom, 12)
+    }
+
+    private func categoryChip(_ type: CollectType?) -> some View {
+        let isSelected = selectedType == type
+        let title = type?.title ?? "全部"
+        // 与时间表星期胶囊同一套取色：按 colorScheme 显式取
+        // （`KazumiPalette.accent(for:)`）。切分类时颜色要在动画事务里
+        // 插值，别在这里引入会回到 trait collection 解析的动态色 ——
+        // 那正是之前点分类闪退的位置。
+        let foreground: Color = isSelected
+            ? KazumiPalette.onAccent(for: colorScheme)
+            : .primary
+        let background: Color = isSelected
+            ? KazumiPalette.accent(for: colorScheme)
+            : KazumiPalette.cardSurface(for: colorScheme)
+        return Button {
+            selectedType = type
+        } label: {
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .foregroundStyle(foreground)
+                .background(
+                    Capsule(style: .continuous).fill(background)
+                )
+        }
+        .buttonStyle(.plain)
+        // 胶囊视觉 34，命中区撑到 44（`Design/HitTarget.swift` 那条全库规矩）。
+        // 不用 `hitTarget44()`：那个把框本身撑到 44，两行就成 44+10+44＝98，
+        // 而定的整条高度是 78（胶囊 34＋行间 10＋胶囊 34）。所以这里把命中区
+        // 向外胀 5 点再收回去：命中区 44、框仍是 34、整条 78。
+        // 代价说清楚：这样量无障碍树，胶囊的框依旧是 34——**高度 44 只能用手按出来验**，
+        // 不能靠量框。验法：按两行之间的缝，看落中的是哪一颗。
+        .padding(.vertical, 5)
+        .contentShape(Rectangle())
+        .padding(.vertical, -5)
+        // 屏上把数字收掉了，读屏还得念出来：收起来的是数字，不是数据。
+        .accessibilityLabel(Text("\(title)，\(count(for: type)) 部"))
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
+    /// 当前选中分类的部数。只这一处，不是六个数字、也不是合计（原版
+    /// `collect_library_view.dart:280` 就是 `'\(count(_selectedType)) 部'`）。
+    private var categoryCount: some View {
+        let total = count(for: selectedType)
+        return Text("\(total) 部")
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+            .accessibilityLabel(Text("当前分类，\(total) 部"))
+            // 跟第一行胶囊对齐：overlay 的 `.topTrailing` 对的是顶边，胶囊高 34、
+            // 这行行高 16，顶边一平中心就差 9 点，看着像浮在那一排上面的 header。
+            // 补成和胶囊一样的内边距，字中心就落在第一行胶囊的中线上；大字模式下
+            // 两者一起长，对齐关系不会跑（Colo 1192）。
+            .padding(.vertical, 8)
+            .padding(.top, 1)
     }
 
     private func count(for type: CollectType?) -> Int {
@@ -131,14 +189,20 @@ struct LibraryScreen: View {
                     .foregroundStyle(.tertiary)
                 Text(library.entries.isEmpty ? "还没有追番" : "这个分类还没有番剧")
                     .font(.headline)
-                Text("在番剧详情页点「追番」即可加入这里。")
+                // 两种空要说两套话：整个库为空时告诉用户怎么加；
+                // 只是这个分类为空时，库里明明有番，再劝他去详情页点「追番」会让人以为记错了。
+                Text(library.entries.isEmpty
+                     ? "在番剧详情页点「追番」即可加入这里。"
+                     : "换一个分类，或者去推荐页找番剧。")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
-                Button("去推荐看看") {
-                    router.selectedDestination = .popular
+                if library.entries.isEmpty {
+                    Button("去推荐看看") {
+                        router.selectedDestination = .popular
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .padding(.top, 4)
                 }
-                .buttonStyle(.borderedProminent)
-                .padding(.top, 4)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
@@ -158,6 +222,8 @@ struct LibraryScreen: View {
                 .padding(.bottom, 24)
             }
             .scrollIndicators(.hidden)
+            // 顶部滚动边缘：内容从吸附的头部下方滚过，模糊盖住那一行。
+            .scrollEdgeEffectStyle(.soft, for: .top)
         }
     }
 
@@ -211,15 +277,15 @@ private struct LibraryEntryCard: View {
                                 Text(String(format: "%.1f", entry.rating))
                                     .font(.system(size: 12, weight: .bold))
                             }
-                            .foregroundStyle(KazumiPalette.accent)
+                            .foregroundStyle(KazumiPalette.accent(for: colorScheme))
                         }
 
                         Text(entry.collectType.title)
                             .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(KazumiPalette.accent)
+                            .foregroundStyle(KazumiPalette.accent(for: colorScheme))
                             .padding(.horizontal, 10)
                             .padding(.vertical, 4)
-                            .background(Capsule(style: .continuous).fill(KazumiPalette.accent.opacity(0.14)))
+                            .background(Capsule(style: .continuous).fill(KazumiPalette.accent(for: colorScheme).opacity(0.14)))
 
                         if entry.totalEpisodes > 0 {
                             Text("看到第 \(entry.currentEpisode) / \(entry.totalEpisodes) 话")
@@ -244,10 +310,11 @@ private struct LibraryEntryCard: View {
                 Image(systemName: "ellipsis")
                     .font(.system(size: 16, weight: .semibold))
                     .frame(width: 32, height: 32)
+                    .hitTarget44()
                     .opacity(isPending ? 0.4 : 1)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("修改收藏状态")
+            .accessibilityLabel("修改追番状态")
         }
         .padding(12)
         .background(

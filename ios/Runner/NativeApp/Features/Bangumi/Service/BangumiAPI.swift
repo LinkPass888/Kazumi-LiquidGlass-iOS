@@ -526,7 +526,8 @@ enum BangumiAPI {
             request.httpBody = Data(body.serialized(pretty: false).utf8)
         }
 
-        KazumiLog.network.debug("\(method, privacy: .public) \(finalURL.absoluteString, privacy: .public)")
+        // notice 级而不是 debug：debug 不落盘，出问题时抓不到；这一行只有方法、地址和「带没带令牌」，不含令牌本身。
+        KazumiLog.network.notice("\(method, privacy: .public) \(finalURL.absoluteString, privacy: .public) auth=\(Self.authState, privacy: .public)")
 
         let data: Data
         let response: URLResponse
@@ -562,5 +563,63 @@ enum BangumiAPI {
             return token.isEmpty ? nil : token
         }
         set { accessTokenBox.withLock { $0 = newValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "" } }
+    }
+
+    /// 「检查令牌」的结果。
+    ///
+    /// 这个类型的意义在于把「令牌到底有没有穿到请求层」变成用户看得见的一件事：
+    /// 用户自己粘的令牌，粘错了只会看到一片空白，分不清是令牌错、网络错还是 App 坏。
+    enum TokenCheckResult: Sendable {
+        /// 连上了，附用户名（昵称优先，没有昵称时退回用户名）、Bangumi 的数字用户 ID，
+        /// 以及服务器给的原始用户名（同步引擎拼收藏列表地址要用它，见交接文档）。
+        ///
+        /// ID 只从这里来：它是在替令牌担保「你是谁」，所以不许本地方便行事存一个。
+        case ok(name: String, id: String, username: String)
+        /// 没填令牌，本地就直接停了，没有发出请求。
+        case missing
+        /// 服务器拒绝了这串令牌（401/403）。
+        case rejected
+        /// 请求根本没走通（断网、超时、DNS 等）。
+        case unreachable(String)
+    }
+
+    /// 拿当前令牌请求自己的用户信息（`/v0/me`）。
+    ///
+    /// 走的是和别的接口同一个 `send`，所以 `Authorization` 头的拼接方式与真实请求完全一致；
+    /// 能拿到用户名，就说明令牌确实穿过了请求层。
+    static func checkToken() async -> TokenCheckResult {
+        guard accessToken != nil else { return .missing }
+        do {
+            let json = try await send(
+                "https://api.bgm.tv/v0/me",
+                method: "GET",
+                query: [],
+                body: nil
+            )
+            let nickname = json["nickname"].stringValue
+            let username = json["username"].stringValue
+            let name = (nickname?.isEmpty == false ? nickname : username) ?? ""
+            // 6 位数字 ID：返回里没有它的时候给空串，由界面那行显示「无法确认」——
+            // 空着不留上一次的值，免得屏幕替一个坏令牌担保身份。
+            let id = json["id"].intValue.map(String.init) ?? ""
+            return .ok(
+                name: name.isEmpty ? "（未返回用户名）" : name,
+                id: id,
+                username: username ?? ""
+            )
+        } catch let error as NetworkError {
+            if case let .badResponse(status, _, _) = error, status == 401 || status == 403 {
+                return .rejected
+            }
+            return .unreachable(error.localizedDescription)
+        } catch {
+            return .unreachable(error.localizedDescription)
+        }
+    }
+
+    /// 发出的请求究竟带没带令牌，只用于排查：只报是否带上与长度，绝不输出令牌本身。
+    private static var authState: String {
+        guard let token = accessToken, !token.isEmpty else { return "none" }
+        return "bearer(\(token.count))"
     }
 }

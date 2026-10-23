@@ -47,7 +47,9 @@ enum AppDestination: String, CaseIterable, Identifiable, Hashable, Sendable {
     var selectedSymbolName: String {
         switch self {
         case .popular: "house.fill"
-        case .timeline: "calendar.circle.fill"
+        // SF Symbols 没有 calendar.fill；为了与其他三个纯实心图标同族，
+        // 选中态沿用 calendar，仅靠 tint 区分选中，不再用带圆圈的变体。
+        case .timeline: "calendar"
         case .collect: "heart.fill"
         case .my: "gearshape.fill"
         }
@@ -99,9 +101,9 @@ enum AppRoute: Hashable, Sendable {
     case about
     case logs
     case danmakuShield
-    case webDAV
-    /// 设置备份：导出 / 导入旧版（Flutter）导出的设置备份文本。
-    case settingsBackup
+    /// 账号与备份主页：Bangumi 账号、WebDAV 备份与设置备份的入口。
+    /// 现在还没有自动同步能力，真正落地后再改回「同步备份」。
+    case syncBackup
     /// 存储管理：图片缓存与运行日志（对应原版 /settings/storage）。
     case storage
     /// 通知设置（对应原版 /settings/notification）。
@@ -142,8 +144,8 @@ extension AppRoute {
         case .about: 10
         case .logs: 11
         case .danmakuShield: 12
-        case .webDAV: 13
-        case .settingsBackup: 14
+        // 21 是追加序号：20 已给 pluginTest，序列不必连号，只要唯一。
+        case .syncBackup: 21
         case .storage: 16
         case .notificationSettings: 17
         case .playerSettings: 18
@@ -176,8 +178,7 @@ extension AppRoute {
              (.about, .about),
              (.logs, .logs),
              (.danmakuShield, .danmakuShield),
-             (.webDAV, .webDAV),
-             (.settingsBackup, .settingsBackup),
+             (.syncBackup, .syncBackup),
              (.storage, .storage),
              (.notificationSettings, .notificationSettings),
              (.playerSettings, .playerSettings),
@@ -212,8 +213,7 @@ extension AppRoute {
              .about,
              .logs,
              .danmakuShield,
-             .webDAV,
-             .settingsBackup,
+             .syncBackup,
              .storage,
              .notificationSettings,
              .playerSettings,
