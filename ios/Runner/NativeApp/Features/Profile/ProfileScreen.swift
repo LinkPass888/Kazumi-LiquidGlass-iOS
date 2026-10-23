@@ -34,7 +34,7 @@ struct ProfileScreen: View {
                 section("数据与应用", rows: [
                     Row(symbol: "icloud", title: "账号与备份", subtitle: "Bangumi 令牌与备份", route: .syncBackup),
                     Row(symbol: "externaldrive", title: "存储与日志", subtitle: "图片缓存与错误日志", route: .storage),
-                    Row(symbol: "info.circle", title: "关于", subtitle: "版本与开源许可", route: .about),
+                    Row(symbol: "info.circle", title: "关于 Kazumi", subtitle: "版本与开源许可", route: .about),
                 ])
             }
             .padding(.horizontal, 16)
@@ -119,8 +119,8 @@ struct ProfileScreen: View {
             )
             toolCard(
                 symbol: "arrow.down.circle",
-                title: "离线缓存",
-                caption: "管理已缓存的剧集",
+                title: "离线下载",
+                caption: "管理离线内容",
                 route: .download
             )
         }

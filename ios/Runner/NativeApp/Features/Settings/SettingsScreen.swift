@@ -88,8 +88,8 @@ extension SettingsGroup {
                 ),
                 SettingsCategory(
                     id: "download",
-                    label: "缓存设置",
-                    description: "并发数与弹幕",
+                    label: "下载设置",
+                    description: "并发数与弹幕缓存",
                     symbol: "arrow.down.circle",
                     destination: .download
                 ),
