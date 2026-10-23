@@ -80,13 +80,6 @@ struct SyncBackupScreen: View {
             }
 
             Section {
-                // 这句必须是组内第一行而不是页脚：上面两行都能点走，
-                // 落到组尾会被读成「第三个入口，点了没反应」（Camo 717）。
-                Text("导出一段文本自己保存，或者粘贴回来恢复。不经过上面的服务器。")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .listRowSeparator(.hidden)
-
                 Toggle("不含账号与密码", isOn: $omitCredentials)
 
                 // 开关只决定凭据带不带，不决定其余设置；这句把后果说清楚，
