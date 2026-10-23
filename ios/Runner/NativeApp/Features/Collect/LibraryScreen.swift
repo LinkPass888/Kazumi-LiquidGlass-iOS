@@ -194,7 +194,7 @@ struct LibraryScreen: View {
                     Text(CollectSort.updateTime.label)
                 }
                 .disabled(true)
-                .accessibilityHint(Text("只有「在看」可以排序"))
+                .accessibilityHint(Text("只有「在看」里能按放送时间排"))
             }
 
             Picker("排序", selection: sortBinding) {
@@ -252,10 +252,12 @@ struct LibraryScreen: View {
             get: { Self.categories.firstIndex(of: selectedType) ?? 0 },
             set: { index in
                 let newType = Self.categories[index]
-                // 切到其它分类时，排序先回到默认的「最近变更」；
-                // 用户仍可在菜单里改另外四档。切回「在看」时 `sort` 原样保留。
+                // 切到其它分类时，**只有当前排的是「更新时间」才降级**成「最近变更」；
+                // 其余四档在任何分类都能用，用户选的那档跟着走，不许切个分类就丢掉。
+                // 切回「在看」时 `sort` 原样保留。
                 if newType != selectedType, newType != .watching {
-                    otherSort = .recentlyChanged
+                    let current = effectiveSort
+                    otherSort = current == .updateTime ? .recentlyChanged : current
                 }
                 selectedType = newType
             }
@@ -526,12 +528,12 @@ struct LibraryScreen: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    /// 搜索无命中：不沿用「这个分类还没有番剧」，直接给清除搜索的出口。
+    /// 搜索无命中：不沿用「这个分类还没有番剧」，直接给清空搜索的出口。
     private var searchEmptyState: some View {
         VStack(spacing: 12) {
             Text("没有匹配的番剧")
                 .font(.headline)
-            Button("清除搜索") {
+            Button("清空搜索") {
                 query = ""
             }
             .buttonStyle(.bordered)
