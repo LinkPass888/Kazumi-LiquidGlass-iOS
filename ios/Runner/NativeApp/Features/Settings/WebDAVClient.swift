@@ -95,10 +95,23 @@ struct WebDAVClient {
             case .invalidURL(let url): "WebDAV 地址无效：\(url)"
             case .unauthorized: "认证失败，请检查用户名与密码"
             case .notFound: "服务器上还没有备份，先点「立即备份」上传一份"
-            case .badStatus(let status): "服务器返回 HTTP \(status)"
-            case .decoding(let message): message
+            case .badStatus(let status): "服务器出错了（\(status)），请稍后再试。"
+            case .decoding:
+                "备份文件读不出来，可能不是这个 App 存的。"
             case .notReadableBack:
                 "文件已经写上去了，但读回来核对不上，这次不算备份成功。"
+            }
+        }
+
+        /// 只进运行日志的那份：保留技术原文（状态码、解码器的原话）。
+        ///
+        /// 屏上那句话是给用户看的（他改不了的，就告诉他改不了）；
+        /// 这一句是给查问题的人看的，一个字不能少。
+        var logDescription: String {
+            switch self {
+            case .badStatus(let status): "服务器返回 HTTP \(status)"
+            case .decoding(let message): message
+            default: errorDescription ?? ""
             }
         }
     }

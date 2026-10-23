@@ -104,6 +104,12 @@ struct WebDAVScreen: View {
         !settings.webDAVURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
+    /// 进日志的技术原文：WebDAV 自己的错误有专门那份（状态码、解码器原话），
+    /// 别的错误用系统原话。屏上不显示这个。
+    private static func technicalText(_ error: Error) -> String {
+        (error as? WebDAVClient.WebDAVError)?.logDescription ?? error.localizedDescription
+    }
+
     /// 屏蔽词条数：一行一条，空行不算。
     private func ruleCount(_ text: String) -> Int {
         text.split(separator: "\n").filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }.count
@@ -140,7 +146,7 @@ struct WebDAVScreen: View {
             KazumiLogBuffer.network("WebDAV 备份完成（已读回核对）")
         } catch {
             statusMessage = "备份没有完成。原因记在「存储与日志」的「运行日志」里。"
-            KazumiLogBuffer.network("WebDAV 备份失败：\(error.localizedDescription)")
+            KazumiLogBuffer.network("WebDAV 备份失败：\(Self.technicalText(error))")
         }
     }
 
@@ -156,7 +162,7 @@ struct WebDAVScreen: View {
             KazumiLogBuffer.network("WebDAV 恢复完成")
         } catch {
             statusMessage = "恢复没有完成。原因记在「存储与日志」的「运行日志」里。"
-            KazumiLogBuffer.network("WebDAV 恢复失败：\(error.localizedDescription)")
+            KazumiLogBuffer.network("WebDAV 恢复失败：\(Self.technicalText(error))")
         }
     }
 }
