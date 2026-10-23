@@ -376,7 +376,7 @@ enum BangumiAPI {
             [subjectID]
         )
         do {
-            _ = try await post(url, body: .object(body))
+            _ = try await post(url, body: .object(body), requiresAuth: true)
             KazumiLog.network.debug("Update bangumi collection: \(subjectID, privacy: .public)")
             return true
         } catch {
@@ -484,20 +484,30 @@ enum BangumiAPI {
     // MARK: - HTTP
 
     /// 对应 BangumiClient.get。
-    private static func get(_ url: String, query: [URLQueryItem] = []) async throws -> JSONValue {
-        try await send(url, method: "GET", query: query, body: nil)
+    /// `requiresAuth` 默认 `false`：公开接口不带令牌（见 `send` 里那段注释）。
+    private static func get(
+        _ url: String,
+        query: [URLQueryItem] = [],
+        requiresAuth: Bool = false
+    ) async throws -> JSONValue {
+        try await send(url, method: "GET", query: query, body: nil, requiresAuth: requiresAuth)
     }
 
     /// 对应 BangumiClient.post。
-    private static func post(_ url: String, body: JSONValue) async throws -> JSONValue {
-        try await send(url, method: "POST", query: [], body: body)
+    private static func post(
+        _ url: String,
+        body: JSONValue,
+        requiresAuth: Bool = false
+    ) async throws -> JSONValue {
+        try await send(url, method: "POST", query: [], body: body, requiresAuth: requiresAuth)
     }
 
     private static func send(
         _ url: String,
         method: String,
         query: [URLQueryItem],
-        body: JSONValue?
+        body: JSONValue?,
+        requiresAuth: Bool = false
     ) async throws -> JSONValue {
         guard var components = URLComponents(string: url) else {
             throw NetworkError.transport("Bangumi 接口地址无效: \(url)")
@@ -519,7 +529,7 @@ enum BangumiAPI {
         )
         request.setValue("", forHTTPHeaderField: "referer")
         request.setValue("application/json", forHTTPHeaderField: "content-type")
-        if let token = accessToken, !token.isEmpty {
+        if requiresAuth, let token = accessToken, !token.isEmpty {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "authorization")
         }
         if let body {
@@ -594,7 +604,8 @@ enum BangumiAPI {
                 "https://api.bgm.tv/v0/me",
                 method: "GET",
                 query: [],
-                body: nil
+                body: nil,
+                requiresAuth: true
             )
             let nickname = json["nickname"].stringValue
             let username = json["username"].stringValue
