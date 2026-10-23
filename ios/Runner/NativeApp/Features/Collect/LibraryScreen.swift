@@ -179,7 +179,7 @@ struct LibraryScreen: View {
                 }
             }
         } label: {
-            menuCapsule(title: categoryTitle, width: 70)
+            menuCapsule(title: categoryTitle)
         }
         .accessibilityLabel(Text("筛选，\(categoryTitle)"))
         .accessibilityHint(Text("选择追番状态"))
@@ -204,7 +204,7 @@ struct LibraryScreen: View {
                 }
             }
         } label: {
-            menuCapsule(title: effectiveSort.label, width: 100)
+            menuCapsule(title: effectiveSort.label)
         }
         .accessibilityLabel(Text("排序，\(effectiveSort.label)"))
         .accessibilityHint(Text("选择排序方式"))
@@ -217,22 +217,25 @@ struct LibraryScreen: View {
             : CollectSort.allCases.filter { $0 != .updateTime }
     }
 
-    /// 玻璃菜单底：视觉 34、命中区 44（外面撑出来，不加高亮）。
-    private func menuCapsule(title: String, width: CGFloat) -> some View {
+    /// 玻璃菜单底：视觉高度 36、命中区 44（外面撑出来，不加高亮）。
+    /// LP 2026-10-23：原来写死 70/100 宽，「在看」两个字被挤成三个点；
+    /// 现在按字撑开，多出来的宽度让给部数。
+    private func menuCapsule(title: String) -> some View {
         HStack(spacing: 4) {
             Text(title)
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.primary)
                 .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
             Image(systemName: "chevron.down")
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(.secondary)
         }
         .padding(.horizontal, 12)
-        .frame(height: 34)
-        .frame(maxWidth: .infinity)
+        .frame(height: 36)
         .kazumiGlassCapsule(interactive: true)
-        .frame(width: width, height: 44)
+        .fixedSize(horizontal: true, vertical: false)
+        .frame(height: 44)
         .contentShape(Rectangle())
     }
 
@@ -324,11 +327,14 @@ struct LibraryScreen: View {
             searchFocused = true
         } label: {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: 17, weight: .regular))
+                .font(.system(size: 16, weight: .regular))
                 .foregroundStyle(.secondary)
-                .frame(width: 44, height: 44)
+                // LP 2026-10-23：视觉 36，跟左边两个菜单胶囊一样高；命中区仍是 44。
+                .frame(width: 44, height: 36)
                 .contentShape(Rectangle())
                 .kazumiGlassCapsule(interactive: true)
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(Text("搜索追番"))
