@@ -51,3 +51,22 @@ final class KazumiAppDelegate: NSObject, UIApplicationDelegate {
 extension Notification.Name {
     static let kazumiAppDidBecomeActive = Notification.Name("com.example.kazumi.appDidBecomeActive")
 }
+
+/// 全屏播放的临时方向锁。
+///
+/// `requestGeometryUpdate` 只有在 `supportedInterfaceOrientations` 也允许那个方向时才会生效，
+/// 而 SwiftUI App 生命周期下这个值由 delegate 报。所以播放器进全屏时把 `mask` 改成横屏，
+/// 退出时改回竖屏；其它页面一律 `portrait`，与 Info.plist 声明一致（竖横都支持，只改运行时锁）。
+@MainActor
+enum OrientationLock {
+    static var mask: UIInterfaceOrientationMask = .portrait
+}
+
+extension KazumiAppDelegate {
+    func application(
+        _ application: UIApplication,
+        supportedInterfaceOrientationsFor window: UIWindow?
+    ) -> UIInterfaceOrientationMask {
+        OrientationLock.mask
+    }
+}

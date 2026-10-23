@@ -124,10 +124,8 @@ struct AppRouteView: View {
             LogScreen()
         case .danmakuShield:
             DanmakuShieldScreen()
-        case .webDAV:
-            WebDAVScreen()
-        case .settingsBackup:
-            SettingsBackupScreen()
+        case .syncBackup:
+            SyncBackupScreen()
         case .storage:
             StorageScreen()
         case .notificationSettings:

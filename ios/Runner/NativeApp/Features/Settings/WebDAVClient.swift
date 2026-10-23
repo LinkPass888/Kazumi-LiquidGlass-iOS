@@ -35,6 +35,27 @@ struct WebDAVClient {
         var exportedAt: Date = Date()
         var entries: [LibraryEntry]
         var history: [WatchRecord]
+        /// 弹幕屏蔽词，按原样存那串换行的文本。
+        ///
+        /// 存成文本而不是拆成数组，是因为本机的存储本来就是用换行拼接的，
+        /// 主题里带空格、以 `/` 包起来写正则的规则原样进出，不用二次解析。
+        var danmakuRules: String = ""
+
+        init(entries: [LibraryEntry], history: [WatchRecord], danmakuRules: String = "") {
+            self.entries = entries
+            self.history = history
+            self.danmakuRules = danmakuRules
+        }
+
+        /// 旧备份（只有 entries / history）也要能读：缺的字段当空。
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            version = try container.decodeIfPresent(Int.self, forKey: .version) ?? 1
+            exportedAt = try container.decodeIfPresent(Date.self, forKey: .exportedAt) ?? Date()
+            entries = try container.decodeIfPresent([LibraryEntry].self, forKey: .entries) ?? []
+            history = try container.decodeIfPresent([WatchRecord].self, forKey: .history) ?? []
+            danmakuRules = try container.decodeIfPresent(String.self, forKey: .danmakuRules) ?? ""
+        }
     }
 
     enum WebDAVError: Error, LocalizedError {

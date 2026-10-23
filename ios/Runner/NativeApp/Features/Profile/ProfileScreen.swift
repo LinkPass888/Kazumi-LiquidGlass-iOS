@@ -6,9 +6,9 @@
 //  * 顶栏「我的」+ 右侧「全部设置」按钮；
 //  * 观看足迹（看过番剧 / 观看集数）；
 //  * 历史记录、离线下载（并排两块工具卡）；
-//  * 规则设置（原版的异形强调卡）；
-//  * 内容与偏好：规则设置 / 通知设置 / 播放设置 / 弹幕设置；
-//  * 数据与应用：同步备份 / 存储管理 / 关于 Kazumi。
+//  * 规则管理（原版的异形强调卡）；
+//  * 内容与偏好：规则管理 / 通知设置 / 播放设置 / 弹幕设置；
+//  * 数据与应用：账号与备份 / 存储管理 / 关于 Kazumi。
 //
 
 import SwiftUI
@@ -23,24 +23,26 @@ struct ProfileScreen: View {
             VStack(alignment: .leading, spacing: 20) {
                 watchStats
                 quickTools
-                // 「规则设置」只保留「内容与偏好」里的那一行：原先这里还有一张
+                // 「规则管理」只保留「内容与偏好」里的那一行：原先这里还有一张
                 // 异形强调卡直达同一页，同屏两个入口反而让人怀疑是两个不同的功能。
                 section("内容与偏好", rows: [
-                    Row(symbol: "puzzlepiece.extension", title: "规则设置", subtitle: "管理番剧来源", route: .pluginList),
+                    Row(symbol: "puzzlepiece.extension", title: "规则管理", subtitle: "管理番剧来源", route: .pluginList),
                     Row(symbol: "bell", title: "通知设置", subtitle: "追番更新提醒", route: .notificationSettings),
                     Row(symbol: "play.rectangle", title: "播放设置", subtitle: "播放器与画质", route: .playerSettings),
                     Row(symbol: "captions.bubble", title: "弹幕设置", subtitle: "弹幕与屏蔽规则", route: .danmakuSettings),
                 ])
                 section("数据与应用", rows: [
-                    Row(symbol: "icloud", title: "同步备份", subtitle: "跨设备同步数据", route: .webDAV),
-                    Row(symbol: "externaldrive", title: "存储管理", subtitle: "缓存与日志", route: .storage),
-                    Row(symbol: "info.circle", title: "关于 Kazumi", subtitle: "版本与开源许可", route: .about),
+                    Row(symbol: "icloud", title: "账号与备份", subtitle: "Bangumi 令牌与备份", route: .syncBackup),
+                    Row(symbol: "externaldrive", title: "存储与日志", subtitle: "图片缓存与错误日志", route: .storage),
+                    Row(symbol: "info.circle", title: "关于", subtitle: "版本与开源许可", route: .about),
                 ])
             }
             .padding(.horizontal, 16)
             .padding(.top, 8)
             .padding(.bottom, 28)
         }
+        // 顶部滚动边缘：渐进模糊（.soft），不额外叠材质或底色。
+        .scrollEdgeEffectStyle(.soft, for: .top)
         .background(KazumiPalette.background(for: colorScheme).ignoresSafeArea())
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .navigationBar)
@@ -52,14 +54,14 @@ struct ProfileScreen: View {
     private var header: some View {
         HStack(alignment: .center) {
             Text("我的")
-                .font(.system(size: 24, weight: .bold))
+                .font(.system(size: 34, weight: .semibold))
             Spacer(minLength: 8)
             Button {
                 router.push(.settings)
             } label: {
                 Image(systemName: "slider.horizontal.3")
-                    .font(.system(size: 17, weight: .semibold))
-                    .frame(width: 38, height: 38)
+                    .font(.system(size: 22, weight: .semibold))
+                    .frame(width: KazumiGlassMetrics.barButtonSize, height: KazumiGlassMetrics.barButtonSize)
             }
             .buttonStyle(.plain)
             .kazumiGlassCapsule(interactive: true)
@@ -92,7 +94,7 @@ struct ProfileScreen: View {
             Text(value)
                 .font(.system(size: 26, weight: .bold))
                 .monospacedDigit()
-                .foregroundStyle(KazumiPalette.accent)
+                .foregroundStyle(KazumiPalette.accent(for: colorScheme))
             Text(title)
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -111,14 +113,14 @@ struct ProfileScreen: View {
         HStack(spacing: 12) {
             toolCard(
                 symbol: "clock.arrow.circlepath",
-                title: "历史记录",
-                caption: library.history.isEmpty ? "暂无观看记录" : "查看观看记录",
+                title: "观看历史",
+                caption: library.history.isEmpty ? "暂无观看历史" : "查看观看历史",
                 route: .history
             )
             toolCard(
                 symbol: "arrow.down.circle",
-                title: "离线下载",
-                caption: "管理离线内容",
+                title: "离线缓存",
+                caption: "管理已缓存的剧集",
                 route: .download
             )
         }
@@ -131,7 +133,7 @@ struct ProfileScreen: View {
             VStack(alignment: .leading, spacing: 8) {
                 Image(systemName: symbol)
                     .font(.system(size: 20, weight: .semibold))
-                    .foregroundStyle(KazumiPalette.accent)
+                    .foregroundStyle(KazumiPalette.accent(for: colorScheme))
                 Text(title)
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.primary)
@@ -175,7 +177,7 @@ struct ProfileScreen: View {
                         HStack(spacing: 12) {
                             Image(systemName: row.symbol)
                                 .font(.system(size: 17, weight: .semibold))
-                                .foregroundStyle(KazumiPalette.accent)
+                                .foregroundStyle(KazumiPalette.accent(for: colorScheme))
                                 .frame(width: 28)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(row.title)
