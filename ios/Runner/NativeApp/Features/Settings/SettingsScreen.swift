@@ -5,11 +5,15 @@
 //  设置首页。分组与主分支完全一致（lib/pages/settings/settings_page.dart 的 _settingsGroups）：
 //    * 播放 —— 播放设置 / 弹幕设置
 //    * 资源 —— 规则管理 / 下载设置
-//    * 应用 —— 通知设置 / 外观设置 / 界面设置 / 同步设置 / 网络设置
-//    * 其他 —— 设置备份 / 更新设置 / 存储与日志 / 关于
+//    * 应用 —— 通知设置 / 外观设置 / 界面设置 / 账号与备份 / 网络设置
+//    * 其他 —— 更新设置 / 存储与日志 / 关于
+//
+//  「账号与备份」现在是一张主页：账号与 WebDAV 各一行，设置备份直接摊开在主页里。
+//  原来的「同步设置」整页已撤掉（账号、WebDAV 各回各的二级页），
+//  「设置备份」也不再单独成页，因此这里不再有这两个入口。
 //
 //  每个分类点进去是一张二级设置页（二级页面见 SettingsDetailScreens.swift），
-//  已经存在独立页面的分类（规则管理 / 存储与日志 / 关于 / 设置备份）直接推入对应页面。
+//  已经存在独立页面的分类（规则管理 / 存储与日志 / 关于）直接推入对应页面。
 //
 
 import SwiftUI
@@ -26,9 +30,8 @@ struct SettingsCategory: Identifiable, Hashable {
         case notification
         case theme
         case interface
-        case sync
+        case syncBackup
         case network
-        case settingsBackup
         case update
         case logs
         case storage
@@ -85,8 +88,8 @@ extension SettingsGroup {
                 ),
                 SettingsCategory(
                     id: "download",
-                    label: "下载设置",
-                    description: "并发数与弹幕缓存",
+                    label: "缓存设置",
+                    description: "并发数与弹幕",
                     symbol: "arrow.down.circle",
                     destination: .download
                 ),
@@ -118,11 +121,11 @@ extension SettingsGroup {
                     destination: .interface
                 ),
                 SettingsCategory(
-                    id: "sync",
-                    label: "同步设置",
-                    description: "追番状态与多设备同步",
+                    id: "syncBackup",
+                    label: "账号与备份",
+                    description: "Bangumi 令牌、WebDAV 与设置备份",
                     symbol: "icloud",
-                    destination: .sync
+                    destination: .syncBackup
                 ),
                 SettingsCategory(
                     id: "network",
@@ -137,13 +140,6 @@ extension SettingsGroup {
             id: "other",
             title: "其他",
             categories: [
-                SettingsCategory(
-                    id: "backup",
-                    label: "设置备份",
-                    description: "导出导入设置，重装后恢复",
-                    symbol: "arrow.triangle.2.circlepath",
-                    destination: .settingsBackup
-                ),
                 SettingsCategory(
                     id: "update",
                     label: "更新设置",
@@ -186,6 +182,8 @@ struct SettingsScreen: View {
                 }
             }
         }
+        // 顶部滚动边缘：列表顶部用渐进模糊（.soft）。
+        .scrollEdgeEffectStyle(.soft, for: .top)
         .navigationTitle("设置")
         .navigationBarTitleDisplayMode(.inline)
         .scrollContentBackground(.hidden)
@@ -207,8 +205,10 @@ struct SettingsScreen: View {
             NavigationLink { ThemeSettingsScreen() } label: { tile(category) }
         case .interface:
             NavigationLink { InterfaceSettingsScreen() } label: { tile(category) }
-        case .sync:
-            NavigationLink { SyncSettingsScreen() } label: { tile(category) }
+        case .syncBackup:
+            // 主页面这一层走统一路由：以后从「我的」等别处进来也走同一条。
+            Button { router.push(.syncBackup) } label: { tile(category) }
+                .buttonStyle(.plain)
         case .network:
             NavigationLink { NetworkSettingsScreen() } label: { tile(category) }
         case .update:
@@ -221,9 +221,6 @@ struct SettingsScreen: View {
                 .buttonStyle(.plain)
         case .pluginShop:
             Button { router.push(.pluginShop) } label: { tile(category) }
-                .buttonStyle(.plain)
-        case .settingsBackup:
-            Button { router.push(.settingsBackup) } label: { tile(category) }
                 .buttonStyle(.plain)
         case .logs:
             Button { router.push(.logs) } label: { tile(category) }
@@ -240,8 +237,8 @@ struct SettingsScreen: View {
     private func tile(_ category: SettingsCategory) -> some View {
         HStack(spacing: 12) {
             Image(systemName: category.symbol)
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(KazumiPalette.accent)
+                .font(.system(size: 18, weight: .semibold)) // 图标尺寸：与列表其他分类图标的视觉大小对齐
+                .foregroundStyle(KazumiPalette.accent(for: colorScheme))
                 .frame(width: 30)
             VStack(alignment: .leading, spacing: 2) {
                 Text(category.label)
@@ -254,6 +251,7 @@ struct SettingsScreen: View {
             Spacer(minLength: 0)
         }
         .padding(.vertical, 4)
-        .contentShape(Rectangle())
+        // 整行都是点击目标；视觉高度可以随文字走，可点区域不低于 44pt。
+        .hitTarget44(alignment: .leading)
     }
 }
