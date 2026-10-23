@@ -145,10 +145,14 @@ struct LibraryScreen: View {
         Group {
             if isSearching {
                 searchRow
+                    .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .trailing)))
             } else {
                 defaultRow
+                    .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .trailing)))
             }
         }
+        // LP 2026-10-23：切换原来是一帧跳过去，「太快太突兀」。
+        .animation(.smooth(duration: 0.32), value: isSearching)
         .padding(.horizontal, 16)
         .padding(.top, 2)
         .padding(.bottom, 12)
@@ -160,11 +164,8 @@ struct LibraryScreen: View {
             sortMenu
             categoryCount
 
-            // 大字装不下时，搜索条收成 44 的放大镜按钮；点开仍占满整行。
-            ViewThatFits(in: .horizontal) {
-                searchEntryButton
-                searchIconButton
-            }
+            // LP 2026-10-23：默认就只是一颗放大镜按钮，点了才长成搜索条。
+            searchIconButton
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .frame(height: 44)
@@ -319,7 +320,7 @@ struct LibraryScreen: View {
     /// 最大字号装不下整条搜索时的 44 放大镜。
     private var searchIconButton: some View {
         Button {
-            isSearching = true
+            withAnimation(.smooth(duration: 0.32)) { isSearching = true }
             searchFocused = true
         } label: {
             Image(systemName: "magnifyingglass")
@@ -372,12 +373,17 @@ struct LibraryScreen: View {
             .frame(height: 44)
             .contentShape(Rectangle())
 
-            Button("取消") {
+            Button {
                 cancelSearch()
+            } label: {
+                // LP 2026-10-23：字边上点不动 —— 可点范围只有字那么大。
+                // 撑满 44 × 44，字居中。
+                Text("取消")
+                    .font(.subheadline)
+                    .foregroundStyle(.tint)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
             }
-            .font(.subheadline)
-            .foregroundStyle(.tint)
-            .frame(minWidth: 44, minHeight: 44)
             .buttonStyle(.plain)
             .accessibilityLabel(Text("取消"))
         }
@@ -386,8 +392,8 @@ struct LibraryScreen: View {
 
     private func cancelSearch() {
         query = ""
-        isSearching = false
         searchFocused = false
+        withAnimation(.smooth(duration: 0.32)) { isSearching = false }
     }
 
     // MARK: - 时刻表
@@ -496,6 +502,12 @@ struct LibraryScreen: View {
                 }
                 .padding(.horizontal, 12)
                 .padding(.bottom, 24)
+            }
+            // LP 2026-10-23：点空白处也该能取消搜索，不能只有那颗「取消」能退出。
+            .contentShape(Rectangle())
+            .onTapGesture {
+                guard isSearching else { return }
+                cancelSearch()
             }
             .scrollIndicators(.hidden)
             // 顶部滚动边缘：内容从吸附的头部下方滚过，模糊盖住那一行。
@@ -635,5 +647,9 @@ private struct LibraryEntryCard: View {
             RoundedRectangle(cornerRadius: 28, style: .continuous)
                 .fill(KazumiPalette.cardSurface(for: colorScheme))
         )
+        // LP 2026-10-23：整张卡片都能点开，不再只有封面那一小块。
+        // 右侧那颗「修改状态」是自己的按钮，会先吃掉它范围内的点击。
+        .contentShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .onTapGesture { onOpen() }
     }
 }
