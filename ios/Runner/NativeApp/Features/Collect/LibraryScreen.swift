@@ -295,7 +295,7 @@ struct LibraryScreen: View {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 15, weight: .regular))
                     .foregroundStyle(.secondary)
-                Text("搜索")
+                Text("搜索追番")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -339,7 +339,7 @@ struct LibraryScreen: View {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 15, weight: .regular))
                     .foregroundStyle(.secondary)
-                TextField("搜索", text: $query)
+                TextField("搜索追番", text: $query)
                     .font(.subheadline)
                     .foregroundStyle(.primary)
                     .textFieldStyle(.plain)
@@ -360,7 +360,7 @@ struct LibraryScreen: View {
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel(Text("清除搜索"))
+                    .accessibilityLabel(Text("清空搜索"))
                 }
             }
             .padding(.horizontal, 12)
