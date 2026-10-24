@@ -24,6 +24,7 @@ struct BangumiInfoScreen: View {
     @State private var controller: InfoController?
     @State private var isShowingSources = false
     @State private var selectedTab: InfoTab = .overview
+    @State private var scrollOffset: CGFloat = 0
     @State private var toastMessage: String?
     /// 添加到时间表但番剧还没标成在看时，先弹确认。
     @State private var pendingTimelineItem: BangumiItem?
@@ -44,13 +45,16 @@ struct BangumiInfoScreen: View {
             }
         }
         .background(KazumiPalette.background(for: colorScheme).ignoresSafeArea())
-        // 顶栏换原生（LP 2026-10-24）：返回、标题、更多都归系统。
-        // 原来那条自绘顶栏把系统返回手势关掉了、才需要 KazumiSwipeBackEnabler 补回来；
-        // 换原生后手势由系统给，补丁一并删掉。
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar(.hidden, for: .navigationBar)
         // 与列表卡片同 ID、同命名空间：从卡片点进来时原地放大，返回时收回去。
         // 找不到对应源视图（如从播放页推入）时系统自动回落到默认转场。
         .kazumiZoomDestination(id: bangumiID, namespace: zoomNamespace)
+        // 自绘顶栏会连带关掉系统返回手势，这里把它接回来。
+        .background {
+            KazumiSwipeBackEnabler()
+                .frame(width: 0, height: 0)
+        }
         .task {
             if controller == nil {
                 await load()
@@ -66,15 +70,15 @@ struct BangumiInfoScreen: View {
                 VStack(alignment: .leading, spacing: 18) {
                     // 标题与 hero 是一个紧凑的整体：两者间距 12，与下方分隔用 18。
                     VStack(alignment: .leading, spacing: 12) {
-                        // 展开态 28pt bold。**不主动淡出**（Colo 2026-10-24 的规格）：
-                        // 让它随内容滚进顶部那条软模糊里被糊掉，和追番页的页标题一样。
-                        // 顶栏不再有第二份标题，所以没有「两份同时半透明」要躲。
+                        // 展开态 28pt bold。不再主动淡出：让它随内容滚进顶部模糊里，
+                        // 只在最后一小段行程里收掉，顶栏那份同一时间接上（见 titleRevealProgress），
+                        // 避开两份标题同时半透明重叠的那几帧。
                         Text(controller.item.displayName)
                             .font(.system(size: 28, weight: .bold))
                             .foregroundStyle(.primary)
                             .lineLimit(2)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .accessibilityAddTraits(.isHeader)
+                            .opacity(1 - titleRevealProgress)
 
                         hero(controller)
                     }
@@ -88,40 +92,24 @@ struct BangumiInfoScreen: View {
             .scrollIndicators(.hidden)
             // 顶部渐进模糊：只作用顶部那一条，不叠材质、不加底色。
             .scrollEdgeEffectStyle(.automatic, for: .top)
+            .onScrollGeometryChange(for: CGFloat.self) { geometry in
+                max(0, geometry.contentOffset.y)
+            } action: { _, newValue in
+                scrollOffset = newValue
+            }
+            // 顶栏吸附在安全区（不再是 ScrollView 的兄弟节点）：内容从它下方滚过去，
+            // 顶部模糊才盖得住标题那一行；否则模糊只能铺在顶栏下面，内容滚上来是硬切一刀。
+            .safeAreaInset(edge: .top, spacing: 0) {
+                topBar(controller)
+            }
 
             startPlayingButton
         }
         .overlay(alignment: .top) { toastView }
         // 出入场由值驱动：状态变化本身不在动画事务里，只有结果被动画化。
         .animation(.easeOut(duration: 0.2), value: toastMessage)
-        // LP 2026-10-24 定：详情页顶栏不要标题，照追番页那套（页标题只在内容里）。
-        // 这里必须是空串——这页是 `.inline`（第 51 行），给了字它就一直显示在栏里，
-        // 顶上就又多出一条。番名由 hero 那条提供，已标 `.isHeader`。
-        .navigationTitle("")
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Menu {
-                    Button {
-                        copyTitle(controller)
-                    } label: {
-                        Label("复制标题", systemImage: "doc.on.doc")
-                    }
-                    Button {
-                        saveCover(controller)
-                    } label: {
-                        Label("保存封面", systemImage: "square.and.arrow.down")
-                    }
-                    Button {
-                        openExternally(controller)
-                    } label: {
-                        Label("外部打开", systemImage: "safari")
-                    }
-                } label: {
-                    Image(systemName: "ellipsis")
-                }
-                .accessibilityLabel("更多")
-            }
-        }
+        // 导航标题给无障碍与系统用；页面内的 inline 那份因此不再重复朗读。
+        .navigationTitle(controller.item.displayName)
         .sheet(isPresented: $isShowingSources) {
             let current = controller
             SourceSheet(controller: current) { pluginName, result in
@@ -164,7 +152,91 @@ struct BangumiInfoScreen: View {
 
     // MARK: - 顶栏
 
+    /// 返回键 + 居中的折叠标题 + 更多菜单。
+    ///
+    /// 滚动内容顶部是 17pt semibold 的标题（与时间表卡片番剧名同号同重）；
+    /// 往上滑到阈值后，这里出现居中 17pt semibold 的一份，与返回键同行。
+    /// 两份同号同重，衔接时不像换了一个控件。
+    ///
+    /// 不再给顶栏加 `.ultraThinMaterial` 背景条：滚动时那一条灰底会横在
+    /// 内容上方，与页面背景断开。
+    /// 展开态标题 → 顶栏居中标题的交接进度（0…1），两处共用同一个值。
+    /// 只用透明度接力，不给顶栏那份加位移或缩放，避免两份同时在视野里跳。
+    ///
+    /// 交接只发生在最后 10pt：大标题先随内容滚进顶部模糊里（不主动淡出），
+    /// 滚过自身高度后顶栏那份在 10pt 行程内接上，中间不会有两份都半透明的帧。
+    private var titleRevealProgress: CGFloat {
+        let handoffStart: CGFloat = 30
+        let travel: CGFloat = 10
+        return min(1, max(0, (scrollOffset - handoffStart) / travel))
+    }
 
+    private func topBar(_ controller: InfoController) -> some View {
+        let progress = titleRevealProgress
+        return HStack(spacing: 10) {
+            barButton(symbol: "chevron.left", label: "返回") {
+                dismiss()
+            }
+
+            // 中间那段弹性空间：标题在弹性宽度里居中，且始终占位，
+            // 折叠与否都不影响两侧按钮的位置。
+            Text(controller.item.displayName)
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity)
+                .opacity(progress)
+                .accessibilityHidden(true)
+
+            Menu {
+                Button {
+                    copyTitle(controller)
+                } label: {
+                    Label("复制标题", systemImage: "doc.on.doc")
+                }
+                Button {
+                    saveCover(controller)
+                } label: {
+                    Label("保存封面", systemImage: "square.and.arrow.down")
+                }
+                Button {
+                    openExternally(controller)
+                } label: {
+                    Label("外部打开", systemImage: "safari")
+                }
+            } label: {
+                Image(systemName: "ellipsis")
+                    .font(.system(size: 20, weight: .semibold))
+                    .frame(
+                        width: KazumiGlassMetrics.barButtonSize,
+                        height: KazumiGlassMetrics.barButtonSize
+                    )
+            }
+            .buttonStyle(.plain)
+            .kazumiGlassCapsule(interactive: true)
+            .accessibilityLabel("更多")
+        }
+        .padding(.leading, KazumiGlassMetrics.barEdgeInset)
+        .padding(.trailing, KazumiGlassMetrics.barEdgeInset)
+        .padding(.top, 4)
+        .padding(.bottom, 8)
+    }
+
+    /// 顶栏圆形玻璃按钮，尺寸与间距取自 KazumiGlassMetrics。
+    private func barButton(symbol: String, label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 20, weight: .semibold))
+                .frame(
+                    width: KazumiGlassMetrics.barButtonSize,
+                    height: KazumiGlassMetrics.barButtonSize
+                )
+        }
+        .buttonStyle(.plain)
+        .kazumiGlassCapsule(interactive: true)
+        .accessibilityLabel(label)
+    }
 }
 
 // MARK: - 封面 + 条目信息
