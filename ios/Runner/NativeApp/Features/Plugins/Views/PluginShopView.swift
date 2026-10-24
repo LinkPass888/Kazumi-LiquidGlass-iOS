@@ -3,7 +3,7 @@
 //  Kazumi
 //
 //  规则仓库（对应 lib/pages/plugin_editor/plugin_shop_page.dart）：
-//  安装 / 更新 / 已安装三种状态，支持搜索、下拉刷新与批量更新。
+//  安装 / 更新 / 已安装三种状态，按仓库更新时间倒序，支持搜索与下拉刷新。
 //
 
 import SwiftUI
@@ -18,10 +18,18 @@ struct PluginShopView: View {
     @State private var errorMessage: String?
     @State private var toast: String?
 
+    /// 仓库列表：按仓库里的更新时间倒序，新的在上；同一时间按名字排，免得每次进来顺序飘。
+    private var sortedItems: [PluginHTTPItem] {
+        plugins.pluginHTTPList.sorted { lhs, rhs in
+            if lhs.lastUpdate != rhs.lastUpdate { return lhs.lastUpdate > rhs.lastUpdate }
+            return lhs.name.localizedCompare(rhs.name) == .orderedAscending
+        }
+    }
+
     private var filteredItems: [PluginHTTPItem] {
         let trimmed = keyword.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return plugins.pluginHTTPList }
-        return plugins.pluginHTTPList.filter {
+        guard !trimmed.isEmpty else { return sortedItems }
+        return sortedItems.filter {
             $0.name.localizedCaseInsensitiveContains(trimmed) ||
                 $0.author.localizedCaseInsensitiveContains(trimmed)
         }
@@ -70,16 +78,6 @@ struct PluginShopView: View {
         .navigationTitle("规则仓库")
         .searchable(text: $keyword, placement: .navigationBarDrawer(displayMode: .always), prompt: "搜索规则或作者")
         .refreshable { await refresh(force: true) }
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    Task { await updateAll() }
-                } label: {
-                    Label("全部更新", systemImage: "arrow.down.circle")
-                }
-                .disabled(isLoading || plugins.updatablePluginCount == 0)
-            }
-        }
         .overlay(alignment: .bottom) {
             if let toast {
                 Text(toast)
@@ -129,17 +127,6 @@ struct PluginShopView: View {
             errorMessage = "规则「\(item.name)」需要更高版本的客户端"
         case .failed:
             errorMessage = "安装「\(item.name)」失败，请稍后重试"
-        }
-    }
-
-    private func updateAll() async {
-        isLoading = true
-        defer { isLoading = false }
-        do {
-            let result = try await plugins.tryUpdateAllPlugins()
-            showToast(result.updated > 0 ? "已更新 \(result.updated) 条规则" : "没有需要更新的规则")
-        } catch {
-            errorMessage = error.localizedDescription
         }
     }
 

@@ -28,12 +28,28 @@ struct PluginListView: View {
     @State private var errorMessage: String?
     /// 搜索关键词：按规则名 / 站点地址 / 作者过滤。
     @State private var keyword = ""
+    /// 「全部／可更新」筛选，作用于已安装的规则列表。
+    @State private var ruleFilter: RuleFilter = .all
+
+    /// 胶囊筛选后的列表：全部是装了的所有规则，可更新只留仓库里有新版本的。
+    private var statusFilteredPlugins: [Plugin] {
+        switch ruleFilter {
+        case .all:
+            plugins.pluginList
+        case .updatable:
+            plugins.pluginList.filter { plugins.pluginUpdateStatus($0) == .updatable }
+        }
+    }
+
+    private var isKeywordEmpty: Bool {
+        keyword.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
 
     /// 过滤后的规则列表。
     private var visiblePlugins: [Plugin] {
         let trimmed = keyword.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return plugins.pluginList }
-        return plugins.pluginList.filter { plugin in
+        guard !trimmed.isEmpty else { return statusFilteredPlugins }
+        return statusFilteredPlugins.filter { plugin in
             plugin.name.localizedCaseInsensitiveContains(trimmed)
                 || plugin.baseUrl.localizedCaseInsensitiveContains(trimmed)
         }
@@ -41,19 +57,10 @@ struct PluginListView: View {
 
     var body: some View {
         List {
-            // 操作组：两行放同一个 Section，才有一条 0.5 分隔线、才被看成一件事的两种做法。
-            // 「添加规则」弹菜单不翻页，所以不给箭头；「规则仓库」真推一页，给箭头。
-            // 行高 48：内容按 48 写，行的上下各用 -2 的 rowInsets 抵掉 List 自己加的 4pt（实测内容 44/48 都成行 52）。
+            // 操作组：规则仓库在上（真推一页，给箭头），添加规则在下（弹菜单，不给箭头）。
+            // 两行同一个 Section：只一条 0.5 分隔线，看成一件事的两种做法。
+            // 行高按 48 定在行本身——内容高度和 rowInsets 都试过，List 会自己撑到 52。
             Section {
-                Menu {
-                    addRuleMenuItems
-                } label: {
-                    Label("添加规则", systemImage: "plus")
-                        .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
-                        .contentShape(Rectangle())
-                }
-                .listRowInsets(EdgeInsets(top: -2, leading: 16, bottom: -2, trailing: 16))
-
                 Button {
                     isShowingShop = true
                 } label: {
@@ -64,10 +71,35 @@ struct PluginListView: View {
                             .font(.footnote.weight(.semibold))
                             .foregroundStyle(.tertiary)
                     }
-                    .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
                 }
-                .listRowInsets(EdgeInsets(top: -2, leading: 16, bottom: -2, trailing: 16))
+                .frame(height: 48)
+                .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
+
+                Menu {
+                    addRuleMenuItems
+                } label: {
+                    Label("添加规则", systemImage: "plus")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                }
+                .frame(height: 48)
+                .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
+            }
+
+            // 添加规则下面一排三个胶囊：前两个筛列表，第三个是动作。
+            Section {
+                HStack(spacing: 8) {
+                    ForEach(RuleFilter.allCases) { filter in
+                        filterCapsule(filter)
+                    }
+                    Spacer(minLength: 8)
+                    updateAllCapsule
+                }
+                .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 4, trailing: 16))
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
             }
 
             if plugins.pluginList.isEmpty {
@@ -81,11 +113,18 @@ struct PluginListView: View {
                 }
             } else if visiblePlugins.isEmpty {
                 Section {
-                    ContentUnavailableView(
-                        "没有匹配的规则",
-                        systemImage: "magnifyingglass",
-                        description: Text("换个关键词试试。")
-                    )
+                    if isKeywordEmpty {
+                        ContentUnavailableView(
+                            "没有可更新的规则",
+                            systemImage: "checkmark.circle"
+                        )
+                    } else {
+                        ContentUnavailableView(
+                            "没有匹配的规则",
+                            systemImage: "magnifyingglass",
+                            description: Text("换个关键词试试。")
+                        )
+                    }
                 }
             } else {
                 Section {
@@ -349,29 +388,61 @@ struct PluginListView: View {
                 }
                 .disabled(selection.isEmpty)
             } else {
-                Menu {
-                    Button {
-                        isEditingSelection = true
-                    } label: {
-                        Label("批量编辑", systemImage: "checkmark.circle")
-                    }
-                    .disabled(plugins.pluginList.isEmpty)
-                    Button {
-                        Task { await checkForUpdates() }
-                    } label: {
-                        Label(isUpdating ? "正在检查更新…" : "检查规则更新", systemImage: "arrow.triangle.2.circlepath")
-                    }
-                    .disabled(isUpdating || plugins.pluginList.isEmpty)
+                // 菜单去掉：批量编辑单独一颗圆按钮；更新规则的动作在下面那排胶囊里。
+                Button {
+                    isEditingSelection = true
                 } label: {
-                    if isUpdating {
-                        ProgressView()
-                    } else {
-                        Image(systemName: "ellipsis.circle")
-                    }
+                    Image(systemName: "checkmark.circle")
                 }
-                .accessibilityLabel("更多操作")
+                .disabled(plugins.pluginList.isEmpty)
+                .accessibilityLabel("批量编辑")
             }
         }
+    }
+
+    // MARK: - 胶囊
+
+    /// 「全部／可更新」两片筛选。
+    private enum RuleFilter: String, CaseIterable, Identifiable {
+        case all
+        case updatable
+
+        var id: String { rawValue }
+        var title: String { self == .all ? "全部" : "可更新" }
+    }
+
+    private func filterCapsule(_ filter: RuleFilter) -> some View {
+        let isOn = ruleFilter == filter
+        return Button {
+            withAnimation(.snappy) { ruleFilter = filter }
+        } label: {
+            Text(filter.title)
+                .font(.subheadline.weight(.medium))
+                .padding(.horizontal, 14)
+                .padding(.vertical, 7)
+                .foregroundStyle(isOn ? Color.white : KazumiPalette.secondaryText(for: colorScheme))
+                .background(
+                    isOn ? KazumiPalette.accent(for: colorScheme) : Color.primary.opacity(0.06),
+                    in: Capsule()
+                )
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(isOn ? .isSelected : [])
+    }
+
+    private var updateAllCapsule: some View {
+        Button {
+            Task { await checkForUpdates() }
+        } label: {
+            Text(isUpdating ? "正在更新…" : "更新全部")
+                .font(.subheadline.weight(.medium))
+                .padding(.horizontal, 14)
+                .padding(.vertical, 7)
+                .foregroundStyle(KazumiPalette.accent(for: colorScheme))
+                .background(KazumiPalette.accent(for: colorScheme).opacity(0.12), in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .disabled(isUpdating || plugins.pluginList.isEmpty)
     }
 
     // MARK: - 操作
