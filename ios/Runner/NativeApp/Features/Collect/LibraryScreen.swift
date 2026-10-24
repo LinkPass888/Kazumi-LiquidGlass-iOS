@@ -661,14 +661,8 @@ private struct LibraryEntryCard: View {
                             .padding(.vertical, 4)
                             .background(Capsule(style: .continuous).fill(KazumiPalette.accent(for: colorScheme).opacity(0.14)))
 
-                        if entry.totalEpisodes > 0 {
-                            // 同卡片那条规则：当前话为 0（App 还不知道）时只说总数。
-                            Text(entry.currentEpisode > 0
-                                 ? "看到第 \(entry.currentEpisode) / \(entry.totalEpisodes) 话"
-                                 : "共 \(entry.totalEpisodes) 话")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
+                        // 这里原本有一行「看到第 X / Y 话」：原版列表条目没有这一项，
+                        // 且 currentEpisode 今天没有一处会写（恒为 0），印出来是假进度。
                         Spacer(minLength: 0)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)

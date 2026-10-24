@@ -123,8 +123,11 @@ struct LibraryPosterCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    /// 元信息行：`8.2 · 12/24`，「全部」里再缀上状态名。
+    /// 元信息行：`8.2 · 在看`，「全部」里才缀状态名。
     /// 缺哪项省哪项；一项都没有时整行不占位（返回 nil，不是空 Text）。
+    /// 这里**没有「看到第几话」**：原版追番卡片的明细行只有评分和状态
+    /// （lib/pages/collect/collect_library_card.dart），而且今天全仓没有一处
+    /// 会写 currentEpisode，印出来只会说假话。等播放能回写进度再加。
     @ViewBuilder
     private var metaText: some View {
         let parts = metaParts
@@ -157,13 +160,6 @@ struct LibraryPosterCard: View {
             // 只有评分数字用强调色，其余保持次要色。
             parts.append(MetaPart(text: String(format: "%.1f", entry.rating), isAccent: true))
         }
-        if entry.totalEpisodes > 0 {
-            // 当前话是 0 时只说总数：这个 0 的意思不是「一集没看」，
-            // 是「App 还不知道」——今天全仓没有一处会写这个数（Camo 2026-10-24 定）。
-            parts.append(MetaPart(text: entry.currentEpisode > 0
-                ? "\(entry.currentEpisode)/\(entry.totalEpisodes)"
-                : "共 \(entry.totalEpisodes) 话"))
-        }
         if showsStatus {
             parts.append(MetaPart(text: entry.collectType.title))
         }
@@ -174,12 +170,6 @@ struct LibraryPosterCard: View {
         var parts = [entry.displayName, entry.collectType.title]
         if entry.rating > 0 {
             parts.append(String(format: "%.1f 分", entry.rating))
-        }
-        if entry.totalEpisodes > 0 {
-            // 一集没看时当前话是 0，念「第 0 话共 12 话」是句假话（一集没看，不是看了第 0 集）。
-            parts.append(entry.currentEpisode > 0
-                ? "第 \(entry.currentEpisode) 话共 \(entry.totalEpisodes) 话"
-                : "共 \(entry.totalEpisodes) 话")
         }
         return parts.joined(separator: "，")
     }
