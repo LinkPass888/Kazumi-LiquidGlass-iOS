@@ -45,7 +45,9 @@ struct LibraryPosterCard: View {
         // 整张卡片（封面、标题、元信息、空白）都是命中区。
         .contentShape(RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous))
         .onTapGesture { onOpen() }
-        .accessibilityElement(children: .ignore)
+        // 整卡当一颗按钮念（label 见下），但用 `.contain` 而不是 `.ignore`：
+        // `.ignore` 会把封面角上那颗「…」一起吞掉，读屏就再也点不到改状态。
+        .accessibilityElement(children: .contain)
         .accessibilityLabel(Text(accessibilityLabel))
         .accessibilityAddTraits(.isButton)
         .accessibilityAction { onOpen() }
