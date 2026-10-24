@@ -91,7 +91,7 @@ struct BangumiInfoScreen: View {
             }
             .scrollIndicators(.hidden)
             // 顶部渐进模糊：只作用顶部那一条，不叠材质、不加底色。
-            .scrollEdgeEffectStyle(.automatic, for: .top)
+            .scrollEdgeEffectStyle(.soft, for: .top)
             .onScrollGeometryChange(for: CGFloat.self) { geometry in
                 max(0, geometry.contentOffset.y)
             } action: { _, newValue in

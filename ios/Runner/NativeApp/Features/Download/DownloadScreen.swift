@@ -56,7 +56,7 @@ struct DownloadScreen: View {
                 }
                 .scrollIndicators(.hidden)
                 // 顶部滚动边缘：渐进模糊（.soft）。
-                .scrollEdgeEffectStyle(.automatic, for: .top)
+                .scrollEdgeEffectStyle(.soft, for: .top)
             }
         }
         .background(KazumiPalette.background(for: colorScheme).ignoresSafeArea())

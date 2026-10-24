@@ -54,7 +54,7 @@ struct PopularScreen: View {
             }
             .scrollIndicators(.hidden)
             // 顶部渐进模糊：头部本来就在滚动内容里，不存在硬切，只缺这一层。
-            .scrollEdgeEffectStyle(.automatic, for: .top)
+            .scrollEdgeEffectStyle(.soft, for: .top)
             // 回顶按钮用 overlay 而不是 background：background 会被滚动内容盖住，
             // 卡片滑过去时按钮就消失在海报下面（overlay 在内容之上）。
             .overlay(alignment: .bottomTrailing) {

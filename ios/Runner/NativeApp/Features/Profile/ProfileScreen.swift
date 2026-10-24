@@ -42,7 +42,7 @@ struct ProfileScreen: View {
             .padding(.bottom, 28)
         }
         // 顶部滚动边缘：渐进模糊（.soft），不额外叠材质或底色。
-        .scrollEdgeEffectStyle(.automatic, for: .top)
+        .scrollEdgeEffectStyle(.soft, for: .top)
         .background(KazumiPalette.background(for: colorScheme).ignoresSafeArea())
         // 顶栏换原生（LP 2026-10-24）：标题和设置按钮都归系统。
         // 原来那块自钉顶栏带不透明底色，会把滚动边缘的模糊整块挡住（Colo 1794 提的坑），

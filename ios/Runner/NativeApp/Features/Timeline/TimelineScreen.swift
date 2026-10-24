@@ -278,7 +278,7 @@ struct TimelineScreen: View {
             }
             .scrollIndicators(.hidden)
             // 顶部渐进模糊边（.soft）：只作用于顶部一条，不叠材质、不加底色。
-            .scrollEdgeEffectStyle(.automatic, for: .top)
+            .scrollEdgeEffectStyle(.soft, for: .top)
             .refreshable {
                 await controller.loadSeason(controller.selectedDate, collectTypes: collectTypes)
                 prefetchCovers()

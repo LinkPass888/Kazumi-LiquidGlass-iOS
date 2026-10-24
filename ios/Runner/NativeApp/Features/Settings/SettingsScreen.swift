@@ -183,7 +183,7 @@ struct SettingsScreen: View {
             }
         }
         // 顶部滚动边缘：列表顶部用渐进模糊（.soft）。
-        .scrollEdgeEffectStyle(.automatic, for: .top)
+        .scrollEdgeEffectStyle(.soft, for: .top)
         .navigationTitle("设置")
         .navigationBarTitleDisplayMode(.inline)
         .scrollContentBackground(.hidden)

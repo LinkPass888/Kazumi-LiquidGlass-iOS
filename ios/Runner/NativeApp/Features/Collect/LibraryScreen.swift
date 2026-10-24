@@ -591,7 +591,7 @@ struct LibraryScreen: View {
             }
             .scrollIndicators(.hidden)
             // 顶部滚动边缘：内容从吸附的头部下方滚过，模糊盖住那一行。
-            .scrollEdgeEffectStyle(.automatic, for: .top)
+            .scrollEdgeEffectStyle(.soft, for: .top)
         }
     }
 

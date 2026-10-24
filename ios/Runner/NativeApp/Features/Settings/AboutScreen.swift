@@ -117,7 +117,7 @@ struct AboutScreen: View {
             .padding(.bottom, 32)
         }
         // 顶部滚动边缘：渐进模糊（.soft）。
-        .scrollEdgeEffectStyle(.automatic, for: .top)
+        .scrollEdgeEffectStyle(.soft, for: .top)
         .background(KazumiPalette.background(for: colorScheme).ignoresSafeArea())
         .navigationTitle("关于")
         .navigationBarTitleDisplayMode(.inline)

@@ -63,7 +63,7 @@ struct PluginShopView: View {
             }
         }
         // 顶部滚动边缘：列表顶部用渐进模糊（.soft）。
-        .scrollEdgeEffectStyle(.automatic, for: .top)
+        .scrollEdgeEffectStyle(.soft, for: .top)
         .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
         .background(KazumiPalette.heroBackground(for: colorScheme).ignoresSafeArea())
