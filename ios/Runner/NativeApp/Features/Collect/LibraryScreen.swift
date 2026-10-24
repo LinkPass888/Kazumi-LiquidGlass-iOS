@@ -223,16 +223,20 @@ struct LibraryScreen: View {
     /// 玻璃菜单底：视觉高度 36、命中区 44（外面撑出来，不加高亮）。
     /// LP 2026-10-23：原来写死 70/100 宽，「在看」两个字被挤成三个点；
     /// 现在按字撑开，多出来的宽度让给部数。
+    ///
+    /// 颜色用 `Color.primary` / `Color.secondary`，**不能用层级写法 `.primary`**：
+    /// 菜单和按钮的标签会按 App 的全局 tint（KazumiApp 的 `.tint(accent)`）上色，
+    /// 层级写法跟着 tint 走，字就变成主题色。LP 2026-10-24 报的就是这个。
     private func menuCapsule(title: String) -> some View {
         HStack(spacing: 4) {
             Text(title)
                 .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.primary)
+                .foregroundStyle(Color.primary)
                 .lineLimit(1)
                 .fixedSize(horizontal: true, vertical: false)
             Image(systemName: "chevron.down")
                 .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.secondary)
         }
         .padding(.horizontal, 12)
         .frame(height: 36)
@@ -303,10 +307,10 @@ struct LibraryScreen: View {
             HStack(spacing: 6) {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 15, weight: .regular))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.secondary)
                 Text("搜索追番")
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.secondary)
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)
                 Spacer(minLength: 0)
@@ -331,7 +335,7 @@ struct LibraryScreen: View {
         } label: {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 16, weight: .regular))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.secondary)
                 // LP 2026-10-23：视觉 36，跟左边两个菜单胶囊一样高；命中区仍是 44。
                 .frame(width: 44, height: 36)
                 .contentShape(Rectangle())
@@ -367,7 +371,7 @@ struct LibraryScreen: View {
                     } label: {
                         Image(systemName: "xmark.circle.fill")
                             .font(.system(size: 15))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Color.secondary)
                             .frame(width: 22, height: 22)
                             .contentShape(Rectangle())
                     }
