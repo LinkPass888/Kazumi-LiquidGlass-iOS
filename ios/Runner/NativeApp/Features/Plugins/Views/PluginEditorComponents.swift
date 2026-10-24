@@ -7,8 +7,10 @@
 
 import SwiftUI
 
-/// 一组相关字段的玻璃卡片。
+/// 一组相关字段的卡片。
+/// LP 2026-10-24：编辑器中间这块不要液态玻璃了，换成普通卡片底色 + 一圈细描边。
 struct EditorCard<Content: View>: View {
+    @Environment(\.colorScheme) private var colorScheme
     @ViewBuilder var content: Content
 
     var body: some View {
@@ -17,7 +19,14 @@ struct EditorCard<Content: View>: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .kazumiGlassCard(cornerRadius: 20)
+        .background(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(KazumiPalette.cardSurface(for: colorScheme))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(Color.primary.opacity(0.07), lineWidth: 1)
+        )
     }
 }
 

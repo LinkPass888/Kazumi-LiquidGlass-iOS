@@ -113,14 +113,22 @@ struct LibraryScreen: View {
             .onPreferenceChange(LibraryContentWidthKey.self) { width in
                 libraryContentWidth = max(0, width)
             }
-            // 顶栏换原生（LP 2026-10-24）：标题走 .navigationTitle，右上「同步」进工具栏。
-            // 只剩控制条还钉在导航栏下面——筛选/排序/部数/搜索原地不动。
+            // LP 2026-10-24（后一条）：追番页整体上移到原来的高度——不用系统大标题了，
+            // 导航栏收起，标题照旧写在内容里，顶栏只剩控制条；「同步」仍留在控制条里。
+            // 顶栏改纯色底（同一条）：标题＋控制条铺页面底色并铺进状态栏，上滑不透内容。
             .safeAreaInset(edge: .top, spacing: 0) {
-                controlBar
+                VStack(spacing: 0) {
+                    header
+                    controlBar
+                }
+                .background(
+                    KazumiPalette.background(for: colorScheme),
+                    ignoresSafeAreaEdges: .top
+                )
             }
             .background(KazumiPalette.background(for: colorScheme).ignoresSafeArea())
-            .navigationTitle("追番")
-            .navigationBarTitleDisplayMode(.large)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar(.hidden, for: .navigationBar)
             // 「同步」不在工具栏：LP 2026-10-24 要它回到搜索按钮右边、两颗一起靠右。
             .task {
                 sort = CollectSort(rawValue: settings.librarySort) ?? .updateTime
@@ -142,6 +150,19 @@ struct LibraryScreen: View {
     }
 
     // MARK: - 头部
+
+    /// 「同步」不在这里：LP 2026-10-24 要它贴在控制条搜索按钮右边。
+    private var header: some View {
+        HStack(alignment: .center) {
+            Text("追番")
+                .font(.system(size: 34, weight: .semibold))
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
+        .padding(.bottom, 10)
+    }
 
     // MARK: - 控制条
 
@@ -404,7 +425,8 @@ struct LibraryScreen: View {
         .accessibilityHint(Text(searchHint))
     }
 
-    /// 展开态：搜索条占满整行，「取消」在右；整行仍是 44 高。
+    /// 展开态：搜索条占满整行，整行仍是 44 高。
+    /// LP 2026-10-24：右边的「取消」删了，点列表空白处退出搜索（见 content 里的 onTapGesture）。
     private var searchRow: some View {
         HStack(spacing: 8) {
             HStack(spacing: 6) {
@@ -441,20 +463,6 @@ struct LibraryScreen: View {
             .kazumiGlassCapsule()
             .frame(minHeight: 44)
             .contentShape(Rectangle())
-
-            Button {
-                cancelSearch()
-            } label: {
-                // LP 2026-10-23：字边上点不动 —— 可点范围只有字那么大。
-                // 撑满 44 × 44，字居中。
-                Text("取消")
-                    .font(.subheadline)
-                    .foregroundStyle(.tint)
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(Text("取消"))
         }
         .frame(minHeight: 44)
     }

@@ -181,7 +181,13 @@ private struct PluginCatalogRow: View {
                         .padding(.horizontal, 14)
                         .padding(.vertical, 7)
                         .background(buttonTint.opacity(0.16), in: Capsule())
-                        .foregroundStyle(buttonTint)
+                        // LP 2026-10-24：「安装 / 更新」的字不要主题色，跟正文一个颜色；
+                        // 只有「已安装」这个不可点的状态留灰。
+                        .foregroundStyle(
+                            status == .installed
+                                ? KazumiPalette.secondaryText(for: colorScheme)
+                                : Color.primary
+                        )
                 }
                 .buttonStyle(.plain)
                 .disabled(status == .installed)

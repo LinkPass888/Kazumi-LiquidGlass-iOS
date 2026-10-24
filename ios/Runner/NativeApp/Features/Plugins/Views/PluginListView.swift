@@ -117,7 +117,11 @@ struct PluginListView: View {
                     isShowingShop = true
                 } label: {
                     HStack(spacing: 0) {
+                        // 这两行是页面里的动作入口，字跟图标都用正文色，不跟主题色走。
+                        // 必须写 Color.primary：光写 .primary 是「当前前景色的主档」，
+                        // 而 List 里 Button 的前景就是主题色，等于没改。
                         Label("规则仓库", systemImage: "shippingbox")
+                            .foregroundStyle(Color.primary)
                         Spacer(minLength: 8)
                         Image(systemName: "chevron.right")
                             .font(.footnote.weight(.semibold))
@@ -133,6 +137,7 @@ struct PluginListView: View {
                     addRuleMenuItems
                 } label: {
                     Label("添加规则", systemImage: "plus")
+                        .foregroundStyle(Color.primary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .contentShape(Rectangle())
                 }
@@ -487,19 +492,33 @@ struct PluginListView: View {
         .accessibilityAddTraits(isOn ? .isSelected : [])
     }
 
+    /// 「更新全部」没有可更新的规则时是灰的、点不动（LP 2026-10-24）。
+    private var hasUpdatableRules: Bool { plugins.updatablePluginCount > 0 }
+
     private var updateAllCapsule: some View {
-        Button {
+        let isDisabled = isUpdating || !hasUpdatableRules
+        return Button {
             Task { await checkForUpdates() }
         } label: {
             Text(isUpdating ? "正在更新…" : "更新全部")
                 .font(.subheadline.weight(.medium))
                 .padding(.horizontal, 14)
                 .padding(.vertical, 7)
-                .foregroundStyle(KazumiPalette.accent(for: colorScheme))
-                .background(KazumiPalette.accent(for: colorScheme).opacity(0.12), in: Capsule())
+                .foregroundStyle(
+                    isDisabled
+                        ? KazumiPalette.secondaryText(for: colorScheme).opacity(0.55)
+                        : KazumiPalette.accent(for: colorScheme)
+                )
+                .background(
+                    (isDisabled
+                        ? KazumiPalette.secondaryText(for: colorScheme).opacity(0.06)
+                        : KazumiPalette.accent(for: colorScheme).opacity(0.12)),
+                    in: Capsule()
+                )
         }
         .buttonStyle(.plain)
-        .disabled(isUpdating || plugins.pluginList.isEmpty)
+        .disabled(isDisabled)
+        .accessibilityHint(isDisabled ? "没有可更新的规则" : "")
     }
 
     // MARK: - 操作
