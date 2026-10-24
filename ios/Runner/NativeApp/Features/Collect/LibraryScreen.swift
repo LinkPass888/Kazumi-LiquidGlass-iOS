@@ -43,7 +43,24 @@ struct LibraryScreen: View {
     @FocusState private var searchFocused: Bool
 
     /// 网格列数。改列数只改这一个数，排版不重写（规格 §四）。
-    private static let gridColumns = 3
+    private static let columnCount = 3
+    /// 网格列间距。
+    private static let columnSpacing: CGFloat = 10
+
+    /// 内容区宽度（左右各 16 之后），由网格上方的探针量出来。
+    /// 还没量到时按 0 处理，退回弹性列，量到之后立刻换成算好的定宽列。
+    @State private var libraryContentWidth: CGFloat = 0
+
+    /// 按内容宽算出三列的定宽列。
+    private static func gridColumns(width: CGFloat) -> [GridItem] {
+        guard width > 0 else {
+            return Array(repeating: GridItem(.flexible(), spacing: columnSpacing), count: columnCount)
+        }
+        // 不取整：402 屏上每列 116.7，三列加两道间距正好铺满，右边不留缝。
+        let total = width - columnSpacing * CGFloat(columnCount - 1)
+        let each = max(1, total / CGFloat(columnCount))
+        return Array(repeating: GridItem(.fixed(each), spacing: columnSpacing), count: columnCount)
+    }
 
     // MARK: - 数据
 
@@ -503,12 +520,18 @@ struct LibraryScreen: View {
         } else {
             ScrollView {
                 // 三列海报网格（规格 §四）：列间距 10、行间距 14、左右 16、底部 24。
-                // 卡片宽不写死，按屏宽和列数算；同一行等高。
+                // 列宽必须自己算出来给 `.fixed`：`.flexible()` 会被卡片内容的
+                // 固有宽度撑开（实测卡宽 127、卡间 0.4、第三张越界 5），
+                // 这里量出内容宽再按 `(内容宽 − 间距 × (列数 − 1)) / 列数` 定列宽。
+                GeometryReader { proxy in
+                    Color.clear.preference(key: LibraryContentWidthKey.self, value: proxy.size.width)
+                }
+                .frame(height: 0)
+                // 跟网格用同一档左右内边距，量到的才是真正的可用宽（不是屏宽）。
+                .padding(.horizontal, 16)
+
                 LazyVGrid(
-                    columns: Array(
-                        repeating: GridItem(.flexible(), spacing: 10),
-                        count: Self.gridColumns
-                    ),
+                    columns: Self.gridColumns(width: libraryContentWidth),
                     spacing: 14
                 ) {
                     ForEach(filteredEntries) { entry in
@@ -524,6 +547,9 @@ struct LibraryScreen: View {
                 }
                 .padding(.horizontal, 16)
                 .padding(.bottom, 24)
+            }
+            .onPreferenceChange(LibraryContentWidthKey.self) { width in
+                libraryContentWidth = width
             }
             // LP 2026-10-23：点空白处也该能取消搜索，不能只有那颗「取消」能退出。
             .contentShape(Rectangle())
@@ -636,7 +662,10 @@ private struct LibraryEntryCard: View {
                             .background(Capsule(style: .continuous).fill(KazumiPalette.accent(for: colorScheme).opacity(0.14)))
 
                         if entry.totalEpisodes > 0 {
-                            Text("看到第 \(entry.currentEpisode) / \(entry.totalEpisodes) 话")
+                            // 同卡片那条规则：当前话为 0（App 还不知道）时只说总数。
+                            Text(entry.currentEpisode > 0
+                                 ? "看到第 \(entry.currentEpisode) / \(entry.totalEpisodes) 话"
+                                 : "共 \(entry.totalEpisodes) 话")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
@@ -673,5 +702,14 @@ private struct LibraryEntryCard: View {
         // 右侧那颗「修改状态」是自己的按钮，会先吃掉它范围内的点击。
         .contentShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
         .onTapGesture { onOpen() }
+    }
+}
+
+
+/// 量网格可用内容宽用的一次性 preference（追番页网格列宽按它算）。
+private struct LibraryContentWidthKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
     }
 }

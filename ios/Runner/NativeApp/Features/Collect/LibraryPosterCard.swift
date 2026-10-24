@@ -158,7 +158,11 @@ struct LibraryPosterCard: View {
             parts.append(MetaPart(text: String(format: "%.1f", entry.rating), isAccent: true))
         }
         if entry.totalEpisodes > 0 {
-            parts.append(MetaPart(text: "\(entry.currentEpisode)/\(entry.totalEpisodes)"))
+            // 当前话是 0 时只说总数：这个 0 的意思不是「一集没看」，
+            // 是「App 还不知道」——今天全仓没有一处会写这个数（Camo 2026-10-24 定）。
+            parts.append(MetaPart(text: entry.currentEpisode > 0
+                ? "\(entry.currentEpisode)/\(entry.totalEpisodes)"
+                : "共 \(entry.totalEpisodes) 话"))
         }
         if showsStatus {
             parts.append(MetaPart(text: entry.collectType.title))
