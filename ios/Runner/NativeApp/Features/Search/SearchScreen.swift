@@ -42,7 +42,7 @@ struct SearchScreen: View {
             }
         }
         // 顶部滚动边缘：渐进模糊（.soft）。
-        .scrollEdgeEffectStyle(.soft, for: .top)
+        .scrollEdgeEffectStyle(.automatic, for: .top)
         .scrollDismissesKeyboard(.immediately)
         .background(KazumiPalette.background(for: colorScheme).ignoresSafeArea())
         .navigationTitle("搜索")

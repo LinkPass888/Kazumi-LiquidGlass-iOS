@@ -64,7 +64,7 @@ struct LogScreen: View {
                 }
                 .scrollIndicators(.hidden)
                 // 顶部滚动边缘：日志列表顶部用渐进模糊（.soft）。
-                .scrollEdgeEffectStyle(.soft, for: .top)
+                .scrollEdgeEffectStyle(.automatic, for: .top)
             }
         }
         .background(KazumiPalette.background(for: colorScheme).ignoresSafeArea())

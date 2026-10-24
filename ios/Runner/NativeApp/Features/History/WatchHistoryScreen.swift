@@ -45,7 +45,7 @@ struct WatchHistoryScreen: View {
                 }
                 .scrollIndicators(.hidden)
                 // 顶部滚动边缘：渐进模糊（.soft）。
-                .scrollEdgeEffectStyle(.soft, for: .top)
+                .scrollEdgeEffectStyle(.automatic, for: .top)
             }
         }
         .background(KazumiPalette.background(for: colorScheme).ignoresSafeArea())

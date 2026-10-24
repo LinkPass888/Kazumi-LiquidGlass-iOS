@@ -69,7 +69,7 @@ struct PluginListView: View {
             }
         }
         .listStyle(.insetGrouped)
-        .scrollEdgeEffectStyle(.soft, for: .top)
+        .scrollEdgeEffectStyle(.automatic, for: .top)
         .scrollContentBackground(.hidden)
         .background(KazumiPalette.heroBackground(for: colorScheme).ignoresSafeArea())
         .navigationTitle("规则管理")

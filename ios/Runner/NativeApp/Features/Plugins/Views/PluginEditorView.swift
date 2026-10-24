@@ -100,7 +100,7 @@ struct PluginEditorView: View {
             .padding(20)
         }
         // 顶部滚动边缘：渐进模糊（.soft），不另外加材质或底色。
-        .scrollEdgeEffectStyle(.soft, for: .top)
+        .scrollEdgeEffectStyle(.automatic, for: .top)
         .background(KazumiPalette.heroBackground(for: colorScheme).ignoresSafeArea())
         .navigationTitle(original.name.isEmpty ? "新建规则" : original.name)
         .navigationBarTitleDisplayMode(.inline)

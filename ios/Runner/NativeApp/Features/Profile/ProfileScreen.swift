@@ -42,7 +42,7 @@ struct ProfileScreen: View {
             .padding(.bottom, 28)
         }
         // 顶部滚动边缘：渐进模糊（.soft），不额外叠材质或底色。
-        .scrollEdgeEffectStyle(.soft, for: .top)
+        .scrollEdgeEffectStyle(.automatic, for: .top)
         .background(KazumiPalette.background(for: colorScheme).ignoresSafeArea())
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .navigationBar)

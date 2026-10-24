@@ -64,7 +64,7 @@ struct DanmakuShieldScreen: View {
             .padding(.vertical, 12)
         }
         // 顶部滚动边缘：渐进模糊（.soft），不另外加材质或底色。
-        .scrollEdgeEffectStyle(.soft, for: .top)
+        .scrollEdgeEffectStyle(.automatic, for: .top)
         .background(KazumiPalette.background(for: colorScheme).ignoresSafeArea())
         .navigationTitle("弹幕屏蔽")
         .navigationBarTitleDisplayMode(.inline)
