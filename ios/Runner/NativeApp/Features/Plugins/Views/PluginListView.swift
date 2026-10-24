@@ -21,6 +21,8 @@ struct PluginListView: View {
     @State private var isShowingNewRule = false
     @State private var selectedRule: Plugin?
     @State private var pendingDeletion: Plugin?
+    /// 批量删除的二次确认：确认前一条都不删，底下的计数也不跟着跳。
+    @State private var pendingBatchDeletion = false
     @State private var isEditingSelection = false
     @State private var selection: Set<String> = []
     @State private var isUpdating = false
@@ -138,6 +140,8 @@ struct PluginListView: View {
             }
         }
         .listStyle(.insetGrouped)
+        // 行高 48：List 自己有个最小行高，把内容改成多少都压不下来，只能改那个下限。
+        .environment(\.defaultMinListRowHeight, 48)
         .scrollEdgeEffectStyle(.soft, for: .top)
         .scrollContentBackground(.hidden)
         .background(KazumiPalette.heroBackground(for: colorScheme).ignoresSafeArea())
@@ -185,6 +189,17 @@ struct PluginListView: View {
             Button("好", role: .cancel) { errorMessage = nil }
         } message: {
             Text(errorMessage ?? "")
+        }
+        // 批量删除也要先问一句；问完之前列表和下面那行计数都不动。
+        .confirmationDialog(
+            "删除选中的 \(selection.count) 条规则？",
+            isPresented: $pendingBatchDeletion,
+            titleVisibility: .visible
+        ) {
+            Button("删除", role: .destructive) {
+                let targets = plugins.pluginList.filter { selection.contains($0.name) }
+                Task { await remove(targets) }
+            }
         }
         .onAppear {
             if plugins.pluginList.isEmpty { plugins.load() }
@@ -365,16 +380,8 @@ struct PluginListView: View {
     private var toolbarContent: some ToolbarContent {
         ToolbarItem(placement: .topBarLeading) {
             if isEditingSelection {
-                Button("完成") {
-                    isEditingSelection = false
-                    selection.removeAll()
-                }
-            }
-        }
-        ToolbarItemGroup(placement: .topBarTrailing) {
-            if isEditingSelection {
-                let count = selection.count
-                let allSelected = count == plugins.pluginList.count
+                // 编辑态三颗的顺序（LP 定）：最左全选、中间删除、最右完成。
+                let allSelected = selection.count == plugins.pluginList.count
                 Button(allSelected ? "取消全选" : "全选") {
                     if allSelected {
                         selection.removeAll()
@@ -382,11 +389,20 @@ struct PluginListView: View {
                         selection = Set(plugins.pluginList.map(\.name))
                     }
                 }
+            }
+        }
+        ToolbarItemGroup(placement: .topBarTrailing) {
+            if isEditingSelection {
+                let count = selection.count
                 Button(count == 0 ? "删除" : "删除 \(count)", role: .destructive) {
-                    let targets = plugins.pluginList.filter { selection.contains($0.name) }
-                    Task { await remove(targets) }
+                    // 只挂上确认框，确认之前不去动列表。
+                    pendingBatchDeletion = true
                 }
                 .disabled(selection.isEmpty)
+                Button("完成") {
+                    isEditingSelection = false
+                    selection.removeAll()
+                }
             } else {
                 // 菜单去掉：批量编辑单独一颗圆按钮；更新规则的动作在下面那排胶囊里。
                 Button {
