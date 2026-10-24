@@ -75,12 +75,16 @@ struct TimelineScreen: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            header
-            weekdaySelector
-            content
-        }
-        .background(KazumiPalette.background(for: colorScheme).ignoresSafeArea())
+        content
+            // 头部与星期条合成一块吸附在顶部：两块都是固定块，
+            // 只提 header 的话内容仍会从星期条下面硬切过去。
+            .safeAreaInset(edge: .top, spacing: 0) {
+                VStack(spacing: 0) {
+                    header
+                    weekdaySelector
+                }
+            }
+            .background(KazumiPalette.background(for: colorScheme).ignoresSafeArea())
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .navigationBar)
         .sheet(isPresented: $isShowingSeasonPicker) {
@@ -112,39 +116,24 @@ struct TimelineScreen: View {
     }
 
     /// 顶栏标题就是当前季度，和原版 `_buildSeasonPicker(inAppBar: true)` 一致。
-    /// 标题下面补一行当日条目数，顶栏因此同时给出「哪一季、这天有几部」。
+    /// 点击区域覆盖整块标题，当前季度 + 箭头即可。
     private var seasonTitleButton: some View {
         Button {
             isShowingSeasonPicker = true
         } label: {
-            VStack(alignment: .leading, spacing: 1) {
-                HStack(spacing: 4) {
-                    Text(controller.seasonLabel)
-                        .font(.system(size: 24, weight: .bold))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.7)
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundStyle(.secondary)
-                }
-                Text(dayCountText)
-                    .font(.caption2.weight(.medium))
-                    .foregroundStyle(.secondary)
+            HStack(spacing: 4) {
+                Text(controller.seasonLabel)
+                    .font(.system(size: 34, weight: .semibold))
                     .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("切换放送季度，当前 \(controller.seasonLabel)，\(dayCountText)")
-    }
-
-    /// 「今天 12 部」/「周二 8 部」。
-    private var dayCountText: String {
-        let title = selectedWeekday == Self.todayIndex && controller.isCurrentSeason
-            ? "今天"
-            : "周\(Self.weekdayTitles[max(0, min(6, selectedWeekday))])"
-        if controller.isLoading { return "\(title) · 加载中" }
-        return "\(title) · \(dayItems.count) 部"
+        .accessibilityLabel("切换放送季度，当前 \(controller.seasonLabel)")
     }
 
     /// 右上角：排序与筛选（图标 + 当前排序名 + 筛选角标）。
@@ -156,26 +145,26 @@ struct TimelineScreen: View {
             HStack(spacing: 6) {
                 ZStack(alignment: .topTrailing) {
                     Image(systemName: "slider.horizontal.3")
-                        .font(.system(size: 15, weight: .semibold))
+                        .font(.system(size: 22, weight: .semibold))
                     if filterCount > 0 {
                         Text("\(filterCount)")
-                            .font(.system(size: 9, weight: .bold))
+                            .font(.system(size: 10, weight: .bold))
                             .foregroundStyle(KazumiPalette.onAccent(for: colorScheme))
-                            .frame(width: 13, height: 13)
+                            .frame(width: 15, height: 15)
                             .background(
                                 Circle().fill(KazumiPalette.accent(for: colorScheme))
                             )
-                            .offset(x: 7, y: -7)
+                            .offset(x: 8, y: -8)
                     }
                 }
-                .frame(width: 18, height: 18)
+                .frame(width: 22, height: 22)
 
                 Text(controller.sort.title)
                     .font(.footnote.weight(.semibold))
                     .lineLimit(1)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 11)
         }
         .buttonStyle(.plain)
         .kazumiGlassCapsule(interactive: true)
@@ -280,10 +269,27 @@ struct TimelineScreen: View {
                 .padding(.bottom, 24)
             }
             .scrollIndicators(.hidden)
+            // 顶部渐进模糊边（.soft）：只作用于顶部一条，不叠材质、不加底色。
+            .scrollEdgeEffectStyle(.soft, for: .top)
             .refreshable {
                 await controller.loadSeason(controller.selectedDate, collectTypes: collectTypes)
                 prefetchCovers()
             }
+            // 左右滑切天：必须用 simultaneousGesture，纵向滚动仍由 ScrollView 自己处理。
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 24).onEnded { value in
+                    let dx = value.translation.width
+                    let dy = value.translation.height
+                    // 纵向优先：横向位移不够压倒纵向、或距离太短就不切。
+                    guard abs(dx) > abs(dy) * 1.4, abs(dx) > 44 else { return }
+                    // selectedWeekday 是 0 基下标（0 = 周一 ... 6 = 周日），到两端截断不循环。
+                    let next = min(6, max(0, selectedWeekday + (dx < 0 ? 1 : -1)))
+                    guard next != selectedWeekday else { return }
+                    withAnimation(.easeOut(duration: 0.2)) { selectedWeekday = next }
+                }
+            )
+            // 轻触感反馈：滑切与点选星期都会触发。
+            .sensoryFeedback(.selection, trigger: selectedWeekday)
         }
     }
 
@@ -341,7 +347,8 @@ struct TimelineScreen: View {
 
     private func yearSection(_ year: Int) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("\(year)")
+            // 年份不走本地化插值，否则会被渲染成「2,026」。
+            Text(year, format: .number.grouping(.never))
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.secondary)
             LazyVGrid(columns: Self.seasonColumns, spacing: 8) {

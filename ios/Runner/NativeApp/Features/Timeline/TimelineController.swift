@@ -92,7 +92,9 @@ final class TimelineController {
         let calendar = Calendar(identifier: .gregorian)
         let year = calendar.component(.year, from: selectedDate)
         let month = calendar.component(.month, from: selectedDate)
-        return "\(year)年\(AnimeSeason.seasonString(month: month))季"
+        // 年份显式转字符串再拼接：整数插值可能被按千分位渲染成「2,026」。
+        // 结果固定为「2026年秋季」，不加分隔符。
+        return String(year) + "年" + AnimeSeason.seasonString(month: month) + "季"
     }
 
     var isCurrentSeason: Bool {

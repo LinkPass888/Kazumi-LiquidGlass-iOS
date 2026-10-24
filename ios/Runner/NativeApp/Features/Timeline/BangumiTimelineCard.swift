@@ -28,7 +28,8 @@ struct BangumiTimelineCard: View {
     /// 与 Dart 版一致的尺寸常量。
     private static let contentPadding: CGFloat = 12
     private static let cornerRadius: CGFloat = 28
-    private static let titleFontSize: CGFloat = 16
+    /// 与详情页折叠后的 inline 标题同号同重（17pt semibold），放大转场时视觉连续。
+    private static let titleFontSize: CGFloat = 17
     private static let labelFontSize: CGFloat = 12
 
     var body: some View {
@@ -71,7 +72,7 @@ struct BangumiTimelineCard: View {
     private var details: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(item.displayName)
-                .font(.system(size: Self.titleFontSize, weight: .bold))
+                .font(.system(size: Self.titleFontSize, weight: .semibold))
                 .foregroundStyle(.primary)
                 .lineLimit(2)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -104,7 +105,7 @@ struct BangumiTimelineCard: View {
                 if isWatching {
                     Image(systemName: "bookmark.fill")
                         .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(KazumiPalette.accent)
+                        .foregroundStyle(KazumiPalette.accent(for: colorScheme))
                         .accessibilityLabel("正在追")
                 }
                 Spacer(minLength: 0)
@@ -124,7 +125,7 @@ struct BangumiTimelineCard: View {
                 HStack(spacing: 2) {
                     Image(systemName: "star.fill")
                         .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(KazumiPalette.accent)
+                        .foregroundStyle(KazumiPalette.accent(for: colorScheme))
                     Text(String(format: "%.1f", item.ratingScore))
                         .font(.system(size: Self.labelFontSize, weight: .bold))
                         .foregroundStyle(.primary)
@@ -142,9 +143,9 @@ struct BangumiTimelineCard: View {
                 .font(.system(size: Self.labelFontSize, weight: .bold))
                 .lineLimit(1)
         }
-        .foregroundStyle(KazumiPalette.accent)
+        .foregroundStyle(KazumiPalette.accent(for: colorScheme))
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
-        .background(Capsule(style: .continuous).fill(KazumiPalette.accent.opacity(0.14)))
+        .background(Capsule(style: .continuous).fill(KazumiPalette.accent(for: colorScheme).opacity(0.14)))
     }
 }
