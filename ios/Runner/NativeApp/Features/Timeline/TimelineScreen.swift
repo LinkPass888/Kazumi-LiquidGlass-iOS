@@ -78,11 +78,19 @@ struct TimelineScreen: View {
         content
             // 头部与星期条合成一块吸附在顶部：两块都是固定块，
             // 只提 header 的话内容仍会从星期条下面硬切过去。
+            // LP 2026-10-24：上滑时内容不该从星期按钮和缝里透出来。
+            // 这一块（标题＋星期条）铺系统毛玻璃材质，不是不透明底色——
+            // 太厚就成了实色、太薄又回到透过去，`regularMaterial` 是中间那档。
+            // 这页的顶栏是藏掉的（没有系统导航栏），所以不存在「铺上去把模糊盖没」的问题；
+            // 真正要小心的是最上面那条状态栏，见下面 `ignoresSafeAreaEdges`。
             .safeAreaInset(edge: .top, spacing: 0) {
                 VStack(spacing: 0) {
                     header
                     weekdaySelector
                 }
+                // `ignoresSafeAreaEdges: .top` 是关键（Colo 2026-10-24）：不加，材质只从
+                // 状态栏下面那 62 点开始铺，最上面一条还是光的，内容照样从时钟后面穿过去。
+                .background(.regularMaterial, ignoresSafeAreaEdges: .top)
             }
             .background(KazumiPalette.background(for: colorScheme).ignoresSafeArea())
         .navigationBarTitleDisplayMode(.inline)
