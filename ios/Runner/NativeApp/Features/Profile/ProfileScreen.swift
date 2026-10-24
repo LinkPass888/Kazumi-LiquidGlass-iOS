@@ -119,8 +119,8 @@ struct ProfileScreen: View {
             )
             toolCard(
                 symbol: "arrow.down.circle",
-                title: "离线下载",
-                caption: "管理离线内容",
+                title: "离线缓存",
+                caption: "管理已缓存的剧集",
                 route: .download
             )
         }

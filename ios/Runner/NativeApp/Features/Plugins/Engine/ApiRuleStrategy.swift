@@ -107,7 +107,7 @@ struct ApiRuleStrategy: Sendable {
         var rootVariables: [String: JSONValue] = ["source": .string(source)]
         for (key, path) in config.variables {
             guard let value = try RestrictedJSONPath.readFirst(document, expression: path), !value.isNull else {
-                throw ApiRuleFormatError(message: "章节响应变量 \(key) 未匹配到值: \(path)")
+                throw ApiRuleFormatError(message: "选集响应变量 \(key) 未匹配到值: \(path)")
             }
             rootVariables[key] = value
         }
@@ -313,7 +313,7 @@ struct ApiRuleStrategy: Sendable {
             try RestrictedJSONPath.validate(config.roadNamesPath)
             try RestrictedJSONPath.validate(config.roadEpisodesPath)
             if config.roadSeparator.isEmpty || config.episodeSeparator.isEmpty || config.fieldSeparator.isEmpty {
-                throw ApiRuleFormatError(message: "章节分隔符不能为空")
+                throw ApiRuleFormatError(message: "选集分隔符不能为空")
             }
             return
         }

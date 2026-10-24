@@ -52,7 +52,7 @@ struct XPathRuleStrategy: Sendable {
               !(components.scheme ?? "").isEmpty,
               !(components.host ?? "").isEmpty else {
             throw XPathRuleFormatError(
-                message: "章节 URL 无效: \(url)",
+                message: "选集 URL 无效: \(url)",
                 kind: .invalidUrl
             )
         }

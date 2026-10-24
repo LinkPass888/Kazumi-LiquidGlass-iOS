@@ -26,7 +26,7 @@ struct BangumiInfoScreen: View {
     @State private var selectedTab: InfoTab = .overview
     @State private var scrollOffset: CGFloat = 0
     @State private var toastMessage: String?
-    /// 点亮「在时间表展示」但番剧还没标成在看时，先弹确认。
+    /// 添加到时间表但番剧还没标成在看时，先弹确认。
     @State private var pendingTimelineItem: BangumiItem?
 
     @Environment(AppEnvironment.self) private var environment
@@ -132,21 +132,21 @@ struct BangumiInfoScreen: View {
             }
         }
         .confirmationDialog(
-            "在时间表展示",
+            "添加到时间表",
             isPresented: Binding(
                 get: { pendingTimelineItem != nil },
                 set: { if !$0 { pendingTimelineItem = nil } }
             ),
             titleVisibility: .visible
         ) {
-            Button("标记为在看并开启") {
+            Button("标记为在看并添加") {
                 guard let item = pendingTimelineItem else { return }
                 pendingTimelineItem = nil
                 markWatchingAndEnableTimeline(item)
             }
             Button("取消", role: .cancel) { pendingTimelineItem = nil }
         } message: {
-            Text("该功能需要番剧处于「在看」状态，是否标记为在看并开启？")
+            Text("时间表只放「在看」的番。要标记为在看，再添加到时间表吗？")
         }
     }
 
@@ -705,7 +705,7 @@ extension BangumiInfoScreen {
         BangumiTimelineStore.shared.entry(for: controller.item.id)?.showInTimeline ?? false
     }
 
-    /// 时间表开关：点亮即在时间表展示（与原版 _setShowInTimeline 一致）。
+    /// 时间表开关：打开即添加到时间表（与原版 _setShowInTimeline 一致）。
     ///
     /// 原版点亮前要求番剧处于「在看」状态：不在看就先弹确认，确认后顺手
     /// 标成在看。之前这里直接写存储，既缺这一步，写入路径本身还会崩
@@ -728,17 +728,17 @@ extension BangumiInfoScreen {
         enableTimeline(controller)
     }
 
-    /// 真正写入「在时间表展示」。
+    /// 真正写入「添加到时间表」。
     private func enableTimeline(_ controller: InfoController) {
         BangumiTimelineStore.shared.setShowInTimeline(
             true,
             for: controller.item.id,
             weekday: currentWeekday(controller)
         )
-        toastMessage = "已在时间表展示"
+        toastMessage = "已添加到时间表"
     }
 
-    /// 确认「标记为在看并开启」后：先写收藏，再点亮时间表。
+    /// 确认「标记为在看并添加」后：先写收藏，再添加到时间表。
     private func markWatchingAndEnableTimeline(_ item: BangumiItem) {
         library.upsert(
             LibraryEntry(
@@ -763,7 +763,7 @@ extension BangumiInfoScreen {
             for: item.id,
             weekday: max(1, min(7, item.airWeekday))
         )
-        toastMessage = "已标记为在看，并在时间表展示"
+        toastMessage = "已标记为在看，并添加到时间表"
     }
 
     /// 星期序号（1 = 周一 ... 7 = 周日）的中文标题。
