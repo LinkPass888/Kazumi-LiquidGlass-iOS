@@ -45,12 +45,19 @@ struct LibraryPosterCard: View {
         // 整张卡片（封面、标题、元信息、空白）都是命中区。
         .contentShape(RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous))
         .onTapGesture { onOpen() }
-        // 整卡当一颗按钮念（label 见下），但用 `.contain` 而不是 `.ignore`：
-        // `.ignore` 会把封面角上那颗「…」一起吞掉，读屏就再也点不到改状态。
-        .accessibilityElement(children: .contain)
+        // 整卡合成一个元素（更新 Label 见下），并把它当按钮。
+        // 读屏用不了封面角上那颗「…」（它在这个元素里面被合掉了），
+        // 所以把「改收藏状态」做成这个元素的自定义操作——读屏转到这里时，
+        // 操作里会多出五个分类，选一个就改，不用先去够那颗小按钮。
+        .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(accessibilityLabel))
         .accessibilityAddTraits(.isButton)
         .accessibilityAction { onOpen() }
+        .accessibilityActions {
+            ForEach(CollectType.enabledCases) { type in
+                Button(type.title) { onChangeType(type) }
+            }
+        }
     }
 
     // MARK: - 封面
@@ -165,7 +172,10 @@ struct LibraryPosterCard: View {
             parts.append(String(format: "%.1f 分", entry.rating))
         }
         if entry.totalEpisodes > 0 {
-            parts.append("第 \(entry.currentEpisode) 话共 \(entry.totalEpisodes) 话")
+            // 一集没看时当前话是 0，念「第 0 话共 12 话」是句假话（一集没看，不是看了第 0 集）。
+            parts.append(entry.currentEpisode > 0
+                ? "第 \(entry.currentEpisode) 话共 \(entry.totalEpisodes) 话"
+                : "共 \(entry.totalEpisodes) 话")
         }
         return parts.joined(separator: "，")
     }
