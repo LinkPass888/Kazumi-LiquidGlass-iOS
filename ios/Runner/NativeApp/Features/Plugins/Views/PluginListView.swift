@@ -41,13 +41,42 @@ struct PluginListView: View {
 
     var body: some View {
         List {
+            // 操作组：两行放同一个 Section，才有一条 0.5 分隔线、才被看成一件事的两种做法。
+            // 「添加规则」弹菜单不翻页，所以不给箭头；「规则仓库」真推一页，给箭头。
+            Section {
+                Menu {
+                    addRuleMenuItems
+                } label: {
+                    Label("添加规则", systemImage: "plus")
+                        .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
+                        .contentShape(Rectangle())
+                }
+                .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
+
+                Button {
+                    isShowingShop = true
+                } label: {
+                    HStack(spacing: 0) {
+                        Label("规则仓库", systemImage: "shippingbox")
+                        Spacer(minLength: 8)
+                        Image(systemName: "chevron.right")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(.tertiary)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
+                .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
+            }
+
             if plugins.pluginList.isEmpty {
                 Section {
                     ContentUnavailableView(
-                        "还没有规则",
-                        systemImage: "puzzlepiece.extension",
-                        description: Text("可以从规则仓库安装，或导入 JSON / kazumi:// 链接。")
+                        "还没有安装规则",
+                        systemImage: "puzzlepiece.extension"
                     )
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
                 }
             } else if visiblePlugins.isEmpty {
                 Section {
@@ -271,6 +300,27 @@ struct PluginListView: View {
 
     // MARK: - 工具栏
 
+    /// 「添加规则」弹出的三项（唯一出处）。仓库已经在屏上那行了，同一件事不给两个入口。
+    @ViewBuilder
+    private var addRuleMenuItems: some View {
+        Button {
+            isShowingImportSheet = true
+        } label: {
+            Label("从剪贴板导入", systemImage: "doc.on.clipboard")
+        }
+        Button {
+            isShowingImporter = true
+        } label: {
+            Label("从文件导入", systemImage: "folder.badge.plus")
+        }
+        Divider()
+        Button {
+            isShowingNewRule = true
+        } label: {
+            Label("新建规则", systemImage: "square.and.pencil")
+        }
+    }
+
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
         ToolbarItem(placement: .topBarLeading) {
@@ -279,35 +329,6 @@ struct PluginListView: View {
                     isEditingSelection = false
                     selection.removeAll()
                 }
-            } else {
-                // 原版顶栏左侧是「添加规则」菜单。
-                Menu {
-                    Button {
-                        isShowingShop = true
-                    } label: {
-                        Label("规则仓库", systemImage: "shippingbox")
-                    }
-                    Button {
-                        isShowingImportSheet = true
-                    } label: {
-                        Label("从剪贴板导入", systemImage: "doc.on.clipboard")
-                    }
-                    Button {
-                        isShowingImporter = true
-                    } label: {
-                        Label("从文件导入", systemImage: "folder.badge.plus")
-                    }
-                    Divider()
-                    Button {
-                        isShowingNewRule = true
-                    } label: {
-                        Label("新建规则", systemImage: "square.and.pencil")
-                    }
-                } label: {
-                    // 只放图标，避免 iOS 26 工具栏里文字撑宽后与返回键重叠；文字只进无障碍标签。
-                    Image(systemName: "plus")
-                }
-                .accessibilityLabel("添加规则")
             }
         }
         ToolbarItemGroup(placement: .topBarTrailing) {
