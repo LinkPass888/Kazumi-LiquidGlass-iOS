@@ -41,6 +41,10 @@ struct LibraryPosterCard: View {
                 .fill(KazumiPalette.cardSurface(for: colorScheme))
         )
         .clipShape(RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous))
+        // LP 2026-10-24：进详情页要整张卡片放大，不是只有封面。
+        // 转场源登记在整张卡上（封面＋标题那一块），侧滑返回时也收回到整张卡。
+        // 以前只登记封面，所以放大的是海报、标题留在原地不动。
+        .kazumiZoomSource(id: entry.id, namespace: zoomNamespace)
         // 整张卡片（封面、标题、空白）都是命中区。
         .contentShape(RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous))
         .onTapGesture { onOpen() }
@@ -73,8 +77,6 @@ struct LibraryPosterCard: View {
                     BangumiRemoteImage(url: entry.imageURL)
                 }
                 .clipped()
-                // 只把封面登记成转场源：放大时菜单不跟着长。
-                .kazumiZoomSource(id: entry.id, namespace: zoomNamespace)
 
             statusMenu
                 .padding(6)
@@ -98,8 +100,11 @@ struct LibraryPosterCard: View {
                 .hitTarget44()
                 .opacity(isPending ? 0.4 : 1)
         }
+        // 这里本来还有一句 .accessibilityLabel("…，修改追番状态")：念不到——
+        // 整张卡是 .accessibilityElement(children: .ignore)，子元素的名字被合掉了。
+        // 那颗钮该说的话由上面卡片的标签（「片名，在看」）和六项操作来说，
+        // 所以整行删掉，不留一个改得再准也没人读的第二出处。
         .disabled(isPending)
-        .accessibilityLabel(Text("\(entry.collectType.title)，修改追番状态"))
     }
 
     // MARK: - 页脚
