@@ -98,7 +98,7 @@ struct PluginTestScreen: View {
             HStack(spacing: 10) {
                 Image(systemName: "testtube.2")
                     .font(.title3)
-                    .foregroundStyle(KazumiPalette.accent)
+                    .foregroundStyle(KazumiPalette.accent(for: colorScheme))
                 Text(plugin?.name ?? "规则测试")
                     .font(.title3.bold())
             }
@@ -131,7 +131,7 @@ struct PluginTestScreen: View {
                           systemImage: isTesting ? "stop.fill" : "play.fill")
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(KazumiPalette.accent)
+                .tint(KazumiPalette.accent(for: colorScheme))
             }
             if isTesting {
                 ProgressView()
@@ -215,7 +215,7 @@ struct PluginTestScreen: View {
             done: !chapters.isEmpty
         ) {
             if !needsChapterParse {
-                Text("未填写章节规则")
+                Text("未填写选集规则")
                     .font(.footnote)
                     .foregroundStyle(KazumiPalette.tertiaryText(for: colorScheme))
             } else if !chapters.isEmpty {
@@ -224,7 +224,7 @@ struct PluginTestScreen: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("播放线路 \(index + 1)：\(road.name)")
                             .font(.footnote.weight(.semibold))
-                        Text("章节数量：\(road.data.count)")
+                        Text("剧集数量：\(road.data.count)")
                             .font(.caption2)
                             .foregroundStyle(KazumiPalette.tertiaryText(for: colorScheme))
                         ForEach(Array(road.identifier.enumerated()), id: \.offset) { itemIndex, name in
@@ -255,7 +255,7 @@ struct PluginTestScreen: View {
     }
 
     private var chapterSubtitle: String {
-        if !needsChapterParse { return "未填写章节规则" }
+        if !needsChapterParse { return "未填写选集规则" }
         if isTesting && chapters.isEmpty { return "正在获取…" }
         if chapters.isEmpty { return "还没有取到线路" }
         let skipped = chapterDiagnostics.isEmpty ? "" : "，跳过 \(chapterDiagnostics.count) 条"
@@ -288,13 +288,13 @@ struct PluginTestScreen: View {
                     ZStack {
                         Circle()
                             .fill(done
-                                  ? KazumiPalette.accent.opacity(0.18)
+                                  ? KazumiPalette.accent(for: colorScheme).opacity(0.18)
                                   : Color.secondary.opacity(0.12))
                             .frame(width: 26, height: 26)
                         if done {
                             Image(systemName: "checkmark")
                                 .font(.caption.bold())
-                                .foregroundStyle(KazumiPalette.accent)
+                                .foregroundStyle(KazumiPalette.accent(for: colorScheme))
                         } else {
                             Text("\(number)")
                                 .font(.caption.bold())

@@ -62,6 +62,8 @@ struct PluginShopView: View {
                 }
             }
         }
+        // 顶部滚动边缘：列表顶部用渐进模糊（.soft）。
+        .scrollEdgeEffectStyle(.soft, for: .top)
         .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
         .background(KazumiPalette.heroBackground(for: colorScheme).ignoresSafeArea())
@@ -169,7 +171,7 @@ private struct PluginCatalogRow: View {
                         Label("验证", systemImage: "checkmark.shield")
                             .labelStyle(.iconOnly)
                             .font(.caption)
-                            .foregroundStyle(KazumiPalette.accent)
+                            .foregroundStyle(KazumiPalette.accent(for: colorScheme))
                     }
                 }
                 HStack(spacing: 10) {
@@ -211,7 +213,7 @@ private struct PluginCatalogRow: View {
 
     private var buttonTint: Color {
         switch status {
-        case .install, .update: KazumiPalette.accent
+        case .install, .update: KazumiPalette.accent(for: colorScheme)
         case .installed: KazumiPalette.secondaryText(for: colorScheme)
         }
     }

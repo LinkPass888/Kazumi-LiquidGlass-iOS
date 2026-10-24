@@ -69,6 +69,7 @@ struct PluginListView: View {
             }
         }
         .listStyle(.insetGrouped)
+        .scrollEdgeEffectStyle(.soft, for: .top)
         .scrollContentBackground(.hidden)
         .background(KazumiPalette.heroBackground(for: colorScheme).ignoresSafeArea())
         .navigationTitle("规则管理")
@@ -99,22 +100,6 @@ struct PluginListView: View {
         }
         .fileImporter(isPresented: $isShowingImporter, allowedContentTypes: [.json, .plainText]) { result in
             handleFileImport(result)
-        }
-        .confirmationDialog(
-            "删除规则「\(pendingDeletion?.name ?? "")」？",
-            isPresented: Binding(
-                get: { pendingDeletion != nil },
-                set: { if !$0 { pendingDeletion = nil } }
-            ),
-            titleVisibility: .visible
-        ) {
-            Button("删除", role: .destructive) {
-                if let plugin = pendingDeletion {
-                    pendingDeletion = nil
-                    Task { await remove([plugin]) }
-                }
-            }
-            Button("取消", role: .cancel) { pendingDeletion = nil }
         }
         .alert("提示", isPresented: Binding(
             get: { updateSummary != nil },
@@ -164,11 +149,28 @@ struct PluginListView: View {
             }
         }
         .swipeActions(edge: .trailing) {
+            // 左滑只记录待删除规则，确认前不删行、不预播删除动画。
             Button(role: .destructive) {
                 pendingDeletion = plugin
             } label: {
                 Label("删除", systemImage: "trash")
             }
+        }
+        // 弹窗锚定到触发行；标题只读本行常量名称，pending 期间行内容与高度保持不变。
+        .confirmationDialog(
+            "删除规则「\(plugin.name)」？",
+            isPresented: Binding(
+                get: { pendingDeletion?.id == plugin.id },
+                set: { if !$0 { pendingDeletion = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("删除", role: .destructive) {
+                // remove() 只在确认回调里执行，行消失后底栏计数才随数据更新一次。
+                pendingDeletion = nil
+                Task { await remove([plugin]) }
+            }
+            Button("取消", role: .cancel) { pendingDeletion = nil }
         }
     }
 
@@ -221,7 +223,7 @@ struct PluginListView: View {
             Image(systemName: "ellipsis")
                 .font(.system(size: 16, weight: .semibold))
                 .frame(width: 34, height: 34)
-                .contentShape(Rectangle())
+                .hitTarget44()
         }
         .accessibilityLabel("\(plugin.name) 的更多操作")
     }
@@ -302,14 +304,23 @@ struct PluginListView: View {
                         Label("新建规则", systemImage: "square.and.pencil")
                     }
                 } label: {
-                    Label("添加规则", systemImage: "plus")
+                    // 只放图标，避免 iOS 26 工具栏里文字撑宽后与返回键重叠；文字只进无障碍标签。
+                    Image(systemName: "plus")
                 }
                 .accessibilityLabel("添加规则")
             }
         }
-        ToolbarItem(placement: .topBarTrailing) {
+        ToolbarItemGroup(placement: .topBarTrailing) {
             if isEditingSelection {
                 let count = selection.count
+                let allSelected = count == plugins.pluginList.count
+                Button(allSelected ? "取消全选" : "全选") {
+                    if allSelected {
+                        selection.removeAll()
+                    } else {
+                        selection = Set(plugins.pluginList.map(\.name))
+                    }
+                }
                 Button(count == 0 ? "删除" : "删除 \(count)", role: .destructive) {
                     let targets = plugins.pluginList.filter { selection.contains($0.name) }
                     Task { await remove(targets) }
@@ -329,12 +340,6 @@ struct PluginListView: View {
                         Label(isUpdating ? "正在检查更新…" : "检查规则更新", systemImage: "arrow.triangle.2.circlepath")
                     }
                     .disabled(isUpdating || plugins.pluginList.isEmpty)
-                    Button {
-                        copyAllRules()
-                    } label: {
-                        Label("复制全部规则", systemImage: "doc.on.doc")
-                    }
-                    .disabled(plugins.pluginList.isEmpty)
                 } label: {
                     if isUpdating {
                         ProgressView()
@@ -374,11 +379,6 @@ struct PluginListView: View {
         } catch {
             errorMessage = error.localizedDescription
         }
-    }
-
-    private func copyAllRules() {
-        UIPasteboard.general.string = PluginImportExport.json(for: plugins.pluginList)
-        updateSummary = "已复制 \(plugins.pluginList.count) 条规则的 JSON 到剪贴板。"
     }
 
     private func checkForUpdates() async {
@@ -453,7 +453,7 @@ private struct PluginRowView: View {
             if isSelecting {
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                     .font(.title3)
-                    .foregroundStyle(isSelected ? KazumiPalette.accent : KazumiPalette.tertiaryText(for: colorScheme))
+                    .foregroundStyle(isSelected ? KazumiPalette.accent(for: colorScheme) : KazumiPalette.tertiaryText(for: colorScheme))
             }
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 8) {
@@ -490,8 +490,8 @@ private struct PluginRowView: View {
                 .font(.caption2.bold())
                 .padding(.horizontal, 7)
                 .padding(.vertical, 2)
-                .background(KazumiPalette.accent.opacity(0.16), in: Capsule())
-                .foregroundStyle(KazumiPalette.accent)
+                .background(KazumiPalette.accent(for: colorScheme).opacity(0.16), in: Capsule())
+                .foregroundStyle(KazumiPalette.accent(for: colorScheme))
         case .latest:
             if isSearchValid {
                 Image(systemName: "checkmark.seal.fill")
