@@ -43,6 +43,56 @@ struct PluginListView: View {
         }
     }
 
+    /// 删除确认弹窗的标题：批量与单条共用，按当前待删状态取值。
+    private var deletionDialogTitle: String {
+        if pendingBatchDeletion {
+            return "删除选中的 \(selection.count) 条规则？"
+        }
+        if let pendingDeletion {
+            return "删除规则「\(pendingDeletion.name)」？"
+        }
+        return "删除规则？"
+    }
+
+    private var deletionDialogPresented: Binding<Bool> {
+        Binding(
+            get: { pendingBatchDeletion || pendingDeletion != nil },
+            set: { isPresented in
+                if !isPresented {
+                    pendingBatchDeletion = false
+                    pendingDeletion = nil
+                }
+            }
+        )
+    }
+
+    /// 删除确认弹窗锚在哪一行：单条就是那一行，批量是待删里最上面那条。
+    private var deletionAnchorID: String? {
+        if let pendingDeletion { return pendingDeletion.id }
+        if pendingBatchDeletion {
+            return visiblePlugins.first { selection.contains($0.name) }?.id
+        }
+        return nil
+    }
+
+    private func performPendingDeletion() {
+        let single = pendingDeletion
+        let isBatch = pendingBatchDeletion
+        pendingDeletion = nil
+        pendingBatchDeletion = false
+        if isBatch {
+            let targets = plugins.pluginList.filter { selection.contains($0.name) }
+            Task { await remove(targets) }
+        } else if let single {
+            Task { await remove([single]) }
+        }
+    }
+
+    private func cancelPendingDeletion() {
+        pendingDeletion = nil
+        pendingBatchDeletion = false
+    }
+
     private var isKeywordEmpty: Bool {
         keyword.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
@@ -140,6 +190,8 @@ struct PluginListView: View {
             }
         }
         .listStyle(.insetGrouped)
+        // 胶囊行上下不空：默认的 section 间距（约 35）压到 12，三行读成一组。
+        .listSectionSpacing(.custom(12))
         // 行高 48：List 自己有个最小行高，把内容改成多少都压不下来，只能改那个下限。
         .environment(\.defaultMinListRowHeight, 48)
         .scrollEdgeEffectStyle(.soft, for: .top)
@@ -190,17 +242,9 @@ struct PluginListView: View {
         } message: {
             Text(errorMessage ?? "")
         }
-        // 批量删除也要先问一句；问完之前列表和下面那行计数都不动。
-        .confirmationDialog(
-            "删除选中的 \(selection.count) 条规则？",
-            isPresented: $pendingBatchDeletion,
-            titleVisibility: .visible
-        ) {
-            Button("删除", role: .destructive) {
-                let targets = plugins.pluginList.filter { selection.contains($0.name) }
-                Task { await remove(targets) }
-            }
-        }
+        // 删除先问一句：两条删除路径（批量、单条左滑/菜单）共用一个弹窗，
+        // 弹窗锚到“待删里最上面那条规则”上（见 row(_:)），所以位置在那一行旁边，
+        // 而不是吸在屏幕顶部。问完之前列表、行高和下面那行计数都不动。
         .onAppear {
             if plugins.pluginList.isEmpty { plugins.load() }
         }
@@ -234,28 +278,25 @@ struct PluginListView: View {
         }
         .swipeActions(edge: .trailing) {
             // 左滑只记录待删除规则，确认前不删行、不预播删除动画。
-            Button(role: .destructive) {
+            // 这里不能用 role: .destructive：那样一点按钮 iOS 就先播删除动画，
+            // 这一行被收掉、下面的规则整片往上跑，二次确认还没问就先动了。
+            // 只染红、不带走删除语义，点了只收左滑并把弹窗叫出来。
+            Button {
                 pendingDeletion = plugin
             } label: {
                 Label("删除", systemImage: "trash")
             }
+            .tint(.red)
         }
-        // 弹窗锚定到触发行；标题只读本行常量名称，pending 期间行内容与高度保持不变。
-        .confirmationDialog(
-            "删除规则「\(plugin.name)」？",
-            isPresented: Binding(
-                get: { pendingDeletion?.id == plugin.id },
-                set: { if !$0 { pendingDeletion = nil } }
-            ),
-            titleVisibility: .visible
-        ) {
-            Button("删除", role: .destructive) {
-                // remove() 只在确认回调里执行，行消失后底栏计数才随数据更新一次。
-                pendingDeletion = nil
-                Task { await remove([plugin]) }
-            }
-            Button("取消", role: .cancel) { pendingDeletion = nil }
-        }
+        // 弹窗只挂在待删里最上面那一行，位置就落在那一行旁边；批量也走这一个。
+        // 只挂一份：每一行都挂同一个 confirmationDialog 时弹窗会弹不出来（试过五条规则，三次全不弹）。
+        .modifier(DeletionDialogAnchor(
+            isAnchor: plugin.id == deletionAnchorID,
+            title: deletionDialogTitle,
+            isPresented: deletionDialogPresented,
+            onDelete: performPendingDeletion,
+            onCancel: cancelPendingDeletion
+        ))
     }
 
     /// 行内溢出菜单，条目与原版 plugin_view_page 的 _menu 一一对应。
@@ -609,6 +650,26 @@ private struct PluginRowView: View {
             }
         case .notInCatalog, .unknown:
             EmptyView()
+        }
+    }
+}
+
+/// 把删除二次确认弹窗挂到锚点那一行上，位置就落在那一行旁边；其它行原样。
+private struct DeletionDialogAnchor: ViewModifier {
+    let isAnchor: Bool
+    let title: String
+    let isPresented: Binding<Bool>
+    let onDelete: () -> Void
+    let onCancel: () -> Void
+
+    func body(content: Content) -> some View {
+        if isAnchor {
+            content.confirmationDialog(title, isPresented: isPresented, titleVisibility: .visible) {
+                Button("删除", role: .destructive, action: onDelete)
+                Button("取消", role: .cancel, action: onCancel)
+            }
+        } else {
+            content
         }
     }
 }
