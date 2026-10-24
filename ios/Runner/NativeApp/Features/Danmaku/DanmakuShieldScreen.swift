@@ -51,7 +51,7 @@ struct DanmakuShieldScreen: View {
                             .foregroundStyle(.white)
                             .background(
                                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                    .fill(newRule.isEmpty ? Color.gray : KazumiPalette.accent)
+                                    .fill(newRule.isEmpty ? Color.gray : KazumiPalette.accent(for: colorScheme))
                             )
                     }
                     .buttonStyle(.plain)
@@ -63,6 +63,8 @@ struct DanmakuShieldScreen: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
         }
+        // 顶部滚动边缘：渐进模糊（.soft），不另外加材质或底色。
+        .scrollEdgeEffectStyle(.soft, for: .top)
         .background(KazumiPalette.background(for: colorScheme).ignoresSafeArea())
         .navigationTitle("弹幕屏蔽")
         .navigationBarTitleDisplayMode(.inline)

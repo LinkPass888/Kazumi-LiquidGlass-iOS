@@ -70,7 +70,7 @@ struct CaptchaSheet: View {
         VStack(spacing: 8) {
             Image(systemName: "checkmark.shield")
                 .font(.system(size: 34, weight: .semibold))
-                .foregroundStyle(KazumiPalette.accent)
+                .foregroundStyle(KazumiPalette.accent(for: colorScheme))
             Text(flow.plugin.name)
                 .font(.headline)
             Text(flow.requiresUserInput ? "请输入页面上的验证码" : "正在自动完成站点验证，请勿关闭…")

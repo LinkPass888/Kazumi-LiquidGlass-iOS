@@ -21,7 +21,7 @@ struct DownloadScreen: View {
                         .foregroundStyle(.tertiary)
                     Text("暂无离线缓存")
                         .font(.headline)
-                    Text("播放页的「缓存」按钮会把当前剧集存到本地。")
+                    Text("本机还没有缓存的剧集。")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
@@ -34,7 +34,7 @@ struct DownloadScreen: View {
                         ForEach(cachedURLs, id: \.self) { url in
                             HStack(spacing: 12) {
                                 Image(systemName: "film.stack")
-                                    .foregroundStyle(KazumiPalette.accent)
+                                    .foregroundStyle(KazumiPalette.accent(for: colorScheme))
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(url.lastPathComponent)
                                         .font(.subheadline.weight(.medium))
@@ -55,10 +55,12 @@ struct DownloadScreen: View {
                     .padding(.horizontal, 12)
                 }
                 .scrollIndicators(.hidden)
+                // 顶部滚动边缘：渐进模糊（.soft）。
+                .scrollEdgeEffectStyle(.soft, for: .top)
             }
         }
         .background(KazumiPalette.background(for: colorScheme).ignoresSafeArea())
-        .navigationTitle("离线下载")
+        .navigationTitle("离线缓存")
         .navigationBarTitleDisplayMode(.inline)
         .task { cachedURLs = Self.loadCachedFiles() }
     }

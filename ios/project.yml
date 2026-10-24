@@ -111,8 +111,9 @@ targets:
           - _raop._tcp
           - _googlecast._tcp
           - _dlna._tcp
-        NSCameraUsageDescription: 用于以图搜番时直接拍照识别番剧。
-        NSPhotoLibraryUsageDescription: 用于选择图片进行以图搜番，或保存视频截图。
+        # 相机与「读相册」两条权限说明已删（Ato 1125）：图片搜索只剩 PhotosPicker
+        # 一条路，选图在系统进程里做、不需要权限说明；真正碰相册的只有存截图那条，
+        # 用的是下面这条「保存到相册」。那两句留着就是替不存在的功能向审核要权限。
         NSPhotoLibraryAddUsageDescription: 用于把播放器截图保存到相册。
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait

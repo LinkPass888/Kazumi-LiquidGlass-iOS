@@ -3,7 +3,7 @@
 //  Kazumi
 //
 //  1:1 复刻 lib/pages/popular/popular_page.dart：
-//  * 顶部是可点击的大标题「热门番组 ▾ / 标签名 ▾」，点开选标签；
+//  * 顶部是可点击的大标题「热门番剧 ▾ / 标签名 ▾」，点开选标签；
 //  * 主体是 3 列（宽度 > 600 时 5 列、> 840 时 6 列）的竖版卡片网格；
 //  * 滚到底自动继续加载，右下角有回到顶部按钮；
 //  * 列表为空视为请求超时，展示可重试的错误态。
@@ -53,6 +53,8 @@ struct PopularScreen: View {
                 }
             }
             .scrollIndicators(.hidden)
+            // 顶部渐进模糊：头部本来就在滚动内容里，不存在硬切，只缺这一层。
+            .scrollEdgeEffectStyle(.soft, for: .top)
             // 回顶按钮用 overlay 而不是 background：background 会被滚动内容盖住，
             // 卡片滑过去时按钮就消失在海报下面（overlay 在内容之上）。
             .overlay(alignment: .bottomTrailing) {
@@ -86,7 +88,7 @@ struct PopularScreen: View {
                 Button {
                     selectTag("")
                 } label: {
-                    Text("热门番组")
+                    Text("热门番剧")
                 }
                 Divider()
                 ForEach(Self.tags, id: \.self) { tag in
@@ -98,11 +100,11 @@ struct PopularScreen: View {
                 }
             } label: {
                 HStack(spacing: 4) {
-                    Text(controller.currentTag.isEmpty ? "热门番组" : controller.currentTag)
-                        .font(.system(size: 28, weight: .bold))
+                    Text(controller.currentTag.isEmpty ? "热门番剧" : controller.currentTag)
+                        .font(.system(size: 34, weight: .semibold))
                         .foregroundStyle(.primary)
                     Image(systemName: "chevron.down")
-                        .font(.system(size: 20, weight: .semibold))
+                        .font(.system(size: 22, weight: .semibold))
                         .foregroundStyle(.secondary)
                 }
             }
@@ -116,7 +118,7 @@ struct PopularScreen: View {
                 router.push(.search(keyword: ""))
             }
 
-            barButton(symbol: "clock.arrow.circlepath", label: "历史记录") {
+            barButton(symbol: "clock.arrow.circlepath", label: "观看历史") {
                 router.push(.history)
             }
         }
@@ -127,10 +129,11 @@ struct PopularScreen: View {
 
     /// 顶栏圆形玻璃按钮。尺寸、间距、边距全部取自 KazumiGlassMetrics，
     /// 与详情页的返回 / 更多按钮共用同一套数值。
+    /// 点击区域 44pt（Apple HIG 最低标准），图标 22pt。
     private func barButton(symbol: String, label: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: 20, weight: .semibold))
+                .font(.system(size: 22, weight: .semibold))
                 .frame(width: KazumiGlassMetrics.barButtonSize, height: KazumiGlassMetrics.barButtonSize)
         }
         .buttonStyle(.plain)

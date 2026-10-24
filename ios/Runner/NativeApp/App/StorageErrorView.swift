@@ -20,7 +20,7 @@ struct StorageErrorView: View {
             VStack(spacing: 18) {
                 Image(systemName: "externaldrive.badge.exclamationmark")
                     .font(.system(size: 54, weight: .semibold))
-                    .foregroundStyle(KazumiPalette.accent)
+                    .foregroundStyle(KazumiPalette.accent(for: colorScheme))
 
                 Text("存储初始化失败")
                     .font(.title2.bold())
