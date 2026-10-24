@@ -55,9 +55,14 @@ struct LibraryPosterCard: View {
 
     private var cover: some View {
         ZStack(alignment: .bottomTrailing) {
-            BangumiRemoteImage(url: entry.imageURL)
+            // 先立一个比例确定的框（宽由网格给，高 = 宽 / 0.65），再把图铺满它。
+            // 直接把图 .aspectRatio(.fit) 是不行的：`BangumiRemoteImage` 会
+            // 铺满可用空间（maxHeight 无限），网格里每张封面各长各的，行就叠在一起。
+            Color.clear
                 .aspectRatio(Self.coverAspectRatio, contentMode: .fit)
-                .frame(maxWidth: .infinity)
+                .overlay {
+                    BangumiRemoteImage(url: entry.imageURL)
+                }
                 .clipped()
                 // 只把封面登记成转场源：放大时菜单不跟着长。
                 .kazumiZoomSource(id: entry.id, namespace: zoomNamespace)
