@@ -28,6 +28,7 @@ struct SourceSheet: View {
     let controller: InfoController
     var onPlay: (String, SearchItem) -> Void
 
+
     @State private var expanded: Set<String> = []
     /// 正在选别名去检索的来源；为空表示没有打开别名选择器。
     @State private var aliasPickerTarget: AliasPickerTarget?
@@ -149,7 +150,7 @@ struct SourceSheet: View {
                             Spacer(minLength: 4)
                             Image(systemName: "play.circle")
                                 .font(.system(size: 18, weight: .semibold))
-                                .foregroundStyle(KazumiPalette.accent)
+                                .foregroundStyle(KazumiPalette.accent(for: colorScheme))
                         }
                         .padding(.horizontal, 14)
                         .padding(.vertical, 10)
@@ -176,7 +177,7 @@ struct SourceSheet: View {
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 10)
-                    .foregroundStyle(KazumiPalette.accent)
+                    .foregroundStyle(KazumiPalette.accent(for: colorScheme))
                 }
                 .buttonStyle(.plain)
             }
@@ -191,7 +192,7 @@ struct SourceSheet: View {
                         .font(.subheadline.weight(.semibold))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 10)
-                        .foregroundStyle(KazumiPalette.accent)
+                        .foregroundStyle(KazumiPalette.accent(for: colorScheme))
                 }
                 .buttonStyle(.plain)
             }
@@ -223,7 +224,7 @@ struct SourceSheet: View {
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(.secondary)
                 .frame(width: 32, height: 32)
-                .contentShape(Rectangle())
+                .hitTarget44()
         }
         .buttonStyle(.plain)
         .accessibilityLabel("\(group.name) 的更多操作")
@@ -275,7 +276,7 @@ struct SourceSheet: View {
             case .error:
                 Image(systemName: "exclamationmark.circle").foregroundStyle(.orange)
             case .captcha:
-                Image(systemName: "lock.circle").foregroundStyle(KazumiPalette.accent)
+                Image(systemName: "lock.circle").foregroundStyle(KazumiPalette.accent(for: colorScheme))
             }
         }
         .frame(width: 18, height: 18)
@@ -288,14 +289,16 @@ struct SourceSheet: View {
                 .foregroundStyle(.tertiary)
             Text("还没有安装任何规则")
                 .font(.headline)
-            Text("请先到「我的 → 规则设置」安装番剧来源。")
+            Text("请先到「我的 → 规则管理」安装番剧来源。")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
-            Button("去安装规则") {
-                dismiss()
-            }
-            .buttonStyle(.borderedProminent)
+            // 这里原本有一颗「去安装规则」按钮，只调 `dismiss()`：字指了一条路，
+            // 按钮没走那条路，人还在原地——一颗在说谎的按钮比没有按钮更坏。
+            // 原版是有路由的（`lib/pages/info/info_page.dart:305-307` 的
+            // `context.pushNamed('/settings/plugin/')`），我们这边 `AppRouter.pluginList` 也在。
+            // 接法写好了，但「先关 sheet 再推页」会跟关闭动画抢，**没在屏上验过**，
+            // 所以先只留这句指路；验通了再把按钮装回来。
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(.horizontal, 32)

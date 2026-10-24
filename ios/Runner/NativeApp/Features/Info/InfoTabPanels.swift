@@ -10,7 +10,7 @@
 //    * 关联     —— 只显示动画，关系名是遍历出来的前传 / 续集（见 RelatedAnimeChain）；
 //    * 制作人员 —— 左侧头像 + 姓名 + 中文名 + 职务。
 //
-//  标题一律左对齐、28pt 粗体，与推荐页的「热门番组」同一套字重字号。
+//  标题一律左对齐、28pt 粗体，与推荐页的「热门番剧」同一套字重字号。
 //
 
 import SwiftUI
@@ -37,7 +37,7 @@ enum InfoTab: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
-/// 详情页里的区块标题：左对齐，字号字重与「热门番组」一致。
+/// 详情页里的区块标题：左对齐，字号字重与「热门番剧」一致。
 struct InfoSectionTitle: View {
     let text: String
 
@@ -75,6 +75,7 @@ struct InfoOverviewPanel: View {
     let item: BangumiItem
 
     @Environment(AppRouter.self) private var router
+    @Environment(\.colorScheme) private var colorScheme
     @State private var introExpanded = false
     @State private var tagsExpanded = false
     /// 简介完整高度的测量值，用来判断要不要给「加载更多」。
@@ -129,7 +130,7 @@ extension InfoOverviewPanel {
                 } label: {
                     Text(introExpanded ? "加载更少" : "加载更多")
                         .font(.footnote.weight(.semibold))
-                        .foregroundStyle(KazumiPalette.accent)
+                        .foregroundStyle(KazumiPalette.accent(for: colorScheme))
                         .frame(maxWidth: .infinity, alignment: .trailing)
                 }
                 .buttonStyle(.plain)
@@ -154,7 +155,8 @@ extension InfoOverviewPanel {
             }
     }
 
-    /// 标签：原版用 Wrap，这里用自适应列宽实现同样的流式换行。
+    /// 标签：原版用 Wrap；这里用 TagFlowLayout 按每颗标签自己的文字宽度流式换行，
+    /// 一行放几颗由可用宽度算出来，不预设列宽。
     @ViewBuilder
     private var tags: some View {
         if item.tags.isEmpty {
@@ -162,11 +164,7 @@ extension InfoOverviewPanel {
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         } else {
-            LazyVGrid(
-                columns: [GridItem(.adaptive(minimum: 84), spacing: 8, alignment: .leading)],
-                alignment: .leading,
-                spacing: 8
-            ) {
+            TagFlowLayout(spacing: 8, rowSpacing: 8) {
                 ForEach(visibleTags, id: \.name) { tag in
                     tagChip(tag)
                 }
@@ -193,16 +191,18 @@ extension InfoOverviewPanel {
             HStack(spacing: 4) {
                 Text(tag.name)
                     .foregroundStyle(.primary)
-                    .lineLimit(1)
+                    // 文字一个都不许少：正常仍是单行（布局按理想宽度给它），
+                    // 只有单颗比整行还宽时才在胶囊里折行，绝不出现省略号。
+                    .lineLimit(nil)
+                    .fixedSize(horizontal: false, vertical: true)
                 if tag.count > 0 {
                     Text("\(tag.count)")
-                        .foregroundStyle(KazumiPalette.accent)
+                        .foregroundStyle(KazumiPalette.accent(for: colorScheme))
                 }
             }
             .font(.footnote)
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
-            .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 Capsule(style: .continuous)
                     .fill(Color.primary.opacity(0.06))
@@ -217,13 +217,12 @@ extension InfoOverviewPanel {
         } label: {
             Text("更多 +")
                 .font(.footnote.weight(.semibold))
-                .foregroundStyle(KazumiPalette.accent)
+                .foregroundStyle(KazumiPalette.accent(for: colorScheme))
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
-                .frame(maxWidth: .infinity, alignment: .leading)
                 .background(
                     Capsule(style: .continuous)
-                        .fill(KazumiPalette.accent.opacity(0.12))
+                        .fill(KazumiPalette.accent(for: colorScheme).opacity(0.12))
                 )
         }
         .buttonStyle(.plain)
@@ -234,6 +233,72 @@ private struct IntroHeightKey: PreferenceKey {
     static let defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = max(value, nextValue())
+    }
+}
+
+/// 按文字宽度流式换行：每颗标签的宽度由它自己的文字定，一行放几颗由可用宽度算出来。
+///
+/// 替换掉原来的 `GridItem(.adaptive(minimum: 84))`：那种排法先按 84 点切等宽列、
+/// 再让每颗胶囊拉满列宽，于是短标签被撑开、长标签被挤，一行几颗也由列数决定。
+/// 与它配套的是胶囊里那句 `frame(maxWidth: .infinity)`——那句必须一起删掉。
+///
+/// 全 App 只服务概览页标签这一处；行号会动，按字面搜 `InfoOverviewPanel`。
+private struct TagFlowLayout: Layout {
+    /// 同一行两颗之间。
+    var spacing: CGFloat = 8
+    /// 两行之间。
+    var rowSpacing: CGFloat = 8
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let maxWidth = proposal.width ?? .infinity
+        var x: CGFloat = 0
+        var y: CGFloat = 0
+        var rowHeight: CGFloat = 0
+        var widest: CGFloat = 0
+        for sub in subviews {
+            let ideal = sub.sizeThatFits(.unspecified)
+            // 单颗宽过整行时按整行宽算，交给胶囊内部折行。
+            let width = min(ideal.width, maxWidth)
+            if x > 0, x + spacing + width > maxWidth {
+                widest = max(widest, x)
+                y += rowHeight + rowSpacing
+                x = 0
+                rowHeight = 0
+            } else if x > 0 {
+                x += spacing
+            }
+            x += width
+            rowHeight = max(rowHeight, ideal.height)
+        }
+        widest = max(widest, x)
+        return CGSize(width: proposal.width ?? widest, height: y + rowHeight)
+    }
+
+    func placeSubviews(
+        in bounds: CGRect,
+        proposal: ProposedViewSize,
+        subviews: Subviews,
+        cache: inout ()
+    ) {
+        var x = bounds.minX
+        var y = bounds.minY
+        var rowHeight: CGFloat = 0
+        for sub in subviews {
+            let ideal = sub.sizeThatFits(.unspecified)
+            if x > bounds.minX, x + spacing + ideal.width > bounds.maxX {
+                x = bounds.minX
+                y += rowHeight + rowSpacing
+                rowHeight = 0
+            } else if x > bounds.minX {
+                x += spacing
+            }
+            // 右边界内收住，不越界。
+            let width = min(ideal.width, bounds.maxX - x)
+            let proposal = ProposedViewSize(width: width, height: nil)
+            sub.place(at: CGPoint(x: x, y: y), anchor: .topLeading, proposal: proposal)
+            x += width
+            rowHeight = max(rowHeight, sub.sizeThatFits(proposal).height)
+        }
     }
 }
 
@@ -327,7 +392,7 @@ struct InfoCommentsPanel: View {
                 .foregroundStyle(.white)
                 .background(
                     Circle().fill(
-                        canSend ? KazumiPalette.accent : Color.secondary.opacity(0.3)
+                        canSend ? KazumiPalette.accent(for: colorScheme) : Color.secondary.opacity(0.3)
                     )
                 )
             }
@@ -368,7 +433,7 @@ struct InfoCommentsPanel: View {
                     if comment.rate > 0 {
                         Text("\(comment.rate) 分")
                             .font(.caption2.weight(.semibold))
-                            .foregroundStyle(KazumiPalette.accent)
+                            .foregroundStyle(KazumiPalette.accent(for: colorScheme))
                     }
                     Spacer(minLength: 0)
                     Text(Self.dateText(comment.updatedAt))
@@ -406,6 +471,8 @@ struct InfoCharactersPanel: View {
     let characters: [BangumiCharacterItem]
     let isLoading: Bool
 
+    @Environment(\.colorScheme) private var colorScheme
+
     var body: some View {
         if isLoading && characters.isEmpty {
             InfoPanelPlaceholder(symbol: "person.2", text: "正在加载角色…")
@@ -434,12 +501,12 @@ struct InfoCharactersPanel: View {
                     if !character.relation.isEmpty {
                         Text(character.relation)
                             .font(.caption2.weight(.bold))
-                            .foregroundStyle(KazumiPalette.accent)
+                            .foregroundStyle(KazumiPalette.accent(for: colorScheme))
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
                             .background(
                                 Capsule(style: .continuous)
-                                    .fill(KazumiPalette.accent.opacity(0.14))
+                                    .fill(KazumiPalette.accent(for: colorScheme).opacity(0.14))
                             )
                     }
                     Spacer(minLength: 0)
@@ -508,7 +575,7 @@ struct InfoRelationsPanel: View {
 
                 Text(relation.relation.isEmpty ? "关联" : relation.relation)
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(KazumiPalette.accent)
+                    .foregroundStyle(KazumiPalette.accent(for: colorScheme))
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }

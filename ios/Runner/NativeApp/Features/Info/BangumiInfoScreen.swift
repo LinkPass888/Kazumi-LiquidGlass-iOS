@@ -3,7 +3,7 @@
 //  Kazumi
 //
 //  1:1 复刻 lib/pages/info/info_page.dart + bangumi_info_card.dart：
-//  * 顶栏：返回键 + 左对齐的大标题（字重字号与推荐页「热门番组」一致）+ 右上角「更多」；
+//  * 顶栏：返回键 + 左对齐的大标题（字重字号与推荐页「热门番剧」一致）+ 右上角「更多」；
 //  * 封面与条目信息直接压在模糊的封面背景上，不再是背景下面另起一块；
 //  * 条目信息：放送开始 / 放送时间（星期菜单 + 具体时刻 + 时间表开关）/ 更新进度 / 评分 / 排名，
 //    最下面一行是收窄的追番状态菜单；
@@ -66,29 +66,50 @@ struct BangumiInfoScreen: View {
 
     private func content(_ controller: InfoController) -> some View {
         ZStack(alignment: .bottomTrailing) {
-            VStack(spacing: 0) {
-                topBar(controller)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    // 标题与 hero 是一个紧凑的整体：两者间距 12，与下方分隔用 18。
+                    VStack(alignment: .leading, spacing: 12) {
+                        // 展开态 28pt bold。不再主动淡出：让它随内容滚进顶部模糊里，
+                        // 只在最后一小段行程里收掉，顶栏那份同一时间接上（见 titleRevealProgress），
+                        // 避开两份标题同时半透明重叠的那几帧。
+                        Text(controller.item.displayName)
+                            .font(.system(size: 28, weight: .bold))
+                            .foregroundStyle(.primary)
+                            .lineLimit(2)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .opacity(1 - titleRevealProgress)
 
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 18) {
                         hero(controller)
-                        tabStrip(controller)
-                        tabContent(controller)
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 96)
+
+                    tabStrip(controller)
+                    tabContent(controller)
                 }
-                .scrollIndicators(.hidden)
-                .onScrollGeometryChange(for: CGFloat.self) { geometry in
-                    max(0, geometry.contentOffset.y)
-                } action: { _, newValue in
-                    scrollOffset = newValue
-                }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 96)
+            }
+            .scrollIndicators(.hidden)
+            // 顶部渐进模糊：只作用顶部那一条，不叠材质、不加底色。
+            .scrollEdgeEffectStyle(.soft, for: .top)
+            .onScrollGeometryChange(for: CGFloat.self) { geometry in
+                max(0, geometry.contentOffset.y)
+            } action: { _, newValue in
+                scrollOffset = newValue
+            }
+            // 顶栏吸附在安全区（不再是 ScrollView 的兄弟节点）：内容从它下方滚过去，
+            // 顶部模糊才盖得住标题那一行；否则模糊只能铺在顶栏下面，内容滚上来是硬切一刀。
+            .safeAreaInset(edge: .top, spacing: 0) {
+                topBar(controller)
             }
 
             startPlayingButton
         }
         .overlay(alignment: .top) { toastView }
+        // 出入场由值驱动：状态变化本身不在动画事务里，只有结果被动画化。
+        .animation(.easeOut(duration: 0.2), value: toastMessage)
+        // 导航标题给无障碍与系统用；页面内的 inline 那份因此不再重复朗读。
+        .navigationTitle(controller.item.displayName)
         .sheet(isPresented: $isShowingSources) {
             let current = controller
             SourceSheet(controller: current) { pluginName, result in
@@ -131,21 +152,42 @@ struct BangumiInfoScreen: View {
 
     // MARK: - 顶栏
 
-    /// 返回键 + 左对齐标题 + 更多菜单。
+    /// 返回键 + 居中的折叠标题 + 更多菜单。
     ///
-    /// 这里不再给顶栏加 `.ultraThinMaterial` 背景条：滚动时那一条灰底会横在
-    /// 内容上方，与页面背景断开。标题始终显示（原来靠折叠淡入的那份已经删掉）。
+    /// 滚动内容顶部是 17pt semibold 的标题（与时间表卡片番剧名同号同重）；
+    /// 往上滑到阈值后，这里出现居中 17pt semibold 的一份，与返回键同行。
+    /// 两份同号同重，衔接时不像换了一个控件。
+    ///
+    /// 不再给顶栏加 `.ultraThinMaterial` 背景条：滚动时那一条灰底会横在
+    /// 内容上方，与页面背景断开。
+    /// 展开态标题 → 顶栏居中标题的交接进度（0…1），两处共用同一个值。
+    /// 只用透明度接力，不给顶栏那份加位移或缩放，避免两份同时在视野里跳。
+    ///
+    /// 交接只发生在最后 10pt：大标题先随内容滚进顶部模糊里（不主动淡出），
+    /// 滚过自身高度后顶栏那份在 10pt 行程内接上，中间不会有两份都半透明的帧。
+    private var titleRevealProgress: CGFloat {
+        let handoffStart: CGFloat = 30
+        let travel: CGFloat = 10
+        return min(1, max(0, (scrollOffset - handoffStart) / travel))
+    }
+
     private func topBar(_ controller: InfoController) -> some View {
-        HStack(spacing: 10) {
+        let progress = titleRevealProgress
+        return HStack(spacing: 10) {
             barButton(symbol: "chevron.left", label: "返回") {
                 dismiss()
             }
 
+            // 中间那段弹性空间：标题在弹性宽度里居中，且始终占位，
+            // 折叠与否都不影响两侧按钮的位置。
             Text(controller.item.displayName)
-                .font(.system(size: 28, weight: .bold))
+                .font(.system(size: 17, weight: .semibold))
                 .foregroundStyle(.primary)
                 .lineLimit(1)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity)
+                .opacity(progress)
+                .accessibilityHidden(true)
 
             Menu {
                 Button {
@@ -201,14 +243,21 @@ struct BangumiInfoScreen: View {
 
 extension BangumiInfoScreen {
     /// 封面与条目信息一起压在模糊封面上（原版 _InfoHeaderBackground 的做法）。
+    ///
+    /// 尺寸固定（对齐 main 的 bangumi_info_card.dart）：封面宽 = (行宽 - 16) / 2，
+    /// 高 = 宽 / 0.65，hero 高 = 封面高 + 上下各 12 的 padding。长标题 / 短标题
+    /// 都不会把 hero 撑高，背景模糊层也随之同尺寸。
     private func hero(_ controller: InfoController) -> some View {
-        HStack(alignment: .top, spacing: 14) {
+        let height = heroCoverHeight
+        return HStack(alignment: .top, spacing: 16) {
             cover(controller.item)
-            infoColumn(controller)
+            infoColumn(controller, coverHeight: height)
         }
         .padding(12)
+        .frame(height: height + 24, alignment: .top)
         .background { backdrop(controller) }
         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .accessibilityElement(children: .contain)
     }
 
     /// 背景：同一张封面放大打模糊，再叠一层页面底色把它压成「磨砂」，
@@ -224,68 +273,84 @@ extension BangumiInfoScreen {
 
     private func cover(_ item: BangumiItem) -> some View {
         BangumiRemoteImage(url: item.largeImage)
-            .frame(width: coverWidth, height: coverWidth / BangumiPosterCard.coverAspectRatio)
+            .frame(width: heroCoverWidth, height: heroCoverHeight)
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
-    /// 封面宽度：整块 hero 的宽度分给封面约三分之一，右侧留给条目信息。
-    private var coverWidth: CGFloat {
+    /// 封面宽度：`(行宽 - 16) / 2`。
+    ///
+    /// 原生详情页信息列是纯竖排、没有 main 的评分透视图，iPhone 上永远是 /2。
+    private var heroCoverWidth: CGFloat {
         let screenWidth = UIApplication.shared.connectedScenes
             .compactMap { $0 as? UIWindowScene }
             .first?.screen.bounds.width ?? 390
-        let rowWidth = min(screenWidth - 32, 950) - 24
-        return max(84, min(150, (rowWidth - 14) * 0.34))
+        let rowWidth = min(screenWidth - 32, 950)
+        return max(84, (rowWidth - 16) / 2)
     }
 
-    /// 条目信息列：标签一行、值一行，最后一行是收窄的追番菜单。
-    private func infoColumn(_ controller: InfoController) -> some View {
+    private var heroCoverHeight: CGFloat {
+        heroCoverWidth / BangumiPosterCard.coverAspectRatio
+    }
+
+    /// 条目信息列：高度钉死为封面高，文字区在上、追番按钮贴底（对应 main 的
+    /// spaceBetween）。文字放不下时整块等比缩小，不靠省略号截断。
+    private func infoColumn(_ controller: InfoController, coverHeight: CGFloat) -> some View {
         let item = controller.item
         return VStack(alignment: .leading, spacing: 8) {
-            infoLine(label: "放送开始:", value: item.airDate.isEmpty ? "未知" : item.airDate)
+            VStack(alignment: .leading, spacing: 8) {
+                infoLine(label: "放送开始", value: item.airDate.isEmpty ? "未知" : item.airDate)
 
-            broadcastRow(controller)
+                broadcastRow(controller)
 
-            // 更新进度：紧跟在「放送时间」之后。
-            if let progress = updateProgress(controller) {
-                infoLine(label: "更新进度:", value: progress)
-            }
+                // 更新进度：紧跟在「放送时间」之后。
+                if let progress = updateProgress(controller) {
+                    infoLine(label: "更新进度", value: progress)
+                }
 
-            if item.ratingScore > 0 {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("评分:")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                    HStack(spacing: 4) {
-                        Image(systemName: "star.fill")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(KazumiPalette.accent)
-                        Text(String(format: "%.1f", item.ratingScore))
-                            .font(.system(size: 18, weight: .bold))
-                            .foregroundStyle(KazumiPalette.accent)
-                        if item.votes > 0 {
-                            Text("(\(item.votes) 人)")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
+                if item.ratingScore > 0 {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("评分")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                        HStack(spacing: 4) {
+                            Image(systemName: "star.fill")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(KazumiPalette.accent(for: colorScheme))
+                            Text(String(format: "%.1f", item.ratingScore))
+                                .font(.system(size: 18, weight: .bold))
+                                .foregroundStyle(KazumiPalette.accent(for: colorScheme))
+                            if item.votes > 0 {
+                                Text("(\(item.votes) 人)")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                            }
                         }
                     }
                 }
-            }
 
-            if item.rank > 0 {
-                infoLine(label: "Bangumi Ranked:", value: "#\(item.rank)")
+                if item.rank > 0 {
+                    infoLine(label: "Bangumi Ranked:", value: "#\(item.rank)")
+                }
             }
+            // 文字区压缩优先级最高：整块等比缩，宁可字小一点。
+            .minimumScaleFactor(0.75)
+            .layoutPriority(1)
 
+            Spacer(minLength: 6)
+
+            // 追番按钮钉在信息列底部，状态只换文案与图标，不换位置与尺寸。
             collectMenu(controller)
-                .padding(.top, 2)
+                .frame(minWidth: 96, minHeight: 36, alignment: .leading)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .frame(height: coverHeight, alignment: .topLeading)
     }
 
     /// 「放送时间」：星期菜单 + 具体时刻 + 时间表开关。
     private func broadcastRow(_ controller: InfoController) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text("放送时间:")
+            Text("放送时间")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
 
@@ -296,7 +361,7 @@ extension BangumiInfoScreen {
                 if let time = controller.airTime {
                     Text(time)
                         .font(.system(size: 18, weight: .bold))
-                        .foregroundStyle(KazumiPalette.accent)
+                        .foregroundStyle(KazumiPalette.accent(for: colorScheme))
                 }
 
                 Button {
@@ -305,11 +370,17 @@ extension BangumiInfoScreen {
                     Image(systemName: "calendar")
                         .font(.system(size: 17, weight: .semibold))
                         .foregroundStyle(
-                            isInTimeline(controller) ? KazumiPalette.accent : Color.secondary
+                            isInTimeline(controller) ? KazumiPalette.accent(for: colorScheme) : Color.secondary
                         )
+                        // 图标本身只有 17×15，点不中很容易被当成“点了没反应”或误触旁边。
+                        // 撑到 44×44 的可点区域，再用负 padding 把布局尺寸收回去，
+                        // 这样命中范围变大、这一行的高度不变。
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                        .padding(-13.5)
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("在时间表展示")
+                .accessibilityLabel(isInTimeline(controller) ? "从时间表移除" : "添加到时间表")
             }
         }
     }
@@ -332,7 +403,7 @@ extension BangumiInfoScreen {
                 Image(systemName: "chevron.down")
                     .font(.system(size: 11, weight: .bold))
             }
-            .foregroundStyle(KazumiPalette.accent)
+            .foregroundStyle(KazumiPalette.accent(for: colorScheme))
         }
         .buttonStyle(.plain)
         .accessibilityLabel("选择放送星期")
@@ -363,7 +434,7 @@ extension BangumiInfoScreen {
                 Image(systemName: "chevron.down")
                     .font(.system(size: 10, weight: .bold))
             }
-            .foregroundStyle(current == .none ? Color.primary : KazumiPalette.accent)
+            .foregroundStyle(current == .none ? Color.primary : KazumiPalette.accent(for: colorScheme))
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
             .background(
@@ -383,7 +454,7 @@ extension BangumiInfoScreen {
                 .foregroundStyle(.secondary)
             Text(value)
                 .font(.system(size: 18, weight: .bold))
-                .foregroundStyle(KazumiPalette.accent)
+                .foregroundStyle(KazumiPalette.accent(for: colorScheme))
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
         }
@@ -413,7 +484,9 @@ extension BangumiInfoScreen {
     /// 横向排列的标签行：概览 / 吐槽 / 角色 / 关联 / 制作人员。
     private func tabStrip(_ controller: InfoController) -> some View {
         ScrollView(.horizontal) {
-            HStack(spacing: 8) {
+            // 间距与胶囊内边距都收窄（2 点 / 4 点）：375 屏默认字号下五颗全在
+            // 一行内容宽 324 点（文字 180 + 内边距 120 + 间距 24），不靠缩字号塞。
+            HStack(spacing: 6) {
                 ForEach(InfoTab.allCases) { tab in
                     let isSelected = selectedTab == tab
                     Button {
@@ -422,7 +495,7 @@ extension BangumiInfoScreen {
                     } label: {
                         Text(tab.title)
                             .font(.subheadline.weight(.semibold))
-                            .padding(.horizontal, 16)
+                            .padding(.horizontal, 12)
                             .padding(.vertical, 8)
                             .foregroundStyle(
                                 isSelected ? KazumiPalette.onAccent(for: colorScheme) : Color.primary
@@ -431,7 +504,7 @@ extension BangumiInfoScreen {
                                 Capsule(style: .continuous)
                                     .fill(
                                         isSelected
-                                            ? KazumiPalette.accent
+                                            ? KazumiPalette.accent(for: colorScheme)
                                             : KazumiPalette.cardSurface(for: colorScheme)
                                     )
                             )
@@ -500,7 +573,7 @@ extension BangumiInfoScreen {
             .foregroundStyle(KazumiPalette.onAccent(for: colorScheme))
             .padding(.horizontal, 18)
             .padding(.vertical, 12)
-            .background(Capsule(style: .continuous).fill(KazumiPalette.accent))
+            .background(Capsule(style: .continuous).fill(KazumiPalette.accent(for: colorScheme)))
         }
         .buttonStyle(KazumiPressButtonStyle())
         .shadow(color: .black.opacity(0.18), radius: 10, y: 4)
@@ -526,8 +599,8 @@ struct KazumiPressButtonStyle: ButtonStyle {
 extension BangumiInfoScreen {
     @ViewBuilder
     private var toastView: some View {
-        if let toastMessage {
-            Text(toastMessage)
+        if let message = toastMessage {
+            Text(message)
                 .font(.footnote.weight(.medium))
                 .foregroundStyle(.primary)
                 .padding(.horizontal, 16)
@@ -537,12 +610,13 @@ extension BangumiInfoScreen {
                         .fill(.ultraThinMaterial)
                 )
                 .padding(.top, 8)
-                .transition(.move(edge: .top).combined(with: .opacity))
-                .task {
+                // 自动消失只做纯赋值，不包 withAnimation：连同下面把出入场
+                // 交给 .animation(value:)，这条路径上不再存在“在动画里改状态”。
+                // task 以文案为 id：快速连点时上一条定时器自然作废，不会提前清掉新的。
+                .task(id: message) {
                     try? await Task.sleep(for: .seconds(2))
-                    withAnimation(.easeOut(duration: 0.2)) {
-                        self.toastMessage = nil
-                    }
+                    guard !Task.isCancelled else { return }
+                    toastMessage = nil
                 }
         }
     }
