@@ -43,16 +43,16 @@ struct PluginListView: View {
         List {
             // 操作组：两行放同一个 Section，才有一条 0.5 分隔线、才被看成一件事的两种做法。
             // 「添加规则」弹菜单不翻页，所以不给箭头；「规则仓库」真推一页，给箭头。
-            // 行高 48 用内容 44 换：List 这一层自己还给每行上下各留 2pt（实测 44→48、48→52）。
+            // 行高 48：内容按 48 写，行的上下各用 -2 的 rowInsets 抵掉 List 自己加的 4pt（实测内容 44/48 都成行 52）。
             Section {
                 Menu {
                     addRuleMenuItems
                 } label: {
                     Label("添加规则", systemImage: "plus")
-                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                        .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
                         .contentShape(Rectangle())
                 }
-                .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
+                .listRowInsets(EdgeInsets(top: -2, leading: 16, bottom: -2, trailing: 16))
 
                 Button {
                     isShowingShop = true
@@ -64,10 +64,10 @@ struct PluginListView: View {
                             .font(.footnote.weight(.semibold))
                             .foregroundStyle(.tertiary)
                     }
-                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                    .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
                     .contentShape(Rectangle())
                 }
-                .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
+                .listRowInsets(EdgeInsets(top: -2, leading: 16, bottom: -2, trailing: 16))
             }
 
             if plugins.pluginList.isEmpty {
