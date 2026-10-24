@@ -20,6 +20,9 @@ struct TimelineScreen: View {
     @State private var selectedWeekday = TimelineScreen.todayIndex
     @State private var isShowingSeasonPicker = false
     @State private var isShowingOptions = false
+    @State private var isLiquidWeekday = false
+    @State private var weekdayDragX: CGFloat?
+    @State private var weekdaySolidifyTask: Task<Void, Never>?
 
     @Environment(LibraryStore.self) private var library
     @Environment(\.colorScheme) private var colorScheme
@@ -63,15 +66,6 @@ struct TimelineScreen: View {
             watchedIDs: watchedIDs,
             droppedIDs: droppedIDs
         )
-    }
-
-    private var dayItems: [BangumiItem] {
-        filteredCalendar.indices.contains(selectedWeekday) ? filteredCalendar[selectedWeekday] : []
-    }
-
-    private var rawDayIsNotEmpty: Bool {
-        controller.bangumiCalendar.indices.contains(selectedWeekday)
-            && !controller.bangumiCalendar[selectedWeekday].isEmpty
     }
 
     var body: some View {
@@ -186,53 +180,211 @@ struct TimelineScreen: View {
 
     // MARK: - 星期选择器
 
+    // 定稿（2026-10-24，照 LP 给的液态 tab 版）：外框是纯色胶囊；静止时滑块 primary 8%。
+    // 手指一碰整条立刻「液化」——实心滑块淡出，手指底下浮起一块 .clear 的液态玻璃
+    // （比格子宽 14、高 10，只折它底下的刻度线，文字压在它上面永远清楚）；松手后玻璃先飞到目标格，停 0.28–0.42 秒
+    // 再缓缓凝回实心。整条同一时刻只有这一块玻璃。
+    /// 轨道可见高。
+    private static let weekdayTrackHeight: CGFloat = 44
+    /// 实心滑块相对轨道的内缩。
+    private static let weekdayGlassInset: CGFloat = 3
+    /// 液态玻璃比格子多出来的宽高。
+    private static let weekdayLiquidGrowth = CGSize(width: 14, height: 10)
+
     private var weekdaySelector: some View {
-        HStack(spacing: 6) {
-            ForEach(0..<7, id: \.self) { day in
-                dayButton(day)
+        GeometryReader { proxy in
+            let cellWidth = max(proxy.size.width, 1) / 7
+            let restX = cellWidth * (CGFloat(selectedWeekday) + 0.5)
+            let centerX: CGFloat = {
+                guard let x = weekdayDragX else { return restX }
+                return min(max(x, cellWidth / 2), max(proxy.size.width - cellWidth / 2, cellWidth / 2))
+            }()
+
+            ZStack(alignment: .topLeading) {
+                // 外框：纯色胶囊托住玻璃，黑 6%、半径 6、y 2 的浅阴影让它离开页面，
+                // 再加 1 点内描边，玻璃膨胀越出上下边时会被框沿折出一道亮弧。
+                Capsule(style: .continuous)
+                    .fill(Color(.secondarySystemGroupedBackground))
+                    .overlay(
+                        Capsule(style: .continuous)
+                            .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
+                    )
+                    .shadow(color: .black.opacity(0.06), radius: 6, y: 2)
+
+                // 刻度线在最底下，专门留给玻璃折。
+                ForEach(1..<7, id: \.self) { index in
+                    Capsule(style: .continuous)
+                        .fill(Color.primary.opacity(0.12))
+                        .frame(width: 1.5, height: 24)
+                        .offset(x: cellWidth * CGFloat(index) - 0.75,
+                                y: (Self.weekdayTrackHeight - 24) / 2)
+                }
+
+                weekdaySlider(centerX: centerX, cellWidth: cellWidth)
+
+                // 玻璃在文字下面：字永远横平竖直、不被折变形，玻璃只折它底下的刻度线。
+                weekdayLiquidGlass(centerX: centerX, cellWidth: cellWidth)
+
+                weekdayLabels
             }
+            .frame(height: Self.weekdayTrackHeight)
+            .contentShape(Capsule(style: .continuous))
+            // 左右滑切天之类的「不是手指直接点」的切换，也让玻璃液一次再凝回去。
+            .onChange(of: selectedWeekday) { _, _ in
+                guard !isLiquidWeekday else { return }
+                weekdaySolidifyTask?.cancel()
+                withAnimation(.spring(response: 0.24, dampingFraction: 0.65)) {
+                    isLiquidWeekday = true
+                }
+                scheduleWeekdaySolidify(delayMilliseconds: 220)
+            }
+            .gesture(weekdayDragGesture(width: proxy.size.width))
         }
-        .padding(.horizontal, 12)
+        .frame(height: Self.weekdayTrackHeight)
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
         .padding(.bottom, 12)
+        .onDisappear { weekdaySolidifyTask?.cancel() }
     }
 
-    private func dayButton(_ day: Int) -> some View {
-        let isSelected = day == selectedWeekday
-        let isToday = controller.isCurrentSeason && day == Self.todayIndex
-        let count = filteredCalendar.indices.contains(day) ? filteredCalendar[day].count : 0
-        let title = isToday ? "今天" : "周\(Self.weekdayTitles[day])"
-        // 提前算好颜色与字号，避免较长的三目表达式触发类型推断超时。
-        let foreground: Color = isSelected ? KazumiPalette.onAccent(for: colorScheme) : .primary
-        let background: Color = isSelected
-            ? KazumiPalette.accent(for: colorScheme)
-            : KazumiPalette.cardSurface(for: colorScheme)
-        let countText = controller.isLoading ? "—" : "\(count)"
+    /// 静止时的实心滑块：primary 8%，字颜色不变；液化时淡出交给玻璃。
+    private func weekdaySlider(centerX: CGFloat, cellWidth: CGFloat) -> some View {
+        let inset = Self.weekdayGlassInset
+        let width = max(cellWidth - inset * 2, 1)
+        return Capsule(style: .continuous)
+            .fill(Color.primary.opacity(0.08))
+            .frame(width: width, height: Self.weekdayTrackHeight - inset * 2)
+            .offset(x: centerX - width / 2, y: inset)
+            .opacity(isLiquidWeekday ? 0 : 1)
+    }
 
-        return Button {
-            withAnimation(.easeOut(duration: 0.16)) {
-                selectedWeekday = day
+    /// 手指底下的那块液态玻璃：盖在文字上方才折得出光，比格子只放一圈。
+    private func weekdayLiquidGlass(centerX: CGFloat, cellWidth: CGFloat) -> some View {
+        let width = cellWidth + Self.weekdayLiquidGrowth.width
+        let height = Self.weekdayTrackHeight + Self.weekdayLiquidGrowth.height
+        return WeekdayLiquidGlass()
+            .frame(width: width, height: height)
+            .shadow(color: .black.opacity(isLiquidWeekday ? 0.12 : 0),
+                    radius: isLiquidWeekday ? 8 : 0,
+                    y: isLiquidWeekday ? 3 : 0)
+            // 用 position 而不是 offset：position 吃掉父级提议的尺寸，玻璃比格子大也不会把整条顶歪。
+            .position(x: centerX, y: Self.weekdayTrackHeight / 2)
+            .opacity(isLiquidWeekday ? 1 : 0)
+            .allowsHitTesting(false)
+    }
+
+    private var weekdayLabels: some View {
+        HStack(spacing: 0) {
+            ForEach(0..<7, id: \.self) { day in
+                weekdayCell(day)
             }
-        } label: {
-            VStack(spacing: 2) {
-                Text(title)
-                    .font(.footnote.weight(.bold))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
-                Text(countText)
-                    .font(.caption2.weight(.medium))
-                    .lineLimit(1)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 7)
-            .foregroundStyle(foreground)
-            .background(
-                Capsule(style: .continuous).fill(background)
-            )
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel(
-            "星期\(Self.weekdayTitles[day])\(isToday ? "，今天" : "")，\(countText) 部"
-        )
+        .frame(height: Self.weekdayTrackHeight)
+        .sensoryFeedback(.selection, trigger: selectedWeekday)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("放送星期")
+    }
+
+    private func weekdayCell(_ day: Int) -> some View {
+        let isSelected = day == selectedWeekday
+        return VStack(spacing: 1) {
+            Text(dayTitle(day))
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+            Text(countText(day))
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(KazumiPalette.secondaryText(for: colorScheme))
+                .lineLimit(1)
+        }
+        .scaleEffect(isSelected && isLiquidWeekday ? 1.06 : 1)
+        .animation(.spring(response: 0.26, dampingFraction: 0.7), value: isSelected && isLiquidWeekday)
+        .frame(maxWidth: .infinity)
+        .frame(height: Self.weekdayTrackHeight)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(spokenDayTitle(day))，\(countText(day)) 部")
+        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
+        .accessibilityAction { selectWeekday(day) }
+    }
+
+    private func dayTitle(_ day: Int) -> String {
+        isTodayColumn(day) ? "今天" : "周\(Self.weekdayTitles[day])"
+    }
+
+    /// 读屏念全称：「星期三」「今天」。
+    private func spokenDayTitle(_ day: Int) -> String {
+        isTodayColumn(day) ? "今天" : "星期\(Self.weekdayTitles[day])"
+    }
+
+    private func isTodayColumn(_ day: Int) -> Bool {
+        controller.isCurrentSeason && day == Self.todayIndex
+    }
+
+    private func countText(_ day: Int) -> String {
+        if controller.isLoading && controller.bangumiCalendar.allSatisfy({ $0.isEmpty }) {
+            return "—"
+        }
+        return "\(filteredCalendar.indices.contains(day) ? filteredCalendar[day].count : 0)"
+    }
+
+    private func selectWeekday(_ day: Int) {
+        guard day != selectedWeekday else { return }
+        withAnimation(.snappy(duration: 0.26)) {
+            selectedWeekday = day
+        }
+    }
+
+    /// 一碰就液化；横移超过 4 点玻璃跟着手指走，指到第几格就选第几格。
+    private func weekdayDragGesture(width: CGFloat) -> some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onChanged { value in
+                weekdaySolidifyTask?.cancel()
+                if !isLiquidWeekday {
+                    withAnimation(.spring(response: 0.24, dampingFraction: 0.65)) {
+                        isLiquidWeekday = true
+                    }
+                }
+                let cellWidth = max(width, 1) / 7
+                if abs(value.translation.width) > 4 || weekdayDragX != nil {
+                    let x = min(max(value.location.x, cellWidth / 2),
+                                max(width - cellWidth / 2, cellWidth / 2))
+                    withAnimation(.interactiveSpring(response: 0.2, dampingFraction: 0.78)) {
+                        weekdayDragX = x
+                    }
+                    let day = weekdayIndex(at: value.location.x, cellWidth: cellWidth)
+                    if day != selectedWeekday { selectedWeekday = day }
+                }
+            }
+            .onEnded { value in
+                let cellWidth = max(width, 1) / 7
+                let day = weekdayIndex(at: value.location.x, cellWidth: cellWidth)
+                let changed = day != selectedWeekday
+                // 玻璃飞过去慢一点（接近系统分段控件换选的速度），停一下再凝回实心。
+                withAnimation(.spring(response: 0.5, dampingFraction: 0.78)) {
+                    selectedWeekday = day
+                    weekdayDragX = nil
+                }
+                scheduleWeekdaySolidify(delayMilliseconds: changed ? 220 : 180)
+            }
+    }
+
+    /// 松手后让玻璃先停在目标格，过一会儿再缓缓凝回实心。
+    private func scheduleWeekdaySolidify(delayMilliseconds: Int) {
+        weekdaySolidifyTask?.cancel()
+        weekdaySolidifyTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(delayMilliseconds))
+            guard !Task.isCancelled else { return }
+            // 凝固比展开快：0.24 秒收住，几乎不弹。
+            withAnimation(.spring(response: 0.25, dampingFraction: 0.9)) {
+                isLiquidWeekday = false
+            }
+        }
+    }
+
+    private func weekdayIndex(at x: CGFloat, cellWidth: CGFloat) -> Int {
+        min(max(Int((x / cellWidth).rounded(.down)), 0), 6)
     }
 
     // MARK: - 内容
@@ -258,12 +410,31 @@ struct TimelineScreen: View {
                 .buttonStyle(.borderedProminent)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if dayItems.isEmpty {
-            emptyState
+        } else {
+            // 一页一天，翻页容器自己管左右滑：在卡片上起手也能滑（原来是
+            // ScrollView 上的 simultaneousGesture，手指从卡片上划过去会被卡片点掉，
+            // 直接跳详情页），并且页面跟手指走，切天那一下就变成了横向翻页的动画。
+            TabView(selection: $selectedWeekday) {
+                ForEach(0..<7, id: \.self) { day in
+                    dayPage(day)
+                        .tag(day)
+                }
+            }
+            .tabViewStyle(.page(indexDisplayMode: .never))
+            // 轻触感反馈：滑切与点选星期都会触发。
+            .sensoryFeedback(.selection, trigger: selectedWeekday)
+        }
+    }
+
+    @ViewBuilder
+    private func dayPage(_ day: Int) -> some View {
+        let items = filteredCalendar.indices.contains(day) ? filteredCalendar[day] : []
+        if items.isEmpty {
+            emptyState(day: day)
         } else {
             ScrollView {
                 LazyVStack(spacing: 10) {
-                    ForEach(dayItems) { item in
+                    ForEach(items) { item in
                         BangumiTimelineCard(
                             item: item,
                             isWatching: watchingIDs.contains(item.id),
@@ -283,26 +454,12 @@ struct TimelineScreen: View {
                 await controller.loadSeason(controller.selectedDate, collectTypes: collectTypes)
                 prefetchCovers()
             }
-            // 左右滑切天：必须用 simultaneousGesture，纵向滚动仍由 ScrollView 自己处理。
-            .simultaneousGesture(
-                DragGesture(minimumDistance: 24).onEnded { value in
-                    let dx = value.translation.width
-                    let dy = value.translation.height
-                    // 纵向优先：横向位移不够压倒纵向、或距离太短就不切。
-                    guard abs(dx) > abs(dy) * 1.4, abs(dx) > 44 else { return }
-                    // selectedWeekday 是 0 基下标（0 = 周一 ... 6 = 周日），到两端截断不循环。
-                    let next = min(6, max(0, selectedWeekday + (dx < 0 ? 1 : -1)))
-                    guard next != selectedWeekday else { return }
-                    withAnimation(.easeOut(duration: 0.2)) { selectedWeekday = next }
-                }
-            )
-            // 轻触感反馈：滑切与点选星期都会触发。
-            .sensoryFeedback(.selection, trigger: selectedWeekday)
         }
     }
 
-    private var emptyState: some View {
-        let filteredOut = rawDayIsNotEmpty
+    private func emptyState(day: Int) -> some View {
+        let filteredOut = controller.bangumiCalendar.indices.contains(day)
+            && !controller.bangumiCalendar[day].isEmpty
         return VStack(spacing: 10) {
             Image(
                 systemName: filteredOut
@@ -434,11 +591,6 @@ struct TimelineScreen: View {
             }
             .navigationTitle("排序与筛选")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("关闭") { isShowingOptions = false }
-                }
-            }
         }
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
@@ -527,5 +679,19 @@ struct TimelineScreen: View {
     private func prefetchCovers() {
         let urls = controller.bangumiCalendar.flatMap { $0.map(\.largeImage) }
         KazumiImageLoader.shared.prefetch(urls)
+    }
+}
+
+// MARK: - 星期条的玻璃
+
+/// 手指底下的液态玻璃：.clear 全透明、零染色，只靠边缘亮弧和阴影定形。
+private struct WeekdayLiquidGlass: View {
+    var body: some View {
+        if #available(iOS 26.0, *) {
+            Color.clear
+                .glassEffect(.clear.interactive(), in: .capsule)
+        } else {
+            Capsule(style: .continuous).fill(Color.white.opacity(0.5))
+        }
     }
 }
