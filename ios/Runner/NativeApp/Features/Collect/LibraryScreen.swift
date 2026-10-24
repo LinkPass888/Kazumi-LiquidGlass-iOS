@@ -705,11 +705,12 @@ private struct LibraryEntryCard: View {
             // 右侧的收藏状态菜单不跟着放大。
             .kazumiZoomSource(id: entry.id, namespace: zoomNamespace)
 
-            Menu {
-                ForEach(CollectType.enabledCases) { type in
-                    Button(type.title) { onChangeType(type) }
-                }
-            } label: {
+            // 这一份也走共用组件：列表布局今天还没接上（没有调用处），
+            // 但留着一份自己写的菜单，就是留着一份将来会分叉的。
+            CollectStatusMenu(
+                current: entry.collectType,
+                onChange: onChangeType
+            ) {
                 Image(systemName: "ellipsis")
                     .font(.system(size: 16, weight: .semibold))
                     .frame(width: 32, height: 32)
