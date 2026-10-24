@@ -14,6 +14,7 @@ struct SearchFilterSheet: View {
 
     @State private var state: SearchFilterState
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
 
     /// 与 constants.dart 的 defaultAnimeTags 一致。
     private static let tags: [String] = [
@@ -124,7 +125,7 @@ struct SearchFilterSheet: View {
                         .padding(.vertical, 7)
                         .background(
                             Capsule(style: .continuous)
-                                .fill(selected ? KazumiPalette.accent : Color.secondary.opacity(0.14))
+                                .fill(selected ? KazumiPalette.accent(for: colorScheme) : Color.secondary.opacity(0.14))
                         )
                         .foregroundStyle(selected ? Color.white : Color.primary)
                 }
@@ -152,7 +153,7 @@ struct SearchFilterSheet: View {
                         .padding(.vertical, 7)
                         .background(
                             Capsule(style: .continuous)
-                                .fill(selected ? KazumiPalette.accent : Color.secondary.opacity(0.14))
+                                .fill(selected ? KazumiPalette.accent(for: colorScheme) : Color.secondary.opacity(0.14))
                         )
                         .foregroundStyle(selected ? Color.white : Color.primary)
                 }
@@ -223,6 +224,8 @@ private struct OptionRangeRow: View {
     let options: [Double]
     @Binding var selection: Double
 
+    @Environment(\.colorScheme) private var colorScheme
+
     var body: some View {
         ScrollView(.horizontal) {
             HStack(spacing: 6) {
@@ -237,7 +240,7 @@ private struct OptionRangeRow: View {
                             .padding(.vertical, 6)
                             .background(
                                 Capsule(style: .continuous)
-                                    .fill(selected ? KazumiPalette.accent : Color.secondary.opacity(0.14))
+                                    .fill(selected ? KazumiPalette.accent(for: colorScheme) : Color.secondary.opacity(0.14))
                             )
                             .foregroundStyle(selected ? Color.white : Color.primary)
                     }

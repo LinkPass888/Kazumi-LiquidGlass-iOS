@@ -158,7 +158,7 @@ struct BestMatchCard: View {
                         .frame(minHeight: 44)
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(KazumiPalette.accent)
+                .tint(KazumiPalette.accent(for: colorScheme))
                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
 
                 if let video = result.previewURL {

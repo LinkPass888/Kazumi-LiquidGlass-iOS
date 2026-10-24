@@ -27,8 +27,6 @@ struct ImageSearchScreen: View {
     @State private var debounceTask: Task<Void, Never>?
     @State private var isShowingHelp = false
     @State private var isShowingPicker = false
-    @State private var isShowingCamera = false
-    @State private var isShowingFileImporter = false
     @State private var photoSelection: PhotosPickerItem?
     @State private var toast: String?
     @FocusState private var isURLFocused: Bool
@@ -81,15 +79,6 @@ struct ImageSearchScreen: View {
         }
         .sheet(isPresented: $isShowingHelp) { helpSheet }
         .photosPicker(isPresented: $isShowingPicker, selection: $photoSelection, matching: .images)
-        .fullScreenCover(isPresented: $isShowingCamera) {
-            CameraImagePicker { picked in
-                adopt(picked)
-            }
-            .ignoresSafeArea()
-        }
-        .fileImporter(isPresented: $isShowingFileImporter, allowedContentTypes: [.image]) { result in
-            handleFileImport(result)
-        }
         .onChange(of: urlText) { _, newValue in
             schedulePreview(for: newValue)
         }
@@ -240,7 +229,7 @@ struct ImageSearchScreen: View {
                         .padding(.vertical, 8)
                         .background {
                             Capsule(style: .continuous)
-                                .fill(selected ? KazumiPalette.accent : Color.clear)
+                                .fill(selected ? KazumiPalette.accent(for: colorScheme) : Color.clear)
                         }
                         .foregroundStyle(selected ? Color.white : Color.secondary)
                         .contentShape(Capsule(style: .continuous))
@@ -264,28 +253,30 @@ struct ImageSearchScreen: View {
                 RemoteFrameImage(url: target, height: previewHeight)
             }
         } else if let imageFile {
-            Image(uiImage: imageFile.image)
-                .resizable()
-                .scaledToFit()
-                .frame(maxWidth: .infinity)
-                .frame(height: previewHeight)
-                .background(KazumiPalette.cardSurface(for: colorScheme))
-                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-                .accessibilityLabel("待识别的完整截图")
-                .overlay(alignment: .bottomTrailing) {
-                    Button {
-                        pickImage()
-                    } label: {
+            // 整块图都能点：主按钮删掉之后，「更换截图」那枚小胶囊只是提示，
+            // 点它和点图是同一件事（Colo 1115）。读屏念「更换截图」。
+            Button {
+                pickImage()
+            } label: {
+                Image(uiImage: imageFile.image)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxWidth: .infinity)
+                    .frame(height: previewHeight)
+                    .background(KazumiPalette.cardSurface(for: colorScheme))
+                    .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                    .overlay(alignment: .bottomTrailing) {
                         Label("更换截图", systemImage: "arrow.triangle.2.circlepath")
                             .font(.caption.weight(.semibold))
                             .padding(.horizontal, 12)
                             .padding(.vertical, 6)
                             .kazumiGlassCapsule()
+                            .padding(10)
                     }
-                    .buttonStyle(.plain)
-                    .disabled(isBusy)
-                    .padding(10)
-                }
+            }
+            .buttonStyle(.plain)
+            .disabled(isBusy)
+            .accessibilityLabel("更换截图")
         } else {
             Button {
                 pickImage()
@@ -308,6 +299,7 @@ struct ImageSearchScreen: View {
             }
             .buttonStyle(.plain)
             .disabled(isBusy)
+            .accessibilityLabel("选择一张动画截图")
         }
     }
 
@@ -356,36 +348,36 @@ struct ImageSearchScreen: View {
     }
 
     /// 对应 _buildPrimaryAction。
+    ///
+    /// 本地截图模式下**没有图时这颗按钮根本不出现**：入口只剩预览区那张卡片
+    /// （LP 1112、Ato 1108）。链接模式那颗「开始识别」照旧，链接没填好时只是不可点。
+    @ViewBuilder
     private var primaryAction: some View {
-        let selecting = !useURL && imageFile == nil
-        let title: String = {
-            if controller.isSearching { return "正在识别" }
-            if isPicking { return "正在读取图片" }
-            if selecting { return "选择截图" }
-            return useURL ? "开始识别" : "识别这张截图"
-        }()
-        return Button {
-            if selecting {
-                pickImage()
-            } else {
+        if useURL || imageFile != nil {
+            let title: String = {
+                if controller.isSearching { return "正在识别" }
+                if isPicking { return "正在读取图片" }
+                return useURL ? "开始识别" : "识别这张截图"
+            }()
+            Button {
                 search()
-            }
-        } label: {
-            HStack(spacing: 10) {
-                if isBusy {
-                    ProgressView()
-                } else {
-                    Image(systemName: selecting ? "photo.badge.plus" : "magnifyingglass")
+            } label: {
+                HStack(spacing: 10) {
+                    if isBusy {
+                        ProgressView()
+                    } else {
+                        Image(systemName: "magnifyingglass")
+                    }
+                    Text(title)
+                        .font(.headline)
                 }
-                Text(title)
-                    .font(.headline)
+                .frame(maxWidth: .infinity)
+                .frame(minHeight: 52)
             }
-            .frame(maxWidth: .infinity)
-            .frame(minHeight: 52)
+            .buttonStyle(.borderedProminent)
+            .tint(KazumiPalette.accent(for: colorScheme))
+            .disabled(isBusy || !hasImage)
         }
-        .buttonStyle(.borderedProminent)
-        .tint(KazumiPalette.accent)
-        .disabled(isBusy || (!selecting && !hasImage))
     }
 
     /// 对应 _ScreenshotTip：截图的小建议。
@@ -393,7 +385,7 @@ struct ImageSearchScreen: View {
         HStack(alignment: .top, spacing: 12) {
             Image(systemName: "lightbulb")
                 .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(KazumiPalette.accent)
+                .foregroundStyle(KazumiPalette.accent(for: colorScheme))
             VStack(alignment: .leading, spacing: 6) {
                 Text("截图小建议")
                     .font(.footnote.weight(.semibold))
@@ -552,50 +544,12 @@ struct ImageSearchScreen: View {
         urlText = value
     }
 
-    /// 对应 _pickImage：相册 / 拍照 / 文件三个来源。
+    /// 对应 _pickImage：点一下直接开相册，只有这一条来源（原版也只有相册；
+    /// LP 1112 要的是「点一下直接从相册选择」，所以中间那层菜单连同拍照、文件一起删）。
     private func pickImage() {
         guard !isBusy else { return }
         isURLFocused = false
-        showPickerMenu()
-    }
-
-    private func showPickerMenu() {
-        let sheet = UIAlertController(title: "选择截图", message: nil, preferredStyle: .actionSheet)
-        sheet.addAction(UIAlertAction(title: "从相册选择", style: .default) { _ in
-            isShowingPicker = true
-        })
-        if UIImagePickerController.isSourceTypeAvailable(.camera) {
-            sheet.addAction(UIAlertAction(title: "拍照", style: .default) { _ in
-                isShowingCamera = true
-            })
-        }
-        sheet.addAction(UIAlertAction(title: "从文件选择", style: .default) { _ in
-            isShowingFileImporter = true
-        })
-        sheet.addAction(UIAlertAction(title: "取消", style: .cancel))
-        present(sheet)
-    }
-
-    private func present(_ controller: UIAlertController) {
-        guard let scene = UIApplication.shared.connectedScenes
-            .compactMap({ $0 as? UIWindowScene })
-            .first(where: { $0.activationState == .foregroundActive }),
-            let window = scene.windows.first(where: \.isKeyWindow) ?? scene.windows.first
-        else { return }
-        var presenter = window.rootViewController
-        while let presented = presenter?.presentedViewController { presenter = presented }
-        guard let presenter else { return }
-        if let popover = controller.popoverPresentationController {
-            popover.sourceView = presenter.view
-            popover.sourceRect = CGRect(
-                x: presenter.view.bounds.midX,
-                y: presenter.view.bounds.maxY - 40,
-                width: 1,
-                height: 1
-            )
-            popover.permittedArrowDirections = []
-        }
-        presenter.present(controller, animated: true)
+        isShowingPicker = true
     }
 
     /// 相册选择结果：读到内存后按 JPEG 上传，与原版 image_picker + readAsBytes 等价。
@@ -612,26 +566,6 @@ struct ImageSearchScreen: View {
                     return
                 }
                 adopt(PickedImage(image: image, fileName: "screenshot"))
-            } catch {
-                inputError = "无法读取这张图片，请换一张"
-            }
-        }
-    }
-
-    private func handleFileImport(_ result: Result<URL, any Error>) {
-        guard case .success(let url) = result else { return }
-        isPicking = true
-        Task {
-            defer { isPicking = false }
-            let scoped = url.startAccessingSecurityScopedResource()
-            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-            do {
-                let data = try Data(contentsOf: url)
-                guard let image = UIImage(data: data) else {
-                    inputError = "无法读取这张图片，请换一张"
-                    return
-                }
-                adopt(PickedImage(image: image, fileName: url.lastPathComponent))
             } catch {
                 inputError = "无法读取这张图片，请换一张"
             }
