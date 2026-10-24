@@ -15,8 +15,8 @@ import SwiftUI
 /// 推荐页右上角那两个按钮、详情页的返回 / 更多按钮都用它，
 /// 这样换到 iOS 后按钮的直径与间距仍然和原版一致。
 enum KazumiGlassMetrics {
-    /// 圆形玻璃按钮的边长。
-    static let barButtonSize: CGFloat = 40
+    /// 圆形玻璃按钮的边长。44pt 是 Apple HIG 的最低点击区域标准。
+    static let barButtonSize: CGFloat = 44
     /// 相邻两个顶栏按钮之间的空隙。
     static let barButtonGap: CGFloat = 6
     /// 最后一个顶栏按钮离屏幕边缘的留白。

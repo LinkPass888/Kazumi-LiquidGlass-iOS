@@ -13,6 +13,7 @@ struct AppRoot: View {
 
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.openURL) private var openURL
+    @Environment(\.colorScheme) private var colorScheme
 
     @State private var isShowingAppUpdate = false
 
@@ -24,6 +25,9 @@ struct AppRoot: View {
                 KazumiTabShell()
             }
         }
+        // 强调色按 SwiftUI 的当前明暗显式取：这里能读到 `colorScheme`（= 设置里的
+        // 主题模式），不再走 UIKit 动态色那条路。
+        .tint(KazumiPalette.accent(for: colorScheme))
         .task {
             guard failure == nil else { return }
             await environment.updates.checkOnLaunch(

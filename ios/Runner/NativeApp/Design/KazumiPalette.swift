@@ -7,45 +7,45 @@
 //
 
 import SwiftUI
-import UIKit
 
 enum KazumiPalette {
-    /// 强调色。
-    ///
-    /// 取色方式与原版一致：原项目用 `ColorScheme.fromSeed(seedColor:)` 生成主题，
-    /// 界面上的 primary 并不是种子色本身，而是种子色在对应亮度下的 tonal palette
-    /// 里取出的一档（Material 3 的 T40 / T80，见 `KazumiThemeColor`）。
-    /// 返回 `UIColor` 承载的动态色，SwiftUI 每次渲染都会按当时的浅色 / 深色与
-    /// 当前配色重新解析，因此切换配色后所有调用点自动跟随。
+    /// 按当前配色取的强调色（旧接口，这批先留：调用点正在陆续转成 accent(for:)，
+    /// 全部转完由最后一个提交删除）。
     @MainActor
     static var accent: Color {
         Color(uiColor: KazumiThemeColor.current.accentUIColor)
     }
 
-    /// 按当前浅色 / 深色取的强调色。
+    /// 强调色。
     ///
-    /// 主题色的两档数值来自 Material 3：浅色模式是 T40（深），深色模式是 T80（浅）。
+    /// 取色方式与原版一致：原项目用 `ColorScheme.fromSeed(seedColor:)` 生成主题，
+    /// 界面上的 primary 并不是种子色本身，而是种子色在对应亮度下的 tonal palette
+    /// 里取出的一档（Material 3 的 T40 / T80，见 `KazumiThemeColor`）。
+    ///
     /// 这里**显式**按 `colorScheme` 取，不走 `UIColor` 的动态解析 ——
-    /// 动态色最终由 UIKit 的 trait collection 决定，自绘顶栏、隐藏导航栏这些
-    /// 场景下它和 SwiftUI 的 colorScheme 可能对不上，就会出现「深色模式用了
-    /// 浅色模式的色、浅色模式用了深色模式的色」这种对调。
+    /// 动态色由 UIKit 的 trait collection 决定，自绘顶栏、隐藏导航栏这些场景下
+    /// 它和 SwiftUI 的 colorScheme 可能对不上，同一套配色会在不同页面里取到不同的
+    /// 档位。亮度档位只由 `colorScheme`（= 设置里的主题模式）决定，没有第二条路。
     ///
     /// `KazumiThemeColor.current` 是主线程隔离的全局状态（由 `SettingsStore` 写入），
-    /// 所以这里同样标 `@MainActor`；所有调用点都在 View 的 body 里，天然满足。
+    /// 所以这里标 `@MainActor`；所有调用点都在 View 的 body 里，天然满足。
     @MainActor
     static func accent(for scheme: ColorScheme) -> Color {
-        let theme = KazumiThemeColor.current
-        return KazumiThemeColor.swiftUIColor(
-            scheme == .dark ? theme.darkPrimary : theme.lightPrimary
-        )
+        accent(for: scheme, theme: KazumiThemeColor.current)
+    }
+
+    /// 指定一套配色（不跟随当前设置）的强调色：设置页那排色块用。
+    @MainActor
+    static func accent(for scheme: ColorScheme, theme: KazumiThemeColor) -> Color {
+        KazumiThemeColor.swiftUIColor(scheme == .dark ? theme.darkPrimary : theme.lightPrimary)
     }
 
     /// 强调色上的前景色（对应 Material 的 onPrimary）。
     ///
     /// 数值同样取自 `ColorScheme.fromSeed` 的 onPrimary（见
     /// `KazumiThemeColor.onPrimary(dark:)`），不用黑白硬编码 ——
-    /// 深色档的 onPrimary 会是该色相很深的一档（默认绿是 0xFF0A390F），
-    /// 并不是纯黑。
+    /// 两档的 onPrimary 与强调色那两档是一对，要改一起改 —— 深色档的 onPrimary
+    /// 会是该色相很深的一档（默认绿是 0xFF0A390F），并不是纯黑。
     @MainActor
     static func onAccent(for scheme: ColorScheme) -> Color {
         let theme = KazumiThemeColor.current

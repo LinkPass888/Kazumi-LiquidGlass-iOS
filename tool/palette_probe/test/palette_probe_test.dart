@@ -61,6 +61,9 @@ void main() {
       final cardPrimaryContainer = Color(Hct.from(hct.hue, 30.0, 50.0).toInt());
       final cardCheckbox = Color(Hct.from(hct.hue, 30.0, 40.0).toInt());
 
+      // 期望值就是 ColorScheme.fromSeed 现算出来的那两颗，与 iOS 那边一一对应
+      // （`lightPrimary` ↔ 浅色档、`darkPrimary` ↔ 深色档）。这张表要和色值表一致，
+      // 否则它绿着而屏幕上是错的。
       final expected = <String, String>{
         'seed': _argb(seed),
         'lightPrimary': _argb(light.primary),

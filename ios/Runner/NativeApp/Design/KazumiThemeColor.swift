@@ -6,8 +6,13 @@
 //
 //  每套方案的颜色分两组，都取自原版 Flutter：
 //
-//  1. 强调色 —— `ColorScheme.fromSeed(seedColor:)` 得到的 primary，
-//     浅色模式 T40、深色模式 T80。全 App 的 tint、强调文字都取它。
+//  1. 强调色 —— `ColorScheme.fromSeed(seedColor:)` 得到的 primary：`lightPrimary`
+//     是浅色外观那颗（原版 T40，深的）、`darkPrimary` 是深色外观那颗（原版 T80，
+//     浅的），跟名字一致，取用时按外观直接取，没有第二层转换。
+//     **强调色是固定色**：不带明暗参数的取色入口已经删掉（任务 3f66494f，LP 1112
+//     「动态取色不要恢复，还是固定色」），明暗由调用点显式传进来。
+//     （2026-10-23 曾经把两张表的 light/dark 对调过一版，LP 1112 说「是我搞错了，
+//     这个颜色改回吧」，已全部退回，`tool/palette_probe` 的期望值也是原值。）
 //  2. 配色卡片的三色 —— 原版 `lib/bean/card/palette_card.dart` 直接用
 //     `Hct.from(hue, ...)` 从种子色的色相算出来的 primary / tertiary /
 //     primaryContainer，外加一枚勾选圆的底色。这三色与 ColorScheme 无关，
@@ -29,9 +34,9 @@ struct KazumiThemeColor: Identifiable, Hashable, Sendable {
     let title: String
     /// 原版 `colorThemeTypes` 里的种子色。
     let seed: UInt32
-    /// 浅色模式下的强调色（`ColorScheme.fromSeed` 的 primary）。
+    /// 浅色外观下的强调色（原版 `fromSeed` 的 T40，深的那颗）。
     let lightPrimary: UInt32
-    /// 深色模式下的强调色。
+    /// 深色外观下的强调色（原版 `fromSeed` 的 T80，浅的那颗）。
     let darkPrimary: UInt32
     /// 配色卡片上半块的色调（HCT：种子色相、彩度 20、明度 90）。
     let cardPrimary: UInt32
@@ -266,80 +271,9 @@ struct KazumiThemeColor: Identifiable, Hashable, Sendable {
     }
 
     /// 当前选中的配色。由 `SettingsStore` 在读写设置时同步，
-    /// `KazumiPalette.accent` 据此取色；只允许在主线程访问。
+    /// `KazumiPalette.accent(for:)` 据此取色；只允许在主线程访问。
     @MainActor
     static var current: KazumiThemeColor = .standard
-
-    /// 应用主题强制的明暗（深色 = true，浅色 = false）。
-    ///
-    /// 原版强调色是按**应用主题**的亮度取的：浅色主题取 T40（深），深色主题取
-    /// T80（浅）。iOS 的动态色却按**窗口 trait** 解析 —— 系统是深色、应用设成
-    /// 浅色（或反过来）时，窗口 trait 与界面亮度并不一致，动态色就会取到另一
-    /// 个档位，界面上表现为「浅色模式用了深色模式的强调色、深色模式用了浅色
-    /// 模式的强调色」，也就是强调色整体对调。
-    ///
-    /// `SettingsStore` 在启动与切换主题时写入这里（跟随系统时为 nil，交回
-    /// trait collection 判断）；`KazumiPalette.accent` 只认这个值，不再让
-    /// UIKit 决定亮度档位。
-    @MainActor
-    static var darkAppearanceOverride: Bool?
-
-    /// 当前是否处于深色外观：优先用应用主题的强制值，其次看 trait 集合。
-    @MainActor
-    static var isDarkAppearance: Bool {
-        if let darkAppearanceOverride { return darkAppearanceOverride }
-        return UITraitCollection.current.userInterfaceStyle == .dark
-    }
-
-    /// 按当前外观取强调色（浅色主题 → 深色档，深色主题 → 浅色档）。
-    @MainActor
-    func accentARGB() -> UInt32 {
-        Self.isDarkAppearance ? darkPrimary : lightPrimary
-    }
-
-    /// 该配色对应的动态强调色（浅色 / 深色自动切换）。
-    ///
-    /// 动态色由 UIKit 在解析时按 `userInterfaceStyle` 取亮/暗分支，
-    /// 必须是稳定且长期存活的同一个实例，因此在主线程按配色缓存。
-    ///
-    /// 应用主题强制了亮 / 暗时（`darkAppearanceOverride`），直接用对应的那一档
-    /// 静态色：此时窗口 trait 可能还停留在系统亮度上（例如系统深色、应用浅色），
-    /// 交给 UIKit 解析会把强调色取反 —— 这正是「浅色 / 深色配色反了」的来源。
-    @MainActor
-    var accentUIColor: UIColor {
-        if let forced = Self.forcedUIColor(id: id) { return forced }
-        if let cached = Self.uiColorCache[id] { return cached }
-        let light = Self.color(lightPrimary)
-        let dark = Self.color(darkPrimary)
-        let color = UIColor { traits in
-            // `.unspecified` 出现在没有视图体系上下文的时候（例如在后台线程
-            // 建立动态色）；此时退回当前 trait 集合，避免默认落到浅色分支。
-            let style = traits.userInterfaceStyle == .unspecified
-                ? UITraitCollection.current.userInterfaceStyle
-                : traits.userInterfaceStyle
-            return style == .dark ? dark : light
-        }
-        Self.uiColorCache[id] = color
-        return color
-    }
-
-    /// 强制外观下的强调色（未强制时返回 nil，交回动态色）。
-    @MainActor
-    private static func forcedUIColor(id: String) -> UIColor? {
-        guard let isDark = darkAppearanceOverride else { return nil }
-        let cacheKey = isDark ? "\(id)-dark" : "\(id)-light"
-        if let cached = forcedColorCache[cacheKey] { return cached }
-        guard let theme = all.first(where: { $0.id == id }) else { return nil }
-        let resolved = color(isDark ? theme.darkPrimary : theme.lightPrimary)
-        forcedColorCache[cacheKey] = resolved
-        return resolved
-    }
-
-    @MainActor
-    private static var forcedColorCache: [String: UIColor] = [:]
-
-    @MainActor
-    private static var uiColorCache: [String: UIColor] = [:]
 
     /// 深色模式是否使用纯黑（对应原版 `SettingsKeys.oledEnhance`）。
     /// `KazumiPalette` 的背景色在 `View` 体系之外也可能被求值，因此不做 actor 隔离，

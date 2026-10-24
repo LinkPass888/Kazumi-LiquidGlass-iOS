@@ -108,9 +108,11 @@ struct KazumiThemeColorSwatch: View {
     let color: KazumiThemeColor
     var size: CGFloat = 16
 
+    @Environment(\.colorScheme) private var colorScheme
+
     var body: some View {
         Circle()
-            .fill(Color(uiColor: color.accentUIColor))
+            .fill(KazumiPalette.accent(for: colorScheme, theme: color))
             .frame(width: size, height: size)
             .overlay {
                 Circle().strokeBorder(.white.opacity(0.35), lineWidth: 0.5)

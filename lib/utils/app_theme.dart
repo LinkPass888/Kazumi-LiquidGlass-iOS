@@ -74,7 +74,6 @@ ThemeData appTheme({
   return ThemeData(
     useMaterial3: true,
     brightness: brightness,
-    colorSchemeSeed: color,
     colorScheme: scheme,
     progressIndicatorTheme: progressIndicatorTheme2024,
     sliderTheme: sliderTheme2024,
