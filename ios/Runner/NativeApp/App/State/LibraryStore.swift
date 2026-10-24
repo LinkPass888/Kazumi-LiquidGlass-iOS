@@ -84,19 +84,6 @@ enum CollectType: Int, Codable, CaseIterable, Sendable, Identifiable {
         }
     }
 
-    /// 详情页追番按钮的图标，对应 lib/bean/widget/collect_button.dart 的
-    /// getIconByInt：favorite_border / favorite / star_rounded / pending_actions /
-    /// done / heart_broken。SF Symbols 里挑语义最接近的几个。
-    var symbolName: String {
-        switch self {
-        case .none: "heart"
-        case .watching: "heart.fill"
-        case .wish: "star.fill"
-        case .onHold: "pause.circle"
-        case .watched: "checkmark.circle"
-        case .dropped: "heart.slash.fill"
-        }
-    }
 }
 
 

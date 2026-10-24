@@ -20,6 +20,7 @@ struct LibraryScreen: View {
     @Environment(AppRouter.self) private var router
     @Environment(SettingsStore.self) private var settings
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// nil 表示「全部」。
     private static let categories: [CollectType?] = [
@@ -538,11 +539,12 @@ struct LibraryScreen: View {
                         LibraryPosterCard(
                             entry: entry,
                             isPending: pendingID == entry.id,
-                            showsStatus: selectedType == nil,
                             zoomNamespace: zoomNamespace,
                             onOpen: { router.push(.bangumiInfo(bangumiID: entry.id)) },
                             onChangeType: { type in changeType(entry, to: type) }
                         )
+                        // 取消追番时这张卡淡出并缩到 0.92，其余卡片靠同一次动画补位。
+                        .transition(cardRemovalTransition)
                     }
                 }
                 .padding(.horizontal, 16)
@@ -601,14 +603,44 @@ struct LibraryScreen: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
+    /// 改收藏状态，两条路分开走：
+    /// * `type == .none` 是「取消追番」——这部从列表里消失，包一层动画让它淡出缩小，
+    ///   剩下的卡片在同一次动画里补位（Ato 2026-10-24：不许手写定时器，也不许删完重排）；
+    /// * 其余是改状态——卡片不动，只有角上那颗符号换掉，**不能包动画**，
+    ///   否则整页会跟着动一下。
     private func changeType(_ entry: LibraryEntry, to type: CollectType) {
         guard pendingID == nil else { return }
         pendingID = entry.id
-        var updated = entry
-        updated.type = type.rawValue
-        updated.updatedAt = Date()
-        library.upsert(updated)
+        if type == .none {
+            withAnimation(removalAnimation) {
+                library.remove(bangumiID: entry.id)
+            }
+        } else {
+            var updated = entry
+            updated.type = type.rawValue
+            updated.updatedAt = Date()
+            library.upsert(updated)
+        }
+        // 删掉的那一条已经不在列表里，别把 pendingID 留在它身上。
         pendingID = nil
+    }
+
+    /// 出门那一下的曲线：Colo 2026-10-24 定的 `.snappy(0.3)`。
+    /// `easeOut` 是前快后慢，卡片 0.12 秒就几乎看不见了，后面那截缩小是空转，
+    /// 而补位要到后半段才动，看着像两件事。
+    /// 开了「减少动态效果」的人只淡出（0.2 秒）、不缩小、不滑动补位——
+    /// 这一下要动一整排，对前庭敏感的人是负担，淡出已经说清它没了。
+    private var removalAnimation: Animation {
+        reduceMotion ? .easeOut(duration: 0.2) : .snappy(duration: 0.3)
+    }
+
+    private var cardRemovalTransition: AnyTransition {
+        reduceMotion
+            ? .asymmetric(insertion: .opacity, removal: .opacity)
+            : .asymmetric(
+                insertion: .opacity,
+                removal: .opacity.combined(with: .scale(scale: 0.92))
+            )
     }
 }
 

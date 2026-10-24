@@ -344,27 +344,19 @@ extension BangumiInfoScreen {
 
 extension BangumiInfoScreen {
     /// 追番状态菜单：收窄放在条目信息最下方。
+    /// 里面那份（五项带图标 → 分隔线 → 红色「取消追番」）和追番页卡片共用
+    /// `CollectStatusMenu`，两处不会再分叉；外面这颗按钮两边不同是对的：
+    /// 这里宽得下字，卡片只有 116.7 宽、只放得下符号。
     private func collectMenu(_ controller: InfoController) -> some View {
         let current = currentType(controller)
-        return Menu {
-            ForEach(CollectType.enabledCases) { type in
-                Button {
-                    collect(controller, type)
-                } label: {
-                    Label(type.buttonTitle, systemImage: type.symbolName)
-                }
-            }
-            if current != .none {
-                Divider()
-                Button(role: .destructive) {
-                    collect(controller, .none)
-                } label: {
-                    Label("取消追番", systemImage: "trash")
-                }
-            }
-        } label: {
+        return CollectStatusMenu(
+            current: current,
+            // 没追的番没有可取消的，这一项不出现。
+            showsCancelItem: current != .none,
+            onChange: { collect(controller, $0) }
+        ) {
             HStack(spacing: 3) {
-                Image(systemName: current.symbolName)
+                Image(systemName: current.statusSymbol)
                     .font(.system(size: 12, weight: .semibold))
                 Text(current.buttonTitle)
                     .font(.system(size: 13, weight: .semibold))
