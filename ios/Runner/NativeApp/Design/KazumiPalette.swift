@@ -9,13 +9,6 @@
 import SwiftUI
 
 enum KazumiPalette {
-    /// 按当前配色取的强调色（旧接口，这批先留：调用点正在陆续转成 accent(for:)，
-    /// 全部转完由最后一个提交删除）。
-    @MainActor
-    static var accent: Color {
-        Color(uiColor: KazumiThemeColor.current.accentUIColor)
-    }
-
     /// 强调色。
     ///
     /// 取色方式与原版一致：原项目用 `ColorScheme.fromSeed(seedColor:)` 生成主题，
