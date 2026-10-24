@@ -702,7 +702,9 @@ private struct LibraryEntryCard: View {
 
 /// 量网格可用内容宽用的一次性 preference（追番页网格列宽按它算）。
 private struct LibraryContentWidthKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
+    // 必须是 `let`：`var` 在严格并发下是非隔离的全局可变状态，编译不过
+    // （仓库里 InfoTabPanels.swift 的 IntroHeightKey 就是这个写法）。
+    static let defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = max(value, nextValue())
     }
