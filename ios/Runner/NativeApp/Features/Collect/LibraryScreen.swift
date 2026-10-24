@@ -113,17 +113,15 @@ struct LibraryScreen: View {
             .onPreferenceChange(LibraryContentWidthKey.self) { width in
                 libraryContentWidth = max(0, width)
             }
-            // 头部与控制条合成一块吸附在顶部：两块都跟着固定，
-            // 只提 header 的话内容会从控制条下面硬切过去。
+            // 顶栏换原生（LP 2026-10-24）：标题走 .navigationTitle，右上「同步」进工具栏。
+            // 只剩控制条还钉在导航栏下面——筛选/排序/部数/搜索原地不动。
             .safeAreaInset(edge: .top, spacing: 0) {
-                VStack(spacing: 0) {
-                    header
-                    controlBar
-                }
+                controlBar
             }
             .background(KazumiPalette.background(for: colorScheme).ignoresSafeArea())
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar(.hidden, for: .navigationBar)
+            .navigationTitle("追番")
+            .navigationBarTitleDisplayMode(.large)
+            // 「同步」不在工具栏：LP 2026-10-24 要它回到搜索按钮右边、两颗一起靠右。
             .task {
                 sort = CollectSort(rawValue: settings.librarySort) ?? .updateTime
                 KazumiImageLoader.shared.prefetch(library.entries.map(\.imageURL))
@@ -144,40 +142,6 @@ struct LibraryScreen: View {
     }
 
     // MARK: - 头部
-
-    private var header: some View {
-        HStack(alignment: .center) {
-            Text("追番")
-                .font(.system(size: 34, weight: .semibold))
-
-            Spacer(minLength: 8)
-
-            // 叫「同步」：LP 2026-10-23 明确要求跟原版一致，字改回来了。
-            // 早先它叫过「备份」，理由是按下去只会到「账号与备份」主页、不会立刻开始同步；
-            // 这个歧义由那一页承担（「立即同步追番」会落在里面），不在按钮名上改。
-            // MP: 未验证 —— 引擎落地后这颗按下去是否该直接开跑，等页面定了再说。
-            Button {
-                router.push(.syncBackup)
-            } label: {
-                HStack(spacing: 6) {
-                    // 原版是循环箭头（lib/pages/collect/collect_page.dart:130 的
-                    // Icons.sync_rounded），不是云。云是当初把字改成「备份」时
-                    // 字、图标、去向一起翻的遗留物；字已退回「同步」，图标跟着退。
-                    Image(systemName: "arrow.triangle.2.circlepath")
-                        .font(.system(size: 22, weight: .semibold))
-                    Text("同步")
-                        .font(.subheadline.weight(.semibold))
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 11)
-            }
-            .buttonStyle(.plain)
-            .kazumiGlassCapsule(interactive: true)
-        }
-        .padding(.horizontal, 16)
-        .padding(.top, 8)
-        .padding(.bottom, 10)
-    }
 
     // MARK: - 控制条
 
@@ -210,8 +174,12 @@ struct LibraryScreen: View {
                 sortMenu
                 categoryCount
 
+                Spacer(minLength: 8)
+
                 // LP 2026-10-23：默认就只是一颗放大镜按钮，点了才长成搜索条。
                 searchIconButton
+                // LP 2026-10-24：同步在搜索右边，两颗一起靠右。
+                syncButton
             }
 
             VStack(alignment: .leading, spacing: 8) {
@@ -223,6 +191,7 @@ struct LibraryScreen: View {
                     categoryCount
                     Spacer(minLength: 0)
                     searchIconButton
+                    syncButton
                 }
             }
         }
@@ -384,6 +353,36 @@ struct LibraryScreen: View {
     }
 
     /// 最大字号装不下整条搜索时的 44 放大镜。
+    /// 进「账号与备份」。LP 2026-10-24：放在搜索按钮左边、和搜索一起靠右，
+    /// 并且**不要主题色**——所以字和图标都用 `Color.primary`／`.secondary`，
+    /// 不用 tint（层级写法会跟着 App 的 tint 上色，那是同一个坑）。
+    private var syncButton: some View {
+        Button {
+            router.push(.syncBackup)
+        } label: {
+            // 尺寸和搜索那颗同一套（Colo 2026-10-24）：图标 16 regular、和放大镜同号，
+            // 字 subheadline semibold，图标与字间距 6，横内边距 12。
+            // 颜色：不用主题色，图标和字都是默认标签色——两颗都靠右时靠字区分。
+            HStack(spacing: 6) {
+                Image(systemName: "arrow.triangle.2.circlepath")
+                    .font(.system(size: 16, weight: .regular))
+                    .foregroundStyle(Color.primary)
+                Text("同步")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Color.primary)
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 12)
+            .frame(height: 36)
+            .kazumiGlassCapsule(interactive: true)
+            .frame(height: 44)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .fixedSize(horizontal: true, vertical: false)
+        .accessibilityLabel(Text("同步"))
+    }
+
     private var searchIconButton: some View {
         Button {
             withAnimation(.smooth(duration: 0.32)) { isSearching = true }
@@ -391,7 +390,8 @@ struct LibraryScreen: View {
         } label: {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 16, weight: .regular))
-                .foregroundStyle(Color.secondary)
+                // LP 2026-10-24：放大镜跟左右几颗的字同色（默认标签色），不再用次要色。
+                // 删掉这行就回到默认，胶囊上的字是 Color.primary，正好一致。
                 // LP 2026-10-23：视觉 36，跟左边两个菜单胶囊一样高；命中区仍是 44。
                 .frame(width: 44, height: 36)
                 .contentShape(Rectangle())
