@@ -21,6 +21,7 @@ struct LibraryScreen: View {
     @Environment(SettingsStore.self) private var settings
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     /// nil 表示「全部」。
     private static let categories: [CollectType?] = [
@@ -43,8 +44,14 @@ struct LibraryScreen: View {
 
     @FocusState private var searchFocused: Bool
 
-    /// 网格列数。改列数只改这一个数，排版不重写（规格 §四）。
-    private static let columnCount = 3
+    /// 网格列数。改列数只改这一处，排版不重写（规格 §四）。
+    /// 字号越大列越少：一份海报卡在最大字号下仍然要读得下标题，
+    /// 三列会把字挤成两三个字一行（Colo 2026-10-24 定的三档）。
+    private var columnCount: Int {
+        if dynamicTypeSize >= .accessibility4 { return 1 }
+        if dynamicTypeSize >= .accessibility1 { return 2 }
+        return 3
+    }
     /// 网格列间距。
     private static let columnSpacing: CGFloat = 10
 
@@ -52,15 +59,16 @@ struct LibraryScreen: View {
     /// 还没量到时按 0 处理，退回弹性列，量到之后立刻换成算好的定宽列。
     @State private var libraryContentWidth: CGFloat = 0
 
-    /// 按内容宽算出三列的定宽列。
-    private static func gridColumns(width: CGFloat) -> [GridItem] {
+    /// 按视口宽和当前列数算出定宽列。
+    private func gridColumns(width: CGFloat) -> [GridItem] {
+        let count = columnCount
         guard width > 0 else {
-            return Array(repeating: GridItem(.flexible(), spacing: columnSpacing), count: columnCount)
+            return Array(repeating: GridItem(.flexible(), spacing: Self.columnSpacing), count: count)
         }
         // 不取整：402 屏上每列 116.7，三列加两道间距正好铺满，右边不留缝。
-        let total = width - columnSpacing * CGFloat(columnCount - 1)
-        let each = max(1, total / CGFloat(columnCount))
-        return Array(repeating: GridItem(.fixed(each), spacing: columnSpacing), count: columnCount)
+        let total = width - Self.columnSpacing * CGFloat(count - 1)
+        let each = max(1, total / CGFloat(count))
+        return Array(repeating: GridItem(.fixed(each), spacing: Self.columnSpacing), count: count)
     }
 
     // MARK: - 数据
@@ -92,6 +100,19 @@ struct LibraryScreen: View {
 
     var body: some View {
         content
+            // 只量视口宽：网格的左右内边距各 16，减掉就是可用内容宽。
+            // 这颗探针必须在 ScrollView 外面，理由见 content 里那段注释。
+            .background {
+                GeometryReader { proxy in
+                    Color.clear.preference(
+                        key: LibraryContentWidthKey.self,
+                        value: proxy.size.width - 32
+                    )
+                }
+            }
+            .onPreferenceChange(LibraryContentWidthKey.self) { width in
+                libraryContentWidth = max(0, width)
+            }
             // 头部与控制条合成一块吸附在顶部：两块都跟着固定，
             // 只提 header 的话内容会从控制条下面硬切过去。
             .safeAreaInset(edge: .top, spacing: 0) {
@@ -180,16 +201,33 @@ struct LibraryScreen: View {
     }
 
     private var defaultRow: some View {
-        HStack(spacing: 8) {
-            categoryMenu
-            sortMenu
-            categoryCount
+        // 一行放得下就一行；放不下（最大字号下这四样加起来 504，比 370 宽）
+        // 就折成两行：筛选＋排序一行，部数＋搜索一行。
+        // 顶栏不能靠缩网格救——网格缩到一列，这一行照样出界（Colo 2026-10-24 实测）。
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 8) {
+                categoryMenu
+                sortMenu
+                categoryCount
 
-            // LP 2026-10-23：默认就只是一颗放大镜按钮，点了才长成搜索条。
-            searchIconButton
+                // LP 2026-10-23：默认就只是一颗放大镜按钮，点了才长成搜索条。
+                searchIconButton
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    categoryMenu
+                    sortMenu
+                }
+                HStack(spacing: 8) {
+                    categoryCount
+                    Spacer(minLength: 0)
+                    searchIconButton
+                }
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .frame(height: 44)
+        .frame(minHeight: 44)
     }
 
     private var categoryMenu: some View {
@@ -257,10 +295,10 @@ struct LibraryScreen: View {
                 .foregroundStyle(Color.secondary)
         }
         .padding(.horizontal, 12)
-        .frame(height: 36)
+        .frame(minHeight: 36)
         .kazumiGlassCapsule(interactive: true)
         .fixedSize(horizontal: true, vertical: false)
-        .frame(height: 44)
+        .frame(minHeight: 44)
         .contentShape(Rectangle())
     }
 
@@ -334,10 +372,10 @@ struct LibraryScreen: View {
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 12)
-            .frame(height: 36)
+            .frame(minHeight: 36)
             .frame(maxWidth: .infinity)
             .kazumiGlassCapsule(interactive: true)
-            .frame(height: 44)
+            .frame(minHeight: 44)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -398,10 +436,10 @@ struct LibraryScreen: View {
                 }
             }
             .padding(.horizontal, 12)
-            .frame(height: 36)
+            .frame(minHeight: 36)
             .frame(maxWidth: .infinity)
             .kazumiGlassCapsule()
-            .frame(height: 44)
+            .frame(minHeight: 44)
             .contentShape(Rectangle())
 
             Button {
@@ -418,7 +456,7 @@ struct LibraryScreen: View {
             .buttonStyle(.plain)
             .accessibilityLabel(Text("取消"))
         }
-        .frame(height: 44)
+        .frame(minHeight: 44)
     }
 
     private func cancelSearch() {
@@ -520,19 +558,14 @@ struct LibraryScreen: View {
             }
         } else {
             ScrollView {
-                // 三列海报网格（规格 §四）：列间距 10、行间距 14、左右 16、底部 24。
+                // 海报网格（规格 §四）：列间距 10、行间距 14、左右 16、底部 24。
                 // 列宽必须自己算出来给 `.fixed`：`.flexible()` 会被卡片内容的
-                // 固有宽度撑开（实测卡宽 127、卡间 0.4、第三张越界 5），
-                // 这里量出内容宽再按 `(内容宽 − 间距 × (列数 − 1)) / 列数` 定列宽。
-                GeometryReader { proxy in
-                    Color.clear.preference(key: LibraryContentWidthKey.self, value: proxy.size.width)
-                }
-                .frame(height: 0)
-                // 跟网格用同一档左右内边距，量到的才是真正的可用宽（不是屏宽）。
-                .padding(.horizontal, 16)
-
+                // 固有宽度撑开（实测卡宽 127、卡间 0.4、第三张越界 5）。
+                // 量宽度的那颗探针在 body 上、ScrollView 外面——**不能**放在这里：
+                // 放在这里量到的是内容宽，而内容宽又按这个数撑出来，自己咬自己，
+                // 大字号时被顶到 504 就再也降不回来（Colo 2026-10-24 实测）。
                 LazyVGrid(
-                    columns: Self.gridColumns(width: libraryContentWidth),
+                    columns: gridColumns(width: libraryContentWidth),
                     spacing: 14
                 ) {
                     ForEach(filteredEntries) { entry in
@@ -549,9 +582,6 @@ struct LibraryScreen: View {
                 }
                 .padding(.horizontal, 16)
                 .padding(.bottom, 24)
-            }
-            .onPreferenceChange(LibraryContentWidthKey.self) { width in
-                libraryContentWidth = width
             }
             // LP 2026-10-23：点空白处也该能取消搜索，不能只有那颗「取消」能退出。
             .contentShape(Rectangle())
@@ -605,7 +635,7 @@ struct LibraryScreen: View {
 
     /// 改收藏状态，两条路分开走：
     /// * `type == .none` 是「取消追番」——这部从列表里消失，包一层动画让它淡出缩小，
-    ///   剩下的卡片在同一次动画里补位（Ato 2026-10-24：不许手写定时器，也不许删完重排）；
+    ///   其余卡片在同一次动画里归位（Ato 2026-10-24：不许手写定时器，也不许删完重排）；
     /// * 其余是改状态——卡片不动，只有角上那颗符号换掉，**不能包动画**，
     ///   否则整页会跟着动一下。
     private func changeType(_ entry: LibraryEntry, to type: CollectType) {
@@ -628,8 +658,9 @@ struct LibraryScreen: View {
     /// 出门那一下的曲线：Colo 2026-10-24 定的 `.snappy(0.3)`。
     /// `easeOut` 是前快后慢，卡片 0.12 秒就几乎看不见了，后面那截缩小是空转，
     /// 而补位要到后半段才动，看着像两件事。
-    /// 开了「减少动态效果」的人只淡出（0.2 秒）、不缩小、不滑动补位——
-    /// 这一下要动一整排，对前庭敏感的人是负担，淡出已经说清它没了。
+    /// 开了「减少动态效果」的人只淡出（0.2 秒）、不缩小；其余卡片在这 0.2 秒里
+    /// 一起归位，不瞬移——瞬移要把删除拆成两帧、中间插手写延迟，Ato 2026-10-24 已否，
+    /// 代价就是那十几点位移跟着走 0.2 秒（Colo 同日收进规格）。
     private var removalAnimation: Animation {
         reduceMotion ? .easeOut(duration: 0.2) : .snappy(duration: 0.3)
     }
