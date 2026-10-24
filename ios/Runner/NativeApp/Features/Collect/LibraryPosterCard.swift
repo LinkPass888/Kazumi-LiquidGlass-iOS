@@ -87,8 +87,10 @@ struct LibraryPosterCard: View {
                 Button(type.title) { onChangeType(type) }
             }
         } label: {
-            Image(systemName: "ellipsis")
-                .font(.system(size: 15, weight: .semibold))
+            // LP 2026-10-24：不用三个点，直接画当前的追番状态（在看那颗心、想看那颗星…），
+            // 一眼就知道这部现在是什么状态；点它还是开菜单改状态。
+            Image(systemName: entry.collectType.statusSymbol)
+                .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(.white)
                 .frame(width: 32, height: 32)
                 .background(
@@ -123,7 +125,7 @@ struct LibraryPosterCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    /// 元信息行：`8.2 · 在看`，「全部」里才缀状态名。
+    /// 元信息行：只写追番状态，且在「全部」里才写。
     /// 缺哪项省哪项；一项都没有时整行不占位（返回 nil，不是空 Text）。
     /// 这里**没有「看到第几话」**：原版追番卡片的明细行只有评分和状态
     /// （lib/pages/collect/collect_library_card.dart），而且今天全仓没有一处
@@ -155,11 +157,8 @@ struct LibraryPosterCard: View {
     }
 
     private var metaParts: [MetaPart] {
+        // LP 2026-10-24：卡片上不再显示评分，这一行只留追番状态。
         var parts: [MetaPart] = []
-        if entry.rating > 0 {
-            // 只有评分数字用强调色，其余保持次要色。
-            parts.append(MetaPart(text: String(format: "%.1f", entry.rating), isAccent: true))
-        }
         if showsStatus {
             parts.append(MetaPart(text: entry.collectType.title))
         }
@@ -168,9 +167,6 @@ struct LibraryPosterCard: View {
 
     private var accessibilityLabel: String {
         var parts = [entry.displayName, entry.collectType.title]
-        if entry.rating > 0 {
-            parts.append(String(format: "%.1f 分", entry.rating))
-        }
         return parts.joined(separator: "，")
     }
 }

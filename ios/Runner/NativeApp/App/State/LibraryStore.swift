@@ -44,6 +44,21 @@ enum CollectType: Int, Codable, CaseIterable, Sendable, Identifiable {
     ///
     /// 与 [title] 只差「未追」这一档：按钮上的未收藏状态叫「未追」，
     /// 收藏库里的分类仍叫「未收藏」，两处不要混用。
+    /// 追番状态的图标，1:1 翻自原版 `lib/bean/widget/collect_button.dart:83-97`
+    /// 的 `getIconByInt`（Material → SF Symbols）：
+    /// 在看 heart.fill、想看 star.fill、搁置 hourglass、看过 checkmark、
+    /// 抛弃 heart.slash.fill、未收藏 heart。
+    var statusSymbol: String {
+        switch self {
+        case .watching: "heart.fill"
+        case .wish: "star.fill"
+        case .onHold: "hourglass"
+        case .watched: "checkmark"
+        case .dropped: "heart.slash.fill"
+        case .none: "heart"
+        }
+    }
+
     var buttonTitle: String {
         switch self {
         case .none: "未追"
