@@ -44,34 +44,24 @@ struct ProfileScreen: View {
         // 顶部滚动边缘：渐进模糊（.soft），不额外叠材质或底色。
         .scrollEdgeEffectStyle(.automatic, for: .top)
         .background(KazumiPalette.background(for: colorScheme).ignoresSafeArea())
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar(.hidden, for: .navigationBar)
-        .safeAreaInset(edge: .top, spacing: 0) { header }
+        // 顶栏换原生（LP 2026-10-24）：标题和设置按钮都归系统。
+        // 原来那块自钉顶栏带不透明底色，会把滚动边缘的模糊整块挡住（Colo 1794 提的坑），
+        // 所以这次连底色一起删掉，不再自己画任何一条栏。
+        .navigationTitle("我的")
+        .navigationBarTitleDisplayMode(.large)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    router.push(.settings)
+                } label: {
+                    Image(systemName: "slider.horizontal.3")
+                }
+                .accessibilityLabel("全部设置")
+            }
+        }
     }
 
     // MARK: - 头部
-
-    private var header: some View {
-        HStack(alignment: .center) {
-            Text("我的")
-                .font(.system(size: 34, weight: .semibold))
-            Spacer(minLength: 8)
-            Button {
-                router.push(.settings)
-            } label: {
-                Image(systemName: "slider.horizontal.3")
-                    .font(.system(size: 22, weight: .semibold))
-                    .frame(width: KazumiGlassMetrics.barButtonSize, height: KazumiGlassMetrics.barButtonSize)
-            }
-            .buttonStyle(.plain)
-            .kazumiGlassCapsule(interactive: true)
-            .accessibilityLabel("全部设置")
-        }
-        .padding(.horizontal, 16)
-        .padding(.top, 8)
-        .padding(.bottom, 10)
-        .background(KazumiPalette.background(for: colorScheme))
-    }
 
     // MARK: - 观看足迹
 
