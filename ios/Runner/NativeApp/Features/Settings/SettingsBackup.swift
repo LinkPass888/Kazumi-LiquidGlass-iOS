@@ -55,7 +55,7 @@ enum SettingsBackup {
 
         var errorDescription: String? {
             switch self {
-            case .invalidJSON: "内容不是有效的 JSON，请确认复制完整"
+            case .invalidJSON: "备份内容不完整，可能复制或导出时被截断了"
             case .notKazumiBackup: "这不是 Kazumi 的设置备份"
             case .unknownVersion: "备份版本无法识别"
             case .futureVersion: "备份来自更新版本的 Kazumi，请先升级应用"

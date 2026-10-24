@@ -37,7 +37,7 @@ struct StorageScreen: View {
                 }
                 .disabled(isClearing)
             } header: {
-                Text("缓存")
+                Text("图片缓存")
             } footer: {
                 Text("图片会在下次加载时重新下载。视频、记录与设置不会删除。")
             }
@@ -72,7 +72,7 @@ struct StorageScreen: View {
         .background(KazumiPalette.background(for: colorScheme).ignoresSafeArea())
         .task { await refreshSize() }
         .confirmationDialog("清除图片缓存？", isPresented: $isConfirmingClear, titleVisibility: .visible) {
-            Button("清除缓存", role: .destructive) {
+            Button("清除图片缓存", role: .destructive) {
                 Task { await clear() }
             }
             Button("取消", role: .cancel) {}

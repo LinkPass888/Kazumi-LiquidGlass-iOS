@@ -3,13 +3,12 @@
 //  Kazumi
 //
 //  对应 lib/pages/about/about_page.dart + credits_page.dart：
-//  应用信息、检测更新、运行日志、项目链接、致谢（数据来源与开源项目）。
+//  应用信息、检测更新、项目链接、致谢（数据来源与开源项目）。
 //
 
 import SwiftUI
 
 struct AboutScreen: View {
-    @Environment(AppRouter.self) private var router
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.openURL) private var openURL
 
@@ -43,7 +42,7 @@ struct AboutScreen: View {
                             Image(systemName: "play.rectangle.fill")
                                 .resizable()
                                 .scaledToFit()
-                                .foregroundStyle(KazumiPalette.accent)
+                                .foregroundStyle(KazumiPalette.accent(for: colorScheme))
                         }
                     }
                     .frame(width: 84, height: 84)
@@ -77,14 +76,6 @@ struct AboutScreen: View {
                     openURL(KazumiAppInfo.releasesURL)
                 }
 
-                actionRow(
-                    title: "运行日志",
-                    symbol: "doc.text.magnifyingglass",
-                    detail: "排查问题时使用"
-                ) {
-                    router.push(.logs)
-                }
-
                 VStack(spacing: 8) {
                     linkRow("项目主页", url: KazumiAppInfo.projectURL)
                     linkRow("源码仓库", url: KazumiAppInfo.sourceURL)
@@ -113,7 +104,6 @@ struct AboutScreen: View {
                         .foregroundStyle(.secondary)
                     linkRow("KSPlayer（播放内核）", url: KazumiAppInfo.ksPlayerURL)
                     linkRow("Fuzi（XPath 解析）", url: KazumiAppInfo.fuziURL)
-                    linkRow("Anime4K（超分辨率）", url: KazumiAppInfo.anime4KURL)
                     linkRow("GPL-3.0 许可证", url: KazumiAppInfo.licenseURL)
                 }
 
@@ -126,6 +116,8 @@ struct AboutScreen: View {
             .padding(.horizontal, 16)
             .padding(.bottom, 32)
         }
+        // 顶部滚动边缘：渐进模糊（.soft）。
+        .scrollEdgeEffectStyle(.soft, for: .top)
         .background(KazumiPalette.background(for: colorScheme).ignoresSafeArea())
         .navigationTitle("关于")
         .navigationBarTitleDisplayMode(.inline)
@@ -143,7 +135,7 @@ struct AboutScreen: View {
             HStack(spacing: 12) {
                 Image(systemName: symbol)
                     .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(KazumiPalette.accent)
+                    .foregroundStyle(KazumiPalette.accent(for: colorScheme))
                     .frame(width: 28)
                 Text(title)
                     .font(.subheadline)
