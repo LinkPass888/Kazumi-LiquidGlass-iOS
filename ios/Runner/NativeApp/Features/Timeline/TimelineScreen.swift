@@ -20,7 +20,6 @@ struct TimelineScreen: View {
     @State private var controller = TimelineController()
     @State private var selectedWeekday = TimelineScreen.todayIndex
     @State private var isShowingSeasonPicker = false
-    @State private var isShowingOptions = false
     @State private var weekdayDragX: CGFloat?
     @State private var pageOffsetX: CGFloat = 0
     @State private var pageViewportWidth: CGFloat = 1
@@ -93,9 +92,6 @@ struct TimelineScreen: View {
         .sheet(isPresented: $isShowingSeasonPicker) {
             seasonSheet
         }
-        .sheet(isPresented: $isShowingOptions) {
-            optionsSheet
-        }
         .task {
             await loadInitialSeason()
         }
@@ -126,11 +122,12 @@ struct TimelineScreen: View {
         } label: {
             HStack(spacing: 4) {
                 Text(controller.seasonLabel)
-                    .font(.system(size: 34, weight: .semibold))
+                    // LP 2631：标题收一档（原 34）。
+                    .font(.system(size: 28, weight: .semibold))
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
                 Image(systemName: "chevron.down")
-                    .font(.system(size: 17, weight: .semibold))
+                    .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -139,44 +136,66 @@ struct TimelineScreen: View {
         .accessibilityLabel("切换放送季度，当前 \(controller.seasonLabel)")
     }
 
-    /// 右上角：排序与筛选（图标 + 当前排序名 + 筛选角标）。
+    /// 右上角：排序与筛选。LP 2631/2632/2637：去掉排序名，只留符号，玻璃底留着。
+    /// LP 2643 / Colo 2644：点开改成从这颗按钮弹出的菜单 —— 排序用 Picker（天然带 ✓），
+    /// 筛选用 Menu 里的 Toggle（选中就带 ✓）；有筛选生效时这颗胶囊换成实心主题色、
+    /// 图标换 onAccent，且不再叠玻璃（玻璃会和实心色搅在一起）。
     private var optionsButton: some View {
         let filterCount = controller.activeFilterCount
-        return Button {
-            isShowingOptions = true
-        } label: {
-            HStack(spacing: 6) {
-                ZStack(alignment: .topTrailing) {
-                    Image(systemName: "slider.horizontal.3")
-                        .font(.system(size: 22, weight: .semibold))
-                    if filterCount > 0 {
-                        Text("\(filterCount)")
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundStyle(KazumiPalette.onAccent(for: colorScheme))
-                            .frame(width: 15, height: 15)
-                            .background(
-                                Circle().fill(KazumiPalette.accent(for: colorScheme))
-                            )
-                            .offset(x: 8, y: -8)
-                    }
+        let hasFilters = filterCount > 0
+        return Menu {
+            Picker("排序", selection: sortBinding) {
+                ForEach(TimelineSort.allCases) { option in
+                    Text(option.title).tag(option)
                 }
-                .frame(width: 22, height: 22)
-
-                Text(controller.sort.title)
-                    .font(.footnote.weight(.semibold))
-                    .lineLimit(1)
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 11)
+
+            Section {
+                Toggle("隐藏看过的番剧", isOn: notShowWatchedBinding)
+                Toggle("隐藏抛弃的番剧", isOn: notShowAbandonedBinding)
+                Toggle("只看正在追的番剧", isOn: onlyShowWatchingBinding)
+            }
+        } label: {
+            iconCapsule(hasFilters: hasFilters)
         }
-        .buttonStyle(.plain)
-        .kazumiGlassCapsule(interactive: true)
         .accessibilityLabel("排序与筛选")
         .accessibilityValue(
-            filterCount > 0
+            hasFilters
                 ? "\(controller.sort.title)，已启用 \(filterCount) 项筛选"
                 : "\(controller.sort.title)，未启用筛选"
         )
+    }
+
+    /// 排序一改，controller 要重排整张时间表（异步），所以 setter 里起个任务。
+    private var sortBinding: Binding<TimelineSort> {
+        Binding(
+            get: { controller.sort },
+            set: { newValue in
+                guard newValue != controller.sort else { return }
+                Task { await controller.changeSort(newValue) }
+            }
+        )
+    }
+
+    /// 那颗胶囊本体：没筛选时玻璃底 + 次要色图标，有筛选时实心主题色 + onAccent 图标。
+    @ViewBuilder
+    private func iconCapsule(hasFilters: Bool) -> some View {
+        let shape = Capsule(style: .continuous)
+        if hasFilters {
+            Image(systemName: "line.3.horizontal.decrease")
+                .font(.system(size: 18, weight: .bold))
+                .foregroundStyle(KazumiPalette.onAccent(for: colorScheme))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 7)
+                .background(shape.fill(KazumiPalette.accent(for: colorScheme)))
+        } else {
+            Image(systemName: "line.3.horizontal.decrease")
+                .font(.system(size: 18, weight: .bold))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 7)
+                .kazumiGlassCapsule(interactive: true)
+        }
     }
 
     // MARK: - 星期选择器
@@ -230,7 +249,8 @@ struct TimelineScreen: View {
         // 原来那 12 点搬到列表顶上，滚动时跟着内容走掉。
     }
 
-    /// 选中格的实心滑块：primary 8%，字颜色不变。
+    /// 选中格的实心滑块：浅色填充、字不变色（LP 2645 / Ato 2646 作废了主题色那版——
+    /// 底色太深，左右翻页时格子的字换色会闪一下）。
     private func weekdaySlider(centerX: CGFloat, cellWidth: CGFloat) -> some View {
         let inset = Self.weekdayGlassInset
         let width = max(cellWidth - inset * 2, 1)
@@ -524,78 +544,7 @@ struct TimelineScreen: View {
         .opacity(disabled ? 0.35 : 1)
     }
 
-    // MARK: - 排序与筛选
-
-    private var optionsSheet: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 22) {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("排序")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                        HStack(spacing: 8) {
-                            ForEach(TimelineSort.allCases) { option in
-                                sortChip(option)
-                            }
-                        }
-                    }
-
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("显示范围")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                        VStack(spacing: 0) {
-                            filterRow("隐藏看过的番剧", isOn: notShowWatchedBinding)
-                            Divider().padding(.leading, 14)
-                            filterRow("隐藏抛弃的番剧", isOn: notShowAbandonedBinding)
-                            Divider().padding(.leading, 14)
-                            filterRow("只看正在追的番剧", isOn: onlyShowWatchingBinding)
-                        }
-                        .background(
-                            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                .fill(KazumiPalette.cardSurface(for: colorScheme))
-                        )
-                    }
-                }
-                .padding(16)
-            }
-            .navigationTitle("排序与筛选")
-            .navigationBarTitleDisplayMode(.inline)
-        }
-        .presentationDetents([.medium, .large])
-        .presentationDragIndicator(.visible)
-    }
-
-    private func sortChip(_ option: TimelineSort) -> some View {
-        let selected = controller.sort == option
-        let foreground: Color = selected ? KazumiPalette.onAccent(for: colorScheme) : .primary
-        let background: Color = selected
-            ? KazumiPalette.accent(for: colorScheme)
-            : KazumiPalette.cardSurface(for: colorScheme)
-
-        return Button {
-            Task { await controller.changeSort(option) }
-        } label: {
-            Text(option.title)
-                .font(.footnote.weight(selected ? .bold : .medium))
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 10)
-                .foregroundStyle(foreground)
-                .background(Capsule(style: .continuous).fill(background))
-        }
-        .buttonStyle(.plain)
-    }
-
-    private func filterRow(_ title: String, isOn: Binding<Bool>) -> some View {
-        Toggle(title, isOn: isOn)
-            .font(.subheadline)
-            .tint(KazumiPalette.accent(for: colorScheme))
-            .padding(.horizontal, 14)
-            .padding(.vertical, 6)
-    }
+    // MARK: - 筛选绑定
 
     private var notShowWatchedBinding: Binding<Bool> {
         Binding(
