@@ -29,21 +29,25 @@ struct KazumiTabShell: View {
                 KazumiNavigationStack(destination: .popular) { zoomNamespace in
                     PopularScreen(zoomNamespace: zoomNamespace)
                 }
+                .id(themeRevision)
             }
             Tab(AppDestination.timeline.title, systemImage: AppDestination.timeline.symbolName, value: AppDestination.timeline) {
                 KazumiNavigationStack(destination: .timeline) { zoomNamespace in
                     TimelineScreen(zoomNamespace: zoomNamespace)
                 }
+                .id(themeRevision)
             }
             Tab(AppDestination.collect.title, systemImage: AppDestination.collect.symbolName, value: AppDestination.collect) {
                 KazumiNavigationStack(destination: .collect) { zoomNamespace in
                     LibraryScreen(zoomNamespace: zoomNamespace)
                 }
+                .id(themeRevision)
             }
             Tab(AppDestination.my.title, systemImage: AppDestination.my.symbolName, value: AppDestination.my) {
                 KazumiNavigationStack(destination: .my) { _ in
                     ProfileScreen()
                 }
+                .id(themeRevision)
             }
         }
         // LP 2586：上滑时缩不缩由界面设置里那个开关控制（默认缩）。
@@ -87,6 +91,13 @@ struct KazumiTabShell: View {
     /// 触感反馈关闭时传 nil：`.sensoryFeedback` 只比较相邻两次的值，nil → nil 不触发。
     private var hapticTrigger: AppDestination? {
         settings.hapticFeedbackEnabled ? router.selectedDestination : nil
+    }
+
+    /// 配色、OLED 纯黑与明暗都是全局静态取值（`KazumiPalette`），换一次要让读它的
+    /// 视图重画一次。重画范围只到每个标签页的内容，标签栏本身不重建 —— 否则选中
+    /// 胶囊会在重建瞬间滑一下（LP 报的「底部 tab 自己切换」）。
+    private var themeRevision: String {
+        "\(settings.themeColor.id)-\(settings.oledEnhance)-\(settings.themeMode.rawValue)"
     }
 
     /// Tab 选中项与 AppDestination 的双向绑定。

@@ -39,8 +39,10 @@ struct KazumiApp: App {
                 // 按 SwiftUI 的当前明暗显式取（见 `KazumiPalette.accent(for:)`）。
                 .kazumiWindowStyle(environment.settings.themeMode)
                 // 配色方案、OLED 纯黑与主题模式都是全局状态（`KazumiPalette` 为静态取值），
-                // 用 id 让视图树在切换后整体重建，背景与强调色立即生效。
-                .id("\(environment.settings.themeColor.id)-\(environment.settings.oledEnhance)-\(environment.settings.themeMode.rawValue)")
+                // 换一次要让读它的视图重画一次。这里**不再**用 id 重建整棵树：
+                // 那样标签栏也会跟着重新创建，选中胶囊会在重建瞬间从默认那格滑到当前这格
+                // （LP 报到「开 OLED 底部 tab 自己切换」就是这个）。重画的范围收到
+                // `KazumiTabShell` 里每个标签页的内容上，见那里的 themeRevision。
         }
     }
 }

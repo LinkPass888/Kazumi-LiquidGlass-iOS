@@ -17,6 +17,13 @@ struct AppRoot: View {
 
     @State private var isShowingAppUpdate = false
 
+    /// 强调色。`KazumiPalette` 是静态取值，这里显式读一下配色设置，
+    /// 换配色时 AppRoot 才会重算（视图树不再整体重建，见 `KazumiApp` 那段注释）。
+    private var accentColor: Color {
+        _ = environment.settings.themeColor
+        return KazumiPalette.accent(for: colorScheme)
+    }
+
     var body: some View {
         Group {
             if let failure {
@@ -27,7 +34,7 @@ struct AppRoot: View {
         }
         // 强调色按 SwiftUI 的当前明暗显式取：这里能读到 `colorScheme`（= 设置里的
         // 主题模式），不再走 UIKit 动态色那条路。
-        .tint(KazumiPalette.accent(for: colorScheme))
+        .tint(accentColor)
         .task {
             guard failure == nil else { return }
             await environment.updates.checkOnLaunch(
