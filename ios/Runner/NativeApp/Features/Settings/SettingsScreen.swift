@@ -89,7 +89,9 @@ extension SettingsGroup {
                 SettingsCategory(
                     id: "download",
                     label: "下载设置",
-                    description: "并发数与弹幕缓存",
+                    // LP 清单第四项。并发那几行这一版没有（没有下载器），
+                    // 说明就不许再写「并发数」。
+                    description: "离线下载",
                     symbol: "arrow.down.circle",
                     destination: .download
                 ),
@@ -122,8 +124,10 @@ extension SettingsGroup {
                 ),
                 SettingsCategory(
                     id: "syncBackup",
-                    label: "账号与备份",
-                    description: "Bangumi 令牌、WebDAV 与设置备份",
+                    // LP 清单第八项叫「同步设置」；Ato 2026-10-24 定：只改名字，
+                    // 备份那部分先留在里面不动（备份不在清单里）。
+                    label: "同步设置",
+                    description: "追番同步与多设备同步",
                     symbol: "icloud",
                     destination: .syncBackup
                 ),

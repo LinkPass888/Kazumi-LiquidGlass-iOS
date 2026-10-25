@@ -24,6 +24,9 @@ extension SettingsStore {
         // 以下三项在原版设置箱里就是同名键，写出来是为了让导出 / 恢复走同一条
         // 「本地键 -> 原版键」通道，而不是被当成未建模的透传键。
         SettingsKey.playResume: "playResume",
+        SettingsKey.backgroundPlayback: "backgroundPlayback",
+        SettingsKey.brightnessVolumeGesture: "brightnessVolumeGesture",
+        SettingsKey.privateMode: "privateMode",
         SettingsKey.buttonSkipTime: "buttonSkipTime",
         SettingsKey.playerControllerLayerDisappearTime: "playerControllerLayerDisappearTime",
         SettingsKey.proxyEnabled: "proxyEnable",
@@ -90,7 +93,15 @@ extension SettingsStore {
             SettingsKey.autoPlayNext,
             SettingsKey.autoSkipOpEd,
             SettingsKey.playResume,
+            SettingsKey.backgroundPlayback,
+            SettingsKey.brightnessVolumeGesture,
+            SettingsKey.privateMode,
             SettingsKey.buttonSkipTime,
+            SettingsKey.doubleTapSkipTime,
+            SettingsKey.longPressSpeed,
+            SettingsKey.playerAspectRatio,
+            SettingsKey.hapticFeedbackEnabled,
+            SettingsKey.showRating,
             SettingsKey.playerControllerLayerDisappearTime,
             SettingsKey.danmakuOpacity,
             SettingsKey.danmakuFontSize,
@@ -136,7 +147,15 @@ extension SettingsStore {
             (SettingsKey.anime4kMode, .int(superResolutionMode.rawValue)),
             (SettingsKey.playSpeed, .double(playSpeed)),
             (SettingsKey.playResume, .bool(playResume)),
+            (SettingsKey.backgroundPlayback, .bool(backgroundPlayback)),
+            (SettingsKey.brightnessVolumeGesture, .bool(brightnessVolumeGesture)),
+            (SettingsKey.privateMode, .bool(privateMode)),
             (SettingsKey.buttonSkipTime, .int(buttonSkipTime)),
+            (SettingsKey.doubleTapSkipTime, .int(doubleTapSkipTime)),
+            (SettingsKey.longPressSpeed, .double(longPressSpeed)),
+            (SettingsKey.playerAspectRatio, .string(defaultAspectRatio.rawValue)),
+            (SettingsKey.hapticFeedbackEnabled, .bool(hapticFeedbackEnabled)),
+            (SettingsKey.showRating, .bool(showRating)),
             (SettingsKey.playerControllerLayerDisappearTime, .int(playerControllerLayerDisappearTime)),
             (SettingsKey.danmakuEnabled, .bool(danmakuEnabled)),
             (SettingsKey.danmakuOpacity, .double(danmakuOpacity)),
@@ -270,8 +289,41 @@ extension SettingsStore {
             playResume = flag
             restored += 1
         }
+        if let flag = value(SettingsKey.backgroundPlayback)?.boolValue {
+            backgroundPlayback = flag
+            restored += 1
+        }
+        if let flag = value(SettingsKey.brightnessVolumeGesture)?.boolValue {
+            brightnessVolumeGesture = flag
+            restored += 1
+        }
+        if let flag = value(SettingsKey.privateMode)?.boolValue {
+            privateMode = flag
+            restored += 1
+        }
         if let number = value(SettingsKey.buttonSkipTime)?.intValue {
             buttonSkipTime = max(1, number)
+            restored += 1
+        }
+        if let number = value(SettingsKey.doubleTapSkipTime)?.intValue {
+            doubleTapSkipTime = max(1, number)
+            restored += 1
+        }
+        if let number = value(SettingsKey.longPressSpeed)?.doubleValue {
+            longPressSpeed = PlaybackSpeed.nearest(number)
+            restored += 1
+        }
+        if let raw = value(SettingsKey.playerAspectRatio)?.stringValue,
+           let mode = PlayerAspectRatioMode(rawValue: raw) {
+            defaultAspectRatio = mode
+            restored += 1
+        }
+        if let flag = value(SettingsKey.hapticFeedbackEnabled)?.boolValue {
+            hapticFeedbackEnabled = flag
+            restored += 1
+        }
+        if let flag = value(SettingsKey.showRating)?.boolValue {
+            showRating = flag
             restored += 1
         }
         if let number = value(SettingsKey.playerControllerLayerDisappearTime)?.intValue {

@@ -75,15 +75,9 @@ enum SuperResolutionMode: Int, CaseIterable, Identifiable, Sendable {
         case .off:
             return []
         case .efficiency:
-            return [
-                "scale=iw*1.5:ih*1.5:flags=lanczos",
-                "unsharp=5:5:0.6:5:5:0.0",
-            ]
+            return ["scale=iw*1.5:ih*1.5:flags=lanczos"]
         case .quality:
-            return [
-                "scale=iw*2:ih*2:flags=lanczos",
-                "unsharp=5:5:0.9:5:5:0.0",
-            ]
+            return ["scale=iw*2:ih*2:flags=lanczos"]
         }
     }
 }
@@ -92,7 +86,8 @@ enum SuperResolutionMode: Int, CaseIterable, Identifiable, Sendable {
 /// 0.25 → 3.0，每档 0.25，共 12 档。播放器菜单与设置页的「默认倍速」共用这一份，
 /// 避免两处档位再次走偏。
 enum PlaybackSpeed {
-    static let all: [Double] = (1...12).map { Double($0) * 0.25 }
+    /// 播放器菜单与设置页给的档位：0.5 到 3.0，够用又不至于一长串。
+    static let all: [Double] = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0]
 
     /// 档位文案：整数写 `2x`，小数写 `1.25x`（原版菜单是 `${value}x`）。
     static func label(_ value: Double) -> String {
@@ -143,8 +138,24 @@ enum SettingsKey {
     static let playSpeed = "playSpeed"
     /// 顶部快进按钮的秒数，沿用原版 `SettingsKeys.buttonSkipTime` 的键名，默认 80。
     static let buttonSkipTime = "buttonSkipTime"
+    /// 画面上左右两侧双击快进 / 快退的秒数，默认 15。
+    static let doubleTapSkipTime = "doubleTapSkipTime"
+    /// 画面长按时的临时倍速（默认 2.0×）。
+    static let longPressSpeed = "longPressSpeed"
+    /// 默认视频比例（LP 清单「默认视频比例」，默认自动）。
+    static let playerAspectRatio = "playerAspectRatio"
+    /// 触感反馈总开关（LP 清单「触感反馈」），默认开启。
+    static let hapticFeedbackEnabled = "hapticFeedbackEnabled"
+    /// 时间表是否显示评分（Ato 2026-10-24：只管时间表，详情页照旧）。
+    static let showRating = "showRating"
     /// 进入播放器时跳到上次播放位置，沿用原版 `SettingsKeys.playResume` 的键名，默认开启。
     static let playResume = "playResume"
+    /// 后台播放，沿用原版 `SettingsKeys.backgroundPlayback` 的键名，默认关闭。
+    static let backgroundPlayback = "backgroundPlayback"
+    /// 竖向滑动调节音量和亮度，沿用原版 `SettingsKeys.brightnessVolumeGesture` 的键名，默认开启。
+    static let brightnessVolumeGesture = "brightnessVolumeGesture"
+    /// 隐身模式（不保留观看记录），沿用原版 `SettingsKeys.privateMode` 的键名，默认关闭。
+    static let privateMode = "privateMode"
     /// 控制栏自动隐藏前的停留时长（毫秒），沿用原版
     /// `SettingsKeys.playerControllerLayerDisappearTime` 的键名，默认 4000。
     static let playerControllerLayerDisappearTime = "playerControllerLayerDisappearTime"
@@ -195,6 +206,10 @@ enum SettingsKey {
     static let autoUpdate = "autoUpdate"
     /// 启动时检查规则更新，沿用原版 `checkPluginUpdateOnStartup` 的键名。
     static let checkPluginUpdateOnStartup = "checkPluginUpdateOnStartup"
+    /// 一起看房间配置
+    static let syncPlayEndPoint = "syncPlayEndPoint"
+    static let syncPlayRoom = "syncPlayRoom"
+    static let syncPlayPassword = "syncPlayPassword"
 }
 
 /// 可观察的设置存储。所有写入立即同步到磁盘，避免进程被系统回收后丢设置。
@@ -244,6 +259,21 @@ final class SettingsStore {
         didSet { persist(superResolutionMode.rawValue, SettingsKey.anime4kMode) }
     }
 
+    /// 进入播放器时的初始画面比例。播放器里改只影响这一次，不写回这里。
+    var defaultAspectRatio: PlayerAspectRatioMode {
+        didSet { persist(defaultAspectRatio.rawValue, SettingsKey.playerAspectRatio) }
+    }
+
+    /// 触感反馈总开关：关掉后底栏、时间表等处的轻震一起停。
+    var hapticFeedbackEnabled: Bool {
+        didSet { persist(hapticFeedbackEnabled, SettingsKey.hapticFeedbackEnabled) }
+    }
+
+    /// 概览、番剧列表与番剧详情页是否显示评分。
+    var showRating: Bool {
+        didSet { persist(showRating, SettingsKey.showRating) }
+    }
+
     var danmakuEnabled: Bool {
         didSet { persist(danmakuEnabled, SettingsKey.danmakuEnabled) }
     }
@@ -278,9 +308,34 @@ final class SettingsStore {
         didSet { persist(playResume, SettingsKey.playResume) }
     }
 
+    /// 退到后台或熄屏时继续播放音频（对应原版「后台播放」开关，默认关闭）。
+    var backgroundPlayback: Bool {
+        didSet { persist(backgroundPlayback, SettingsKey.backgroundPlayback) }
+    }
+
+    /// 画面上竖向滑动调节亮度与音量（对应原版「滑动手势」开关，默认开启）。
+    var brightnessVolumeGesture: Bool {
+        didSet { persist(brightnessVolumeGesture, SettingsKey.brightnessVolumeGesture) }
+    }
+
+    /// 隐身模式：不写入观看记录（对应原版「隐身模式」开关，默认关闭）。
+    var privateMode: Bool {
+        didSet { persist(privateMode, SettingsKey.privateMode) }
+    }
+
     /// 顶部快进按钮的跳转秒数（对应原版 `buttonSkipTime`，默认 80 秒）。
     var buttonSkipTime: Int {
         didSet { persist(buttonSkipTime, SettingsKey.buttonSkipTime) }
+    }
+
+    /// 画面两侧双击的快进 / 快退秒数（默认 15 秒）。
+    var doubleTapSkipTime: Int {
+        didSet { persist(doubleTapSkipTime, SettingsKey.doubleTapSkipTime) }
+    }
+
+    /// 画面长按时的临时倍速（松手恢复原倍速），默认 2 倍。
+    var longPressSpeed: Double {
+        didSet { persist(longPressSpeed, SettingsKey.longPressSpeed) }
     }
 
     /// 控制栏自动隐藏前的停留时长（毫秒，对应原版
@@ -435,6 +490,19 @@ final class SettingsStore {
         didSet { persist(checkPluginUpdateOnStartup, SettingsKey.checkPluginUpdateOnStartup) }
     }
 
+    /// 一起看的房间服务器地址、房间名与口令
+    var syncPlayEndPoint: String {
+        didSet { persist(syncPlayEndPoint, SettingsKey.syncPlayEndPoint) }
+    }
+
+    var syncPlayRoom: String {
+        didSet { persist(syncPlayRoom, SettingsKey.syncPlayRoom) }
+    }
+
+    var syncPlayPassword: String {
+        didSet { persist(syncPlayPassword, SettingsKey.syncPlayPassword) }
+    }
+
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         // 旧版 Swift 键 -> Flutter 键的一次性迁移。只在目标键从未写过时复制，
@@ -477,6 +545,11 @@ final class SettingsStore {
         superResolutionMode = SuperResolutionMode(
             rawValue: Self.read(defaults, SettingsKey.anime4kMode, 1)
         ) ?? .off
+        defaultAspectRatio = PlayerAspectRatioMode(
+            rawValue: Self.read(defaults, SettingsKey.playerAspectRatio, "automatic")
+        ) ?? .automatic
+        hapticFeedbackEnabled = Self.read(defaults, SettingsKey.hapticFeedbackEnabled, true)
+        showRating = Self.read(defaults, SettingsKey.showRating, true)
         danmakuEnabled = Self.read(defaults, SettingsKey.danmakuEnabled, true)
         danmakuOpacity = Self.read(defaults, SettingsKey.danmakuOpacity, 1.0)
         danmakuFontSize = Self.read(defaults, SettingsKey.danmakuFontSize, 20.0)
@@ -485,8 +558,14 @@ final class SettingsStore {
         autoSkipOpEd = Self.read(defaults, SettingsKey.autoSkipOpEd, false)
         playSpeed = PlaybackSpeed.nearest(Self.read(defaults, SettingsKey.playSpeed, 1.0))
         playResume = Self.read(defaults, SettingsKey.playResume, true)
+        backgroundPlayback = Self.read(defaults, SettingsKey.backgroundPlayback, false)
+        brightnessVolumeGesture = Self.read(defaults, SettingsKey.brightnessVolumeGesture, true)
+        privateMode = Self.read(defaults, SettingsKey.privateMode, false)
         // 秒数必须为正：备份或旧数据里若写进了 0 / 负数，快进按钮会变成空操作。
         buttonSkipTime = max(1, Self.read(defaults, SettingsKey.buttonSkipTime, 80))
+        doubleTapSkipTime = max(1, Self.read(defaults, SettingsKey.doubleTapSkipTime, 15))
+        // 长按倍速固定归到菜单里那几档，存进来的怪值不至于让播放器跑飞。
+        longPressSpeed = PlaybackSpeed.nearest(Self.read(defaults, SettingsKey.longPressSpeed, 2.0))
         // 与原版滑杆的上下限一致（1–10 秒）；越界值夹回范围内，避免控制栏永不隐藏或瞬间消失。
         playerControllerLayerDisappearTime = min(
             10_000,
@@ -525,11 +604,33 @@ final class SettingsStore {
         enableBangumiProxy = Self.read(defaults, SettingsKey.enableBangumiProxy, false)
         autoUpdateCheck = Self.read(defaults, SettingsKey.autoUpdate, true)
         checkPluginUpdateOnStartup = Self.read(defaults, SettingsKey.checkPluginUpdateOnStartup, true)
+        syncPlayEndPoint = Self.read(defaults, SettingsKey.syncPlayEndPoint, "")
+        syncPlayRoom = Self.read(defaults, SettingsKey.syncPlayRoom, "")
+        syncPlayPassword = Self.read(defaults, SettingsKey.syncPlayPassword, "")
         // 加速方式在全部存储属性初始化完成后再同步到全局开关。
         BangumiAcceleration.mode = enableBangumiProxy ? .mirror : .direct
         // init 中给存储属性赋初值不会触发 didSet，这里补一次启动时的令牌注入；
         // 之后设置页改令牌、恢复备份都会走 `bangumiAccessToken.didSet`。
         BangumiAPI.accessToken = bangumiAccessToken
+    }
+
+    /// 把播放相关设置恢复为出厂值（LP 清单「恢复默认设置」）。
+    ///
+    /// 只动播放器与超分辨率：解码器、规则、网络、同步这些不在这里，
+    /// 所以设置页那颗按钮的确认文案也只提这两块，不夸大范围。
+    func resetPlayerSettings() {
+        autoPlayNext = true
+        playResume = true
+        backgroundPlayback = false
+        brightnessVolumeGesture = true
+        privateMode = false
+        playSpeed = 1.0
+        buttonSkipTime = 80
+        doubleTapSkipTime = 15
+        longPressSpeed = 2.0
+        playerControllerLayerDisappearTime = 4000
+        superResolutionMode = .off
+        defaultAspectRatio = .automatic
     }
 
     private func persist(_ value: Any?, _ key: String) {

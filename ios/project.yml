@@ -87,7 +87,7 @@ targets:
         CFBundleSignature: "????"
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         # DanDanPlay 弹幕接口的凭据（构建时通过 DANDAN_APP_ID / DANDAN_APP_SECRET 注入）。
-        # 留空时可以在「设置 → 弹幕设置」里手填。
+        # 空值时弹幕功能不可用；设置页不再提供手填（LP 2026-10-24）。
         DanDanAppId: $(DANDAN_APP_ID)
         DanDanAppSecret: $(DANDAN_APP_SECRET)
         LSRequiresIPhoneOS: true

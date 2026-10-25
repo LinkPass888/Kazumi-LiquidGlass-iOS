@@ -16,6 +16,7 @@ import SwiftUI
 
 struct KazumiTabShell: View {
     @Environment(AppRouter.self) private var router
+    @Environment(SettingsStore.self) private var settings
 
     var body: some View {
         TabView(selection: tabSelection) {
@@ -41,6 +42,13 @@ struct KazumiTabShell: View {
             }
         }
         .tabBarMinimizeBehavior(.onScrollDown)
+        // LP 清单「触感反馈」：关掉后底栏切换不再轻震（trigger 传 nil 就不触发）。
+        .sensoryFeedback(.selection, trigger: hapticTrigger)
+    }
+
+    /// 触感反馈关闭时传 nil：`.sensoryFeedback` 只比较相邻两次的值，nil → nil 不触发。
+    private var hapticTrigger: AppDestination? {
+        settings.hapticFeedbackEnabled ? router.selectedDestination : nil
     }
 
     /// Tab 选中项与 AppDestination 的双向绑定。

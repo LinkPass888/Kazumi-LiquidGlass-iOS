@@ -36,33 +36,23 @@ struct DanmakuComment: Identifiable, Hashable, Sendable {
 /// 一次取弹幕的结果，UI 据此决定提示文案。
 enum DanmakuFetchResult: Sendable {
     case success([DanmakuComment])
-    /// 没有可用数据（未配置凭据 / 没有匹配的番剧 / 这一集没有弹幕）。
+    /// 这一集本来就没有弹幕：正常情况，界面上什么都不显示（Ato 2026-10-25）。
+    case empty
+    /// 没有可用数据（未配置凭据 / DanDanPlay 没有这部番的记录）。
     case unavailable(String)
     /// 网络或接口失败。
     case failed(String)
 }
 
-/// DanDanPlay 的凭据。
+/// DanDanPlay 的凭据。只在打包时注入（Info.plist 的 DanDanAppId / DanDanAppSecret）。
+/// 设置页不再手填——LP 2026-10-24：「这个不是手动填的，是打包时从变量注入的」。
 enum DanDanCredentials {
-    static let appIDKey = "kazumi.dandan.appId"
-    static let secretKey = "kazumi.dandan.appSecret"
-
-    static var appID: String { value(forKey: appIDKey, infoKey: "DanDanAppId") }
-    static var secret: String { value(forKey: secretKey, infoKey: "DanDanAppSecret") }
+    static var appID: String { value(forInfoKey: "DanDanAppId") }
+    static var secret: String { value(forInfoKey: "DanDanAppSecret") }
 
     static var isConfigured: Bool { !appID.isEmpty && !secret.isEmpty }
 
-    static func clearOverride() {
-        UserDefaults.standard.removeObject(forKey: appIDKey)
-        UserDefaults.standard.removeObject(forKey: secretKey)
-    }
-
-    private static func value(forKey key: String, infoKey: String) -> String {
-        if let stored = UserDefaults.standard.string(forKey: key)?
-            .trimmingCharacters(in: .whitespacesAndNewlines),
-           !stored.isEmpty {
-            return stored
-        }
+    private static func value(forInfoKey infoKey: String) -> String {
         let bundleValue = (Bundle.main.object(forInfoDictionaryKey: infoKey) as? String)?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         // 没有注入时 Xcode 可能把 `$(...)` 原样留下，这种情况按空处理。
@@ -120,7 +110,7 @@ enum DanmakuAPI {
             }
             let comments = try await comments(danDanBangumiID: danDanID, episode: episode)
             guard !comments.isEmpty else {
-                return .unavailable("这一集暂时没有弹幕")
+                return .empty
             }
             return .success(comments)
         } catch {
