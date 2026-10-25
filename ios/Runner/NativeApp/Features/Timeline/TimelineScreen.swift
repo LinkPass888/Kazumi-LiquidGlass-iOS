@@ -122,8 +122,8 @@ struct TimelineScreen: View {
         } label: {
             HStack(spacing: 4) {
                 Text(controller.seasonLabel)
-                    // LP 2631：标题收一档（原 34）。
-                    .font(.system(size: 28, weight: .semibold))
+                    // LP 2631 → 2652：标题一路收到 30（原 34）。
+                    .font(.system(size: 30, weight: .semibold))
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
                 Image(systemName: "chevron.down")
@@ -177,24 +177,28 @@ struct TimelineScreen: View {
         )
     }
 
-    /// 那颗胶囊本体：没筛选时玻璃底 + 次要色图标，有筛选时实心主题色 + onAccent 图标。
+    /// 那颗按钮本体。LP 2652 / Colo 2653：36×36 正圆，图标 18 居中，命中区 44；
+    /// 有筛选时填实心主题色 + onAccent 图标，形状不跟着变，还是正圆。
+    /// 40 见方的胶囊由 `kazumiGlassShapeModifier` 渲染出来就是正圆，36 同理。
     @ViewBuilder
     private func iconCapsule(hasFilters: Bool) -> some View {
-        let shape = Capsule(style: .continuous)
+        let circle = Circle()
+        let icon = Image(systemName: "line.3.horizontal.decrease")
+            .font(.system(size: 18, weight: .bold))
         if hasFilters {
-            Image(systemName: "line.3.horizontal.decrease")
-                .font(.system(size: 18, weight: .bold))
+            icon
                 .foregroundStyle(KazumiPalette.onAccent(for: colorScheme))
-                .padding(.horizontal, 12)
-                .padding(.vertical, 7)
-                .background(shape.fill(KazumiPalette.accent(for: colorScheme)))
+                .frame(width: 36, height: 36)
+                .background(circle.fill(KazumiPalette.accent(for: colorScheme)))
+                .contentShape(circle)
+                .frame(width: 44, height: 44)
         } else {
-            Image(systemName: "line.3.horizontal.decrease")
-                .font(.system(size: 18, weight: .bold))
+            icon
                 .foregroundStyle(.secondary)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 7)
+                .frame(width: 36, height: 36)
                 .kazumiGlassCapsule(interactive: true)
+                .contentShape(circle)
+                .frame(width: 44, height: 44)
         }
     }
 
