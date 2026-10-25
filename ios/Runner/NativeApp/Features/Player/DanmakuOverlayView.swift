@@ -124,8 +124,16 @@ final class DanmakuOverlayView: UIView {
         displayLink = nil
     }
 
+    private var loggedFirstStep = false
+
     @objc private func step() {
         guard enabled, !comments.isEmpty, bounds.width > 1, bounds.height > 1 else { return }
+        if !loggedFirstStep {
+            loggedFirstStep = true
+            KazumiLogBuffer.player(
+                "起播打点：弹幕层第一帧 \(comments.count) 条，画面 \(Int(bounds.width))x\(Int(bounds.height))"
+            )
+        }
         let now = clockNow()
         if now < lastNow - 1.5 || now > lastNow + 3 {
             clearLabels()

@@ -211,33 +211,30 @@ final class PlayerSurfaceCoordinator: NSObject, PlayerControllerDelegate {
             options.referer = referer
             options.appendHeader(["Referer": referer])
         }
-        options.videoFilters = filters
-
-        // FFmpeg 滤镜链只在 MEPlayer 内核下生效，AVPlayer 会直接忽略。
+        // 超分辨率不接 FFmpeg 内核，滤镜链在这里丢弃。
         //
-        // 这里刻意不去改 `KSOptions.firstPlayerType`：那是 KSPlayer 的全局静态
-        // 可变属性，在 Swift 6 严格并发下客户端读写会被判定为不安全。
-        // 改成自己建 layer（`isAutoPlay: false`）后替换 `playerLayer.player`，
-        // 既绕开全局状态，也避免先按默认内核起播再换掉的双重加载。
+        // 曾经的写法是按档位建 `KSMEPlayer`（FFmpeg 内核）并把滤镜链交给
+        // `KSOptions.videoFilters`。它在起播时建不出滤镜图——日志里
+        // `MEPlayerItem | Error parsing filterchain ...` 之后进程当场退出，
+        // 也就是「起播即闪退」。在那条链路真正能用之前，画面只走 AVPlayer，
+        // 宁可没有超分效果，也不能让播放器一开播就崩。
         //
         // 换集 / 换档位时先把上一路停掉，否则旧内核会继续出声。
         view.playerLayer?.stop()
 
         let layer = KSPlayerLayer(url: url, isAutoPlay: false, options: options)
         view.playerLayer = layer
-        if !filters.isEmpty {
-            let previous = layer.player
-            layer.player = KSMEPlayer(url: url, options: options)
-            previous.shutdown()
-        }
 
         // 与 `PlayerView.set(url:options:)` 保持一致：清掉上一集的进度与字幕源。
         view.srtControl.url = url
         view.toolBar.currentTime = 0
         view.totalTime = 0
 
+        KazumiLogBuffer.player("起播打点：layer 已建好，准备挂画面")
         attachVideoView(to: view)
+        KazumiLogBuffer.player("起播打点：画面已挂上，调用 play()")
         layer.play()
+        KazumiLogBuffer.player("起播打点：play() 已返回")
 
         if resumeTime > 1 {
             view.seek(time: resumeTime) { _ in }
@@ -307,6 +304,7 @@ final class PlayerSurfaceCoordinator: NSObject, PlayerControllerDelegate {
         let isPlaying = state.isPlaying
         let isReady = state == .readyToPlay
         let isFailed = state == .error
+        KazumiLogBuffer.player("起播打点：内核状态 playing=\(isPlaying) ready=\(isReady) failed=\(isFailed)")
         let target = surface
         Task { @MainActor in
             target?.handleState(isPlaying: isPlaying, isReady: isReady, isFailed: isFailed)

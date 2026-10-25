@@ -247,6 +247,11 @@ final class PlayerController {
             danmakuComments = comments
             danmakuStatus = .ready
             KazumiLogBuffer.player("弹幕已加载：\(comments.count) 条")
+        case .empty:
+            // 这集本来就没弹幕：不当成错误，也不跳提示。
+            danmakuComments = []
+            danmakuStatus = .ready
+            danmakuMessage = nil
         case .unavailable(let message):
             danmakuComments = []
             danmakuStatus = .unavailable
