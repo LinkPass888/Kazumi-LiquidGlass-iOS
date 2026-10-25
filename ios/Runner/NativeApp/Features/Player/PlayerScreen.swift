@@ -870,6 +870,32 @@ struct PlayerScreen: View {
         showControls()
     }
 
+    /// 弹幕观感打包：设置页那几项 + 播放器自己的弹幕开关与当前倍速。
+    /// 改成结构体是因为弹幕层要的项越来越多，一项一个参数会把调用点撑散。
+    private var danmakuStyle: DanmakuOverlayView.Style {
+        var style = DanmakuOverlayView.Style()
+        style.enabled = danmakuEnabled
+        style.opacity = settings.danmakuOpacity
+        style.fontSize = settings.danmakuFontSize
+        style.area = settings.danmakuArea
+        style.duration = settings.danmakuDuration
+        style.lineHeight = settings.danmakuLineHeight
+        style.followSpeed = settings.danmakuFollowSpeed
+        style.showTop = settings.danmakuTop
+        style.showBottom = settings.danmakuBottom
+        style.showScroll = settings.danmakuScroll
+        style.massive = settings.danmakuMassive
+        style.deduplication = settings.danmakuDeduplication
+        style.showBiliBili = settings.danmakuBiliBiliSource
+        style.showGamer = settings.danmakuGamerSource
+        style.showDanDan = settings.danmakuDanDanSource
+        style.border = settings.danmakuBorder
+        style.borderSize = settings.danmakuBorderSize
+        style.useColor = settings.danmakuColor
+        style.fontWeight = settings.danmakuFontWeight
+        return style
+    }
+
     /// 黑底 + 视频画面（或解析中的状态）。拆出来是为了只在画面上挂手势，
     /// 不把顶栏按钮与错误遮罩的点击也当成「点画面暂停」。
     @ViewBuilder
@@ -885,10 +911,8 @@ struct PlayerScreen: View {
                     videoFilters: settings.superResolutionMode.videoFilters,
                     videoGravity: aspectRatioMode.videoGravity,
                     danmaku: controller.danmakuComments,
-                    danmakuEnabled: danmakuEnabled,
-                    danmakuOpacity: settings.danmakuOpacity,
-                    danmakuFontSize: settings.danmakuFontSize,
-                    danmakuArea: settings.danmakuArea,
+                    danmakuStyle: danmakuStyle,
+                    danmakuPlaybackRate: Double(playbackRate),
                     surface: surface
                 )
             } else {

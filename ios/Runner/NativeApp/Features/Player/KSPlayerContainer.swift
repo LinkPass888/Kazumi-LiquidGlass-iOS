@@ -347,10 +347,10 @@ struct KSPlayerContainer: UIViewRepresentable {
     /// 画面填充方式（自动 = 等比适配，裁切 = 等比填满，拉伸 = 不保持比例）。
     let videoGravity: AVLayerVideoGravity
     let danmaku: [DanmakuComment]
-    let danmakuEnabled: Bool
-    let danmakuOpacity: Double
-    let danmakuFontSize: Double
-    let danmakuArea: Double
+    /// 弹幕观感（显示开关、区域、持续时间、行高、描边、字重等，见 DanmakuOverlayView.Style）。
+    let danmakuStyle: DanmakuOverlayView.Style
+    /// 当前播放倍速，「弹幕跟随视频倍速」开着时用它算停留时间。
+    let danmakuPlaybackRate: Double
     let surface: PlayerSurfaceModel
 
     func makeUIView(context: Context) -> PlayerView {
@@ -387,10 +387,8 @@ struct KSPlayerContainer: UIViewRepresentable {
         context.coordinator.applyVideoGravity(videoGravity)
         context.coordinator.overlay?.apply(
             comments: danmaku,
-            enabled: danmakuEnabled,
-            opacity: danmakuOpacity,
-            fontSize: danmakuFontSize,
-            area: danmakuArea
+            style: danmakuStyle,
+            playbackRate: danmakuPlaybackRate
         )
     }
 

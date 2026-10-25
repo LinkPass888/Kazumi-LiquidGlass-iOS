@@ -99,8 +99,8 @@ struct SyncBackupScreen: View {
             // LP 定：按介质分组——剪贴板一段、文件一段，段与段的间隔自己分开。
             // 行名只写动作，段标题已经说了是哪条路；读屏报全名。
             Section {
-                actionRow("导出", icon: "arrow.up.doc", accessibility: "导出到剪贴板") { exportBackup() }
-                actionRow("恢复", icon: "square.and.arrow.down", accessibility: "从剪贴板恢复") {
+                actionRow("导出到剪贴板", icon: "arrow.up.doc", accessibility: "导出到剪贴板") { exportBackup() }
+                actionRow("从剪贴板恢复", icon: "square.and.arrow.down", accessibility: "从剪贴板恢复") {
                     importBackupFromClipboard()
                 }
             } header: {
@@ -108,8 +108,8 @@ struct SyncBackupScreen: View {
             }
 
             Section {
-                actionRow("导出", icon: "folder", accessibility: "导出到文件") { exportBackupToFile() }
-                actionRow("恢复", icon: "doc.badge.plus", accessibility: "从文件恢复") {
+                actionRow("导出到文件", icon: "folder", accessibility: "导出到文件") { exportBackupToFile() }
+                actionRow("从文件恢复", icon: "doc.badge.plus", accessibility: "从文件恢复") {
                     pickBackupFile()
                 }
             } header: {

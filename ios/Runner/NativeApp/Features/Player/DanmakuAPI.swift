@@ -31,6 +31,9 @@ struct DanmakuComment: Identifiable, Hashable, Sendable {
     let mode: Int
     let colorValue: Int
     let text: String
+    /// 这条弹幕的来路，取 DanDanPlay `p` 的第 4 段（BiliBili／Gamer／DanDanPlay）。
+    /// 弹幕设置里三颗来源开关就是按它过滤的（main: _isDanmakuSourceEnabled）。
+    let source: String
 }
 
 /// 一次取弹幕的结果，UI 据此决定提示文案。
@@ -229,13 +232,16 @@ enum DanmakuAPI {
             guard parts.count >= 3, let time = Double(parts[0]), time >= 0 else { continue }
             let mode = Int(parts[1]) ?? 1
             let colorValue = Int(parts[2]) ?? 0xFFFFFF
+            // maxSplits: 3 —— 前三段切开，剩下的整段就是来源（含可能出现的逗号）。
+            let source = parts.count > 3 ? String(parts[3]).trimmingCharacters(in: .whitespaces) : ""
             result.append(
                 DanmakuComment(
                     id: index,
                     time: time,
                     mode: mode,
                     colorValue: colorValue,
-                    text: text
+                    text: text,
+                    source: source
                 )
             )
         }

@@ -275,52 +275,27 @@ struct PlayerSettingsScreen: View {
 struct DanmakuSettingsScreen: View {
     @Environment(SettingsStore.self) private var settings
     @Environment(AppRouter.self) private var router
+    @State private var isConfirmingRestore = false
+    /// 恢复默认后顶上那句提示；两秒后自己收起来。
+    @State private var showRestoredToast = false
 
     /// DanDanPlay 凭据随打包注入（Info.plist），这个页不再写 UserDefaults 覆盖值。
 
     var body: some View {
         Form {
-            Section("显示") {
-                Toggle("显示弹幕", isOn: enabledBinding)
-                sliderRow(
-                    title: "字号",
-                    value: "\(Int(settings.danmakuFontSize))",
-                    binding: fontSizeBinding,
-                    range: 12...32,
-                    step: 1
-                )
-                sliderRow(
-                    title: "不透明度",
-                    value: String(format: "%.0f%%", settings.danmakuOpacity * 100),
-                    binding: opacityBinding,
-                    range: 0.2...1.0,
-                    step: 0.05
-                )
-                sliderRow(
-                    title: "显示区域",
-                    value: String(format: "%.0f%%", settings.danmakuArea * 100),
-                    binding: areaBinding,
-                    range: 0.25...1.0,
-                    step: 0.05
-                )
-            }
-            // LP 2026-10-24：弹弹play 的账号不在这里手填，是打包时从变量注入的，
-            // 设置页只留一句说明（Ato 同日同定）。Ato 2026-10-24 后补：没凭据时
-            // 不许做成「能点但没反应」——直接把状态写在行上，说明写清缺什么。
-            // 三路来源（BiliBili／Gamer／弹弹play）第二批才接，这版只有弹弹play 这一行。
-            Section {
-                LabeledContent("DanDanPlay") {
-                    Text(DanDanCredentials.isConfigured ? "已配置" : "未配置")
-                        .foregroundStyle(DanDanCredentials.isConfigured ? Color.secondary : Color.orange)
+            // 三路来源都只是开关（Ato 2502：账号是打包时注入的，屏上不该出现
+            // 账号、凭据这些字）。DanDanPlay 返回的每条弹幕自带来路标记，
+            // 这三颗就是按标记筛——关掉的那一路不画。
+            Section("弹幕来源") {
+                Toggle(isOn: biliBiliSourceBinding) {
+                    Label("BiliBili", systemImage: "tv")
                 }
-            } header: {
-                Text("弹幕来源")
-            } footer: {
-                Text(
-                    DanDanCredentials.isConfigured
-                        ? "账号随打包注入，不需要在这里填写。"
-                        : "这一版还没拿到弹弹play 的凭据，所以加载不出弹幕。凭据是打包时注入的，这个页填不了。"
-                )
+                Toggle(isOn: gamerSourceBinding) {
+                    Label("Gamer", systemImage: "gamecontroller")
+                }
+                Toggle(isOn: danDanSourceBinding) {
+                    Label("弹弹play", systemImage: "bubble.left.and.bubble.right")
+                }
             }
             Section {
                 Button {
@@ -331,8 +306,129 @@ struct DanmakuSettingsScreen: View {
             } footer: {
                 Text("按关键词过滤掉不想看的弹幕，规则可同步到 WebDAV。")
             }
+            Section("弹幕显示") {
+                Toggle("显示弹幕", isOn: enabledBinding)
+                sliderRow(
+                    title: "弹幕区域",
+                    value: "\(Int((settings.danmakuArea * 100).rounded()))%",
+                    binding: areaBinding,
+                    range: 0...1,
+                    step: 0.125
+                )
+                sliderRow(
+                    title: "弹幕持续时间",
+                    value: "\(Int(settings.danmakuDuration.rounded())) 秒",
+                    binding: durationBinding,
+                    range: 2...16,
+                    step: 1
+                )
+                sliderRow(
+                    title: "弹幕行高",
+                    value: String(format: "%.1f", settings.danmakuLineHeight),
+                    binding: lineHeightBinding,
+                    range: 0...3,
+                    step: 0.1
+                )
+                Toggle(isOn: followSpeedBinding) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("弹幕跟随视频倍速")
+                        Text("开启后弹幕速度会随视频倍速而改变")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                Toggle("顶部弹幕", isOn: topBinding)
+                Toggle("底部弹幕", isOn: bottomBinding)
+                Toggle("滚动弹幕", isOn: scrollBinding)
+                Toggle(isOn: massiveBinding) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("海量弹幕")
+                        Text("弹幕过多时进行叠加绘制")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                Toggle(isOn: dedupBinding) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("弹幕去重")
+                        Text("相同内容弹幕过多时合并为一条弹幕")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            Section("弹幕样式") {
+                Toggle("弹幕描边", isOn: borderBinding)
+                sliderRow(
+                    title: "弹幕描边粗细",
+                    value: String(format: "%.1f", settings.danmakuBorderSize),
+                    binding: borderSizeBinding,
+                    range: 0.1...3,
+                    step: 0.1
+                )
+                Toggle("弹幕颜色", isOn: colorBinding)
+                sliderRow(
+                    title: "字体大小",
+                    value: "\(Int(settings.danmakuFontSize.rounded()))",
+                    binding: fontSizeBinding,
+                    range: 10...48,
+                    step: 1
+                )
+                sliderRow(
+                    title: "字体字重",
+                    value: "\(settings.danmakuFontWeight)",
+                    binding: fontWeightBinding,
+                    range: 1...9,
+                    step: 1
+                )
+                sliderRow(
+                    title: "弹幕不透明度",
+                    value: "\(Int((settings.danmakuOpacity * 100).rounded()))%",
+                    binding: opacityBinding,
+                    range: 0.1...1,
+                    step: 0.05
+                )
+            }
+            Section {
+                Button {
+                    isConfirmingRestore = true
+                } label: {
+                    Text("恢复默认设置")
+                }
+            } footer: {
+                Text("将弹幕相关设置恢复为默认值")
+            }
         }
         .kazumiSettingsDetail("弹幕设置")
+        .confirmationDialog(
+            "恢复默认弹幕设置",
+            isPresented: $isConfirmingRestore,
+            titleVisibility: .visible
+        ) {
+            Button("恢复默认", role: .destructive) {
+                settings.resetDanmakuSettings()
+                withAnimation { showRestoredToast = true }
+                Task {
+                    try? await Task.sleep(for: .seconds(2))
+                    withAnimation { showRestoredToast = false }
+                }
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            // 逐字照 main（danmaku_settings.dart:82）：让用户知道屏蔽词不会被清。
+            Text("弹幕来源、显示和样式设置将恢复为默认值，关键词屏蔽列表不会被清空。")
+        }
+        .overlay(alignment: .top) {
+            if showRestoredToast {
+                Text("已恢复默认弹幕设置")
+                    .font(.footnote)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(.thinMaterial, in: Capsule())
+                    .padding(.top, 8)
+                    .transition(.opacity)
+            }
+        }
     }
 
     /// 「标题 + 当前值 + 滑杆」一行。
@@ -354,20 +450,39 @@ struct DanmakuSettingsScreen: View {
         }
     }
 
-    private var enabledBinding: Binding<Bool> {
-        Binding(get: { settings.danmakuEnabled }, set: { settings.danmakuEnabled = $0 })
+    private func bool(_ keyPath: ReferenceWritableKeyPath<SettingsStore, Bool>) -> Binding<Bool> {
+        Binding(get: { settings[keyPath: keyPath] }, set: { settings[keyPath: keyPath] = $0 })
     }
 
-    private var fontSizeBinding: Binding<Double> {
-        Binding(get: { settings.danmakuFontSize }, set: { settings.danmakuFontSize = $0 })
+    private func double(_ keyPath: ReferenceWritableKeyPath<SettingsStore, Double>) -> Binding<Double> {
+        Binding(get: { settings[keyPath: keyPath] }, set: { settings[keyPath: keyPath] = $0 })
     }
 
-    private var opacityBinding: Binding<Double> {
-        Binding(get: { settings.danmakuOpacity }, set: { settings.danmakuOpacity = $0 })
-    }
+    private var enabledBinding: Binding<Bool> { bool(\.danmakuEnabled) }
+    private var followSpeedBinding: Binding<Bool> { bool(\.danmakuFollowSpeed) }
+    private var topBinding: Binding<Bool> { bool(\.danmakuTop) }
+    private var bottomBinding: Binding<Bool> { bool(\.danmakuBottom) }
+    private var scrollBinding: Binding<Bool> { bool(\.danmakuScroll) }
+    private var massiveBinding: Binding<Bool> { bool(\.danmakuMassive) }
+    private var dedupBinding: Binding<Bool> { bool(\.danmakuDeduplication) }
+    private var borderBinding: Binding<Bool> { bool(\.danmakuBorder) }
+    private var colorBinding: Binding<Bool> { bool(\.danmakuColor) }
+    private var biliBiliSourceBinding: Binding<Bool> { bool(\.danmakuBiliBiliSource) }
+    private var gamerSourceBinding: Binding<Bool> { bool(\.danmakuGamerSource) }
+    private var danDanSourceBinding: Binding<Bool> { bool(\.danmakuDanDanSource) }
 
-    private var areaBinding: Binding<Double> {
-        Binding(get: { settings.danmakuArea }, set: { settings.danmakuArea = $0 })
+    private var fontSizeBinding: Binding<Double> { double(\.danmakuFontSize) }
+    private var opacityBinding: Binding<Double> { double(\.danmakuOpacity) }
+    private var areaBinding: Binding<Double> { double(\.danmakuArea) }
+    private var durationBinding: Binding<Double> { double(\.danmakuDuration) }
+    private var lineHeightBinding: Binding<Double> { double(\.danmakuLineHeight) }
+    private var borderSizeBinding: Binding<Double> { double(\.danmakuBorderSize) }
+
+    private var fontWeightBinding: Binding<Double> {
+        Binding(
+            get: { Double(settings.danmakuFontWeight) },
+            set: { settings.danmakuFontWeight = Int($0.rounded()) }
+        )
     }
 }
 
@@ -413,18 +528,10 @@ struct DownloadSettingsScreen: View {
                 if let message {
                     Text(message)
                 } else {
-                    Text("选一个文件夹，之后的下载存到那里；没选过就放在应用内。")
+                    // main 两处都强调「只对之后下载的生效」（download_settings.dart:148）：
+                    // 换目录的人最容易以为旧文件会跟着搬过去，这句不能省。
+                    Text("选一个文件夹，之后的下载存到那里；没选过就放在应用内。换位置只对之后下载的剧集生效，之前的不会跟着搬。")
                 }
-            }
-            // LP 清单里下载设置还有并发、分片、缓存弹幕两样没做；
-            // Ato 2026-10-24：那两样要等下载器做出来才有意义，这一版先不放。
-            Section("说明") {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("播放时保存的剧集也会出现在下载管理里；这一版还没有下载队列。")
-                    Text("并发设置（同时下载集数、分片并发数）要等下载器做出来才有意义，这一版先不放。")
-                }
-                .font(.footnote)
-                .foregroundStyle(.secondary)
             }
         }
         .kazumiSettingsDetail("下载设置")

@@ -30,13 +30,73 @@ final class DanmakuOverlayView: UIView {
     private var labels: [ItemLabel] = []
     private var nextIndex = 0
 
-    private var enabled = true
-    private var opacity: CGFloat = 1
-    private var fontSize: CGFloat = 20
-    private var area: CGFloat = 0.5
+    /// 一整套弹幕观感。字段与「弹幕设置」页一一对应，页面改哪一项这里就跟着变。
+    struct Style: Equatable {
+        var enabled = true
+        var opacity: Double = 1
+        var fontSize: Double = 20
+        var area: Double = 0.5
+        /// 滚动弹幕横穿屏幕的秒数（main 的 danmakuDuration）。
+        var duration: Double = 8
+        /// 行高倍数（main 的 danmakuLineHeight，默认 1.6）。
+        var lineHeight: Double = 1.6
+        /// 弹幕速度跟随视频倍速（main 的 danmakuFollowSpeed）。
+        var followSpeed = true
+        var showTop = true
+        var showBottom = false
+        var showScroll = true
+        /// 海量弹幕：轨道满了也照画（叠着来），关掉就宁可丢。
+        var massive = false
+        /// 5 秒内内容相同的合并成一条。
+        var deduplication = false
+        /// 三路来源开关（main: _isDanmakuSourceEnabled）。关掉的那一路不画。
+        var showBiliBili = true
+        var showGamer = true
+        var showDanDan = true
+
+        var border = true
+        var borderSize: Double = 1.5
+        var useColor = true
+        /// 1~9 对应 w100~w900（main 的 danmakuFontWeight）。
+        var fontWeight = 4
+
+        /// 这条来路的弹幕要不要画。判断与 main 的 _isDanmakuSourceEnabled 一致：
+        /// 弹弹play 自己的弹幕，只在弹弹play 这颗关掉时才被筛掉。
+        func allows(_ source: String) -> Bool {
+            if !showBiliBili && source.contains("BiliBili") { return false }
+            if !showGamer && source.contains("Gamer") { return false }
+            if !showDanDan && !(source.contains("BiliBili") || source.contains("Gamer")) {
+                return false
+            }
+            return true
+        }
+
+        /// 只挑「同一批弹幕该怎么画」相关的项：这几项一变，已经画出来的要清掉重来。
+        var filterSignature: Int {
+            var hasher = Hasher()
+            hasher.combine(showTop)
+            hasher.combine(showBottom)
+            hasher.combine(showScroll)
+            hasher.combine(massive)
+            hasher.combine(deduplication)
+            hasher.combine(showBiliBili)
+            hasher.combine(showGamer)
+            hasher.combine(showDanDan)
+            return hasher.finalize()
+        }
+    }
+
+    private var style = Style()
+    /// 上一次的过滤类设置，用来判断要不要把已经画出来的清掉重来。
+    private var lastFilterSignature: Int?
+
+    private var enabled: Bool { style.enabled }
 
     /// 播放内核；时间每帧直接从 KSPlayer 读，比等回调插值更跟手。
     weak var playerView: PlayerView?
+
+    /// 当前倍速。「弹幕跟随视频倍速」开着时，用它把停留时间缩短。
+    private var playbackRate: Double = 1
 
     private var lastNow: Double = 0
 
@@ -58,25 +118,44 @@ final class DanmakuOverlayView: UIView {
 
     func apply(
         comments newComments: [DanmakuComment],
-        enabled: Bool,
-        opacity: Double,
-        fontSize: Double,
-        area: Double
+        style newStyle: Style,
+        playbackRate rate: Double
     ) {
         let newSignature = newComments.count &* 31 &+ Int((newComments.last?.time ?? 0) * 10)
-        if newSignature != signature {
+        let filtersChanged = lastFilterSignature != nil
+            && lastFilterSignature != newStyle.filterSignature
+        if newSignature != signature || filtersChanged {
             signature = newSignature
-            comments = newComments
+            let allowed = newComments.filter { newStyle.allows($0.source) }
+            comments = newStyle.deduplication ? Self.merged(allowed) : allowed
             clearLabels()
-            nextIndex = 0
+            // 过滤类设置改了：从现在这一刻接着放，不把已经过去的那段重播一遍。
+            nextIndex = filtersChanged ? lowerBound(clockNow()) : 0
         }
-        self.enabled = enabled
-        self.opacity = CGFloat(max(0.1, min(1, opacity)))
-        self.fontSize = CGFloat(max(10, min(40, fontSize)))
-        self.area = CGFloat(max(0.2, min(1, area)))
-        if !enabled {
+        style = newStyle
+        lastFilterSignature = newStyle.filterSignature
+        playbackRate = max(0.1, rate)
+        if !newStyle.enabled {
             clearLabels()
         }
+    }
+
+    /// 5 秒内内容完全相同的合并成一条（main: mergeDuplicateDanmakus，窗口 5 秒）。
+    private static func merged(_ comments: [DanmakuComment]) -> [DanmakuComment] {
+        guard !comments.isEmpty else { return comments }
+        var result: [DanmakuComment] = []
+        result.reserveCapacity(comments.count)
+        // 按时间顺序扫，记住每条文本最近一次出现的时间。
+        let ordered = comments.sorted { $0.time < $1.time }
+        var lastSeen: [String: Double] = [:]
+        for comment in ordered {
+            if let seen = lastSeen[comment.text], comment.time - seen < 5 {
+                continue
+            }
+            lastSeen[comment.text] = comment.time
+            result.append(comment)
+        }
+        return result
     }
 
     // MARK: - 时钟
@@ -156,23 +235,63 @@ final class DanmakuOverlayView: UIView {
     }
 
     private func spawn(_ comment: DanmakuComment, now: Double) {
+        // 哪一种不显示就直接不画（main 的顶部/底部/滚动弹幕三颗开关）。
+        let mode = (comment.mode == 4 || comment.mode == 5) ? comment.mode : 1
+        switch mode {
+        case 1: if !style.showScroll { return }
+        case 4: if !style.showBottom { return }
+        case 5: if !style.showTop { return }
+        default: return
+        }
+
         let label = ItemLabel()
         label.text = comment.text
-        label.font = .boldSystemFont(ofSize: fontSize)
-        label.textColor = Self.color(comment.colorValue)
-        label.layer.shadowColor = UIColor.black.cgColor
-        label.layer.shadowOpacity = 0.8
-        label.layer.shadowRadius = 2
+        let size = max(10, min(48, style.fontSize))
+        label.font = .systemFont(ofSize: size, weight: Self.weight(style.fontWeight))
+        // 关掉「弹幕颜色」就一律白字（main 的 danmakuColor）。
+        label.textColor = style.useColor ? Self.color(comment.colorValue) : .white
+        if style.border {
+            label.layer.shadowColor = UIColor.black.cgColor
+            label.layer.shadowOpacity = 0.8
+            label.layer.shadowRadius = CGFloat(max(0.1, min(3, style.borderSize)))
+        } else {
+            label.layer.shadowOpacity = 0
+            label.layer.shadowRadius = 0
+        }
         label.layer.shadowOffset = .zero
-        label.alpha = opacity
-        label.mode = (comment.mode == 4 || comment.mode == 5) ? comment.mode : 1
+        label.alpha = CGFloat(max(0.1, min(1, style.opacity)))
+        label.mode = mode
         label.startTime = now
-        label.duration = label.mode == 1 ? 8 : 4.5
+        label.duration = duration(for: mode)
         label.sizeToFit()
-        label.lane = laneIndex(mode: label.mode, width: label.bounds.width, now: now)
+        // 轨道满了：海量弹幕叠着画，否则这条就不画了。
+        guard let lane = laneIndex(mode: mode, width: label.bounds.width, now: now) else { return }
+        label.lane = lane
         addSubview(label)
         labels.append(label)
         position(label, at: now)
+    }
+
+    /// 滚动弹幕按设置里的秒数走；固定弹幕（顶/底）按 main 的比例停 4.5/8。
+    private func duration(for mode: Int) -> Double {
+        let base = max(2, min(16, style.duration))
+        let scaled = style.followSpeed ? base / playbackRate : base
+        return mode == 1 ? scaled : scaled * (4.5 / 8)
+    }
+
+    /// 1~9 映射到 w100~w900，与 main 的字体字重滑杆一致。
+    private static func weight(_ value: Int) -> UIFont.Weight {
+        switch max(1, min(9, value)) {
+        case 1: .ultraLight
+        case 2: .thin
+        case 3: .light
+        case 4: .regular
+        case 5: .medium
+        case 6: .semibold
+        case 7: .bold
+        case 8: .heavy
+        default: .black
+        }
     }
 
     private func layoutLabels(at now: Double) {
@@ -223,18 +342,24 @@ final class DanmakuOverlayView: UIView {
 
     // MARK: - 轨道
 
-    private var laneHeight: CGFloat { fontSize + 6 }
-
-    private var maxLanes: Int {
-        max(1, Int((bounds.height * area - 12) / laneHeight))
+    /// 行高 =（字号 + 6）× 行高倍数（main 的 danmakuLineHeight，默认 1.6）。
+    private var laneHeight: CGFloat {
+        max(1, (CGFloat(max(10, min(48, style.fontSize))) + 6) * CGFloat(max(0, min(3, style.lineHeight))))
     }
 
-    private func laneIndex(mode: Int, width: CGFloat, now: Double) -> Int {
+    /// 显示区域为 0 时一条都不放（main 的滑杆下限就是 0）。
+    private var maxLanes: Int {
+        max(0, Int((bounds.height * CGFloat(max(0, min(1, style.area))) - 12) / laneHeight))
+    }
+
+    /// 找不到空轨道时返回 nil：海量弹幕关着就丢这条，开着才叠。
+    private func laneIndex(mode: Int, width: CGFloat, now: Double) -> Int? {
         let limit = maxLanes
+        guard limit > 0 else { return nil }
         for lane in 0..<limit where isLaneFree(lane: lane, mode: mode, width: width, now: now) {
             return lane
         }
-        // 全部占满时随机塞一条，宁可有重叠也不要丢弹幕。
+        guard style.massive else { return nil }
         return Int.random(in: 0..<limit)
     }
 

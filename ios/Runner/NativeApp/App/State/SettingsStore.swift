@@ -163,6 +163,38 @@ enum SettingsKey {
     static let danmakuOpacity = "danmakuOpacity"
     static let danmakuFontSize = "danmakuFontSize"
     static let danmakuArea = "danmakuArea"
+    // 以下键名与 main 的 settings 完全一致（settings_keys.dart 的 danmaku 组），
+    // 这样两版的设置备份可以互认。
+    /// 滚动弹幕横穿屏幕的秒数，默认 8。
+    static let danmakuDuration = "danmakuDuration"
+    /// 弹幕行高倍数，默认 1.6。
+    static let danmakuLineHeight = "danmakuLineHeight"
+    /// 弹幕速度跟随视频倍速，默认开。
+    static let danmakuFollowSpeed = "danmakuFollowSpeed"
+    /// 顶部弹幕，默认开。
+    static let danmakuTop = "danmakuTop"
+    /// 底部弹幕，默认关。
+    static let danmakuBottom = "danmakuBottom"
+    /// 滚动弹幕，默认开。
+    static let danmakuScroll = "danmakuScroll"
+    /// 海量弹幕（轨满了也不丢，叠着画），默认关。
+    static let danmakuMassive = "danmakuMassive"
+    /// 弹幕去重（5 秒内相同内容合并成一条），默认关。
+    static let danmakuDeduplication = "danmakuDeduplication"
+    /// 弹幕描边，默认开。
+    static let danmakuBorder = "danmakuBorder"
+    /// 描边粗细，默认 1.5（main 的 0.1~3 那档）。
+    static let danmakuBorderSize = "danmakuBorderSize"
+    /// 弹幕颜色（关掉就一律白字），默认开。
+    static let danmakuColor = "danmakuColor"
+    /// 字体字重，1~9 对应 w100~w900，main 默认 4。
+    static let danmakuFontWeight = "danmakuFontWeight"
+    /// 三路来源开关（main 的 danmakuBiliBiliSource / danmakuGamerSource /
+    /// danmakuDanDanSource，默认都开）。弹弹play 的弹幕自带来源标记，
+    /// 这三颗就是按标记筛。
+    static let danmakuBiliBiliSource = "danmakuBiliBiliSource"
+    static let danmakuGamerSource = "danmakuGamerSource"
+    static let danmakuDanDanSource = "danmakuDanDanSource"
     static let danmakuFilterRules = "danmakuFilterRules"
     static let danmakuSourcePriority = "danmakuSourcePriority"
     static let webDAVURL = "webDAVURL"
@@ -291,6 +323,71 @@ final class SettingsStore {
     /// 弹幕显示区域（0.25 ~ 1.0 的屏幕高度占比）。
     var danmakuArea: Double {
         didSet { persist(danmakuArea, SettingsKey.danmakuArea) }
+    }
+
+    /// 滚动弹幕横穿屏幕的秒数（main 滑杆 2~16、默认 8）。
+    var danmakuDuration: Double {
+        didSet { persist(danmakuDuration, SettingsKey.danmakuDuration) }
+    }
+
+    /// 弹幕行高倍数（main 滑杆 0~3、默认 1.6）。
+    var danmakuLineHeight: Double {
+        didSet { persist(danmakuLineHeight, SettingsKey.danmakuLineHeight) }
+    }
+
+    /// 弹幕速度是否跟随视频倍速（默认开）。
+    var danmakuFollowSpeed: Bool {
+        didSet { persist(danmakuFollowSpeed, SettingsKey.danmakuFollowSpeed) }
+    }
+
+    var danmakuTop: Bool {
+        didSet { persist(danmakuTop, SettingsKey.danmakuTop) }
+    }
+
+    /// main 里底部弹幕默认是关的，跟着来。
+    var danmakuBottom: Bool {
+        didSet { persist(danmakuBottom, SettingsKey.danmakuBottom) }
+    }
+
+    var danmakuScroll: Bool {
+        didSet { persist(danmakuScroll, SettingsKey.danmakuScroll) }
+    }
+
+    var danmakuMassive: Bool {
+        didSet { persist(danmakuMassive, SettingsKey.danmakuMassive) }
+    }
+
+    var danmakuDeduplication: Bool {
+        didSet { persist(danmakuDeduplication, SettingsKey.danmakuDeduplication) }
+    }
+
+    var danmakuBorder: Bool {
+        didSet { persist(danmakuBorder, SettingsKey.danmakuBorder) }
+    }
+
+    var danmakuBorderSize: Double {
+        didSet { persist(danmakuBorderSize, SettingsKey.danmakuBorderSize) }
+    }
+
+    var danmakuColor: Bool {
+        didSet { persist(danmakuColor, SettingsKey.danmakuColor) }
+    }
+
+    /// 1~9，对应 w100~w900（main 是同一套数字）。
+    var danmakuFontWeight: Int {
+        didSet { persist(danmakuFontWeight, SettingsKey.danmakuFontWeight) }
+    }
+
+    var danmakuBiliBiliSource: Bool {
+        didSet { persist(danmakuBiliBiliSource, SettingsKey.danmakuBiliBiliSource) }
+    }
+
+    var danmakuGamerSource: Bool {
+        didSet { persist(danmakuGamerSource, SettingsKey.danmakuGamerSource) }
+    }
+
+    var danmakuDanDanSource: Bool {
+        didSet { persist(danmakuDanDanSource, SettingsKey.danmakuDanDanSource) }
     }
 
     var autoPlayNext: Bool {
@@ -575,6 +672,22 @@ final class SettingsStore {
         danmakuOpacity = Self.read(defaults, SettingsKey.danmakuOpacity, 1.0)
         danmakuFontSize = Self.read(defaults, SettingsKey.danmakuFontSize, 20.0)
         danmakuArea = Self.read(defaults, SettingsKey.danmakuArea, 0.5)
+        // 弹幕显示与样式：默认值照 main 的 settings_keys.dart（4 号键组）。
+        danmakuDuration = min(16, max(2, Self.read(defaults, SettingsKey.danmakuDuration, 8.0)))
+        danmakuLineHeight = min(3, max(0, Self.read(defaults, SettingsKey.danmakuLineHeight, 1.6)))
+        danmakuFollowSpeed = Self.read(defaults, SettingsKey.danmakuFollowSpeed, true)
+        danmakuTop = Self.read(defaults, SettingsKey.danmakuTop, true)
+        danmakuBottom = Self.read(defaults, SettingsKey.danmakuBottom, false)
+        danmakuScroll = Self.read(defaults, SettingsKey.danmakuScroll, true)
+        danmakuMassive = Self.read(defaults, SettingsKey.danmakuMassive, false)
+        danmakuDeduplication = Self.read(defaults, SettingsKey.danmakuDeduplication, false)
+        danmakuBorder = Self.read(defaults, SettingsKey.danmakuBorder, true)
+        danmakuBorderSize = min(3, max(0.1, Self.read(defaults, SettingsKey.danmakuBorderSize, 1.5)))
+        danmakuColor = Self.read(defaults, SettingsKey.danmakuColor, true)
+        danmakuFontWeight = min(9, max(1, Self.read(defaults, SettingsKey.danmakuFontWeight, 4)))
+        danmakuBiliBiliSource = Self.read(defaults, SettingsKey.danmakuBiliBiliSource, true)
+        danmakuGamerSource = Self.read(defaults, SettingsKey.danmakuGamerSource, true)
+        danmakuDanDanSource = Self.read(defaults, SettingsKey.danmakuDanDanSource, true)
         autoPlayNext = Self.read(defaults, SettingsKey.autoPlayNext, true)
         autoSkipOpEd = Self.read(defaults, SettingsKey.autoSkipOpEd, false)
         playSpeed = PlaybackSpeed.nearest(Self.read(defaults, SettingsKey.playSpeed, 1.0))
@@ -653,6 +766,30 @@ final class SettingsStore {
         playerControllerLayerDisappearTime = 4000
         superResolutionMode = .off
         defaultAspectRatio = .automatic
+    }
+
+    /// 弹幕设置的「恢复默认设置」（main: resetDanmakuSettings）。
+    /// 只动弹幕观感这几项，关键词屏蔽规则和来源优先级是内容不是观感，不碰。
+    func resetDanmakuSettings() {
+        danmakuEnabled = true
+        danmakuFontSize = 20
+        danmakuOpacity = 1.0
+        danmakuArea = 0.5
+        danmakuDuration = 8
+        danmakuLineHeight = 1.6
+        danmakuFollowSpeed = true
+        danmakuTop = true
+        danmakuBottom = false
+        danmakuScroll = true
+        danmakuMassive = false
+        danmakuDeduplication = false
+        danmakuBorder = true
+        danmakuBorderSize = 1.5
+        danmakuColor = true
+        danmakuFontWeight = 4
+        danmakuBiliBiliSource = true
+        danmakuGamerSource = true
+        danmakuDanDanSource = true
     }
 
     private func persist(_ value: Any?, _ key: String) {
