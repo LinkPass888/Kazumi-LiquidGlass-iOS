@@ -199,26 +199,38 @@ struct SettingsScreen: View {
     @ViewBuilder
     private func categoryRow(_ category: SettingsCategory) -> some View {
         switch category.destination {
+        // 分类行一律走路由表，不用 NavigationLink：
+        // 外观页里改配色/OLED 会让整棵视图树按 id 重建一次（静态调色板要重新取值），
+        // 栈状态若存在 NavigationLink 本地就会被清掉、退回设置首页；
+        // 放进 AppRouter 后重建能把同一个栈原样装回来（LP 2517 的「切开关会返回上一页」）。
         case .player:
-            NavigationLink { PlayerSettingsScreen() } label: { tile(category) }
+            Button { router.push(.playerSettings) } label: { tile(category) }
+                .buttonStyle(.plain)
         case .danmaku:
-            NavigationLink { DanmakuSettingsScreen() } label: { tile(category) }
+            Button { router.push(.danmakuSettings) } label: { tile(category) }
+                .buttonStyle(.plain)
         case .notification:
-            NavigationLink { NotificationSettingsScreen() } label: { tile(category) }
+            Button { router.push(.notificationSettings) } label: { tile(category) }
+                .buttonStyle(.plain)
         case .theme:
-            NavigationLink { ThemeSettingsScreen() } label: { tile(category) }
+            Button { router.push(.themeSettings) } label: { tile(category) }
+                .buttonStyle(.plain)
         case .interface:
-            NavigationLink { InterfaceSettingsScreen() } label: { tile(category) }
+            Button { router.push(.interfaceSettings) } label: { tile(category) }
+                .buttonStyle(.plain)
         case .syncBackup:
             // 主页面这一层走统一路由：以后从「我的」等别处进来也走同一条。
             Button { router.push(.syncBackup) } label: { tile(category) }
                 .buttonStyle(.plain)
         case .network:
-            NavigationLink { NetworkSettingsScreen() } label: { tile(category) }
+            Button { router.push(.networkSettings) } label: { tile(category) }
+                .buttonStyle(.plain)
         case .update:
-            NavigationLink { UpdateSettingsScreen() } label: { tile(category) }
+            Button { router.push(.updateSettings) } label: { tile(category) }
+                .buttonStyle(.plain)
         case .download:
-            NavigationLink { DownloadSettingsScreen() } label: { tile(category) }
+            Button { router.push(.downloadSettings) } label: { tile(category) }
+                .buttonStyle(.plain)
         // 已经有独立页面的分类，直接推入既有路由。
         case .pluginList:
             Button { router.push(.pluginList) } label: { tile(category) }

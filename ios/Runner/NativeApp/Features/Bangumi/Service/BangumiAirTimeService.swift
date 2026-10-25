@@ -75,6 +75,11 @@ final class BangumiAirTimeService {
         times[subjectID]
     }
 
+    /// 某部番的首播时刻与周期（更新提醒按它推算下一集），没有数据返回 nil。
+    func schedule(for subjectID: Int) -> BangumiAirSchedule? {
+        schedules[subjectID]
+    }
+
     /// 加载这部番所属季度（以及当前季度，兼顾跨季番）的时刻表。
     func ensureLoaded(subjectID: Int, airDate: String) async {
         guard times[subjectID] == nil else { return }

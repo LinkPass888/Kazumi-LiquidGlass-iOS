@@ -193,7 +193,8 @@ struct LibraryScreen: View {
         .animation(.smooth(duration: 0.32), value: isSearching)
         .padding(.horizontal, 16)
         .padding(.top, 2)
-        .padding(.bottom, 12)
+        // LP 2535 / Colo 2537：顶栏底色下沿贴着控制条下沿；原来那 12 点搬到网格顶上。
+        // Colo 2550 提过底边留 −4 收回多出的那点，LP 2556 看了说不好看，回退成 0。
     }
 
     private var defaultRow: some View {
@@ -600,6 +601,7 @@ struct LibraryScreen: View {
                     }
                 }
                 .padding(.horizontal, 16)
+                .padding(.top, 16)
                 .padding(.bottom, 24)
             }
             // LP 2026-10-23：点空白处也该能取消搜索，不能只有那颗「取消」能退出。

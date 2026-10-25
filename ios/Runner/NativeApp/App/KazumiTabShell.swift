@@ -18,6 +18,7 @@ struct KazumiTabShell: View {
     @Environment(AppRouter.self) private var router
     @Environment(SettingsStore.self) private var settings
     @Environment(LibraryStore.self) private var library
+    @Environment(AppEnvironment.self) private var environment
 
     /// 屏蔽词刚改完那一轮上传：连着改几条只发最后一次。
     @State private var shieldSyncTask: Task<Void, Never>?
@@ -48,6 +49,10 @@ struct KazumiTabShell: View {
         .tabBarMinimizeBehavior(.onScrollDown)
         // 启动时并一次云盘：原版 init_page.dart:98-106 也在这个时机同步观看记录。
         // 只有真的开着同步、也选过内容才发请求，没配的话这里什么都不做。
+        .task {
+            // 每次启动重排一遍更新提醒：上一轮排的会随系统清理，追番列表也可能变了。
+            await environment.refreshUpdateNotifications()
+        }
         .task {
             guard settings.webDavEnable,
                   !settings.webDAVURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
@@ -160,6 +165,8 @@ struct AppRouteView: View {
             SettingsScreen()
         case .about:
             AboutScreen()
+        case .changelog:
+            ChangelogScreen()
         case .logs:
             LogScreen()
         case .danmakuShield:
@@ -174,6 +181,16 @@ struct AppRouteView: View {
             PlayerSettingsScreen()
         case .danmakuSettings:
             DanmakuSettingsScreen()
+        case .themeSettings:
+            ThemeSettingsScreen()
+        case .interfaceSettings:
+            InterfaceSettingsScreen()
+        case .networkSettings:
+            NetworkSettingsScreen()
+        case .updateSettings:
+            UpdateSettingsScreen()
+        case .downloadSettings:
+            DownloadSettingsScreen()
         }
     }
 }

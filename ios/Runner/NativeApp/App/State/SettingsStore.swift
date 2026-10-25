@@ -128,7 +128,6 @@ enum SettingsKey {
     static let themeColor = "themeColor"
     /// OLED 纯黑，沿用原版 `SettingsKeys.oledEnhance` 的键名。
     static let oledEnhance = "oledEnhance"
-    static let glassEnabled = "glassEnabled"
     static let selectedPluginIndex = "selectedPluginIndex"
     static let playerQuality = "playerQuality"
     static let hardwareDecoder = "hardwareDecoder"
@@ -223,6 +222,10 @@ enum SettingsKey {
     static let proxyEnabled = "proxyEnabled"
     static let proxyHost = "proxyHost"
     static let proxyPort = "proxyPort"
+    /// 规则仓库镜像（原版 `enableGitProxy`）。
+    static let enableGitProxy = "enableGitProxy"
+    /// 图片加速方式（原版 `imageAcceleration`，direct / mirror）。
+    static let imageAcceleration = "imageAcceleration"
     static let meteredNetworkLimit = "meteredNetworkLimit"
     static let updateNotificationEnabled = "updateNotificationEnabled"
     /// 下载并发数，沿用原版 `SettingsKeys.downloadParallelEpisodes` 的键名。
@@ -276,11 +279,6 @@ final class SettingsStore {
             persist(oledEnhance, SettingsKey.oledEnhance)
             KazumiThemeColor.oledEnhance = oledEnhance
         }
-    }
-
-    /// 是否启用 iOS 26 液态玻璃（对应 KazumiGlass.enabled）。
-    var glassEnabled: Bool {
-        didSet { persist(glassEnabled, SettingsKey.glassEnabled) }
     }
 
     /// 当前选中的规则源下标（对应 PluginsController.currentPlugin）。
@@ -550,8 +548,28 @@ final class SettingsStore {
         didSet { persist(webDavEnableDanmakuShield, SettingsKey.webDavEnableDanmakuShield) }
     }
 
+    /// 代理开关：网络设置里那两行 LP 2559 让删了（iOS 上开 VPN 就够），
+    /// 只剩存储——原版设置备份里带着它，恢复时不至于丢。
     var proxyEnabled: Bool {
         didSet { persist(proxyEnabled, SettingsKey.proxyEnabled) }
+    }
+
+    /// 规则仓库镜像开关（对应原版 `enableGitProxy`）。
+    var enableGitProxy: Bool {
+        didSet {
+            persist(enableGitProxy, SettingsKey.enableGitProxy)
+            // withLock 的闭包是 Sendable 的，先把值取成局部常量再进去。
+            let enabled = enableGitProxy
+            RulesRepoClient.enableMirror.withLock { $0 = enabled }
+        }
+    }
+
+    /// 图片加速方式（对应原版 `imageAcceleration`）。
+    var imageAcceleration: String {
+        didSet {
+            persist(imageAcceleration, SettingsKey.imageAcceleration)
+            KazumiNetworkPolicy.imageAcceleration = ImageAcceleration(rawValue: imageAcceleration) ?? .direct
+        }
     }
 
     var proxyHost: String {
@@ -651,9 +669,7 @@ final class SettingsStore {
         // 静态成员不能经由 `self` 读取（等价于访问未初始化完成的实例），
         // 因此局部变量承载读取结果，等构造结束再同步到全局调色板。
         let resolvedOLEDEnhance = Self.read(defaults, SettingsKey.oledEnhance, false)
-        let resolvedGlassEnabled = Self.read(defaults, SettingsKey.glassEnabled, true)
         oledEnhance = resolvedOLEDEnhance
-        glassEnabled = resolvedGlassEnabled
         // 在全部存储属性初始化完成后再同步全局调色板，避免 'self' 提前访问。
         KazumiThemeColor.current = resolvedThemeColor
         KazumiThemeColor.oledEnhance = resolvedOLEDEnhance
@@ -730,8 +746,11 @@ final class SettingsStore {
         proxyEnabled = Self.read(defaults, SettingsKey.proxyEnabled, false)
         proxyHost = Self.read(defaults, SettingsKey.proxyHost, "")
         proxyPort = Self.read(defaults, SettingsKey.proxyPort, 0)
+        enableGitProxy = Self.read(defaults, SettingsKey.enableGitProxy, false)
+        imageAcceleration = Self.read(defaults, SettingsKey.imageAcceleration, ImageAcceleration.direct.rawValue)
         meteredNetworkLimit = Self.read(defaults, SettingsKey.meteredNetworkLimit, false)
-        updateNotificationEnabled = Self.read(defaults, SettingsKey.updateNotificationEnabled, true)
+        // LP 2530：提醒范围默认关，用户自己打开时才申请通知权限。
+        updateNotificationEnabled = Self.read(defaults, SettingsKey.updateNotificationEnabled, false)
         downloadParallelEpisodes = Self.read(defaults, SettingsKey.downloadParallelEpisodes, 2)
         downloadDanmaku = Self.read(defaults, SettingsKey.downloadDanmaku, true)
         defaultStartupPage = Self.read(defaults, SettingsKey.defaultStartupPage, "/tab/popular/")
@@ -744,6 +763,12 @@ final class SettingsStore {
         syncPlayPassword = Self.read(defaults, SettingsKey.syncPlayPassword, "")
         // 加速方式在全部存储属性初始化完成后再同步到全局开关。
         BangumiAcceleration.mode = enableBangumiProxy ? .mirror : .direct
+        // 网络那几项同样要补一次：init 里赋初值不触发 didSet，
+        // 不补的话冷启动后镜像开关、代理、图片加速都还是默认值。
+        let gitMirrorEnabled = enableGitProxy
+        RulesRepoClient.enableMirror.withLock { $0 = gitMirrorEnabled }
+        KazumiNetworkPolicy.imageAcceleration =
+            ImageAcceleration(rawValue: imageAcceleration) ?? .direct
         // init 中给存储属性赋初值不会触发 didSet，这里补一次启动时的令牌注入；
         // 之后设置页改令牌、恢复备份都会走 `bangumiAccessToken.didSet`。
         BangumiAPI.accessToken = bangumiAccessToken

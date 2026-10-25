@@ -100,6 +100,29 @@ final class AppEnvironment {
         }
     }
 
+    /// 重排番剧更新提醒（设置页改开关、追番列表变动、启动时都走这里）。
+    ///
+    /// 关掉时只清空已排定的，不再排新的；开着时先把「在看」那些番的放送
+    /// 时刻补上（季度数据没加载过就没有时刻可算），再交给排定器。
+    func refreshUpdateNotifications() async {
+        guard settings.updateNotificationEnabled else {
+            await UpdateNotificationScheduler.shared.cancelAll()
+            return
+        }
+        let watching = library.entries.filter { $0.collectType == .watching }
+        guard !watching.isEmpty else {
+            await UpdateNotificationScheduler.shared.cancelAll()
+            return
+        }
+        for entry in watching {
+            await BangumiAirTimeService.shared.ensureLoaded(
+                subjectID: entry.id,
+                airDate: entry.airDate
+            )
+        }
+        await UpdateNotificationScheduler.shared.reschedule(watching: watching)
+    }
+
     /// 存储根目录（Step 3 的 JSON 存储与 WebDAV 备份都基于它）。
     static var storageRoot: URL {
         let support = (try? FileManager.default.url(

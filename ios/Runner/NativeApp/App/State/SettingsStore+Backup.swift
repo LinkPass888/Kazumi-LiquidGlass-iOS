@@ -64,7 +64,6 @@ extension SettingsStore {
         "bangumiProgressQueue",
         "bangumiUsername",
         "bangumiUserId",
-        "proxyConfigured",
         "downloadDirectory",
         "downloadDirectoryBookmark",
         "onboardingCompleted",
@@ -89,7 +88,6 @@ extension SettingsStore {
             SettingsKey.themeMode,
             SettingsKey.themeColor,
             SettingsKey.oledEnhance,
-            SettingsKey.glassEnabled,
             SettingsKey.autoPlayNext,
             SettingsKey.autoSkipOpEd,
             SettingsKey.playResume,
@@ -110,6 +108,8 @@ extension SettingsStore {
             SettingsKey.downloadDanmaku,
             SettingsKey.defaultStartupPage,
             SettingsKey.enableBangumiProxy,
+            SettingsKey.enableGitProxy,
+            SettingsKey.imageAcceleration,
             SettingsKey.selectedPluginIndex,
             SettingsKey.autoUpdate,
             SettingsKey.checkPluginUpdateOnStartup,
@@ -141,7 +141,6 @@ extension SettingsStore {
             (SettingsKey.themeMode, .string(themeMode.rawValue)),
             (SettingsKey.themeColor, .string(Self.backupThemeColorValue(themeColor))),
             (SettingsKey.oledEnhance, .bool(oledEnhance)),
-            (SettingsKey.glassEnabled, .bool(glassEnabled)),
             (SettingsKey.autoPlayNext, .bool(autoPlayNext)),
             (SettingsKey.autoSkipOpEd, .bool(autoSkipOpEd)),
             (SettingsKey.anime4kMode, .int(superResolutionMode.rawValue)),
@@ -253,10 +252,6 @@ extension SettingsStore {
             oledEnhance = flag
             restored += 1
         }
-        if let flag = value(SettingsKey.glassEnabled)?.boolValue {
-            glassEnabled = flag
-            restored += 1
-        }
         if let flag = value(SettingsKey.autoPlayNext)?.boolValue {
             autoPlayNext = flag
             restored += 1
@@ -349,6 +344,15 @@ extension SettingsStore {
         }
         if let flag = value(SettingsKey.enableBangumiProxy)?.boolValue {
             enableBangumiProxy = flag
+            restored += 1
+        }
+        if let flag = value(SettingsKey.enableGitProxy)?.boolValue {
+            enableGitProxy = flag
+            restored += 1
+        }
+        if let text = value(SettingsKey.imageAcceleration)?.stringValue,
+           ImageAcceleration(rawValue: text) != nil {
+            imageAcceleration = text
             restored += 1
         }
         if let number = value(SettingsKey.selectedPluginIndex)?.intValue {

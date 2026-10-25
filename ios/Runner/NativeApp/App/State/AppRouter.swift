@@ -105,6 +105,18 @@ enum AppRoute: Hashable, Sendable {
     case playerSettings
     /// 弹幕设置（对应原版 /settings/danmaku）。
     case danmakuSettings
+    /// 外观设置（对应原版 /settings/theme）。
+    case themeSettings
+    /// 界面设置（对应原版 /settings/interface）。
+    case interfaceSettings
+    /// 网络设置（对应原版 /settings/proxy）。
+    case networkSettings
+    /// 更新设置（对应原版 /settings/update）。
+    case updateSettings
+    /// 下载设置（对应原版 /settings/download）。
+    case downloadSettings
+    /// 关于页的更新日志（读仓库 CHANGELOG.md，LP 2541）。
+    case changelog
 }
 
 extension AppRoute {
@@ -143,6 +155,12 @@ extension AppRoute {
         case .notificationSettings: 17
         case .playerSettings: 18
         case .danmakuSettings: 19
+        case .themeSettings: 22
+        case .interfaceSettings: 23
+        case .networkSettings: 24
+        case .updateSettings: 25
+        case .downloadSettings: 26
+        case .changelog: 27
         }
     }
 
@@ -175,7 +193,13 @@ extension AppRoute {
              (.storage, .storage),
              (.notificationSettings, .notificationSettings),
              (.playerSettings, .playerSettings),
-             (.danmakuSettings, .danmakuSettings):
+             (.danmakuSettings, .danmakuSettings),
+             (.themeSettings, .themeSettings),
+             (.interfaceSettings, .interfaceSettings),
+             (.networkSettings, .networkSettings),
+             (.updateSettings, .updateSettings),
+             (.downloadSettings, .downloadSettings),
+             (.changelog, .changelog):
             true
         default:
             false
@@ -210,7 +234,13 @@ extension AppRoute {
              .storage,
              .notificationSettings,
              .playerSettings,
-             .danmakuSettings:
+             .danmakuSettings,
+             .themeSettings,
+             .interfaceSettings,
+             .networkSettings,
+             .updateSettings,
+             .downloadSettings,
+             .changelog:
             break
         }
     }

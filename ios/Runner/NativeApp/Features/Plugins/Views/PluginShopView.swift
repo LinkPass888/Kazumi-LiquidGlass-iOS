@@ -12,7 +12,6 @@ struct PluginShopView: View {
     @Environment(PluginsController.self) private var plugins
     @Environment(\.colorScheme) private var colorScheme
 
-    @State private var keyword = ""
     @State private var isLoading = false
     @State private var busyItems: Set<String> = []
     @State private var errorMessage: String?
@@ -26,14 +25,8 @@ struct PluginShopView: View {
         }
     }
 
-    private var filteredItems: [PluginHTTPItem] {
-        let trimmed = keyword.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return sortedItems }
-        return sortedItems.filter {
-            $0.name.localizedCaseInsensitiveContains(trimmed) ||
-                $0.author.localizedCaseInsensitiveContains(trimmed)
-        }
-    }
+    /// 目录里的全部规则（LP 2519：规则不多，不做搜索框）。
+    private var filteredItems: [PluginHTTPItem] { sortedItems }
 
     var body: some View {
         List {
@@ -49,9 +42,9 @@ struct PluginShopView: View {
             } else if filteredItems.isEmpty {
                 Section {
                     ContentUnavailableView(
-                        plugins.pluginHTTPList.isEmpty ? "规则目录为空" : "没有匹配的规则",
+                        "规则目录为空",
                         systemImage: "shippingbox",
-                        description: Text(plugins.pluginHTTPList.isEmpty ? "下拉刷新重试。" : "换个关键词试试。")
+                        description: Text("下拉刷新重试。")
                     )
                 }
             } else {
@@ -76,7 +69,6 @@ struct PluginShopView: View {
         .scrollContentBackground(.hidden)
         .background(KazumiPalette.heroBackground(for: colorScheme).ignoresSafeArea())
         .navigationTitle("规则仓库")
-        .searchable(text: $keyword, placement: .navigationBarDrawer(displayMode: .always), prompt: "搜索规则或作者")
         .refreshable { await refresh(force: true) }
         .overlay(alignment: .bottom) {
             if let toast {

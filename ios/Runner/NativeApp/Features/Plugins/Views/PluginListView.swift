@@ -29,7 +29,6 @@ struct PluginListView: View {
     @State private var updateSummary: String?
     @State private var errorMessage: String?
     /// 搜索关键词：按规则名 / 站点地址 / 作者过滤。
-    @State private var keyword = ""
     /// 「全部／可更新」筛选，作用于已安装的规则列表。
     @State private var ruleFilter: RuleFilter = .all
 
@@ -93,19 +92,8 @@ struct PluginListView: View {
         pendingBatchDeletion = false
     }
 
-    private var isKeywordEmpty: Bool {
-        keyword.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-
-    /// 过滤后的规则列表。
-    private var visiblePlugins: [Plugin] {
-        let trimmed = keyword.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return statusFilteredPlugins }
-        return statusFilteredPlugins.filter { plugin in
-            plugin.name.localizedCaseInsensitiveContains(trimmed)
-                || plugin.baseUrl.localizedCaseInsensitiveContains(trimmed)
-        }
-    }
+    /// 页面上列的规则（LP 2519：规则不多，不做搜索框，直接按状态筛选后的全量）。
+    private var visiblePlugins: [Plugin] { statusFilteredPlugins }
 
     var body: some View {
         List {
@@ -170,18 +158,10 @@ struct PluginListView: View {
                 }
             } else if visiblePlugins.isEmpty {
                 Section {
-                    if isKeywordEmpty {
-                        ContentUnavailableView(
-                            "没有可更新的规则",
-                            systemImage: "checkmark.circle"
-                        )
-                    } else {
-                        ContentUnavailableView(
-                            "没有匹配的规则",
-                            systemImage: "magnifyingglass",
-                            description: Text("换个关键词试试。")
-                        )
-                    }
+                    ContentUnavailableView(
+                        "没有可更新的规则",
+                        systemImage: "checkmark.circle"
+                    )
                 }
             } else {
                 Section {
@@ -203,11 +183,6 @@ struct PluginListView: View {
         .scrollContentBackground(.hidden)
         .background(KazumiPalette.heroBackground(for: colorScheme).ignoresSafeArea())
         .navigationTitle("规则管理")
-        .searchable(
-            text: $keyword,
-            placement: .navigationBarDrawer(displayMode: .always),
-            prompt: "搜索规则名或站点"
-        )
         .toolbar { toolbarContent }
         .navigationDestination(isPresented: Binding(
             get: { selectedRule != nil },
@@ -359,11 +334,8 @@ struct PluginListView: View {
     }
 
     private var footerText: String {
-        if keyword.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            let updatable = plugins.updatablePluginCount
-            return "共 \(plugins.pluginList.count) 条规则\(updatable > 0 ? "，\(updatable) 条可更新" : "")。行内菜单的「上移 / 下移」可以调整优先级。"
-        }
-        return "匹配 \(visiblePlugins.count) / \(plugins.pluginList.count) 条规则。"
+        let updatable = plugins.updatablePluginCount
+        return "共 \(plugins.pluginList.count) 条规则\(updatable > 0 ? "，\(updatable) 条可更新" : "")。行内菜单的「上移 / 下移」可以调整优先级。"
     }
 
     private func index(of plugin: Plugin) -> Int {

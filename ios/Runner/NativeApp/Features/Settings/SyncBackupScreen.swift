@@ -131,8 +131,9 @@ struct SyncBackupScreen: View {
         .navigationBarTitleDisplayMode(.inline)
         .scrollContentBackground(.hidden)
         .background(KazumiPalette.background(for: colorScheme).ignoresSafeArea())
-        // 恢复确认挂在 Form 上：行内挂零高度视图时弹不出来。
-        .confirmationDialog("恢复这些设置？", isPresented: $isShowingRestoreConfirm, titleVisibility: .visible) {
+        // 恢复确认用居中的对话框，跟原版 AlertDialog 一样落在屏幕正中
+        //（LP 2517：之前用 confirmationDialog，iOS 26 会从表单某个位置弹出，位置不对）。
+        .alert("恢复这些设置？", isPresented: $isShowingRestoreConfirm) {
             Button("恢复设置") { applyPendingBackup() }
             Button("取消", role: .cancel) { pendingPayload = nil }
         } message: {

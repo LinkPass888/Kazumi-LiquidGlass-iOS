@@ -56,5 +56,7 @@ enum KazumiAppInfo {
     static let fuziURL = URL(string: "https://github.com/cezheng/Fuzi")!
     static let anime4KURL = URL(string: "https://github.com/bloc97/Anime4K")!
     static let licenseURL = URL(string: "https://github.com/LinkPass888/Kazumi-LiquidGlass-iOS/blob/main/LICENSE")!
+    /// 原版「开源」一节里的「贡献指南」，指向仓库里的 CONTRIBUTING.md（static/doc/CONTRIBUTING.md）。
+    static let contributingURL = URL(string: "https://github.com/LinkPass888/Kazumi-LiquidGlass-iOS/blob/main/static/doc/CONTRIBUTING.md")!
     static let latestReleaseAPIURL = URL(string: "https://api.github.com/repos/LinkPass888/Kazumi-LiquidGlass-iOS/releases/latest")!
 }

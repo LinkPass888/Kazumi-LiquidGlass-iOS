@@ -14,6 +14,8 @@
 //
 
 import SwiftUI
+import UIKit
+import UserNotifications
 
 /// 二级设置页的统一外壳（对应原版 SettingsDetailScaffold + SettingsList）。
 private struct KazumiSettingsDetailStyle: ViewModifier {
@@ -556,23 +558,206 @@ struct DownloadSettingsScreen: View {
 
 struct NotificationSettingsScreen: View {
     @Environment(SettingsStore.self) private var settings
+    @Environment(AppEnvironment.self) private var environment
+    /// 系统通知权限（进页面时查一次，申请/跳设置回来再查）。
+    @State private var permission: UNAuthorizationStatus = .notDetermined
+    @State private var isBusy = false
+    /// 「查看排程」那一次读出来的已排定提醒。
+    @State private var isShowingSchedule = false
+    @State private var scheduled: [ScheduledUpdateNotification] = []
 
     var body: some View {
         Form {
-            Section("提醒") {
-                Toggle("追番更新提醒", isOn: notifyBinding)
+            Section {
+                Button {
+                    Task { await handlePermissionTap() }
+                } label: {
+                    HStack {
+                        Text("通知权限")
+                            .foregroundStyle(.primary)
+                        Spacer(minLength: 8)
+                        Text(permissionLabel)
+                            .foregroundStyle(permission == .authorized ? Color.secondary : Color.orange)
+                    }
+                }
+                .disabled(isBusy)
+            } header: {
+                Text("通知权限")
+            } footer: {
+                Text(permissionCaption)
+            }
+
+            // 一行一个菜单（LP 2532）：左边写「提醒范围」，右边的值点开选，跟深色模式那行一致。
+            Section {
+                Picker("提醒范围", selection: scopeBinding) {
+                    Text("关闭").tag(false)
+                    Text("我在追的动画").tag(true)
+                }
+                .pickerStyle(.menu)
+                .disabled(isBusy)
+            } footer: {
+                Text("「我在追的动画」包含所有标记「在看」的番剧。")
+            }
+
+            Section {
+                Button {
+                    Task { await showSchedule() }
+                } label: {
+                    HStack {
+                        Text("查看排程")
+                            .foregroundStyle(.primary)
+                        Spacer(minLength: 8)
+                        Text(scheduledSummary)
+                            .foregroundStyle(.secondary)
+                        Image(systemName: "chevron.right")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+            } header: {
+                Text("通知排程")
+            } footer: {
+                Text("按追番列表里每部番的放送时刻排定，最多排未来 7 天。")
             }
         }
         .kazumiSettingsDetail("通知设置")
+        .task { await refreshPermission() }
+        .sheet(isPresented: $isShowingSchedule) {
+            UpdateScheduleSheet(items: scheduled)
+        }
+        .onChange(of: settings.updateNotificationEnabled) { _, _ in
+            Task { await environment.refreshUpdateNotifications() }
+        }
     }
 
-    private var notifyBinding: Binding<Bool> {
+    private var scopeBinding: Binding<Bool> {
         Binding(
             get: { settings.updateNotificationEnabled },
-            set: { settings.updateNotificationEnabled = $0 }
+            // 打开「我在追的动画」时顺手把通知权限要下来（LP 2530）：没问过就弹系统弹窗，
+            // 之前拒过的只能引导去系统设置。没拿到权限就不打开这个范围，
+            // 免得留下一个开着却永远不响的开关。
+            set: { newValue in
+                if newValue {
+                    Task { await enableScope() }
+                } else {
+                    settings.updateNotificationEnabled = false
+                }
+            }
         )
     }
 
+    private func enableScope() async {
+        guard !isBusy else { return }
+        isBusy = true
+        defer { isBusy = false }
+        let outcome = await UpdateNotificationScheduler.shared.ensurePermission()
+        await refreshPermission()
+        switch outcome {
+        case .granted:
+            settings.updateNotificationEnabled = true
+            await environment.refreshUpdateNotifications()
+        case .asked:
+            // 弹窗里没允许：范围保持关闭。
+            settings.updateNotificationEnabled = false
+        case .needsSettings:
+            settings.updateNotificationEnabled = false
+            if let url = URL(string: UIApplication.openSettingsURLString) {
+                await UIApplication.shared.open(url)
+            }
+        }
+    }
+
+    private var permissionLabel: String {
+        switch permission {
+        case .authorized, .provisional, .ephemeral: "已允许"
+        case .denied: "已关闭"
+        case .notDetermined: "未询问"
+        @unknown default: "未知"
+        }
+    }
+
+    private var permissionCaption: String {
+        switch permission {
+        case .authorized, .provisional, .ephemeral:
+            "更新提醒会以系统通知送达。"
+        case .denied:
+            "系统里已经关掉了这个 App 的通知，点这一行去系统设置里打开。"
+        case .notDetermined:
+            "点这一行申请通知权限。"
+        @unknown default:
+            "点这一行申请通知权限。"
+        }
+    }
+
+    private var scheduledSummary: String {
+        if !settings.updateNotificationEnabled { return "提醒已关闭" }
+        return "查看已排定的更新提醒"
+    }
+
+    private func refreshPermission() async {
+        permission = await UpdateNotificationScheduler.shared.authorizationStatus()
+    }
+
+    /// 点「通知权限」：没问过就申请；拒绝过的只能跳系统设置。
+    private func handlePermissionTap() async {
+        guard !isBusy else { return }
+        isBusy = true
+        defer { isBusy = false }
+        let outcome = await UpdateNotificationScheduler.shared.ensurePermission()
+        await refreshPermission()
+        switch outcome {
+        case .granted:
+            // 拿到权限了就把提醒排上（之前没权限时排不进去）。
+            await environment.refreshUpdateNotifications()
+        case .asked:
+            break
+        case .needsSettings:
+            if let url = URL(string: UIApplication.openSettingsURLString) {
+                await UIApplication.shared.open(url)
+            }
+        }
+    }
+
+    private func showSchedule() async {
+        scheduled = await UpdateNotificationScheduler.shared.scheduledNotifications()
+        isShowingSchedule = true
+    }
+}
+
+/// 「通知排程」弹窗：列出已排定的提醒，按时间先后。
+private struct UpdateScheduleSheet: View {
+    let items: [ScheduledUpdateNotification]
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if items.isEmpty {
+                    Text("当前没有已排定的提醒。\n标记「在看」的番剧有更新时间数据时，会自动排定。")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                ForEach(items) { item in
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(item.body)
+                            .font(.subheadline)
+                        Text(Self.format(item.fireAt))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .navigationTitle("通知排程")
+            .navigationBarTitleDisplayMode(.inline)
+        }
+        .presentationDetents([.medium, .large])
+    }
+
+    private static func format(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_Hans_CN")
+        formatter.dateFormat = "M月d日 EEEE HH:mm"
+        return formatter.string(from: date)
+    }
 }
 
 // MARK: - 外观设置
@@ -607,14 +792,6 @@ struct ThemeSettingsScreen: View {
                 }
             }
             Section("显示效果") {
-                Toggle(isOn: glassBinding) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("液态玻璃效果")
-                        Text("按钮与弹层用半透明玻璃材质")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
                 // 「OLED优化」中间没有空格，照 main 的写法。
                 Toggle(isOn: oledBinding) {
                     VStack(alignment: .leading, spacing: 2) {
@@ -646,10 +823,6 @@ struct ThemeSettingsScreen: View {
 
     private var themeColorBinding: Binding<KazumiThemeColor> {
         Binding(get: { settings.themeColor }, set: { settings.themeColor = $0 })
-    }
-
-    private var glassBinding: Binding<Bool> {
-        Binding(get: { settings.glassEnabled }, set: { settings.glassEnabled = $0 })
     }
 
     private var oledBinding: Binding<Bool> {
@@ -738,42 +911,42 @@ struct NetworkSettingsScreen: View {
 
     var body: some View {
         Form {
+            // 一段三行照原版 NetworkMirrorSettings：番剧条目、规则仓库、图片。
+            // 代理那两行 LP 2559 让删了（iOS 上开 VPN 就够），连说明一起不留。
             Section("访问加速") {
-                Toggle("Bangumi 镜像加速", isOn: mirrorBinding)
-            }
-            Section {
-                Toggle("使用代理", isOn: proxyEnabledBinding)
-                TextField("代理地址", text: proxyHostBinding)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .keyboardType(.URL)
-                TextField("代理端口", text: proxyPortBinding)
-                    .keyboardType(.numberPad)
-            } header: {
-                Text("代理")
-            } footer: {
-                Text("代理仅对 Bangumi 接口与规则请求生效。")
+                Picker("番剧条目加速", selection: bangumiAccelerationBinding) {
+                    Text("直连").tag(false)
+                    Text("镜像").tag(true)
+                }
+                .pickerStyle(.menu)
+
+                Toggle("规则仓库镜像", isOn: gitProxyBinding)
+
+                Picker("图片加速", selection: imageAccelerationBinding) {
+                    Text("直连").tag(ImageAcceleration.direct.rawValue)
+                    Text("镜像").tag(ImageAcceleration.mirror.rawValue)
+                }
+                .pickerStyle(.menu)
             }
         }
         .kazumiSettingsDetail("网络设置")
     }
 
-    private var mirrorBinding: Binding<Bool> {
-        Binding(get: { settings.enableBangumiProxy }, set: { settings.enableBangumiProxy = $0 })
-    }
-
-    private var proxyEnabledBinding: Binding<Bool> {
-        Binding(get: { settings.proxyEnabled }, set: { settings.proxyEnabled = $0 })
-    }
-
-    private var proxyHostBinding: Binding<String> {
-        Binding(get: { settings.proxyHost }, set: { settings.proxyHost = $0 })
-    }
-
-    private var proxyPortBinding: Binding<String> {
+    private var bangumiAccelerationBinding: Binding<Bool> {
         Binding(
-            get: { settings.proxyPort > 0 ? String(settings.proxyPort) : "" },
-            set: { settings.proxyPort = Int($0) ?? 0 }
+            get: { settings.enableBangumiProxy },
+            set: { settings.enableBangumiProxy = $0 }
+        )
+    }
+
+    private var gitProxyBinding: Binding<Bool> {
+        Binding(get: { settings.enableGitProxy }, set: { settings.enableGitProxy = $0 })
+    }
+
+    private var imageAccelerationBinding: Binding<String> {
+        Binding(
+            get: { settings.imageAcceleration },
+            set: { settings.imageAcceleration = $0 }
         )
     }
 }

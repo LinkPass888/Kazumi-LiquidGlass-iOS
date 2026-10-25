@@ -11,6 +11,7 @@ import SwiftUI
 struct AboutScreen: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.openURL) private var openURL
+    @Environment(AppRouter.self) private var router
 
     /// 检测更新状态（nil 表示还没点过）。
     @State private var updateState: UpdateState = .idle
@@ -68,18 +69,25 @@ struct AboutScreen: View {
                     Task { await checkForUpdate() }
                 }
 
+                // LP 2541：点这一行翻一页，直接读仓库里的 CHANGELOG.md，不再把人扔到浏览器。
                 actionRow(
                     title: "查看更新日志",
                     symbol: "list.bullet.rectangle",
-                    detail: "跳到 GitHub Releases 看每个版本的改动"
+                    detail: "看每个版本改了什么"
                 ) {
-                    openURL(KazumiAppInfo.releasesURL)
+                    router.push(.changelog)
                 }
 
                 VStack(spacing: 8) {
                     linkRow("项目主页", url: KazumiAppInfo.projectURL)
                     linkRow("源码仓库", url: KazumiAppInfo.sourceURL)
                     linkRow("问题反馈", url: KazumiAppInfo.issuesURL)
+                    linkRow("贡献指南", url: KazumiAppInfo.contributingURL)
+                    NavigationLink {
+                        ThirdPartyLicensesScreen()
+                    } label: {
+                        licensesRow("第三方许可证")
+                    }
                     linkRow("Telegram 频道", url: KazumiAppInfo.telegramURL)
                     linkRow("图标作者", url: KazumiAppInfo.iconAuthorURL)
                 }
@@ -211,6 +219,26 @@ struct AboutScreen: View {
         }
     }
 
+
+    /// 进到 App 内那一页的链接行（跟 linkRow 同一套外观，右边是箭头而不是外链图标）。
+    private func licensesRow(_ title: String) -> some View {
+        HStack(spacing: 10) {
+            Text(title)
+                .font(.subheadline)
+                .foregroundStyle(.primary)
+            Spacer(minLength: 4)
+            Image(systemName: "chevron.right")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.tertiary)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .contentShape(Rectangle())
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(KazumiPalette.cardSurface(for: colorScheme))
+        )
+    }
 
     private func linkRow(_ title: String, url: URL) -> some View {
         Button {

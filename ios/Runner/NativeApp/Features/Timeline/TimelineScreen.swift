@@ -21,9 +21,7 @@ struct TimelineScreen: View {
     @State private var selectedWeekday = TimelineScreen.todayIndex
     @State private var isShowingSeasonPicker = false
     @State private var isShowingOptions = false
-    @State private var isLiquidWeekday = false
     @State private var weekdayDragX: CGFloat?
-    @State private var weekdaySolidifyTask: Task<Void, Never>?
     @State private var pageOffsetX: CGFloat = 0
     @State private var pageViewportWidth: CGFloat = 1
 
@@ -183,16 +181,12 @@ struct TimelineScreen: View {
 
     // MARK: - 星期选择器
 
-    // 定稿（2026-10-24，照 LP 给的液态 tab 版）：外框是纯色胶囊；静止时滑块 primary 8%。
-    // 手指一碰整条立刻「液化」——实心滑块淡出，手指底下浮起一块 .clear 的液态玻璃
-    // （比格子宽 14、高 10，只折它底下的刻度线，文字压在它上面永远清楚）；松手后玻璃先飞到目标格，停 0.28–0.42 秒
-    // 再缓缓凝回实心。整条同一时刻只有这一块玻璃。
+    // 外框是纯色胶囊，选中格垫一块 primary 8% 的实心滑块（LP 2519：液态玻璃那套切换效果删掉，
+    // 太花且不像原生，只留实心填充；滑块仍跟手/跟翻页走，只是不再液化和回凝）。
     /// 轨道可见高。
     private static let weekdayTrackHeight: CGFloat = 44
     /// 实心滑块相对轨道的内缩。
     private static let weekdayGlassInset: CGFloat = 3
-    /// 液态玻璃比格子多出来的宽高。
-    private static let weekdayLiquidGrowth = CGSize(width: 14, height: 10)
 
     private var weekdaySelector: some View {
         GeometryReader { proxy in
@@ -221,44 +215,22 @@ struct TimelineScreen: View {
                     )
                     .shadow(color: .black.opacity(0.06), radius: 6, y: 2)
 
-                // 刻度线在最底下，专门留给玻璃折。
-                ForEach(1..<7, id: \.self) { index in
-                    Capsule(style: .continuous)
-                        .fill(Color.primary.opacity(0.12))
-                        .frame(width: 1.5, height: 24)
-                        .offset(x: cellWidth * CGFloat(index) - 0.75,
-                                y: (Self.weekdayTrackHeight - 24) / 2)
-                }
-
                 weekdaySlider(centerX: centerX, cellWidth: cellWidth)
-
-                // 玻璃在文字下面：字永远横平竖直、不被折变形，玻璃只折它底下的刻度线。
-                weekdayLiquidGlass(centerX: centerX, cellWidth: cellWidth)
 
                 weekdayLabels
             }
             .frame(height: Self.weekdayTrackHeight)
             .contentShape(Capsule(style: .continuous))
-            // 切天那一刻才液化，松手不直接凝——等 selectedWeekday 真变了再计时凝固。
-            .onChange(of: selectedWeekday) { _, _ in
-                weekdaySolidifyTask?.cancel()
-                if !isLiquidWeekday {
-                    withAnimation(.spring(response: 0.24, dampingFraction: 0.65)) {
-                        isLiquidWeekday = true
-                    }
-                }
-                scheduleWeekdaySolidify(delayMilliseconds: 420)
-            }
             .gesture(weekdayDragGesture(width: proxy.size.width))
         }
         .frame(height: Self.weekdayTrackHeight)
         .padding(.horizontal, 16)
         .padding(.top, 8)
-        .padding(.bottom, 12)
-        .onDisappear { weekdaySolidifyTask?.cancel() }
+        // LP 2535 / Colo 2537：顶栏底色下沿贴着星期条下沿，不加空白底边；
+        // 原来那 12 点搬到列表顶上，滚动时跟着内容走掉。
     }
 
-    /// 静止时的实心滑块：primary 8%，字颜色不变；液化时淡出交给玻璃。
+    /// 选中格的实心滑块：primary 8%，字颜色不变。
     private func weekdaySlider(centerX: CGFloat, cellWidth: CGFloat) -> some View {
         let inset = Self.weekdayGlassInset
         let width = max(cellWidth - inset * 2, 1)
@@ -266,22 +238,6 @@ struct TimelineScreen: View {
             .fill(Color.primary.opacity(0.08))
             .frame(width: width, height: Self.weekdayTrackHeight - inset * 2)
             .offset(x: centerX - width / 2, y: inset)
-            .opacity(isLiquidWeekday ? 0 : 1)
-    }
-
-    /// 手指底下的那块液态玻璃：盖在文字上方才折得出光，比格子只放一圈。
-    private func weekdayLiquidGlass(centerX: CGFloat, cellWidth: CGFloat) -> some View {
-        let width = cellWidth + Self.weekdayLiquidGrowth.width
-        let height = Self.weekdayTrackHeight + Self.weekdayLiquidGrowth.height
-        return WeekdayLiquidGlass()
-            .frame(width: width, height: height)
-            .shadow(color: .black.opacity(isLiquidWeekday ? 0.12 : 0),
-                    radius: isLiquidWeekday ? 8 : 0,
-                    y: isLiquidWeekday ? 3 : 0)
-            // 用 position 而不是 offset：position 吃掉父级提议的尺寸，玻璃比格子大也不会把整条顶歪。
-            .position(x: centerX, y: Self.weekdayTrackHeight / 2)
-            .opacity(isLiquidWeekday ? 1 : 0)
-            .allowsHitTesting(false)
     }
 
     private var weekdayLabels: some View {
@@ -309,8 +265,6 @@ struct TimelineScreen: View {
                 .foregroundStyle(KazumiPalette.secondaryText(for: colorScheme))
                 .lineLimit(1)
         }
-        .scaleEffect(isSelected && isLiquidWeekday ? 1.06 : 1)
-        .animation(.spring(response: 0.26, dampingFraction: 0.7), value: isSelected && isLiquidWeekday)
         .frame(maxWidth: .infinity)
         .frame(height: Self.weekdayTrackHeight)
         .contentShape(Rectangle())
@@ -348,17 +302,10 @@ struct TimelineScreen: View {
         }
     }
 
-    /// 一碰就液化；横移超过 4 点玻璃跟着手指走，指到第几格就选第几格。
-    /// 松手不直接定凝固——等 Tab 真换天（selectedWeekday 变）那一刻才计时凝固。
+    /// 一碰实心滑块就跟手；横移超过 4 点滑块跟着手指走，指到第几格就选第几格。
     private func weekdayDragGesture(width: CGFloat) -> some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { value in
-                weekdaySolidifyTask?.cancel()
-                if !isLiquidWeekday {
-                    withAnimation(.spring(response: 0.24, dampingFraction: 0.65)) {
-                        isLiquidWeekday = true
-                    }
-                }
                 let cellWidth = max(width, 1) / 7
                 if abs(value.translation.width) > 4 || weekdayDragX != nil {
                     let x = min(max(value.location.x, cellWidth / 2),
@@ -381,21 +328,7 @@ struct TimelineScreen: View {
                     selectedWeekday = day
                     weekdayDragX = nil
                 }
-                // 不在这里定凝固，交给 onChange(selectedWeekday) 去定。
             }
-    }
-
-    /// 松手后让玻璃先停在目标格，过一会儿再缓缓凝回实心。
-    private func scheduleWeekdaySolidify(delayMilliseconds: Int) {
-        weekdaySolidifyTask?.cancel()
-        weekdaySolidifyTask = Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(delayMilliseconds))
-            guard !Task.isCancelled else { return }
-            // 凝固比展开快：0.24 秒收住，几乎不弹。
-            withAnimation(.spring(response: 0.25, dampingFraction: 0.9)) {
-                isLiquidWeekday = false
-            }
-        }
     }
 
     private func weekdayIndex(at x: CGFloat, cellWidth: CGFloat) -> Int {
@@ -482,6 +415,7 @@ struct TimelineScreen: View {
                     }
                 }
                 .padding(.horizontal, 12)
+                .padding(.top, 12)
                 .padding(.bottom, 24)
             }
             .scrollIndicators(.hidden)
@@ -719,16 +653,3 @@ struct TimelineScreen: View {
     }
 }
 
-// MARK: - 星期条的玻璃
-
-/// 手指底下的液态玻璃：.clear 全透明、零染色，只靠边缘亮弧和阴影定形。
-private struct WeekdayLiquidGlass: View {
-    var body: some View {
-        if #available(iOS 26.0, *) {
-            Color.clear
-                .glassEffect(.clear.interactive(), in: .capsule)
-        } else {
-            Capsule(style: .continuous).fill(Color.white.opacity(0.5))
-        }
-    }
-}

@@ -145,7 +145,9 @@ final class KazumiImageLoader: @unchecked Sendable {
         }
 
         // 2. 网络
-        guard let remote = URL(string: key) else { return }
+        // 缓存 key 始终是原始地址；真正去取的时候按「图片加速」可能换成镜像地址。
+        guard let logical = URL(string: key) else { return }
+        let remote = BangumiImageRewriter.rewritten(logical)
         do {
             let (data, response) = try await session.data(from: remote)
             if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
