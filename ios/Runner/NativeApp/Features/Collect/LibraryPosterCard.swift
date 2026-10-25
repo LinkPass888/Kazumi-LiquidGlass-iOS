@@ -89,12 +89,22 @@ struct LibraryPosterCard: View {
             // LP 2026-10-24：不用三个点，直接画当前的追番状态（在看那颗心、想看那颗星…），
             // 一眼就知道这部现在是什么状态；点它还是开菜单改状态。
             // LP 2026-10-24 晚：符号改主题色——白底圆 + 主题色符号，浅色封面上也看得清。
+            // LP 2026-10-25：底改成半透明，并且跟着深浅色模式走。
+            // 原来写死 `Color.white`：浅色下是块死白、深色下更是突兀的一块白，
+            // 也不透封面。改用材质——浅色是磨砂白、深色是磨砂黑，本身带透明度，
+            // 封面的颜色透得上来；描边只用来在浅色封面上保住轮廓。
             Image(systemName: entry.collectType.statusSymbol)
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(KazumiPalette.accent(for: colorScheme))
                 .frame(width: 32, height: 32)
-                .background(Circle().fill(Color.white))
-                .shadow(color: .black.opacity(0.12), radius: 4, y: 1)
+                .background(
+                    Circle()
+                        .fill(.ultraThinMaterial)
+                        .overlay(
+                            Circle().strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5)
+                        )
+                )
+                .shadow(color: .black.opacity(0.10), radius: 3, y: 1)
                 .hitTarget44()
                 .opacity(isPending ? 0.4 : 1)
         }
