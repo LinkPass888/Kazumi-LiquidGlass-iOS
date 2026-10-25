@@ -112,7 +112,7 @@ extension SettingsGroup {
                 SettingsCategory(
                     id: "theme",
                     label: "外观与界面",
-                    description: "主题、配色与启动页",
+                    description: "主题、显示效果与启动页",
                     symbol: "paintpalette",
                     destination: .theme
                 ),
