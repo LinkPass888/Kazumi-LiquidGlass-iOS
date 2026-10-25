@@ -56,8 +56,20 @@ final class InfoController {
     }
 
     /// 与原版一致：标题/简介缺失或票数分布不全时刷新详情。
+    /// 本地缓存过期了也算需要刷新（缓存只用来先画页面，不代替刷新）。
     var needsDetailRefresh: Bool {
-        item.summary.isEmpty || item.votes <= 0 || item.votesCount.count < 10
+        item.summary.isEmpty
+            || item.votes <= 0
+            || item.votesCount.count < 10
+            || BangumiSubjectCache.shared.needsInfoRefresh(item.id)
+    }
+
+    /// 用缓存先把剧集列表铺上，进页面时不再等网络。
+    func applyCachedEpisodes() {
+        guard episodes.isEmpty,
+              let cached = BangumiSubjectCache.shared.episodes(for: item.id)
+        else { return }
+        episodes = cached
     }
 
     func loadDetailIfNeeded() async {
@@ -70,10 +82,17 @@ final class InfoController {
     }
 
     func loadEpisodes() async {
-        guard !isLoadingEpisodes, episodes.isEmpty else { return }
+        // 缓存里的剧集先铺上，后台再决定要不要刷新。
+        applyCachedEpisodes()
+        guard !isLoadingEpisodes else { return }
+        // 缓存还新鲜就不用再拉；过期了也照拉，拉回来替换，期间页面上的旧列表不动。
+        if !episodes.isEmpty, !BangumiSubjectCache.shared.needsEpisodesRefresh(item.id) { return }
         isLoadingEpisodes = true
         defer { isLoadingEpisodes = false }
-        episodes = await BangumiAPI.episodes(subjectID: item.id)
+        let loaded = await BangumiAPI.episodes(subjectID: item.id)
+        if !loaded.isEmpty || episodes.isEmpty {
+            episodes = loaded
+        }
     }
 
     // MARK: - 详情页分标签

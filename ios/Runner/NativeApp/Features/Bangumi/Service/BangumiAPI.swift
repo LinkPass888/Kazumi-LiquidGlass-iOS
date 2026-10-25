@@ -116,6 +116,9 @@ enum BangumiAPI {
                     return BangumiItem.fromJSON(entry["subject"])
                 })
             }
+            // 列表里已经拿到的条目记进缓存：点进详情页时先有内容可画。
+            let flat = result.flatMap { $0 }
+            await BangumiSubjectCache.shared.remember(flat)
         } catch {
             KazumiLog.network.error("Resolve calendar failed: \(error.localizedDescription, privacy: .public)")
             if result.isEmpty {
@@ -139,10 +142,12 @@ enum BangumiAPI {
                     URLQueryItem(name: "offset", value: "\(offset)"),
                 ]
             )
-            return (json["data"].arrayValue ?? []).compactMap { entry in
+            let items: [BangumiItem] = (json["data"].arrayValue ?? []).compactMap { entry -> BangumiItem? in
                 guard !entry["subject"].isNull else { return nil }
                 return BangumiItem.fromJSON(entry["subject"])
             }
+            await BangumiSubjectCache.shared.remember(items)
+            return items
         } catch {
             KazumiLog.network.error("Resolve bangumi trends failed: \(error.localizedDescription, privacy: .public)")
             return []
@@ -265,6 +270,7 @@ enum BangumiAPI {
                     items.append(item)
                 }
             }
+            await BangumiSubjectCache.shared.remember(items)
             return BangumiSearchPage(items: items, rawCount: raw.count)
         } catch {
             KazumiLog.network.error("Unknown search problem: \(error.localizedDescription, privacy: .public)")
@@ -279,7 +285,11 @@ enum BangumiAPI {
                 BangumiEndpoints.apiNextDomain + BangumiEndpoints.infoByIDNext,
                 [id]
             )
-            return BangumiItem.fromJSON(try await get(url))
+            let json = try await get(url)
+            let item = BangumiItem.fromJSON(json)
+            // 拉到的完整条目落盘：下次进详情页先拿它铺页面，不用再转圈等。
+            await BangumiSubjectCache.shared.store(info: json, for: id)
+            return item
         } catch {
             KazumiLog.network.error("Resolve bangumi item failed: \(error.localizedDescription, privacy: .public)")
             return nil
@@ -431,6 +441,7 @@ enum BangumiAPI {
     /// 对应 getBangumiEpisodesByID：每页 100 条，按 total 续抓。
     static func episodes(subjectID: Int) async -> [BangumiEpisode] {
         var episodes: [BangumiEpisode] = []
+        var raw: [JSONValue] = []
         var offset = 0
         let limit = 100
         var total: Int?
@@ -447,6 +458,7 @@ enum BangumiAPI {
                 if total == nil { total = json["total"].intValue }
                 let data = json["data"].arrayValue ?? []
                 if data.isEmpty { break }
+                raw.append(contentsOf: data)
                 episodes.append(contentsOf: data.map(BangumiEpisode.fromJSON))
                 offset += data.count
             } catch {
@@ -456,6 +468,9 @@ enum BangumiAPI {
                 break
             }
         } while (total ?? Int.max) > offset
+        if !raw.isEmpty {
+            await BangumiSubjectCache.shared.store(episodes: raw, for: subjectID)
+        }
         return episodes
     }
 

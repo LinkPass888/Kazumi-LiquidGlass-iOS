@@ -45,6 +45,8 @@ final class BangumiAirTimeService {
     private(set) var times: [Int: String] = [:]
     /// bangumi id -> 首播时刻 + 周期（时间表卡片的「第 N 话」用它推算）。
     private(set) var schedules: [Int: BangumiAirSchedule] = [:]
+    /// bangumi id -> MAL id，AniList 查询要用（它的接口只认 MAL id）。
+    private(set) var malIDs: [Int: Int] = [:]
     private(set) var isLoading = false
 
     /// 已经成功加载过的季度（"2025-10"）。
@@ -83,9 +85,58 @@ final class BangumiAirTimeService {
 
     // MARK: - 查询
 
+    /// 下一次更新的时刻（epoch 毫秒），没有数据返回 nil。
+    ///
+    /// 与 main 的 `nextUpdateEpoch` 同一条链路：AniList 实测优先，
+    /// 取不到再用 bangumi-mal 的季度表推算。
+    /// - AniList 缓存新鲜（还没到那一集）：airingAt 就是下一次；
+    /// - 已过期（那一集已经播了）：airingAt 加一个周期才是下一次；
+    /// - 完播的番 AniList 没有下一集，交给季度表。
+    func nextUpdateEpoch(for subjectID: Int, now: Date = Date()) -> Int? {
+        if let airing = AniListClient.shared.staleCached(subjectID, now: now), !airing.finished {
+            if airing.isFresh(at: now) { return airing.airingAt }
+            if let period = schedules[subjectID]?.period, period > 0 {
+                return airing.airingAt + Int(period * 1000)
+            }
+        }
+        return nextUpdateEpochFromSeason(subjectID: subjectID, now: now)
+    }
+
+    /// 只用季度表推算下一次更新：首播时刻加若干个周期。
+    private func nextUpdateEpochFromSeason(subjectID: Int, now: Date) -> Int? {
+        guard let schedule = schedules[subjectID], schedule.period > 0 else { return nil }
+        let elapsed = now.timeIntervalSince(schedule.first)
+        guard elapsed >= 0 else { return nil }
+        let period = schedule.period
+        let periods = (elapsed / period).rounded(.down) + 1
+        return Int((schedule.first.timeIntervalSince1970 + periods * period) * 1000)
+    }
+
     /// 某部番的播出时刻（本地时间 "HH:mm"），没有数据返回 nil。
     func airTime(for subjectID: Int) -> String? {
-        times[subjectID]
+        guard let epoch = nextUpdateEpoch(for: subjectID) else { return nil }
+        return Self.timeText(Date(timeIntervalSince1970: Double(epoch) / 1000))
+    }
+
+    /// 已经播出到第几集（1-based），没有数据返回 nil。
+    ///
+    /// 与 main 的 `currentEpisode` 一致：AniList 新鲜时「下一集」还没播，
+    /// 已播到 episode − 1；缓存过期说明那一集已经播了，已播到 episode 本身。
+    func currentEpisode(for subjectID: Int, now: Date = Date()) -> Int? {
+        if let airing = AniListClient.shared.staleCached(subjectID, now: now), !airing.finished {
+            return airing.isFresh(at: now) ? airing.currentEpisode : airing.episode
+        }
+        return schedules[subjectID]?.currentEpisode(now: now)
+    }
+
+    /// 批量补齐 AniList 的播出时刻。
+    ///
+    /// 只发「需要重查」的番，按 25 部一批合并请求（见 AniListClient）。
+    /// 失败不影响调用方：读的时候自动退回季度表。
+    func ensureAniListLoaded(_ subjectIDs: [Int]) async {
+        let known = malIDs
+        guard !known.isEmpty else { return }
+        await AniListClient.shared.ensureLoaded(subjectIDs, malIDs: known)
     }
 
     /// 某部番的首播时刻与周期（更新提醒按它推算下一集），没有数据返回 nil。
@@ -248,6 +299,25 @@ final class BangumiAirTimeService {
             times[subjectID] = Self.timeText(schedule.first)
             schedules[subjectID] = schedule
         }
+        for (subjectID, malID) in Self.parseMalIDs(data) {
+            malIDs[subjectID] = malID
+        }
+    }
+
+    /// 季度 JSON 里的 mal_id，AniList 用它查下一集时刻。
+    private static func parseMalIDs(_ data: Data) -> [Int: Int] {
+        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let items = root["items"] as? [String: Any]
+        else { return [:] }
+        var result: [Int: Int] = [:]
+        for (key, value) in items {
+            guard let subjectID = Int(key),
+                  let entry = value as? [String: Any],
+                  let malID = entry["mal_id"] as? Int
+            else { continue }
+            result[subjectID] = malID
+        }
+        return result
     }
 
     private static func timeText(_ date: Date) -> String {

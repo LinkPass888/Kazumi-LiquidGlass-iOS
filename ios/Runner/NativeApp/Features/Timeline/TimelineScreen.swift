@@ -25,7 +25,17 @@ struct TimelineScreen: View {
     @State private var pageViewportWidth: CGFloat = 1
 
     @Environment(LibraryStore.self) private var library
+    @Environment(AppRouter.self) private var router
     @Environment(\.colorScheme) private var colorScheme
+
+    /// 当前打开着详情的番剧 id（从导航栈里读）。
+    @State private var detailItemID: Int?
+    /// 返回后要做淡入的卡片：改了放送星期、卡片换了那一天时用。
+    @State private var flashItemID: Int?
+    /// 淡入的当前状态：false 是起始帧（透明、低 8 点），true 是落位。
+    @State private var flashVisible = true
+    /// 这些卡片返回时不登记缩放转场源：卡片已经换了位置，硬套放大接不上。
+    @State private var zoomSuppressedIDs: Set<Int> = []
 
     private static let weekdayTitles = ["一", "二", "三", "四", "五", "六", "日"]
 
@@ -97,7 +107,62 @@ struct TimelineScreen: View {
         }
         // 详情页改完放送星期 / 点亮「在时间表展示」后，回到这里立刻重排。
         .onChange(of: BangumiTimelineStore.shared.revision) { _, _ in
-            Task { await controller.refreshCustomEntries(collectTypes: collectTypes) }
+            Task {
+                await controller.refreshCustomEntries(collectTypes: collectTypes)
+                prepareWeekdayMove()
+            }
+        }
+        // 详情页开合：记下是哪部番，返回时按需播淡入。
+        .onChange(of: openedDetailID) { _, new in
+            if let new {
+                detailItemID = new
+            } else {
+                detailItemID = nil
+                startFlashIfNeeded()
+            }
+        }
+    }
+
+    // MARK: - 详情开合
+
+    /// 导航栈顶如果就是详情页，返回它打开的是哪部番；否则 nil。
+    private var openedDetailID: Int? {
+        if case .bangumiInfo(let bangumiID) = router.timelinePath.last { return bangumiID }
+        return nil
+    }
+
+    /// 详情页里改了放送星期、这部番换了列：把页面直接切到新那一天，
+    /// 并让它在返回时淡入。
+    ///
+    /// 不切页的话，返回时缩放转场要找的卡片在另一天那一页上，
+    /// 放大回缩接不上；切过去之后用户看到的是「它搬到了周三」。
+    private func prepareWeekdayMove() {
+        guard let detailItemID else { return }
+        let newDay = filteredCalendar.firstIndex { day in
+            day.contains { $0.id == detailItemID }
+        }
+        guard let newDay, newDay != selectedWeekday else { return }
+        // 卡片已经换位置：这一次返回不登记缩放转场源，交给下面的淡入。
+        zoomSuppressedIDs.insert(detailItemID)
+        flashItemID = detailItemID
+        flashVisible = false
+        // 不带动画：详情还盖在上面，用户看不到这一下硬切。
+        selectedWeekday = newDay
+    }
+
+    /// 详情收起之后播淡入：透明度 0→1、位置从下 8 点回到原位，180 毫秒。
+    private func startFlashIfNeeded() {
+        guard let flashItemID else { return }
+        withAnimation(.easeOut(duration: 0.18)) {
+            flashVisible = true
+        }
+        Task {
+            try? await Task.sleep(for: .milliseconds(400))
+            // 动画结束后恢复常态，卡片以后照旧走缩放转场。
+            if self.flashItemID == flashItemID {
+                self.flashItemID = nil
+                self.zoomSuppressedIDs.remove(flashItemID)
+            }
         }
     }
 
@@ -425,6 +490,7 @@ struct TimelineScreen: View {
         if items.isEmpty {
             emptyState(day: day)
         } else {
+            ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(spacing: 10) {
                     ForEach(items) { item in
@@ -434,8 +500,10 @@ struct TimelineScreen: View {
                             isWatching: watchingIDs.contains(item.id),
                             updateText: controller.updateText(for: item),
                             currentEpisode: controller.currentEpisode(for: item),
-                            zoomNamespace: zoomNamespace
+                            zoomNamespace: zoomSuppressedIDs.contains(item.id) ? nil : zoomNamespace
                         )
+                        .opacity(isFlashing(item.id) ? 0 : 1)
+                        .offset(y: isFlashing(item.id) ? 8 : 0)
                     }
                 }
                 .padding(.horizontal, 12)
@@ -449,7 +517,18 @@ struct TimelineScreen: View {
                 await controller.loadSeason(controller.selectedDate, collectTypes: collectTypes)
                 prefetchCovers()
             }
+            // 卡片换了列之后，把它滚进可见范围，否则淡入发生在屏幕外等于没发生。
+            .onChange(of: flashItemID) { _, new in
+                guard let new, items.contains(where: { $0.id == new }) else { return }
+                proxy.scrollTo(new, anchor: .center)
+            }
+            }
         }
+    }
+
+    /// 这张卡片是否还在淡入的起始帧。
+    private func isFlashing(_ id: Int) -> Bool {
+        flashItemID == id && !flashVisible
     }
 
     private func emptyState(day: Int) -> some View {

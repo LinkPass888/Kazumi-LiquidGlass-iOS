@@ -629,14 +629,32 @@ extension BangumiInfoScreen {
 extension BangumiInfoScreen {
     private func load() async {
         let environment = self.environment
+
+        // 1. 先拿缓存铺页面：列表里渲染过的条目、或以前进过这个详情页，
+        //    都能立刻画出标题、封面、剧集，不再整页转圈等网络。
+        if let cached = BangumiSubjectCache.shared.item(for: bangumiID) {
+            let created = InfoController(item: cached, plugins: environment.plugins)
+            created.applyCachedEpisodes()
+            controller = created
+            // 缓存只负责先显示，内容随后照常刷新。
+            await refresh(created)
+            return
+        }
+
+        // 2. 没有缓存（第一次进这部番）：等接口，整页转圈是唯一的兜底。
         let base = await BangumiAPI.info(id: bangumiID)
             ?? BangumiItem(id: bangumiID, name: "未知番剧", nameCn: "")
         let created = InfoController(item: base, plugins: environment.plugins)
         controller = created
-        await created.loadDetailIfNeeded()
-        await created.loadEpisodes()
+        await refresh(created)
+    }
+
+    /// 刷新详情、剧集与播出时刻。详情页已经在屏幕上时，这些只是把内容补全。
+    private func refresh(_ controller: InfoController) async {
+        await controller.loadDetailIfNeeded()
+        await controller.loadEpisodes()
         // 播出时刻要单独拉季度表，失败只是不显示时刻。
-        await created.loadAirTime()
+        await controller.loadAirTime()
     }
 
     /// 标签点开时才去拉对应数据。

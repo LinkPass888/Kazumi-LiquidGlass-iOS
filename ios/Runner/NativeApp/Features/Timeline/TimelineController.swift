@@ -115,7 +115,7 @@ final class TimelineController {
     /// 往季同样适用 —— 往季的首播时刻就在那一年，算出来的集数是对的。
     /// 数据还没加载到时返回 nil，卡片少一个胶囊，不影响其余内容。
     func currentEpisode(for item: BangumiItem) -> Int? {
-        BangumiAirTimeService.shared.schedules[item.id]?.currentEpisode()
+        BangumiAirTimeService.shared.currentEpisode(for: item.id)
     }
 
     // MARK: - 显示范围
@@ -169,6 +169,9 @@ final class TimelineController {
         // 先取季度时刻表：卡片上的「HH:mm 更新」与「第 N 话」、以及默认顺序的
         // 排序都依赖它。拉取失败时保持空表，只是少两个胶囊，不影响列表。
         await BangumiAirTimeService.shared.ensureLoaded(forSeasonOf: date)
+        // 季度表拿到 MAL id 之后，再用 AniList 补一轮实测时刻：只查还没到
+        // 下一集播出时刻的那些番，按 25 部一批，请求量与当季番数无关。
+        await BangumiAirTimeService.shared.ensureAniListLoaded(calendar.flatMap { $0.map(\.id) })
 
         baseCalendar = calendar
         let merged = await mergeCustomEntries(into: calendar, collectTypes: collectTypes)
