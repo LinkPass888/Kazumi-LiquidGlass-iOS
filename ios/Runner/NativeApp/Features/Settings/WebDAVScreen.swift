@@ -2,13 +2,17 @@
 //  WebDAVScreen.swift
 //  Kazumi
 //
-//  设置 →「账号与备份」→「WebDAV 备份」（二级页）。这一版仍是整包模型：
-//  服务器地址 / 用户名 / 密码，加上整包备份与恢复（立即备份 / 从备份恢复 / 测试连接）。
+//  设置 →「同步设置」→「多设备同步」。
 //
-//  追番账号与令牌只在 BangumiAccountScreen 一处输入，本页不再重复；
-//  设置备份也只留在「账号与备份」主页，本页不再提供入口。
-//  「同步追番状态」「同步弹幕屏蔽规则」「自动同步」三个开关的键没有消费者，
-//  已经从界面撤掉（设置属性本身不删，避免破坏旧备份的恢复）。
+//  版面按 Colo 2026-10-25 的重排落，四段从上到下：
+//  连接你的云盘 / 要同步什么 / 立即同步 / 同步结果，一屏之内。
+//  账密默认折起来（LP 同日：账密能默认折叠最好），折着也看得到主机名；
+//  「保存并测试」和结果行留在折区外面，不展开也能连、也能看见结果。
+//  没连通时下面两段整块灰掉 —— 灰的开关不能点，也不能假装能同步。
+//
+//  LP 2026-10-25：三个内容开关只管记住「同步哪几类」，拨一下不许当场跑一次同步。
+//  自动同步的时机跟原版一致（lib/pages/init_page.dart、player_item.dart）：
+//  启动时、退出播放器时各并一轮，改动开关本身不触发。
 //
 
 import SwiftUI
@@ -18,72 +22,250 @@ struct WebDAVScreen: View {
     @Environment(LibraryStore.self) private var library
     @Environment(\.colorScheme) private var colorScheme
 
+    /// 结果行上那句话：常显，空态是「尚未连接」。
     @State private var statusMessage: String?
+    @State private var statusIsError = false
     @State private var isBusy = false
-    @State private var isConfirmingRestore = false
+    @State private var isSyncing = false
+    @State private var progress: SyncProgress?
+    @State private var isCredentialsExpanded = false
+
+    @AppStorage("webDavLastSyncAt") private var lastSyncAt: Double = 0
+    @AppStorage("webDavLastSyncSummary") private var lastSyncSummary = ""
+    @AppStorage("webDavLastSyncError") private var lastSyncError = ""
+
+    /// 同步中那一条进度：没有总数就不画进度条。
+    private struct SyncProgress {
+        var text: String
+        var value: Double?
+    }
 
     var body: some View {
         Form {
-            Section {
-                TextField("https://dav.example.com/", text: webDAVURLBinding)
+            connectionSection
+            contentSection
+            runSection
+            resultSection
+        }
+        .navigationTitle("多设备同步")
+        .navigationBarTitleDisplayMode(.inline)
+        .scrollContentBackground(.hidden)
+        .background(KazumiPalette.background(for: colorScheme).ignoresSafeArea())
+        .onAppear {
+            // 地址空着就没有可折的东西：直接摊开，第一次用的人少点一下。
+            if settings.webDAVURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                isCredentialsExpanded = true
+            }
+        }
+    }
+
+    // MARK: - 段一 连接你的云盘
+
+    private var connectionSection: some View {
+        Section {
+            credentialsRow
+
+            Button {
+                Task { await saveAndTest() }
+            } label: {
+                Text("保存并测试")
+                    .frame(maxWidth: .infinity)
+            }
+            .disabled(isBusy || !hasCredentials)
+
+            // 结果行常显、位置固定：按完就在原处换字，整段不会跳一下。
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                if isBusy {
+                    ProgressView()
+                        .controlSize(.small)
+                }
+                Text(statusMessage ?? "尚未连接")
+                    .font(.footnote)
+                    .foregroundStyle(statusIsError ? Color.orange : Color.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+            }
+            .accessibilityElement(children: .combine)
+
+            // 总开关在账密下面（LP 2026-10-25）。
+            Toggle("启用 WebDAV", isOn: enableBinding)
+                .disabled(!hasCredentials)
+        } header: {
+            Text("连接你的云盘")
+        } footer: {
+            Text("地址、账号和密码只存在这台设备上，同步时直连你自己的云盘。")
+        }
+    }
+
+    /// 折叠行本身：左边「服务器」，右边主机名，一颗会转的箭头。
+    private var credentialsRow: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Button {
+                withAnimation(.snappy(duration: 0.2)) {
+                    isCredentialsExpanded.toggle()
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    Text("服务器")
+                        .foregroundStyle(Color.primary)
+                    Spacer(minLength: 8)
+                    Text(serverSummary)
+                        .foregroundStyle(Color.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Color.secondary)
+                        .rotationEffect(.degrees(isCredentialsExpanded ? 180 : 0))
+                }
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("服务器")
+            .accessibilityValue(serverSummary)
+            .accessibilityHint(isCredentialsExpanded ? "收起地址与账号" : "展开地址与账号")
+
+            if isCredentialsExpanded {
+                TextField("地址", text: webDAVURLBinding)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .keyboardType(.URL)
+                    .frame(minHeight: 44)
 
                 TextField("用户名", text: webDAVUserBinding)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
+                    .frame(minHeight: 44)
 
-                SecureField("密码", text: webDAVPasswordBinding)
-            } header: {
-                Text("服务器")
-            }
+                HStack(spacing: 8) {
+                    Group {
+                        if isPasswordVisible {
+                            TextField("密码", text: webDAVPasswordBinding)
+                        } else {
+                            SecureField("密码", text: webDAVPasswordBinding)
+                        }
+                    }
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
 
-            Section {
-                Button {
-                    Task { await testConnection() }
-                } label: {
-                    Label("测试连接", systemImage: "network")
+                    Button {
+                        isPasswordVisible.toggle()
+                    } label: {
+                        Image(systemName: isPasswordVisible ? "eye.slash" : "eye")
+                            .frame(width: 44, height: 44)
+                    }
+                    .buttonStyle(.borderless)
+                    .accessibilityLabel(isPasswordVisible ? "隐藏密码" : "显示密码")
                 }
-                .disabled(isBusy || !isConfigured)
-
-                Button {
-                    Task { await backup() }
-                } label: {
-                    Label("立即备份", systemImage: "icloud.and.arrow.up")
-                }
-                .disabled(isBusy || !isConfigured)
-
-                Button {
-                    isConfirmingRestore = true
-                } label: {
-                    Label("从备份恢复", systemImage: "icloud.and.arrow.down")
-                }
-                .disabled(isBusy || !isConfigured)
-            } header: {
-                Text("备份与恢复")
-            } footer: {
-                Text("「测试连接」只发一次只读请求，确认地址与账号可用；不会写入任何内容。")
-            }
-
-            if let statusMessage {
-                Section("状态") {
-                    Text(statusMessage)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
+                .frame(minHeight: 44)
             }
         }
-        .navigationTitle("WebDAV 备份")
-        .navigationBarTitleDisplayMode(.inline)
-        .scrollContentBackground(.hidden)
-        .background(KazumiPalette.background(for: colorScheme).ignoresSafeArea())
-        .confirmationDialog("恢复会覆盖本机现有的追番、观看历史与屏蔽词，确定继续？", isPresented: $isConfirmingRestore, titleVisibility: .visible) {
-            Button("覆盖恢复", role: .destructive) {
-                Task { await restore() }
+    }
+
+    @State private var isPasswordVisible = false
+
+    /// 折起来的那一行：填过就写主机名，没填过写「未填写」。
+    private var serverSummary: String {
+        let raw = settings.webDAVURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !raw.isEmpty else { return "未填写" }
+        let withScheme = raw.contains("://") ? raw : "https://" + raw
+        if let host = URL(string: withScheme)?.host, !host.isEmpty { return host }
+        return raw
+    }
+
+    // MARK: - 段二 要同步什么
+
+    private var contentSection: some View {
+        Section {
+            Group {
+                Toggle("观看记录", isOn: historyBinding)
+                Toggle("收藏", isOn: collectBinding)
+                Toggle("弹幕屏蔽词", isOn: shieldBinding)
             }
-            Button("取消", role: .cancel) {}
+            .disabled(!canSync)
+            .opacity(canSync ? 1 : 0.45)
+            .accessibilityValue(canSync ? "" : "需要先连接")
+        } header: {
+            Text("要同步什么")
+        } footer: {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("启动 App、退出全屏时自动同步播放进度和历史记录。")
+                Text("屏蔽词：修改规则后自动同步。")
+                Text("进收藏页时同步一次。原版 Kazumi 的收藏能读进来，这边新加的写不回原版。")
+            }
         }
+    }
+
+    // MARK: - 段三 立即同步
+
+    private var runSection: some View {
+        Section {
+            Group {
+                Button {
+                    Task { await runSync(WebDAVSync.enabledContents(settings)) }
+                } label: {
+                    Text(isSyncing ? "正在同步…" : "立即同步")
+                        .frame(maxWidth: .infinity)
+                }
+                .disabled(!canSync || isBusy || WebDAVSync.enabledContents(settings).isEmpty)
+
+                if isSyncing, let progress {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(progress.text)
+                            .font(.footnote)
+                            .foregroundStyle(Color.secondary)
+                        if let value = progress.value {
+                            ProgressView(value: value)
+                                .progressViewStyle(.linear)
+                        }
+                    }
+                    .accessibilityElement(children: .combine)
+                }
+            }
+            .disabled(!canSync)
+            .opacity(canSync ? 1 : 0.45)
+            .accessibilityValue(canSync ? "" : "需要先连接")
+        } header: {
+            Text("立即同步")
+        }
+    }
+
+    // MARK: - 段四 同步结果
+
+    private var resultSection: some View {
+        Section {
+            Text(lastSyncLine)
+                .frame(minHeight: 24, alignment: .leading)
+
+            if !lastSyncError.isEmpty {
+                Text(lastSyncError)
+                    .font(.footnote)
+                    .foregroundStyle(Color.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if !lastSyncSummary.isEmpty {
+                Text(lastSyncSummary)
+                    .font(.footnote)
+                    .foregroundStyle(Color.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        } header: {
+            Text("同步结果")
+        } footer: {
+            if !lastSyncError.isEmpty {
+                Text("下一次同步成功后会换回正常字样。")
+            }
+        }
+    }
+
+    private var lastSyncLine: String {
+        guard lastSyncAt > 0 else { return "还没同步过" }
+        let date = Date(timeIntervalSince1970: lastSyncAt)
+        let calendar = Calendar.current
+        let time = date.formatted(.dateTime.hour().minute())
+        if calendar.isDateInToday(date) { return "上次同步 今天 \(time)" }
+        if calendar.isDateInYesterday(date) { return "上次同步 昨天 \(time)" }
+        return "上次同步 \(date.formatted(.dateTime.month().day())) \(time)"
     }
 
     // MARK: - 绑定
@@ -100,70 +282,119 @@ struct WebDAVScreen: View {
         Binding(get: { settings.webDAVPassword }, set: { settings.webDAVPassword = $0 })
     }
 
-    private var isConfigured: Bool {
+    /// 总开关只存值；打开的那一刻顺手并一轮（LP 2026-10-25：开启后要自动同步）。
+    private var enableBinding: Binding<Bool> {
+        Binding(
+            get: { settings.webDavEnable },
+            set: { newValue in
+                settings.webDavEnable = newValue
+                guard newValue else { return }
+                Task { await syncOnEnable() }
+            }
+        )
+    }
+
+    /// 「同步哪几类」的三个开关同样只存值：要同步就按下面的「立即同步」。
+    private var historyBinding: Binding<Bool> {
+        Binding(
+            get: { settings.webDavEnableHistory },
+            set: { settings.webDavEnableHistory = $0 }
+        )
+    }
+
+    private var collectBinding: Binding<Bool> {
+        Binding(
+            get: { settings.webDavEnableCollect },
+            set: { settings.webDavEnableCollect = $0 }
+        )
+    }
+
+    private var shieldBinding: Binding<Bool> {
+        Binding(
+            get: { settings.webDavEnableDanmakuShield },
+            set: { settings.webDavEnableDanmakuShield = $0 }
+        )
+    }
+
+    /// 三格齐了才算配置过：只有地址，等于替一个没账号的服务器担保。
+    private var hasCredentials: Bool {
         !settings.webDAVURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !settings.webDAVUser.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !settings.webDAVPassword.isEmpty
     }
 
-    /// 进日志的技术原文：WebDAV 自己的错误有专门那份（状态码、解码器原话），
-    /// 别的错误用系统原话。屏上不显示这个。
-    private static func technicalText(_ error: Error) -> String {
-        (error as? WebDAVClient.WebDAVError)?.logDescription ?? error.localizedDescription
+    private var canSync: Bool {
+        hasCredentials && settings.webDavEnable
     }
 
-    /// 屏蔽词条数：一行一条，空行不算。
-    private func ruleCount(_ text: String) -> Int {
-        text.split(separator: "\n").filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }.count
-    }
+    // MARK: - 同步
 
-    // MARK: - 备份 / 恢复
-
-    private func testConnection() async {
+    private func runSync(_ contents: [WebDAVSync.Content]) async {
+        guard !isBusy else { return }
         isBusy = true
-        statusMessage = nil
+        isSyncing = true
+        progress = nil
+        statusIsError = false
+        defer {
+            isBusy = false
+            isSyncing = false
+            progress = nil
+        }
+        let outcome = await WebDAVSync.sync(
+            contents,
+            settings: settings,
+            library: library
+        ) { event in
+            progress = SyncProgress(
+                text: event.text,
+                value: event.total > 0 ? min(max(Double(event.current) / Double(event.total), 0), 1) : nil
+            )
+        }
+
+        // 结果只落进段四：段一那行管的是「连得上吗」，不重复同一句话。
+        let now = Date().timeIntervalSince1970
+        lastSyncAt = now
+        if outcome.ok {
+            lastSyncError = ""
+            lastSyncSummary = outcome.summary
+            // 同步成了一次，那行「尚未连接」就该换成实话：连得上是刚验过的。
+            statusMessage = "连接正常"
+            statusIsError = false
+        } else {
+            lastSyncError = outcome.message
+            lastSyncSummary = ""
+        }
+        KazumiLogBuffer.network(outcome.log)
+    }
+
+    /// 打开总开关后自己跑的那一轮：选过内容就按选的那几类并，
+    /// 一类都没选就只连一下，至少让「已开启」这句话是真的。
+    private func syncOnEnable() async {
+        let contents = WebDAVSync.enabledContents(settings)
+        guard !contents.isEmpty else {
+            await saveAndTest()
+            return
+        }
+        await runSync(contents)
+    }
+
+    // MARK: - 连接
+
+    /// 账密就在上面几格，改完这一颗把地址落盘，顺手 ping 一次。
+    private func saveAndTest() async {
+        settings.webDAVURL = settings.webDAVURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        isBusy = true
+        statusMessage = "正在测试…"
+        statusIsError = false
         defer { isBusy = false }
         do {
             try await WebDAVClient(settings: settings).ping()
-            statusMessage = "连接正常，可以备份或恢复"
-            KazumiLogBuffer.network("WebDAV 连接测试通过")
+            statusMessage = "连接正常"
+            KazumiLogBuffer.network("WebDAV 保存并测试：连接通过")
         } catch {
-            statusMessage = "连接失败：\(error.localizedDescription)"
-            KazumiLogBuffer.network("WebDAV 连接测试失败：\(error.localizedDescription)")
-        }
-    }
-
-    private func backup() async {
-        isBusy = true
-        statusMessage = nil
-        defer { isBusy = false }
-        do {
-            let payload = WebDAVClient.Payload(
-                entries: library.entries,
-                history: library.history,
-                danmakuRules: settings.danmakuFilterRulesText
-            )
-            try await WebDAVClient(settings: settings).uploadAndVerify(payload)
-            statusMessage = "备份完成：\(library.entries.count) 部追番 / \(library.history.count) 条观看历史 / \(ruleCount(payload.danmakuRules)) 条屏蔽词"
-            KazumiLogBuffer.network("WebDAV 备份完成（已读回核对）")
-        } catch {
-            statusMessage = "备份没有完成。原因记在「存储与日志」的「运行日志」里。"
-            KazumiLogBuffer.network("WebDAV 备份失败：\(Self.technicalText(error))")
-        }
-    }
-
-    private func restore() async {
-        isBusy = true
-        statusMessage = nil
-        defer { isBusy = false }
-        do {
-            let payload = try await WebDAVClient(settings: settings).download()
-            library.replace(entries: payload.entries, history: payload.history)
-            settings.danmakuFilterRulesText = payload.danmakuRules
-            statusMessage = "恢复完成：\(payload.entries.count) 部追番 / \(payload.history.count) 条观看历史 / \(ruleCount(payload.danmakuRules)) 条屏蔽词"
-            KazumiLogBuffer.network("WebDAV 恢复完成")
-        } catch {
-            statusMessage = "恢复没有完成。原因记在「存储与日志」的「运行日志」里。"
-            KazumiLogBuffer.network("WebDAV 恢复失败：\(Self.technicalText(error))")
+            statusMessage = "连接失败：\(WebDAVSync.technicalText(error))"
+            statusIsError = true
+            KazumiLogBuffer.network("WebDAV 保存并测试失败：\(WebDAVSync.technicalText(error))")
         }
     }
 }
-

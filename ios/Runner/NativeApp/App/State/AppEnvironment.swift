@@ -25,14 +25,22 @@ final class AppEnvironment {
 
     /// 应用根依赖（与原 coreModule 的单例注册一一对应）。
     let settings: SettingsStore
+    /// 下载目录：设置页选的文件夹、播放器落盘、下载列表三处共用一份，
+    /// 「落在哪儿」才不会一处一套。
+    let downloadDirectory: DownloadDirectoryStore
     let library: LibraryStore
     let router: AppRouter
     let plugins: PluginsController
     let pluginSearch: PluginSearchService
     let updates: AppUpdateService
+    /// 追番同步引擎：设置页、详情页与播放器共用一份，三处对「连没连上」才一致。
+    let bangumiSync: BangumiSyncEngine
+    /// 「自动标记看过」的消费端，播放器把进度喂给它。
+    let bangumiProgress: BangumiProgressService
 
     private init(settings: SettingsStore, library: LibraryStore, router: AppRouter) {
         self.settings = settings
+        self.downloadDirectory = DownloadDirectoryStore(defaults: .standard)
         self.library = library
         self.router = router
         let plugins = PluginsController()
@@ -40,6 +48,8 @@ final class AppEnvironment {
         self.plugins = plugins
         self.pluginSearch = PluginSearchService(plugins: plugins)
         self.updates = AppUpdateService()
+        self.bangumiSync = BangumiSyncEngine(settings: settings, library: library)
+        self.bangumiProgress = BangumiProgressService(settings: settings)
     }
 
     /// 与原 main.dart 一致：先确保存储目录可用，失败时返回错误页而不是崩溃。
@@ -83,6 +93,7 @@ final class AppEnvironment {
             root.appending(path: "cache", directoryHint: .isDirectory),
             root.appending(path: "images", directoryHint: .isDirectory),
             root.appending(path: "snapshots", directoryHint: .isDirectory),
+            root.appending(path: "downloads", directoryHint: .isDirectory),
         ]
         for directory in directories where !manager.fileExists(atPath: directory.path(percentEncoded: false)) {
             try manager.createDirectory(at: directory, withIntermediateDirectories: true)

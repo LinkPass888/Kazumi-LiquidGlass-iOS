@@ -667,6 +667,148 @@ enum BangumiAPI {
         }
     }
 
+    // MARK: - 追番同步（收藏列表 / 单集标记）
+
+    /// 用户在 Bangumi 上的一条收藏状态。
+    ///
+    /// 对应 lib/modules/bangumi/bangumi_collection.dart：只留同步引擎要用的字段。
+    /// 远端条目要落进本地收藏库，所以这里也把条目的展示信息一起带回来，
+    /// 否则「补全本地缺失状态」只能写一个没有名字的空壳。
+    struct RemoteCollection: Sendable {
+        var subjectID: Int
+        /// Bangumi 的收藏类型：1 想看 / 2 看过 / 3 在看 / 4 搁置 / 5 抛弃。
+        var type: Int
+        var updatedAt: Date
+        var name: String
+        var nameCn: String
+        var summary: String
+        var airDate: String
+        var rating: Double
+        var rank: Int
+        var totalEpisodes: Int
+        var imageURL: String
+        var tags: [String]
+
+        init?(_ json: JSONValue) {
+            let subject = json["subject"]
+            let id = subject["id"].intValue ?? json["subject_id"].intValue ?? 0
+            guard id > 0 else { return nil }
+            // updated_at 是「最新优先」比较用的时间；缺了就跳过这一条，
+            // 不能拿当前时间去顶——那会让它凭空赢下每一次冲突（原版同样跳过）。
+            guard let raw = json["updated_at"].stringValue,
+                  let updatedAt = DateTimeHelper.parseISO(raw) else { return nil }
+            self.subjectID = id
+            self.type = json["type"].intValue ?? 0
+            self.updatedAt = updatedAt
+            self.name = subject["name"].stringValue ?? ""
+            self.nameCn = subject["name_cn"].stringValue ?? ""
+            self.summary = subject["short_summary"].stringValue ?? ""
+            self.airDate = subject["date"].stringValue ?? ""
+            self.rating = subject["score"].doubleValue ?? 0
+            self.rank = subject["rank"].intValue ?? 0
+            self.totalEpisodes = subject["eps"].intValue ?? 0
+            self.imageURL = subject["images"]["large"].stringValue ?? ""
+            self.tags = (subject["tags"].arrayValue ?? []).compactMap { $0["name"].stringValue }
+        }
+    }
+
+    /// 拉取某个用户的全部番剧收藏（`subject_type=2`，只看番剧）。
+    ///
+    /// 对应 getBangumiCollectibles：按 `total` 一页页续抓，进度用
+    /// 「正在拉取 Bangumi 收藏」报出去。原版并发 3 页、限速 200ms；
+    /// 这里改成顺序一页一页拉并保持 200ms 间隔 —— 收藏通常只有几百条，
+    /// 页数很少，少一层并发就少一处可以出错的地方。
+    static func remoteCollections(
+        username: String,
+        limit: Int = 50,
+        onProgress: (@Sendable (String, Int, Int) -> Void)? = nil
+    ) async throws -> [RemoteCollection] {
+        let name = username.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else {
+            throw NetworkError.transport("还没确认 Bangumi 用户名，无法拉取收藏")
+        }
+        let endpoint = BangumiEndpoints.authMirrorDomain + "/v0/users/\(name)/collections"
+        var collected: [RemoteCollection] = []
+        var seen = Set<Int>()
+        var offset = 0
+        while true {
+            let json = try await send(
+                endpoint,
+                method: "GET",
+                query: [
+                    URLQueryItem(name: "subject_type", value: "2"),
+                    URLQueryItem(name: "limit", value: "\(limit)"),
+                    URLQueryItem(name: "offset", value: "\(offset)"),
+                ],
+                body: nil,
+                requiresAuth: true
+            )
+            guard let page = json["data"].arrayValue else {
+                throw NetworkError.decoding("Bangumi 收藏列表里没有 data 字段")
+            }
+            let total = json["total"].intValue ?? 0
+            if total > 0, page.isEmpty, offset == 0 {
+                throw NetworkError.decoding("Bangumi 说有 \(total) 条收藏，但第一页是空的")
+            }
+            for element in page {
+                guard let item = RemoteCollection(element), item.type != 0 else { continue }
+                if seen.insert(item.subjectID).inserted { collected.append(item) }
+            }
+            onProgress?("正在拉取 Bangumi 收藏", min(collected.count, total), total)
+            offset += page.count
+            if page.isEmpty || offset >= total { break }
+            try? await Task.sleep(nanoseconds: 200_000_000)
+        }
+        KazumiLog.network.notice("Bangumi: 拉取收藏 \(collected.count, privacy: .public) 条")
+        return collected
+    }
+
+    /// 标记单集的四种结果。对应 bangumi_progress_service.dart 的 MarkResult。
+    enum MarkOutcome: Sendable {
+        case ok
+        /// 番剧还没收藏（接口回 400）：要先收成「在看」再重试。
+        case notCollected
+        case unauthorized
+        /// 这一集在 Bangumi 上不存在（404），重试也没用。
+        case rejected
+        case failed
+    }
+
+    /// 把一集在 Bangumi 上标为「看过」（`type = 2`）。
+    ///
+    /// 只给「自动标记看过」用：番剧本身还没收藏时接口会回 400，
+    /// 调用方要先把番剧收成「在看」再试一次。
+    static func markEpisodeWatched(episodeID: Int) async -> MarkOutcome {
+        guard accessToken != nil else { return .unauthorized }
+        let url = BangumiEndpoints.format(
+            BangumiEndpoints.authMirrorDomain + BangumiEndpoints.setEpisode,
+            [episodeID]
+        )
+        do {
+            _ = try await post(url, body: .object(["type": .int(2)]), requiresAuth: true)
+            return .ok
+        } catch let error as NetworkError {
+            if case let .badResponse(status, _, _) = error {
+                switch status {
+                case 200, 204: return .ok
+                case 400: return .notCollected
+                case 401, 403: return .unauthorized
+                case 404: return .rejected
+                default: return .failed
+                }
+            }
+            KazumiLog.network.error(
+                "Mark bangumi episode watched failed: \(error.localizedDescription, privacy: .public)"
+            )
+            return .failed
+        } catch {
+            KazumiLog.network.error(
+                "Mark bangumi episode watched failed: \(error.localizedDescription, privacy: .public)"
+            )
+            return .failed
+        }
+    }
+
     /// 发出的请求究竟带没带令牌，只用于排查：只报是否带上与长度，绝不输出令牌本身。
     private static var authState: String {
         guard let token = accessToken, !token.isEmpty else { return "none" }

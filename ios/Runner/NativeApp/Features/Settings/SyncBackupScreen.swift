@@ -42,41 +42,42 @@ import UniformTypeIdentifiers
 
 struct SyncBackupScreen: View {
     @Environment(SettingsStore.self) private var settings
+    @Environment(AppEnvironment.self) private var environment
     @Environment(\.colorScheme) private var colorScheme
 
     /// 是否跳过账号与密码（默认跳过，与主项目一致）。
     @State private var omitCredentials = true
     @State private var backupMessage: String?
+    /// 结果那行是不是失败：失败用系统橙，成功用次要色。
+    @State private var backupMessageIsError = false
     @State private var pendingPayload: SettingsBackup.Payload?
     @State private var isShowingRestoreConfirm = false
-    /// 导出/导入文件用的状态。
-    @State private var backupDocument: BackupFileDocument?
-    @State private var backupExportName = ""
-    @State private var isShowingBackupExporter = false
-    @State private var isShowingBackupImporter = false
+    /// 导出/导入文件用的状态。面板本身由 DocumentPickerBridge 呈现，
+    /// 这里只管回来的结果。
+    @State private var isPickingBackupFile = false
 
     var body: some View {
         Form {
             Section {
                 NavigationLink {
-                    BangumiAccountScreen()
+                    BangumiSyncScreen()
                 } label: {
                     serviceRow(
-                        title: "Bangumi 账号",
-                        subtitle: "账号与访问令牌",
+                        title: "追番同步",
+                        subtitle: "与 Bangumi 保持相同的追番状态",
                         status: bangumiStatusText
                     )
                 }
 
-                // 这一轮 WebDAV 备份页还没有「启用 WebDAV」总闸与内容开关，
-                // 所以状态只能报「地址有没有配」两态；
-                // 规格里的「已开启 / 已关闭」「未选择内容」等分件版落地后再回来补齐。
+                // 标题与说明照原版那张卡（webdav_sync_page.dart:92-105）：
+                // 「多设备同步」/「通过自己的云盘，在其他设备接着看。」
+                // 状态按总闸与内容开关分四档，跟原版一致。
                 NavigationLink {
                     WebDAVScreen()
                 } label: {
                     serviceRow(
-                        title: "WebDAV 备份",
-                        subtitle: "WebDAV 地址、备份与恢复",
+                        title: "多设备同步",
+                        subtitle: "通过自己的云盘，在其他设备接着看",
                         status: webDAVStatusText
                     )
                 }
@@ -84,53 +85,43 @@ struct SyncBackupScreen: View {
 
             Section {
                 Toggle("不含账号与密码", isOn: $omitCredentials)
-
-                // 开关只决定凭据带不带，不决定其余设置；这句把后果说清楚，
-                // 免得用户以为打开开关之后追番和观看历史也会一起备份。
-                Text(omitCredentials
-                     ? "跳过追番同步、WebDAV、代理等凭据，其余设置照常恢复。"
-                     : "包含同步账号、WebDAV 与代理密码，请只存放在自己可信的地方。")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-
-                // 两行两列（LP 在 Colo 那张卡上选的；Colo 规格 v7.20）：
-                // 四个动作装进一个 List cell，导出、恢复各占一行。
-                // 一行一个时这四个动作占 296 点，挤成两行两列实测 124 点，
-                // 而且「导出」「恢复」一横行就分出来了。
-                // 用 Grid 不用两层 HStack：某一格折成两行时，同行另一格跟着等高，
-                // 边框不会一高一低（Colo 的规格）。列宽、行高都由 Grid 自己算。
-                // 诊断版：临时换成两层 HStack，只用来分辨「按下时那套 Grid 排版」是不是元凶。
-                VStack(spacing: 8) {
-                    HStack(spacing: 8) {
-                        actionCell("导出到剪贴板", icon: "doc.on.clipboard") { exportBackup() }
-                        actionCell("导出到文件", icon: "folder") { exportBackupToFile() }
-                    }
-
-                    // 分两件事说，不把已验证的结论和未验证的推测混在一起：
-                    // 1. 卸载不会清空系统剪贴板。模拟器上验证过：写入一段标记文本，
-                    //    卸载 App 后仍能读回。
-                    // 2. 重装后 App 能不能读到这段内容，取决于系统的粘贴授权提示；
-                    //    这一点尚未在真机上验证。
-                    HStack(spacing: 8) {
-                        actionCell("从剪贴板恢复", icon: "square.and.arrow.down") { importBackupFromClipboard() }
-                        actionCell("从文件恢复", icon: "doc.badge.plus") { isShowingBackupImporter = true }
-                    }
-                }
-                // 四个动作只交一次行留白：不压掉 44 点的手指尖，只把四道行留白减成一道。
-                .listRowInsets(EdgeInsets(top: 15, leading: 16, bottom: 15, trailing: 16))
-
-                // 结果单元格始终存在，只换文字：增删行会让整组高度跳动。
-                // 还没操作时它只是一行空白（空格占位），不构成常驻提示。
-                Text(backupMessage ?? " ")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
             } header: {
                 Text("设置备份")
             } footer: {
-                // 这句只说我们这边备份了什么：不写「云端也有一份」，
-                // 否则用户会以为收藏已有备份，和真实的备份范围不符。
-                Text("备份只包含应用设置。追番、观看历史、缓存与播放器日志不在备份里；账号与密码由导出时那个开关决定带不带。")
+                // 开关那句会变字数，放段里会把下面的行推上推下；挪进脚注就稳了。
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(omitExplanation)
+                    // 只说备份了什么：不写「云端也有一份」，否则会以为收藏也备了。
+                    Text("备份只包含应用设置。追番、观看历史、下载与播放器日志不在备份里。")
+                }
+            }
+
+            // LP 定：按介质分组——剪贴板一段、文件一段，段与段的间隔自己分开。
+            // 行名只写动作，段标题已经说了是哪条路；读屏报全名。
+            Section {
+                actionRow("导出", icon: "arrow.up.doc", accessibility: "导出到剪贴板") { exportBackup() }
+                actionRow("恢复", icon: "square.and.arrow.down", accessibility: "从剪贴板恢复") {
+                    importBackupFromClipboard()
+                }
+            } header: {
+                Text("剪贴板")
+            }
+
+            Section {
+                actionRow("导出", icon: "folder", accessibility: "导出到文件") { exportBackupToFile() }
+                actionRow("恢复", icon: "doc.badge.plus", accessibility: "从文件恢复") {
+                    pickBackupFile()
+                }
+            } header: {
+                Text("文件")
+            } footer: {
+                // 结果只在真做过一次之后出现（LP：底下不要那行空话）。
+                // 出现后停在脚注位，不会被撑开顶下去。
+                if let backupMessage {
+                    Text(backupMessage)
+                        .foregroundStyle(backupMessageIsError ? Color.orange : Color.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
             }
         }
         // 这一页今天确实只做账号、WebDAV 备份与设置备份，没有任何自动同步，
@@ -147,32 +138,9 @@ struct SyncBackupScreen: View {
         } message: {
             Text(restoreConfirmMessage)
         }
-        .fileExporter(
-            isPresented: $isShowingBackupExporter,
-            document: backupDocument,
-            contentType: .json,
-            defaultFilename: backupExportName
-        ) { result in
-            switch result {
-            case .success:
-                backupMessage = "已导出到文件"
-            case .failure(let error):
-                backupMessage = "存不到这个位置，可能是空间不够，或者没有写入权限。"
-            }
-            backupDocument = nil
-        }
-        .fileImporter(
-            isPresented: $isShowingBackupImporter,
-            allowedContentTypes: [.json, .plainText]
-        ) { result in
-            switch result {
-            case .success(let url):
-                importBackupFromFile(url)
-            case .failure(let error):
-                backupMessage = "读不到这个文件，可能已被移动，或者没有访问权限。"
-            }
-        }
     }
+
+    // MARK: - 文件面板（导出、导入共用一条）
 
     // MARK: - 服务行
 
@@ -202,63 +170,86 @@ struct SyncBackupScreen: View {
     }
 
     /// 与 Bangumi 账号页同一口径：令牌为空就是未填写，否则已保存。
+    /// 状态口径照 sync_settings_page.dart 那张卡：没令牌是「未连接」，
+    /// 有令牌看自动同步开没开，验证失败时是「连接异常」。
     private var bangumiStatusText: String {
-        settings.bangumiAccessToken
+        let engine = environment.bangumiSync
+        if engine.isConnecting { return "正在连接" }
+        if engine.lastError != nil { return "连接异常" }
+        if settings.bangumiAccessToken
             .trimmingCharacters(in: .whitespacesAndNewlines)
-            .isEmpty ? "未填写令牌" : "已保存令牌"
+            .isEmpty { return "未连接" }
+        return settings.bangumiSyncEnable ? "已开启" : "已关闭"
     }
 
     /// 与 Bangumi 账号行同一口径：去掉首尾空白后为空就是未配置。
     /// 「已开启 / 已关闭」「未选择内容」依赖总闸与内容开关，
     /// 这一轮 WebDAV 备份页还没有它们，等分件版落地再补。
     private var webDAVStatusText: String {
-        settings.webDAVURL
+        guard !settings.webDAVURL
             .trimmingCharacters(in: .whitespacesAndNewlines)
-            .isEmpty ? "未配置" : "已保存地址"
+            .isEmpty else { return "未配置" }
+        guard settings.webDavEnable else { return "已关闭" }
+        guard !WebDAVSync.enabledContents(settings).isEmpty else { return "未选择内容" }
+        return "已开启"
+    }
+
+    private var omitExplanation: String {
+        omitCredentials
+            ? "跳过追番同步、WebDAV 和代理的账号密码，其余设置照常恢复"
+            : "把同步账号、WebDAV 与代理密码一起导出，请只存放在自己可信的地方"
     }
 
     // MARK: - 设置备份
 
-    /// 一格动作。`.bordered` 是为了让四个动作在同一格里看得出各自的边界；
-    /// `maxWidth: .infinity` 让可点区域铺满整个格子（以前只有文字那么宽，
-    /// 点在行右侧空白上不会触发，看着像按不动）。
-    private func actionCell(
+    /// 一行动作：左边动作名（正常字色），行尾一颗次要色小图标。
+    /// 整行可点，图标不单独被读屏念出来。
+    private func actionRow(
         _ title: String,
         icon: String,
+        accessibility: String,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            // 用 HStack 而不是 Label：Label 的图标默认在整块文字里垂直居中，
-            // 折成两行时图标会悬在中间；firstTextBaseline 让图标跟第一行齐。
-            HStack(alignment: .firstTextBaseline, spacing: 5) {
-                // 图标钉 16 点，不跟着字号缩放：两列宽度一样，格子才对得齐。
-                Image(systemName: icon)
-                    .font(.system(size: 16))
+            HStack(spacing: 8) {
                 Text(title)
-                    // 字号 Ato 定在 .body：去引号后五个字，375 点宽下还有余量，不降字号。
                     .font(.body)
-                    // 挤不下时换行，不许截断：按钮上出现「导出到剪贴…」等于动作名少一半。
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .multilineTextAlignment(.center)
+                    .foregroundStyle(.primary)
+                Spacer(minLength: 8)
+                Image(systemName: icon)
+                    .font(.system(size: 15, weight: .regular))
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
             }
-            .frame(maxWidth: .infinity, minHeight: 44)
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
         }
-        .buttonStyle(.bordered)
+        .buttonStyle(.plain)
+        .accessibilityLabel(accessibility)
+        // 四行按同步那两页的 52 点行高走：Form 默认上下留白会把 44 撑到 74，
+        // 压回 4/4 正好合上那两页的单行高。
+        .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+    }
+
+    /// 结果统一从这里落：成功清掉橙字，失败才染成橙。
+    private func setBackupResult(_ text: String, isError: Bool) {
+        // 结果行一律不带句号（Camo）：解码器给的失败句末尾那个也去掉。
+        backupMessage = text.hasSuffix("。") ? String(text.dropLast()) : text
+        backupMessageIsError = isError
     }
 
     private func exportBackup() {
         let snapshot = settings.backupSnapshot(omitCredentials: omitCredentials)
         guard !snapshot.isEmpty else {
-            backupMessage = "没有可导出的设置"
+            setBackupResult("没有可导出的设置", isError: true)
             return
         }
         UIPasteboard.general.string = SettingsBackup.encode(snapshot)
-        backupMessage = "已复制 \(snapshot.count) 项设置到剪贴板"
+        setBackupResult("已复制 \(snapshot.count) 项设置到剪贴板，建议粘贴到备忘录保存", isError: false)
     }
 
     private func importBackupFromClipboard() {
-        backupMessage = nil
+        setBackupResult("", isError: false)
         // 直接读 `.string`：真机上这一步会由系统弹出粘贴授权，允许之后这次读取
         // 就拿到内容。以前这里借 `detectValues` 走同一套授权，但那个调用本身
         // 会把 App 打死——模拟器上点一次就原地回主屏，连空回调、不改任何状态
@@ -269,13 +260,13 @@ struct SyncBackupScreen: View {
         KazumiLogBuffer.network("剪贴板恢复：已按下，准备读剪贴板")
         guard let raw = UIPasteboard.general.string else {
             KazumiLogBuffer.network("剪贴板恢复：读到空（无内容或未授权）")
-            backupMessage = Self.clipboardEmptyMessage
+            setBackupResult(Self.clipboardEmptyMessage, isError: true)
             return
         }
         KazumiLogBuffer.network("剪贴板恢复：读到 \(raw.count) 字")
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else {
-            backupMessage = Self.clipboardEmptyMessage
+            setBackupResult(Self.clipboardEmptyMessage, isError: true)
             return
         }
         acceptClipboardBackup(text)
@@ -287,13 +278,18 @@ struct SyncBackupScreen: View {
         do {
             let payload = try SettingsBackup.decode(raw)
             guard payload.count > 0 else {
-                backupMessage = Self.emptyBackupMessage
+                setBackupResult(Self.emptyBackupMessage, isError: true)
                 return
             }
             pendingPayload = payload
-            isShowingRestoreConfirm = true
+            // 文件面板刚关掉时立刻挂弹窗，SwiftUI 会把弹窗吞掉（选完文件像什么都没发生）。
+            // 等面板真正退干净的下一拍再挂，两条路共用这个口。
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
+                guard pendingPayload != nil else { return }
+                isShowingRestoreConfirm = true
+            }
         } catch {
-            backupMessage = error.localizedDescription
+            setBackupResult(error.localizedDescription, isError: true)
         }
     }
 
@@ -304,30 +300,99 @@ struct SyncBackupScreen: View {
         guard let payload = pendingPayload else { return }
         pendingPayload = nil
         let count = settings.applyBackup(payload.settings)
-        backupMessage = "已恢复 \(count) 项设置"
+        setBackupResult("已恢复 \(count) 项设置", isError: false)
     }
 
     /// 导出到文件：内容与剪贴板那份完全一样，只是走文件系统。
-    private func exportBackupToFile() {
+    func exportBackupToFile() {
         let snapshot = settings.backupSnapshot(omitCredentials: omitCredentials)
         guard !snapshot.isEmpty else {
-            backupMessage = "没有可导出的设置"
+            setBackupResult("没有可导出的设置", isError: true)
             return
         }
-        backupDocument = BackupFileDocument(text: SettingsBackup.encode(snapshot))
-        backupExportName = "kazumi-settings-\(Self.fileStampText())"
-        isShowingBackupExporter = true
+        guard !isPickingBackupFile else { return }
+        // 先写成一份临时文件，再让用户挑存到哪儿。面板拿到的是本机上一个真实
+        // 存在的文件，不经过 SwiftUI 的 FileDocument 那条路。
+        let name = "kazumi-settings-\(Self.fileStampText()).json"
+        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(name)
+        do {
+            try Data(SettingsBackup.encode(snapshot).utf8).write(to: tempURL, options: .atomic)
+        } catch {
+            setBackupResult("存不到这个位置，可能是空间不够，或者没有写入权限", isError: true)
+            return
+        }
+        isPickingBackupFile = true
+        DocumentPickerBridge.export(url: tempURL) { result in
+            isPickingBackupFile = false
+            switch result {
+            case .success:
+                // 面板刚退场：等它走完这一拍再改页面，否则结果行会被退场动画吃掉。
+                afterPickerDismissed { setBackupResult("已导出到文件", isError: false) }
+            case .failure(let error):
+                guard !Self.isCancelled(error) else { return }
+                afterPickerDismissed {
+                    setBackupResult("存不到这个位置，可能是空间不够，或者没有写入权限", isError: true)
+                }
+            }
+        }
+    }
+
+    /// 从文件恢复：先开面板，选回来再走读取。
+    private func pickBackupFile() {
+        guard !isPickingBackupFile else { return }
+        isPickingBackupFile = true
+        // 备份文件是从别的设备、别的工具拿过来的，扩展名不可控：只认 JSON 与文本
+        // 会把侧载环境里那一份直接筛掉、在文件面板里根本看不见。
+        DocumentPickerBridge.open(types: [.json, .plainText, .data]) { result in
+            isPickingBackupFile = false
+            switch result {
+            case .success(let urls):
+                guard let url = urls.first else { return }
+                // 面板还在退场，这一刻读文件会读到一半被杀；等它退干净。
+                afterPickerDismissed { importBackupFromFile(url) }
+            case .failure(let error):
+                guard !Self.isCancelled(error) else { return }
+                afterPickerDismissed {
+                    setBackupResult("读不到这个文件，可能已被移动，或者没有访问权限", isError: true)
+                }
+            }
+        }
+    }
+
+    /// 面板退场之后再做下一件事：弹窗、改结果行都在这一拍之后。
+    private func afterPickerDismissed(_ work: @escaping () -> Void) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45, execute: work)
+    }
+
+    private static func isCancelled(_ error: Error) -> Bool {
+        if let picker = error as? DocumentPickerBridge.PickerError {
+            if case .cancelled = picker { return true }
+        }
+        return (error as NSError).code == NSUserCancelledError
     }
 
     private func importBackupFromFile(_ url: URL) {
-        // 文件里选来的 URL 在沙箱外，先取得访问权，用完释放。
+        // 文件里选来的 URL 在沙箱外，iOS 只给这一小段时间的访问权，读完立刻放。
+        // 先走 NSFileCoordinator：iCloud 盘与第三方文件 App 提供的是占位文件，
+        // 不经过协调直接 Data(contentsOf:) 常常读到空或报没权限（侧载包里尤其常见）。
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+
+        var coordinated: Data?
+        var coordinationError: NSError?
+        NSFileCoordinator().coordinate(readingItemAt: url, options: [], error: &coordinationError) { readURL in
+            coordinated = try? Data(contentsOf: readURL)
+        }
+        if let coordinated {
+            acceptBackup(Self.text(from: coordinated))
+            return
+        }
+        // 协调失败时退回直接读：本地文件、以及不响应协调的提供器走这条。
         do {
             let data = try Data(contentsOf: url)
-            acceptBackup(String(decoding: data, as: UTF8.self))
+            acceptBackup(Self.text(from: data))
         } catch {
-            backupMessage = "读不到这个文件，可能已被移动，或者没有访问权限。"
+            setBackupResult("读不到这个文件，可能已被移动，或者没有访问权限", isError: true)
         }
     }
 
@@ -336,14 +401,27 @@ struct SyncBackupScreen: View {
         do {
             let payload = try SettingsBackup.decode(raw)
             guard payload.count > 0 else {
-                backupMessage = Self.emptyBackupMessage
+                setBackupResult(Self.emptyBackupMessage, isError: true)
                 return
             }
             pendingPayload = payload
-            isShowingRestoreConfirm = true
+            // 文件面板刚关掉时立刻挂弹窗，SwiftUI 会把弹窗吞掉（选完文件像什么都没发生）。
+            // 等面板真正退干净的下一拍再挂，两条路共用这个口。
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
+                guard pendingPayload != nil else { return }
+                isShowingRestoreConfirm = true
+            }
         } catch {
-            backupMessage = error.localizedDescription
+            setBackupResult(error.localizedDescription, isError: true)
         }
+    }
+
+    /// 文件不一定是这边写出去的：Windows 备忘录、旧版工具会给 UTF-16 或带 BOM 的文本。
+    /// UTF-8 读不通就按 UTF-16 再读一次，都读不通才当坏文件。
+    private static func text(from data: Data) -> String {
+        if let utf8 = String(data: data, encoding: .utf8) { return utf8 }
+        if let utf16 = String(data: data, encoding: .utf16) { return utf16 }
+        return String(decoding: data, as: UTF8.self)
     }
 
     private static func fileStampText() -> String {
@@ -360,7 +438,7 @@ struct SyncBackupScreen: View {
                 + "共 \(payload.count) 项设置，将覆盖当前设置。",
         ]
         if payload.settings.keys.contains(where: SettingsBackup.credentialKeys.contains) {
-            blocks.append("备份包含账号或代理密码。恢复后请到「账号与备份」里确认凭据仍然有效。")
+            blocks.append("恢复后请回到「同步设置」，确认追番同步和多设备同步还能连上。")
         }
         blocks.append("引导步骤、通知权限、设备同步状态不会被改动。")
         return blocks.joined(separator: "\n\n")
@@ -372,28 +450,5 @@ struct SyncBackupScreen: View {
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyy-MM-dd HH:mm"
         return formatter.string(from: date)
-    }
-}
-
-/// 交给系统文件导出用的文档：纯文本 JSON，与剪贴板那份内容一致。
-/// （原先和已经撤掉的设置备份页放在一起；现在这里是唯一的使用方。）
-struct BackupFileDocument: FileDocument {
-    static var readableContentTypes: [UTType] { [.json, .plainText] }
-
-    var text: String
-
-    init(text: String) {
-        self.text = text
-    }
-
-    init(configuration: ReadConfiguration) throws {
-        guard let data = configuration.file.regularFileContents else {
-            throw CocoaError(.fileReadCorruptFile)
-        }
-        text = String(decoding: data, as: UTF8.self)
-    }
-
-    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
-        FileWrapper(regularFileWithContents: Data(text.utf8))
     }
 }

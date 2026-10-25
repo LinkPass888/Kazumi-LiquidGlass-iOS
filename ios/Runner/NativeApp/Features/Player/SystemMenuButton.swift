@@ -67,6 +67,10 @@ struct SystemMenuButton: UIViewRepresentable {
         coordinator.items = items
         coordinator.onOpen = onOpen
 
+        #if DEBUG
+        Self.auditSymbols(buttonSymbol: title == nil ? symbol : nil, items: items)
+        #endif
+
         if let title {
             button.setImage(nil, for: .normal)
             button.setTitle(title, for: .normal)
@@ -95,6 +99,26 @@ struct SystemMenuButton: UIViewRepresentable {
 
         button.menu = UIMenu(children: coordinator.makeActions(count: items.count))
     }
+
+    #if DEBUG
+    /// 图标名写错时系统不报错，只在屏上留一片空白——这里替它喊一声。
+    /// 每个名字只喊一次，避免每次视图重建都刷日志。
+    private nonisolated(unsafe) static var reportedSymbols: Set<String> = []
+
+    private static func auditSymbols(buttonSymbol: String?, items: [Item]) {
+        var names: [String] = []
+        if let buttonSymbol, !buttonSymbol.isEmpty { names.append(buttonSymbol) }
+        for item in items {
+            if !item.symbol.isEmpty { names.append(item.symbol) }
+            if let submenu = item.submenu { names.append(contentsOf: submenu.map(\.symbol)) }
+        }
+        for name in names where !name.isEmpty && !reportedSymbols.contains(name) {
+            guard UIImage(systemName: name) == nil else { continue }
+            reportedSymbols.insert(name)
+            KazumiLogBuffer.network("图标名不存在：\(name)")
+        }
+    }
+    #endif
 
     /// 只在主线程上用；`UIAction` 的闭包签名要求 Sendable，这里显式标注。
     final class Coordinator: @unchecked Sendable {

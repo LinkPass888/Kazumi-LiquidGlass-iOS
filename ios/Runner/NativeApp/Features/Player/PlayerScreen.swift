@@ -450,6 +450,8 @@ struct PlayerScreen: View {
             if let controller { persistProgress(controller) }
             surface.stop()
             controller?.stop()
+            // 退出播放器时把观看记录并进云盘（原版 player_item.dart:375 也是这个时机）。
+            syncHistoryIfNeeded()
         }
     }
 
@@ -731,6 +733,19 @@ struct PlayerScreen: View {
         sawLandscape = false
         requestOrientation(.portrait)
         showControls()
+        syncHistoryWithWebDAV()
+    }
+
+    /// 原版 player_item.dart:374 / 458：退出全屏时把观看记录并一轮云盘。
+    /// 只在「启用 WebDAV」和「观看记录」都开着时发，失败只进日志，不扰用户。
+    private func syncHistoryWithWebDAV() {
+        guard settings.webDavEnable, settings.webDavEnableHistory else { return }
+        let settings = settings
+        let library = environment.library
+        Task {
+            let outcome = await WebDAVSync.sync([.history], settings: settings, library: library)
+            KazumiLogBuffer.network(outcome.log)
+        }
     }
 
     private func requestOrientation(_ mask: UIInterfaceOrientationMask) {
@@ -976,18 +991,34 @@ struct PlayerScreen: View {
     private func applyCollectType(_ type: CollectType) {
         guard type != currentCollectType else { return }
         noteInteraction()
+        // 口径照 collect_controller.dart 的 _syncBangumiCollectIfEnabled：
+        // 只有「自动同步追番」开着才推给 Bangumi；没开就是纯本地改动。
+        // 推失败时这次修改整体作废 —— 本地显示「已看过」而 Bangumi 上还是「在看」，
+        // 比没改更让人糊涂（原版同样是回滚 + 一句失败提示）。
+        let syncEnabled = settings.bangumiSyncEnable
+        let showToast = settings.bangumiImmediateSyncToastEnable
         Task {
-            let updated = await BangumiAPI.updateCollection(subjectID: bangumiID, type: type)
-            guard updated else {
-                surface.toastMessage = "先在「我的」里登录 Bangumi，才能改收藏状态"
-                return
+            if syncEnabled {
+                if showToast { surface.toastMessage = "正在同步到 Bangumi..." }
+                let pushed = await environment.bangumiSync.pushCollectible(
+                    bangumiID: bangumiID,
+                    type: type
+                )
+                guard pushed else {
+                    surface.toastMessage = "同步到 Bangumi 失败，已取消本次状态修改"
+                    return
+                }
             }
             if var entry = environment.library.entry(for: bangumiID) {
                 entry.type = type.rawValue
                 entry.updatedAt = Date()
                 environment.library.upsert(entry)
             }
-            surface.toastMessage = type == .none ? "已取消追番" : "已标为\(type.title)"
+            if syncEnabled, showToast {
+                surface.toastMessage = "已同步到 Bangumi"
+            } else {
+                surface.toastMessage = type == .none ? "已取消追番" : "已标为\(type.title)"
+            }
         }
     }
 
@@ -1121,7 +1152,7 @@ struct PlayerScreen: View {
                 closeMenu()
                 danmakuEnabled.toggle()
             },
-            SystemMenuButton.Item(title: "弹幕设置", symbol: "text.bubble.badge.gearshape") {
+            SystemMenuButton.Item(title: "弹幕设置", symbol: "bubble.circle") {
                 closeMenu()
                 openSheet(.danmakuSettings)
             },
@@ -1457,11 +1488,30 @@ struct PlayerScreen: View {
     // MARK: - 进度与续播
 
     /// 把当前播放位置写进观看历史（对应原版 history 记录）。
+    /// 退出播放器时同步观看记录——只在多设备同步开着、且「观看记录」这一类打开时才发请求。
+    private func syncHistoryIfNeeded() {
+        guard settings.webDavEnable,
+              settings.webDavEnableHistory,
+              !settings.webDAVURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        let settings = settings
+        let library = environment.library
+        Task { _ = await WebDAVSync.sync([.history], settings: settings, library: library) }
+    }
+
     private func persistProgress(_ controller: PlayerController) {
         persistWatchProgress(
             library: environment.library,
             privateMode: settings.privateMode,
             controller: controller,
+            position: surface.currentTime,
+            duration: surface.duration
+        )
+        // 「自动标记看过」的消费端：看到 90% 就在 Bangumi 上把这集标成看过。
+        // 隐身模式不标 —— 用户按下隐身就是不想在服务器留下痕迹。
+        guard !settings.privateMode else { return }
+        environment.bangumiProgress.onPosition(
+            subjectID: controller.bangumiID,
+            episodeNumber: controller.currentEpisode,
             position: surface.currentTime,
             duration: surface.duration
         )

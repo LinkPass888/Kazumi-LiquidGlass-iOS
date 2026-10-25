@@ -50,6 +50,10 @@ final class KazumiAppDelegate: NSObject, UIApplicationDelegate {
 
 extension Notification.Name {
     static let kazumiAppDidBecomeActive = Notification.Name("com.example.kazumi.appDidBecomeActive")
+
+    /// 弹幕屏蔽词被改过。同步那边靠它做 500ms 防抖后上传（原版
+    /// danmaku_shield_sync_service.dart 也是改完就同步，不是只等下次启动）。
+    static let kazumiDanmakuRulesChanged = Notification.Name("com.example.kazumi.danmakuRulesChanged")
 }
 
 /// 全屏播放的临时方向锁。

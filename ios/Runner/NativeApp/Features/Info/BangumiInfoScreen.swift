@@ -665,6 +665,29 @@ extension BangumiInfoScreen {
     }
 
     private func collect(_ controller: InfoController, _ type: CollectType) {
+        // 口径同 collect_controller.dart 的 _syncBangumiCollectIfEnabled：
+        // 「自动同步追番」开着才推 Bangumi，推不成功就整次作废。
+        let syncEnabled = settings.bangumiSyncEnable
+        let showToast = settings.bangumiImmediateSyncToastEnable
+        guard syncEnabled else {
+            applyCollect(controller, type)
+            return
+        }
+        Task {
+            let pushed = await environment.bangumiSync.pushCollectible(
+                bangumiID: controller.item.id,
+                type: type
+            )
+            guard pushed else {
+                toastMessage = "同步到 Bangumi 失败，已取消本次状态修改"
+                return
+            }
+            applyCollect(controller, type)
+            if showToast { toastMessage = "已同步到 Bangumi" }
+        }
+    }
+
+    private func applyCollect(_ controller: InfoController, _ type: CollectType) {
         let item = controller.item
         if type == .none {
             library.remove(bangumiID: item.id)

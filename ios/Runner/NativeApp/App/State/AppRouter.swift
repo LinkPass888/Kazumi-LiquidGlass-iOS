@@ -35,23 +35,16 @@ enum AppDestination: String, CaseIterable, Identifiable, Hashable, Sendable {
     /// 时间表用日历符号：原版在详情页里点亮「在时间表展示」时用的就是
     /// CupertinoIcons.calendar（见 bangumi_info_card.dart），底部入口用同一个符号，
     /// 两处能对上。原版菜单里的 Icons.timeline 在 SF Symbols 里没有对应图形。
+    ///
+    /// 「我的」用人像（LP 2026-10-25）：底栏原来是齿轮，和「我的」页右上角那颗
+    /// 设置按钮撞图形；底栏换人像后齿轮只归右上角，各归各位（Colo 2370）。
+    /// 只换符号，填充行为跟原来一样 —— 写描边名，选中态由系统补 .fill。
     var symbolName: String {
         switch self {
         case .popular: "house"
         case .timeline: "calendar"
         case .collect: "heart"
-        case .my: "gearshape"
-        }
-    }
-
-    var selectedSymbolName: String {
-        switch self {
-        case .popular: "house.fill"
-        // SF Symbols 没有 calendar.fill；为了与其他三个纯实心图标同族，
-        // 选中态沿用 calendar，仅靠 tint 区分选中，不再用带圆圈的变体。
-        case .timeline: "calendar"
-        case .collect: "heart.fill"
-        case .my: "gearshape.fill"
+        case .my: "person.crop.circle"
         }
     }
 

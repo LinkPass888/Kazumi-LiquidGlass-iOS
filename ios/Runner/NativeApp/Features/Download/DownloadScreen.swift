@@ -10,6 +10,7 @@ import SwiftUI
 
 struct DownloadScreen: View {
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(DownloadDirectoryStore.self) private var downloadDirectory
     @State private var cachedURLs: [URL] = []
 
     var body: some View {
@@ -62,7 +63,11 @@ struct DownloadScreen: View {
         .background(KazumiPalette.background(for: colorScheme).ignoresSafeArea())
         .navigationTitle("下载管理")
         .navigationBarTitleDisplayMode(.inline)
-        .task { cachedURLs = Self.loadCachedFiles() }
+        // 位置可能在设置里改过：每次进这一页都按当前的下载目录重读一遍。
+        .task { cachedURLs = Self.loadCachedFiles(in: downloadDirectory.directoryURL) }
+        .onChange(of: downloadDirectory.directoryURL) { _, newValue in
+            cachedURLs = Self.loadCachedFiles(in: newValue)
+        }
     }
 
     private func fileSize(of url: URL) -> String {
@@ -70,10 +75,9 @@ struct DownloadScreen: View {
         return ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file)
     }
 
-    /// 缓存目录由 AppEnvironment 统一维护（Application Support/Kazumi/cache）。
-    private static func loadCachedFiles() -> [URL] {
-        let directory = AppEnvironment.storageRoot
-            .appending(path: "cache", directoryHint: .isDirectory)
+    /// 下载目录由 DownloadDirectoryStore 统一维护：默认 Application Support/Kazumi/downloads，
+    /// 设置里选过外部文件夹时就是那个文件夹。
+    private static func loadCachedFiles(in directory: URL) -> [URL] {
         let contents = (try? FileManager.default.contentsOfDirectory(
             at: directory,
             includingPropertiesForKeys: [.fileSizeKey, .isRegularFileKey]

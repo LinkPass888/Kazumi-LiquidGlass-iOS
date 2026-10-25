@@ -169,6 +169,8 @@ enum SettingsKey {
     static let webDAVUser = "webDAVUser"
     static let webDAVPassword = "webDAVPassword"
     static let webDAVAutoSync = "webDAVAutoSync"
+    /// 本机在云盘上的设备名（弹幕屏蔽词一份一个文件）。
+    static let webDAVDeviceID = "webDAVDeviceID"
     static let bangumiAccessToken = "bangumiAccessToken"
     static let bangumiUsername = "bangumiUsername"
     /// 令牌换回来的数字 ID 的缓存。只当缓存用：同步引擎合并前必须自己再问一次
@@ -409,6 +411,25 @@ final class SettingsStore {
         didSet { persist(webDAVPassword, SettingsKey.webDAVPassword) }
     }
 
+    /// 本机在云盘上的设备名，弹幕屏蔽词按设备一份文件（原版也是这个办法）。
+    /// 第一次用到时生成 32 位十六进制，之后不再变 —— 变了就等于新设备，
+    /// 云盘上会多出一份空文件。
+    var webDAVDeviceID: String {
+        get {
+            if storedWebDAVDeviceID.isEmpty {
+                storedWebDAVDeviceID = UUID().uuidString
+                    .replacingOccurrences(of: "-", with: "")
+                    .lowercased()
+            }
+            return storedWebDAVDeviceID
+        }
+        set { storedWebDAVDeviceID = newValue }
+    }
+
+    private var storedWebDAVDeviceID: String {
+        didSet { persist(storedWebDAVDeviceID, SettingsKey.webDAVDeviceID) }
+    }
+
     var webDAVAutoSync: Bool {
         didSet {
             persist(webDAVAutoSync, SettingsKey.webDAVAutoSync)
@@ -574,13 +595,13 @@ final class SettingsStore {
         bangumiSyncEnabled = Self.read(defaults, SettingsKey.bangumiSyncEnabled, false)
         danmakuShieldSyncEnabled = Self.read(defaults, SettingsKey.danmakuShieldSyncEnabled, false)
         bangumiSyncEnable = Self.read(defaults, SettingsKey.bangumiSyncEnable, false)
-        bangumiSyncPriority = Self.read(defaults, SettingsKey.bangumiSyncPriority, 0)
+        bangumiSyncPriority = Self.read(defaults, SettingsKey.bangumiSyncPriority, BangumiSyncPriority.bangumiFirst.rawValue)
         bangumiImmediateSyncToastEnable = Self.read(
             defaults,
             SettingsKey.bangumiImmediateSyncToastEnable,
             true
         )
-        bangumiAutoMarkWatched = Self.read(defaults, SettingsKey.bangumiAutoMarkWatched, true)
+        bangumiAutoMarkWatched = Self.read(defaults, SettingsKey.bangumiAutoMarkWatched, false)
         bangumiAccessToken = Self.read(defaults, SettingsKey.bangumiAccessToken, "")
         bangumiUsername = Self.read(defaults, SettingsKey.bangumiUsername, "")
         bangumiUserId = Self.read(defaults, SettingsKey.bangumiUserId, "")
@@ -588,6 +609,7 @@ final class SettingsStore {
         webDAVUser = Self.read(defaults, SettingsKey.webDAVUser, "")
         webDAVPassword = Self.read(defaults, SettingsKey.webDAVPassword, "")
         webDAVAutoSync = Self.read(defaults, SettingsKey.webDAVAutoSync, false)
+        storedWebDAVDeviceID = Self.read(defaults, SettingsKey.webDAVDeviceID, "")
         webDavEnable = Self.read(defaults, SettingsKey.webDavEnable, false)
         webDavEnableHistory = Self.read(defaults, SettingsKey.webDavEnableHistory, false)
         webDavEnableCollect = Self.read(defaults, SettingsKey.webDavEnableCollect, false)
@@ -646,7 +668,10 @@ final class SettingsStore {
     /// 让两处用同一份键名，避免再出现「写得进、读不出」的偏差。
     var danmakuFilterRulesText: String {
         get { defaults.string(forKey: SettingsKey.keyPrefix + SettingsKey.danmakuFilterRules) ?? "" }
-        set { defaults.set(newValue, forKey: SettingsKey.keyPrefix + SettingsKey.danmakuFilterRules) }
+        set { defaults.set(newValue, forKey: SettingsKey.keyPrefix + SettingsKey.danmakuFilterRules)
+            // 改完就来一条通知：同步那边防抖 500ms 后上传（原版的时机）。
+            NotificationCenter.default.post(name: .kazumiDanmakuRulesChanged, object: nil)
+        }
     }
 
     /// 已落盘的设置快照：键名（去掉前缀）-> 值。

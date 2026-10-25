@@ -375,6 +375,8 @@ struct DanmakuSettingsScreen: View {
 
 struct DownloadSettingsScreen: View {
     @Environment(AppRouter.self) private var router
+    @Environment(DownloadDirectoryStore.self) private var downloadDirectory
+    @State private var message: String?
 
     var body: some View {
         Form {
@@ -387,19 +389,59 @@ struct DownloadSettingsScreen: View {
             } footer: {
                 Text("下载管理里可以查看已下载的剧集。")
             }
-            // LP 清单里下载设置还有并发、分片、缓存弹幕、下载位置四样；
-            // Ato 2026-10-24：这一版没有下载器，四个控件一个不放，只留一句实话。
+            Section {
+                Button {
+                    chooseDirectory()
+                } label: {
+                    HStack {
+                        Text("下载位置")
+                            .foregroundStyle(.primary)
+                        Spacer(minLength: 8)
+                        Text(downloadDirectory.displayName)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                }
+                if downloadDirectory.hasCustomSelection {
+                    Button("改回应用内") {
+                        downloadDirectory.reset()
+                        message = nil
+                    }
+                }
+            } footer: {
+                if let message {
+                    Text(message)
+                } else {
+                    Text("选一个文件夹，之后的下载存到那里；没选过就放在应用内。")
+                }
+            }
+            // LP 清单里下载设置还有并发、分片、缓存弹幕两样没做；
+            // Ato 2026-10-24：那两样要等下载器做出来才有意义，这一版先不放。
             Section("说明") {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("播放时保存的剧集也会出现在下载管理里；这一版还没有下载队列。")
                     Text("并发设置（同时下载集数、分片并发数）要等下载器做出来才有意义，这一版先不放。")
-                    Text("文件固定在应用内，iOS 不允许改到别处。")
                 }
                 .font(.footnote)
                 .foregroundStyle(.secondary)
             }
         }
         .kazumiSettingsDetail("下载设置")
+    }
+
+    private func chooseDirectory() {
+        downloadDirectory.choose { result in
+            // 面板退场这一拍再改状态，免得提示压在还在退的页面上。
+            switch result {
+            case .success:
+                message = nil
+            case .failure(let error):
+                if let pickerError = error as? DocumentPickerBridge.PickerError,
+                   case .cancelled = pickerError { return }
+                message = error.localizedDescription
+            }
+        }
     }
 }
 

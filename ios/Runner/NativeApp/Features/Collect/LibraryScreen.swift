@@ -16,6 +16,7 @@ struct LibraryScreen: View {
     /// 卡片 → 详情页缩放转场所属的命名空间（由所在导航栈提供）。
     var zoomNamespace: Namespace.ID?
 
+    @Environment(AppEnvironment.self) private var environment
     @Environment(LibraryStore.self) private var library
     @Environment(AppRouter.self) private var router
     @Environment(SettingsStore.self) private var settings
@@ -36,6 +37,8 @@ struct LibraryScreen: View {
     @State private var query = ""
     @State private var isSearching = false
     @State private var pendingID: Int?
+    /// 同步失败这类一句提示。样式与详情页那颗一致。
+    @State private var toastMessage: String?
 
     /// 「更新时间」排序用的时刻表：进页先算好，比较器只查表。
     @State private var updateTimes: [Int: Date] = [:]
@@ -133,6 +136,13 @@ struct LibraryScreen: View {
             .task {
                 sort = CollectSort(rawValue: settings.librarySort) ?? .updateTime
                 KazumiImageLoader.shared.prefetch(library.entries.map(\.imageURL))
+                // 进收藏页时并一次云盘（原版 collect_controller.dart:209 同一时机）。
+                if settings.webDavEnable,
+                   settings.webDavEnableCollect,
+                   !settings.webDAVURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    let outcome = await WebDAVSync.sync([.collect], settings: settings, library: library)
+                    KazumiLogBuffer.network(outcome.log)
+                }
             }
             // 追番条目变化时补齐时刻表：新加入「在看」的番也要拿到时刻。
             .task(id: library.watchingEntries.map(\.id)) {
@@ -147,6 +157,7 @@ struct LibraryScreen: View {
             .onChange(of: isSearching) { _, value in
                 searchFocused = value
             }
+            .overlay(alignment: .bottom) { toastView }
     }
 
     // MARK: - 头部
@@ -648,6 +659,31 @@ struct LibraryScreen: View {
     ///   否则整页会跟着动一下。
     private func changeType(_ entry: LibraryEntry, to type: CollectType) {
         guard pendingID == nil else { return }
+        // 「自动同步追番」开着时先把改动推给 Bangumi，推不成功就整次作废
+        // （collect_controller.dart: _syncBangumiCollectIfEnabled）。
+        // 没开就是纯本地改动，和以前一模一样。
+        guard settings.bangumiSyncEnable else {
+            commitType(entry, to: type)
+            return
+        }
+        pendingID = entry.id
+        Task {
+            let pushed = await environment.bangumiSync.pushCollectible(
+                bangumiID: entry.id,
+                type: type
+            )
+            pendingID = nil
+            guard pushed else {
+                toastMessage = "同步到 Bangumi 失败，已取消本次状态修改"
+                return
+            }
+            commitType(entry, to: type)
+            if settings.bangumiImmediateSyncToastEnable { toastMessage = "已同步到 Bangumi" }
+        }
+    }
+
+    /// 真正落本地的那一半：动画与补位规则只在这里。
+    private func commitType(_ entry: LibraryEntry, to type: CollectType) {
         pendingID = entry.id
         if type == .none {
             withAnimation(removalAnimation) {
@@ -671,6 +707,29 @@ struct LibraryScreen: View {
     /// 代价就是那十几点位移跟着走 0.2 秒（Colo 同日收进规格）。
     private var removalAnimation: Animation {
         reduceMotion ? .easeOut(duration: 0.2) : .snappy(duration: 0.3)
+    }
+
+    /// 一句提示，2 秒后自己消失；连点只留最新那句（同详情页的实现）。
+    @ViewBuilder
+    private var toastView: some View {
+        if let message = toastMessage {
+            Text(message)
+                .font(.footnote.weight(.medium))
+                .foregroundStyle(.primary)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .background(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(.ultraThinMaterial)
+                )
+                .padding(.bottom, 16)
+                .transition(.opacity)
+                .task(id: message) {
+                    try? await Task.sleep(for: .seconds(2))
+                    guard !Task.isCancelled else { return }
+                    toastMessage = nil
+                }
+        }
     }
 
     private var cardRemovalTransition: AnyTransition {

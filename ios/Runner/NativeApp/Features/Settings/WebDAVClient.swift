@@ -145,6 +145,76 @@ struct WebDAVClient {
         }
     }
 
+    /// 拿一个固定路径下的原文，没有这个文件返回 nil（不抛错）。
+    ///
+    /// 给原版 Flutter 那套旧格式用（`history/snapshot.json`、
+    /// `danmakuShield/<设备>.json`）：那些文件不是本端的包，只能用原文读。
+    func rawDownload(path: String) async throws -> Data? {
+        let base = try folderURL()
+        var target = base
+        for part in path.split(separator: "/") {
+            target.append(path: String(part))
+        }
+        let request = try authorizedRequest(url: target, method: "GET")
+        let (data, response) = try await URLSession.shared.data(for: request)
+        if let http = response as? HTTPURLResponse, http.statusCode == 404 { return nil }
+        try Self.validate(response)
+        return data
+    }
+
+    /// 往固定路径写原文（旧格式用）：逐级建目录，再 PUT。
+    ///
+    /// `history/snapshot.json` 和 `danmakuShield/<设备>.json` 不是本端的包，
+    /// 只能按原版的格式原样写回去，原版才读得到。
+    func uploadRaw(path: String, data: Data, contentType: String = "application/json") async throws {
+        let base = try folderURL()
+        try await ensureDirectory(base)
+        var target = base
+        let parts = path.split(separator: "/")
+        for part in parts.dropLast() {
+            target.append(path: String(part), directoryHint: .isDirectory)
+            try await ensureDirectory(target)
+        }
+        if let last = parts.last { target.append(path: String(last)) }
+        var request = try authorizedRequest(url: target, method: "PUT")
+        request.setValue(contentType, forHTTPHeaderField: "content-type")
+        request.httpBody = data
+        let (_, response) = try await URLSession.shared.data(for: request)
+        try Self.validate(response)
+    }
+
+    /// 列一个目录下的文件名（PROPFIND Depth 1）。目录不存在时返回空数组。
+    func listFolder(path: String) async throws -> [String] {
+        let base = try folderURL()
+        var target = base
+        for part in path.split(separator: "/") {
+            target.append(path: String(part), directoryHint: .isDirectory)
+        }
+        var request = try authorizedRequest(url: target, method: "PROPFIND")
+        request.setValue("1", forHTTPHeaderField: "depth")
+        request.setValue("application/xml", forHTTPHeaderField: "content-type")
+        let (data, response) = try await URLSession.shared.data(for: request)
+        if let http = response as? HTTPURLResponse, http.statusCode == 404 { return [] }
+        try Self.validate(response)
+        return Self.hrefs(in: data).filter { !$0.hasSuffix("/") }
+    }
+
+    /// 从 PROPFIND 的回包里挑出条目名（各家的命名空间前缀不一样，按后缀匹配）。
+    private static func hrefs(in xml: Data) -> [String] {
+        guard let text = String(data: xml, encoding: .utf8) else { return [] }
+        var names: [String] = []
+        var rest = Substring(text)
+        while let open = rest.range(of: ":href>") {
+            guard let close = rest[open.upperBound...].range(of: "</") else { break }
+            let raw = rest[open.upperBound..<close.lowerBound]
+            rest = rest[close.upperBound...]
+            let decoded = raw.removingPercentEncoding ?? String(raw)
+            let name = decoded.split(separator: "/").last.map(String.init) ?? ""
+            if !name.isEmpty { names.append(name) }
+        }
+        return names
+    }
+
     /// 备份：写上去，再**用恢复那条路**读回来对一遍。
     ///
     /// 安全网自己坏了必须当场知道：以前这里 `upload` 一返回就说「备份完成」，

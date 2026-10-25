@@ -27,6 +27,7 @@ struct KazumiApp: App {
             AppRoot(failure: storageFailure)
                 .environment(environment)
                 .environment(environment.settings)
+                .environment(environment.downloadDirectory)
                 .environment(environment.library)
                 .environment(environment.router)
                 .environment(environment.plugins)

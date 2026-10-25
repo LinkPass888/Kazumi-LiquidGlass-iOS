@@ -1,0 +1,294 @@
+//
+//  WebDAVLegacy.swift
+//  Kazumi
+//
+//  读原版 Flutter 版留在云盘上的那几份文件。
+//
+//  原生版自己的同步包是 `kazumiSync/kazumi_backup.json`，原版写的是
+//  `history/snapshot.json`（JSON）、`history/changes/<设备>.jsonl`（事件流）、
+//  `danmakuShield/<设备>.json`（每台设备一份）、以及 `collectibles.tmp` /
+//  `histories.tmp`（Hive 箱文件，二进制）。
+//
+//  LP 2026-10-25：换到原生版以后，云盘上那份老数据得真能合进来。
+//  所以同步前先按文件名精确匹配把能读的读起来，跟本地一起合并；
+//  读不出来的（Hive 二进制那两份）就跳过，不猜、也不改它们。
+//
+
+import Foundation
+
+@MainActor
+enum WebDAVLegacy {
+    /// 原版固定目录名（lib/services/sync/webdav.dart:16-20）。
+    static let historySnapshotPath = "history/snapshot.json"
+    static let shieldFolder = "danmakuShield"
+
+    // MARK: - 观看记录
+
+    /// 原版历史快照的形状：只看合并要用的那几个字段，其余不解码。
+    private struct Snapshot: Decodable {
+        struct Item: Decodable {
+            struct Bangumi: Decodable {
+                let id: Int
+                let name: String?
+                let nameCn: String?
+                let images: [String: String]?
+            }
+
+            struct Progress: Decodable {
+                let progressMs: Double?
+            }
+
+            let bangumiItem: Bangumi
+            let lastWatchEpisode: Int?
+            let adapterName: String?
+            /// 毫秒。
+            let lastWatchTime: Double?
+            let lastWatchEpisodeName: String?
+            let progresses: [String: Progress]?
+        }
+
+        let histories: [Item]
+    }
+
+    /// 原版历史快照读出来的两样东西：能进本端模型的记录，和云盘上那份原始 JSON。
+    ///
+    /// 写回必须在那份原始 JSON 上改。凭空重造会把原版按线路分开的条目、
+    /// 以及每部番每一集的进度都压成一条——2026-10-25 就出过这一次：
+    /// 云盘上 613 条被写成 249 条，每部番只剩最后看的那一集。
+    struct LegacyHistory: Sendable {
+        var records: [WatchRecord] = []
+        var raw: Data?
+    }
+
+    /// 读原版的历史快照，转成本端的 `WatchRecord`。
+    ///
+    /// 云盘上没有这个文件时返回空的——原版从没用过 WebDAV 的用户就是这样。
+    static func history(client: WebDAVClient) async throws -> LegacyHistory {
+        guard let data = try await client.rawDownload(path: historySnapshotPath) else {
+            return LegacyHistory()
+        }
+        let snapshot = try JSONDecoder().decode(Snapshot.self, from: data)
+        let records: [WatchRecord] = snapshot.histories.compactMap { item in
+            let episode = item.lastWatchEpisode ?? 0
+            let progressMs = item.progresses?[String(episode)]?.progressMs ?? 0
+            let updatedMs = item.lastWatchTime ?? 0
+            guard item.bangumiItem.id > 0 else { return nil }
+            let nameCn = item.bangumiItem.nameCn?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let name = item.bangumiItem.name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let images = item.bangumiItem.images ?? [:]
+            let cover = images["large"] ?? images["common"] ?? images["medium"] ?? images["small"] ?? ""
+            return WatchRecord(
+                bangumiID: item.bangumiItem.id,
+                bangumiName: nameCn.isEmpty ? name : nameCn,
+                imageURL: cover,
+                sourceRuleName: item.adapterName ?? "",
+                episodeTitle: item.lastWatchEpisodeName ?? "",
+                episodeNumber: episode,
+                progressSeconds: max(progressMs, 0) / 1000,
+                // 原版快照不记这一集的时长，留 0；播放器下次播到这儿会补上。
+                durationSeconds: 0,
+                updatedAt: Date(timeIntervalSince1970: max(updatedMs, 0) / 1000)
+            )
+        }
+        return LegacyHistory(records: records, raw: data)
+    }
+
+    // MARK: - 弹幕屏蔽词
+
+    /// 原版每一台设备一个文件，形状是 `{version, entries:[{rule, updatedAt, deviceId, deleted}]}`。
+    private struct ShieldFile: Decodable {
+        struct Entry: Decodable {
+            let rule: String?
+            let deleted: Bool?
+        }
+
+        let entries: [Entry]?
+    }
+
+    /// 把所有设备那份的屏蔽词并起来，按原版的行序（先本机已有的，后云盘多出来的）。
+    static func shieldRules(client: WebDAVClient) async throws -> [String] {
+        let names = try await client.listFolder(path: shieldFolder)
+        var rules: [String] = []
+        for name in names.sorted() where name.hasSuffix(".json") {
+            guard let data = try await client.rawDownload(path: "\(shieldFolder)/\(name)"),
+                  let file = try? JSONDecoder().decode(ShieldFile.self, from: data)
+            else { continue }
+            for entry in file.entries ?? [] where entry.deleted != true {
+                let rule = entry.rule?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                if !rule.isEmpty { rules.append(rule) }
+            }
+        }
+        return rules
+    }
+
+    // MARK: - 写回原版格式
+
+    /// 把本端的观看记录合并写回 `history/snapshot.json`。
+    ///
+    /// 必须在原版那份 JSON 上改，不能凭空重造：原版按「线路 + 番剧」存条目，
+    /// 每部番的 `progresses` 里存着看过的每一集。重造会把它压成一条、
+    /// 只剩最后看的那一集（2026-10-25 出过：613 条被写成 249 条）。
+    /// 所以：同一条目有就更新，没有才追加；原版存着的别的集一律保留。
+    static func writeHistory(
+        _ records: [WatchRecord],
+        existing: Data?,
+        client: WebDAVClient,
+        progress: ((Int, Int) -> Void)? = nil
+    ) async throws {
+        var root: [String: Any] = [:]
+        if let existing, let parsed = try? JSONSerialization.jsonObject(with: existing) as? [String: Any] {
+            root = parsed
+        }
+        var histories = root["histories"] as? [[String: Any]] ?? []
+        var itemVersions = root["itemVersions"] as? [String: Any] ?? [:]
+        var progressVersions = root["progressVersions"] as? [String: Any] ?? [:]
+
+        var index: [String: Int] = [:]
+        for (position, item) in histories.enumerated() {
+            guard let key = entryKey(item) else { continue }
+            index[key] = position
+        }
+
+        for (offset, record) in records.enumerated() where record.bangumiID > 0 {
+            progress?(offset, records.count)
+            let key = "\(record.sourceRuleName)\(record.bangumiID)::online"
+            let updatedMs = Int(record.updatedAt.timeIntervalSince1970 * 1000)
+            let episode = record.episodeNumber
+            let version = version(updatedMs)
+            let slot = String(episode)
+            let progress: [String: Any] = [
+                "episode": episode,
+                "road": 0,
+                "progressMs": Int(record.progressSeconds * 1000),
+                "updatedAtMs": updatedMs
+            ]
+
+            if let position = index[key] {
+                var item = histories[position]
+                var progresses = item["progresses"] as? [String: Any] ?? [:]
+                let previous = ms((progresses[slot] as? [String: Any])?["updatedAtMs"])
+                if previous <= Double(updatedMs) {
+                    progresses[slot] = progress
+                    item["progresses"] = progresses
+                    var versions = progressVersions[key] as? [String: Any] ?? [:]
+                    versions[slot] = version
+                    progressVersions[key] = versions
+                }
+                if ms(item["lastWatchTime"]) <= Double(updatedMs) {
+                    item["lastWatchEpisode"] = episode
+                    item["lastWatchTime"] = updatedMs
+                    item["lastWatchEpisodeName"] = record.episodeTitle
+                    item["bangumiItem"] = fillItem(item["bangumiItem"] as? [String: Any] ?? [:], from: record)
+                    itemVersions[key] = version
+                }
+                histories[position] = item
+            } else {
+                histories.append([
+                    "bangumiItem": freshItem(record),
+                    "lastWatchEpisode": episode,
+                    "adapterName": record.sourceRuleName,
+                    "lastWatchTime": updatedMs,
+                    "lastSrc": "",
+                    "lastWatchEpisodeName": record.episodeTitle,
+                    "entryKind": "online",
+                    "episodePageUrl": "",
+                    "progresses": [slot: progress]
+                ] as [String: Any])
+                index[key] = histories.count - 1
+                itemVersions[key] = version
+                progressVersions[key] = [slot: version]
+            }
+        }
+
+        root["histories"] = histories
+        root["itemVersions"] = itemVersions
+        root["progressVersions"] = progressVersions
+        root["generatedAt"] = Int(Date().timeIntervalSince1970 * 1000)
+        if root["schemaVersion"] == nil { root["schemaVersion"] = 1 }
+        if root["deletedVersions"] == nil { root["deletedVersions"] = [String: Any]() }
+        let data = try JSONSerialization.data(withJSONObject: root)
+        try await client.uploadRaw(path: historySnapshotPath, data: data)
+    }
+
+    /// 原版的条目键：线路 + 番剧 ID + online。
+    private static func entryKey(_ item: [String: Any]) -> String? {
+        guard let bangumi = item["bangumiItem"] as? [String: Any] else { return nil }
+        let id = Int(ms(bangumi["id"]))
+        guard id > 0 else { return nil }
+        let rule = item["adapterName"] as? String ?? ""
+        let kind = item["entryKind"] as? String ?? "online"
+        return "\(rule)\(id)::\(kind)"
+    }
+
+    /// 只在缺名字、缺封面时补，不改原版已经存下的番剧资料。
+    private static func fillItem(_ item: [String: Any], from record: WatchRecord) -> [String: Any] {
+        var item = item
+        if (item["nameCn"] as? String ?? "").isEmpty { item["nameCn"] = record.bangumiName }
+        if (item["name"] as? String ?? "").isEmpty { item["name"] = record.bangumiName }
+        var images = item["images"] as? [String: Any] ?? [:]
+        if images["large"] == nil, !record.imageURL.isEmpty {
+            for size in ["small", "grid", "large", "medium", "common"] { images[size] = record.imageURL }
+            item["images"] = images
+        }
+        return item
+    }
+
+    /// 云盘上还没有这部番时，按原版 `bangumiItem` 的字段造一份。
+    private static func freshItem(_ record: WatchRecord) -> [String: Any] {
+        var images = [String: Any]()
+        if !record.imageURL.isEmpty {
+            for size in ["small", "grid", "large", "medium", "common"] { images[size] = record.imageURL }
+        }
+        return [
+            "id": record.bangumiID,
+            "type": 2,
+            "name": record.bangumiName,
+            "nameCn": record.bangumiName,
+            "summary": "",
+            "airDate": "",
+            "airWeekday": 7,
+            "rank": 0,
+            "images": images,
+            "tags": [Any](),
+            "alias": [Any](),
+            "ratingScore": 0,
+            "votes": 0,
+            "votesCount": [Any](),
+            "info": ""
+        ]
+    }
+
+    /// JSON 里的数字可能是 Int 也可能是 Double，统一按毫秒取。
+    private static func ms(_ value: Any?) -> Double {
+        guard let value else { return 0 }
+        if let number = value as? NSNumber { return number.doubleValue }
+        if let text = value as? String, let number = Double(text) { return number }
+        return 0
+    }
+
+    /// 把本机的屏蔽词写成「本机设备」那一份，原版会把各设备的文件并起来。
+    static func writeShield(_ rules: [String], deviceID: String, client: WebDAVClient) async throws {
+        let now = Int(Date().timeIntervalSince1970 * 1000)
+        var seen = Set<String>()
+        let entries: [[String: Any]] = rules.compactMap { raw in
+            let rule = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !rule.isEmpty, seen.insert(rule).inserted else { return nil }
+            return [
+                "rule": rule,
+                "updatedAt": now,
+                "deviceId": deviceID,
+                "deleted": false
+            ]
+        }
+        let file: [String: Any] = ["version": 1, "entries": entries]
+        let data = try JSONSerialization.data(withJSONObject: file)
+        try await client.uploadRaw(path: "\(shieldFolder)/\(deviceID).json", data: data)
+    }
+
+    /// 原版 `HistorySyncVersion.of`：16 位补零的毫秒，竖线，事件 ID。
+    private static func version(_ ms: Int) -> String {
+        let digits = String(max(ms, 0))
+        let pad = String(repeating: "0", count: max(0, 16 - digits.count))
+        return "\(pad)\(digits)|kazumi-native:\(UUID().uuidString)"
+    }
+}
