@@ -46,7 +46,8 @@ struct KazumiTabShell: View {
                 }
             }
         }
-        .tabBarMinimizeBehavior(.onScrollDown)
+        // LP 2586：上滑时缩不缩由界面设置里那个开关控制（默认缩）。
+        .tabBarMinimizeBehavior(settings.tabBarShrinkOnScroll ? .onScrollDown : .never)
         // 启动时并一次云盘：原版 init_page.dart:98-106 也在这个时机同步观看记录。
         // 只有真的开着同步、也选过内容才发请求，没配的话这里什么都不做。
         .task {
@@ -183,8 +184,6 @@ struct AppRouteView: View {
             DanmakuSettingsScreen()
         case .themeSettings:
             ThemeSettingsScreen()
-        case .interfaceSettings:
-            InterfaceSettingsScreen()
         case .networkSettings:
             NetworkSettingsScreen()
         case .updateSettings:

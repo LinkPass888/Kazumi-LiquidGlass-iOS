@@ -766,6 +766,14 @@ struct ThemeSettingsScreen: View {
     @Environment(SettingsStore.self) private var settings
     @State private var isShowingThemeColorSheet = false
 
+    /// 与原版 interface_settings.dart 的 defaultPageMap 一致。
+    private static let startupPages: [(value: String, title: String)] = [
+        ("/tab/popular/", "推荐"),
+        ("/tab/timeline/", "时间表"),
+        ("/tab/collect/", "追番"),
+        ("/tab/my/", "我的"),
+    ]
+
     var body: some View {
         Form {
             Section("主题") {
@@ -791,6 +799,7 @@ struct ThemeSettingsScreen: View {
                     .buttonStyle(.plain)
                 }
             }
+            // Colo 2595：显示效果一段装「屏幕上多显示点什么」的那几项。
             Section("显示效果") {
                 // 「OLED优化」中间没有空格，照 main 的写法。
                 Toggle(isOn: oledBinding) {
@@ -809,9 +818,34 @@ struct ThemeSettingsScreen: View {
                             .foregroundStyle(.secondary)
                     }
                 }
+                // 这句说明 LP 2285 定的，虽然两头都指空也照留（Camo 2599）。
+                Toggle(isOn: showRatingBinding) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("显示评分")
+                        Text("关闭后隐藏概览和番剧列表中的评分信息")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                Toggle(isOn: tabBarBinding) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("上滑时缩小底部标签栏")
+                        Text("关闭后上滑不再缩小底部标签栏")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            // Camo 2599：段已经叫「启动」，行里不再说一遍启动。
+            Section("启动") {
+                Picker("打开时进入", selection: startupBinding) {
+                    ForEach(Self.startupPages, id: \.value) { page in
+                        Text(page.title).tag(page.value)
+                    }
+                }
             }
         }
-        .kazumiSettingsDetail("外观设置")
+        .kazumiSettingsDetail("外观与界面")
         .sheet(isPresented: $isShowingThemeColorSheet) {
             ThemeColorSheet(selection: themeColorBinding)
         }
@@ -836,6 +870,24 @@ struct ThemeSettingsScreen: View {
         )
     }
 
+    private var showRatingBinding: Binding<Bool> {
+        Binding(get: { settings.showRating }, set: { settings.showRating = $0 })
+    }
+
+    private var tabBarBinding: Binding<Bool> {
+        Binding(
+            get: { settings.tabBarShrinkOnScroll },
+            set: { settings.tabBarShrinkOnScroll = $0 }
+        )
+    }
+
+    private var startupBinding: Binding<String> {
+        Binding(
+            get: { settings.defaultStartupPage },
+            set: { settings.defaultStartupPage = $0 }
+        )
+    }
+
     /// 「控件 + 说明小字」的一行，与播放设置页一致。
     private func captionRow<Content: View>(
         _ title: String,
@@ -852,57 +904,6 @@ struct ThemeSettingsScreen: View {
 }
 
 // MARK: - 界面设置
-
-struct InterfaceSettingsScreen: View {
-    @Environment(SettingsStore.self) private var settings
-
-    /// 与原版 interface_settings.dart 的 defaultPageMap 一致。
-    private static let startupPages: [(value: String, title: String)] = [
-        ("/tab/popular/", "推荐"),
-        ("/tab/timeline/", "时间表"),
-        ("/tab/collect/", "追番"),
-        ("/tab/my/", "我的"),
-    ]
-
-    var body: some View {
-        Form {
-            Section("启动") {
-                VStack(alignment: .leading, spacing: 4) {
-                    Picker("启动界面设置", selection: startupBinding) {
-                        ForEach(Self.startupPages, id: \.value) { page in
-                            Text(page.title).tag(page.value)
-                        }
-                    }
-                    Text("设置应用开启时的默认页面")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            Section("显示") {
-                Toggle(isOn: showRatingBinding) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("显示评分")
-                        Text("关闭后隐藏概览和番剧列表中的评分信息")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            }
-        }
-        .kazumiSettingsDetail("界面设置")
-    }
-
-    private var showRatingBinding: Binding<Bool> {
-        Binding(get: { settings.showRating }, set: { settings.showRating = $0 })
-    }
-
-    private var startupBinding: Binding<String> {
-        Binding(
-            get: { settings.defaultStartupPage },
-            set: { settings.defaultStartupPage = $0 }
-        )
-    }
-}
 
 // MARK: - 网络设置
 

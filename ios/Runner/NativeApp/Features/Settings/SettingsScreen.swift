@@ -5,7 +5,7 @@
 //  设置首页。分组与主分支完全一致（lib/pages/settings/settings_page.dart 的 _settingsGroups）：
 //    * 播放 —— 播放设置 / 弹幕设置
 //    * 资源 —— 规则管理 / 下载设置
-//    * 应用 —— 通知设置 / 外观设置 / 界面设置 / 账号与备份 / 网络设置
+//    * 应用 —— 通知设置 / 外观与界面 / 账号与备份 / 网络设置
 //    * 其他 —— 更新设置 / 存储与日志 / 关于
 //
 //  「账号与备份」现在是一张主页：账号与 WebDAV 各一行，设置备份直接摊开在主页里。
@@ -29,7 +29,6 @@ struct SettingsCategory: Identifiable, Hashable {
         case download
         case notification
         case theme
-        case interface
         case syncBackup
         case network
         case update
@@ -108,19 +107,14 @@ extension SettingsGroup {
                     symbol: "bell",
                     destination: .notification
                 ),
+                // LP 2594 / Ato 2597 / Colo 2595：外观与界面合成一页（Camo 2599 定名
+                // 「外观与界面」），首页两个入口并成一个。
                 SettingsCategory(
                     id: "theme",
-                    label: "外观设置",
-                    description: "主题与配色",
+                    label: "外观与界面",
+                    description: "主题、配色与启动页",
                     symbol: "paintpalette",
                     destination: .theme
-                ),
-                SettingsCategory(
-                    id: "interface",
-                    label: "界面设置",
-                    description: "启动、窗口行为与展示信息",
-                    symbol: "square.grid.2x2",
-                    destination: .interface
                 ),
                 SettingsCategory(
                     id: "syncBackup",
@@ -134,7 +128,7 @@ extension SettingsGroup {
                 SettingsCategory(
                     id: "network",
                     label: "网络设置",
-                    description: "访问加速与代理",
+                    description: "访问加速",
                     symbol: "globe",
                     destination: .network
                 ),
@@ -214,9 +208,6 @@ struct SettingsScreen: View {
                 .buttonStyle(.plain)
         case .theme:
             Button { router.push(.themeSettings) } label: { tile(category) }
-                .buttonStyle(.plain)
-        case .interface:
-            Button { router.push(.interfaceSettings) } label: { tile(category) }
                 .buttonStyle(.plain)
         case .syncBackup:
             // 主页面这一层走统一路由：以后从「我的」等别处进来也走同一条。

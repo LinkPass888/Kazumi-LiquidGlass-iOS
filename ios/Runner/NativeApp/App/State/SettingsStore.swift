@@ -147,6 +147,8 @@ enum SettingsKey {
     static let hapticFeedbackEnabled = "hapticFeedbackEnabled"
     /// 时间表是否显示评分（Ato 2026-10-24：只管时间表，详情页照旧）。
     static let showRating = "showRating"
+    /// 上滑时缩小底部标签栏（LP 2586 定稿：名字带「缩小」，默认开）。
+    static let tabBarShrinkOnScroll = "tabBarShrinkOnScroll"
     /// 进入播放器时跳到上次播放位置，沿用原版 `SettingsKeys.playResume` 的键名，默认开启。
     static let playResume = "playResume"
     /// 后台播放，沿用原版 `SettingsKeys.backgroundPlayback` 的键名，默认关闭。
@@ -304,6 +306,11 @@ final class SettingsStore {
     /// 概览、番剧列表与番剧详情页是否显示评分。
     var showRating: Bool {
         didSet { persist(showRating, SettingsKey.showRating) }
+    }
+
+    /// 上滑时缩小底部标签栏。默认开：上滑把标签栏收起。
+    var tabBarShrinkOnScroll: Bool {
+        didSet { persist(tabBarShrinkOnScroll, SettingsKey.tabBarShrinkOnScroll) }
     }
 
     var danmakuEnabled: Bool {
@@ -684,6 +691,7 @@ final class SettingsStore {
         ) ?? .automatic
         hapticFeedbackEnabled = Self.read(defaults, SettingsKey.hapticFeedbackEnabled, true)
         showRating = Self.read(defaults, SettingsKey.showRating, true)
+        tabBarShrinkOnScroll = Self.read(defaults, SettingsKey.tabBarShrinkOnScroll, true)
         danmakuEnabled = Self.read(defaults, SettingsKey.danmakuEnabled, true)
         danmakuOpacity = Self.read(defaults, SettingsKey.danmakuOpacity, 1.0)
         danmakuFontSize = Self.read(defaults, SettingsKey.danmakuFontSize, 20.0)

@@ -105,10 +105,8 @@ enum AppRoute: Hashable, Sendable {
     case playerSettings
     /// 弹幕设置（对应原版 /settings/danmaku）。
     case danmakuSettings
-    /// 外观设置（对应原版 /settings/theme）。
+    /// 外观与界面（LP 2594 合并了原版分开的两页，Camo 2599 定名）。
     case themeSettings
-    /// 界面设置（对应原版 /settings/interface）。
-    case interfaceSettings
     /// 网络设置（对应原版 /settings/proxy）。
     case networkSettings
     /// 更新设置（对应原版 /settings/update）。
@@ -156,7 +154,6 @@ extension AppRoute {
         case .playerSettings: 18
         case .danmakuSettings: 19
         case .themeSettings: 22
-        case .interfaceSettings: 23
         case .networkSettings: 24
         case .updateSettings: 25
         case .downloadSettings: 26
@@ -195,7 +192,6 @@ extension AppRoute {
              (.playerSettings, .playerSettings),
              (.danmakuSettings, .danmakuSettings),
              (.themeSettings, .themeSettings),
-             (.interfaceSettings, .interfaceSettings),
              (.networkSettings, .networkSettings),
              (.updateSettings, .updateSettings),
              (.downloadSettings, .downloadSettings),
@@ -236,7 +232,6 @@ extension AppRoute {
              .playerSettings,
              .danmakuSettings,
              .themeSettings,
-             .interfaceSettings,
              .networkSettings,
              .updateSettings,
              .downloadSettings,
