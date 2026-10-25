@@ -114,7 +114,15 @@ struct BangumiItem: Identifiable, Hashable, Sendable {
     }
 
     /// 对应 images['large'] ?? ''。
-    var largeImage: String { images["large"] ?? "" }
+    ///
+    /// 依次退到 common / medium / small / grid：Bangumi 有些条目只给了小图，
+    /// 直接取 large 会得到空地址，卡片就永久停在占位图上。
+    var largeImage: String {
+        for key in ["large", "common", "medium", "small", "grid"] {
+            if let value = images[key], !value.isEmpty { return value }
+        }
+        return ""
+    }
 
     /// 对应 bangumi_timeline_card.dart 的 _supportingText：优先 metaTags，其次用户标签。
     var supportingText: String {

@@ -18,14 +18,16 @@ struct BangumiRemoteImage: View {
     var contentMode: ContentMode = .fill
 
     @State private var image: UIImage?
-    @State private var failed = false
+    @State private var pixelSize = KazumiImageLoader.pixelSize(for: CGSize(width: 200, height: 300))
+    /// 尺寸档位变化时 +1，用来重开一次加载任务。
+    @State private var attempt = 0
 
     init(url: String, contentMode: ContentMode = .fill) {
         self.url = url
         self.contentMode = contentMode
         // 命中内存缓存时直接出图，不经历「占位 → 图片」这一帧。
-        let key = KazumiImageLoader.cacheKey(for: url)
-        _image = State(initialValue: key.isEmpty ? nil : KazumiImageLoader.shared.cachedImage(for: key))
+        let size = KazumiImageLoader.pixelSize(for: CGSize(width: 200, height: 300))
+        _image = State(initialValue: KazumiImageLoader.shared.cachedImage(for: url, pixelSize: size))
     }
 
     private var key: String { KazumiImageLoader.cacheKey(for: url) }
@@ -38,25 +40,23 @@ struct BangumiRemoteImage: View {
                 Image(uiImage: image)
                     .resizable()
                     .aspectRatio(contentMode: contentMode)
-            } else if key.isEmpty {
-                placeholderSymbol
-            } else if failed {
-                placeholderSymbol
             } else {
-                ProgressView()
-                    .controlSize(.small)
+                placeholderSymbol
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipped()
-        .task(id: key) {
-            await loadIfNeeded()
+        .onGeometryChange(for: Int.self) { proxy in
+            KazumiImageLoader.pixelSize(for: proxy.size)
+        } action: { newValue in
+            // 只在像素档位真的变了才重来一次：布局每帧都会回调，
+            // 若把尺寸直接绑进 .task 的 id，加载会被反复取消，永远出不来图。
+            guard newValue != pixelSize else { return }
+            pixelSize = newValue
+            if image == nil { attempt += 1 }
         }
-        .onChange(of: key) { _, newValue in
-            // 同一个视图被复用到另一张封面时（分页刷新、列表重排），
-            // 先把上一张图清掉，否则 .task 里会因 image != nil 直接返回。
-            image = newValue.isEmpty ? nil : KazumiImageLoader.shared.cachedImage(for: newValue)
-            failed = false
+        .task(id: "\(key)#\(attempt)") {
+            await loadIfNeeded()
         }
     }
 
@@ -72,21 +72,22 @@ struct BangumiRemoteImage: View {
             .foregroundStyle(.tertiary)
     }
 
+    /// 失败不留状态：取不到就显示占位，视图再次出现时（或尺寸档位变化时）
+    /// 会重新走一遍 .task，跟原版一样每次显示都允许再试。
     private func loadIfNeeded() async {
-        guard !key.isEmpty else {
-            failed = false
+        guard !key.isEmpty else { return }
+        if let cached = KazumiImageLoader.shared.cachedImage(for: url, pixelSize: pixelSize) {
+            image = cached
             return
         }
-        if image != nil { return }
-        let hit = await KazumiImageLoader.shared.load(key)
-        guard !Task.isCancelled else { return }
-        if hit, let cached = KazumiImageLoader.shared.cachedImage(for: key) {
-            withAnimation(.easeOut(duration: 0.15)) {
-                image = cached
-                failed = false
-            }
-        } else {
-            failed = true
+        _ = await KazumiImageLoader.shared.load(url, pixelSize: pixelSize)
+        // 即使这个任务被取消（视图复用 / 尺寸变化），只要图已经在缓存里就画出来，
+        // 否则会白白丢掉一次已经完成的下载。
+        guard let cached = KazumiImageLoader.shared.cachedImage(for: url, pixelSize: pixelSize) else {
+            return
+        }
+        withAnimation(.easeOut(duration: 0.15)) {
+            image = cached
         }
     }
 }
@@ -104,14 +105,14 @@ struct KazumiAvatar: View {
     var focus: CGFloat = 0.18
 
     @State private var image: UIImage?
-    @State private var failed = false
 
     init(url: String, size: CGFloat = 40, focus: CGFloat = 0.18) {
         self.url = url
         self.size = size
         self.focus = focus
         let key = KazumiImageLoader.cacheKey(for: url)
-        _image = State(initialValue: key.isEmpty ? nil : KazumiImageLoader.shared.cachedImage(for: key))
+        let pixels = KazumiImageLoader.pixelSize(for: CGSize(width: size, height: size))
+        _image = State(initialValue: KazumiImageLoader.shared.cachedImage(for: url, pixelSize: pixels))
     }
 
     private var key: String { KazumiImageLoader.cacheKey(for: url) }
@@ -145,14 +146,13 @@ struct KazumiAvatar: View {
 
     private func loadIfNeeded() async {
         guard !key.isEmpty, image == nil else { return }
-        let hit = await KazumiImageLoader.shared.load(key)
+        let pixels = KazumiImageLoader.pixelSize(for: CGSize(width: size, height: size))
+        let hit = await KazumiImageLoader.shared.load(url, pixelSize: pixels)
         guard !Task.isCancelled else { return }
-        if hit, let cached = KazumiImageLoader.shared.cachedImage(for: key) {
+        if hit, let cached = KazumiImageLoader.shared.cachedImage(for: url, pixelSize: pixels) {
             withAnimation(.easeOut(duration: 0.15)) {
                 image = cached
             }
-        } else {
-            failed = true
         }
     }
 }

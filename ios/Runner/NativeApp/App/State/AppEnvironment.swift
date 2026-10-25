@@ -9,6 +9,7 @@
 
 import Foundation
 import Observation
+import UIKit
 
 @MainActor
 @Observable
@@ -79,6 +80,8 @@ final class AppEnvironment {
 
     /// Application Support/hive 对应原工程的存储根目录；原生版改为 Application Support/Kazumi。
     static func prepareStorageDirectories() throws {
+        // 图片解码要按屏幕倍率算目标像素，而 UIScreen 只能在主线程读：启动时写一次。
+        KazumiImageLoader.screenScale = UIScreen.main.scale
         let manager = FileManager.default
         let support = try manager.url(
             for: .applicationSupportDirectory,

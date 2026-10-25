@@ -58,10 +58,23 @@ final class BangumiAirTimeService {
     private let session: URLSession
 
     private init() {
-        let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
-            ?? URL(fileURLWithPath: NSTemporaryDirectory())
-        directory = caches.appendingPathComponent("KazumiAirTimes", isDirectory: true)
-        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        // 和 main 一样落在 Application Support：Caches 会被系统在存储紧张时整目录
+        // 清掉，清掉之后每次冷启动都要重新拉季度数据，卡片上的「HH:mm 更新」
+        // 就会慢一拍才出现。
+        let support = (try? FileManager.default.url(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask,
+            appropriateFor: nil,
+            create: true
+        )) ?? URL(fileURLWithPath: NSTemporaryDirectory())
+        directory = support
+            .appendingPathComponent("Kazumi", isDirectory: true)
+            .appendingPathComponent("update_times", isDirectory: true)
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        } catch {
+            // 建不出来就只在内存里用这一份，下次启动重新拉。
+        }
 
         let configuration = URLSessionConfiguration.default
         configuration.timeoutIntervalForRequest = 15
@@ -102,6 +115,20 @@ final class BangumiAirTimeService {
         for season in [target, current] where !loadedSeasons.contains(season.id) {
             await loadSeason(id: season.id)
         }
+    }
+
+    /// 缓存诊断：缓存目录、文件数、占用字节。设置页「存储与日志」显示它。
+    func cacheDiagnostics() -> (directory: String, fileCount: Int, bytes: Int) {
+        let manager = FileManager.default
+        let files = (try? manager.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: [.fileSizeKey]
+        )) ?? []
+        var bytes = 0
+        for file in files {
+            bytes += (try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+        }
+        return (directory.path, files.count, bytes)
     }
 
     // MARK: - 季度
@@ -167,9 +194,11 @@ final class BangumiAirTimeService {
 
     private func fetchSeason(id: String) async {
         isLoading = true
+        var applied = false
         defer {
             isLoading = false
-            loadedSeasons.insert(id)
+            // 只有真拿到数据才算加载过；否则下次还要再试，不然一次失败就永远没时刻。
+            if applied { loadedSeasons.insert(id) }
         }
 
         let components = id.split(separator: "-")
@@ -180,26 +209,37 @@ final class BangumiAirTimeService {
         let season = Season(year: year, month: month)
         let fileURL = cacheURL(for: season)
 
-        // 1. 本地缓存（7 天内直接用）
-        if let attributes = try? FileManager.default.attributesOfItem(atPath: fileURL.path),
-           let modified = attributes[.modificationDate] as? Date,
-           Date().timeIntervalSince(modified) < Self.maxAge,
-           let data = try? Data(contentsOf: fileURL) {
-            apply(data)
+        let cached = try? Data(contentsOf: fileURL)
+        let modified = (try? FileManager.default.attributesOfItem(atPath: fileURL.path))?[.modificationDate] as? Date
+        let isFresh = modified.map { Date().timeIntervalSince($0) < Self.maxAge } ?? false
+
+        // 1. 本地缓存（7 天内直接用，不再发请求）
+        if isFresh, let cached {
+            apply(cached)
+            applied = true
             return
         }
 
         // 2. 远端
-        guard let remote = Self.remoteURL(for: season) else { return }
-        do {
-            let (data, response) = try await session.data(from: remote)
-            if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
-                return
+        if let remote = Self.remoteURL(for: season) {
+            do {
+                let (data, response) = try await session.data(from: remote)
+                if let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) {
+                    apply(data)
+                    applied = true
+                    try? data.write(to: fileURL, options: .atomic)
+                    return
+                }
+            } catch {
+                // 下面统一走旧缓存兜底。
             }
-            apply(data)
-            try? data.write(to: fileURL, options: .atomic)
-        } catch {
-            // 拉不到就保持空表，详情页只显示星期。
+        }
+
+        // 3. 拉不到（离线 / 非 2xx）就用过期缓存，main 也是这个顺序：
+        //    过期的数据总比空表好，卡片至少还有「HH:mm 更新」。
+        if let cached {
+            apply(cached)
+            applied = true
         }
     }
 

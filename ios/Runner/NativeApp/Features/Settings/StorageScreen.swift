@@ -17,6 +17,8 @@ struct StorageScreen: View {
     @Environment(\.colorScheme) private var colorScheme
 
     @State private var cacheBytes: Int?
+    /// 更新时间缓存（放送时刻按季度缓存）。
+    @State private var airTimeCache: (directory: String, fileCount: Int, bytes: Int) = ("", 0, 0)
     @State private var isClearing = false
     @State private var isConfirmingClear = false
     @State private var message: String?
@@ -40,6 +42,20 @@ struct StorageScreen: View {
                 Text("图片缓存")
             } footer: {
                 Text("图片会在下次加载时重新下载。视频、记录与设置不会删除。")
+            }
+
+            Section {
+                HStack {
+                    Label("更新时间缓存", systemImage: "clock.arrow.circlepath")
+                    Spacer()
+                    Text("\(airTimeCache.fileCount) 个季度 / \(airTimeCache.bytes) 字节")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            } header: {
+                Text("更新时间")
+            } footer: {
+                Text("放送时刻按季度缓存 7 天，离线时用旧数据。")
             }
 
             Section {
@@ -89,6 +105,7 @@ struct StorageScreen: View {
 
     private func refreshSize() async {
         cacheBytes = await KazumiImageLoader.shared.diskSizeInBytes()
+        airTimeCache = BangumiAirTimeService.shared.cacheDiagnostics()
     }
 
     private func clear() async {
