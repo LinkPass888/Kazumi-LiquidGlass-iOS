@@ -32,6 +32,7 @@ struct BangumiInfoScreen: View {
     @Environment(AppEnvironment.self) private var environment
     @Environment(LibraryStore.self) private var library
     @Environment(AppRouter.self) private var router
+    @Environment(SettingsStore.self) private var settings
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dismiss) private var dismiss
 
@@ -307,7 +308,8 @@ extension BangumiInfoScreen {
                     infoLine(label: "更新进度", value: progress)
                 }
 
-                if item.ratingScore > 0 {
+                // 评分行跟着设置里那颗「显示评分」走（LP 2026-10-25）。
+                if settings.showRating, item.ratingScore > 0 {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("评分")
                             .font(.footnote)

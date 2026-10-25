@@ -16,6 +16,7 @@ struct TimelineScreen: View {
     /// 卡片 → 详情页缩放转场所属的命名空间（由所在导航栈提供）。
     var zoomNamespace: Namespace.ID?
 
+    @Environment(SettingsStore.self) private var settings
     @State private var controller = TimelineController()
     @State private var selectedWeekday = TimelineScreen.todayIndex
     @State private var isShowingSeasonPicker = false
@@ -23,6 +24,8 @@ struct TimelineScreen: View {
     @State private var isLiquidWeekday = false
     @State private var weekdayDragX: CGFloat?
     @State private var weekdaySolidifyTask: Task<Void, Never>?
+    @State private var pageOffsetX: CGFloat = 0
+    @State private var pageViewportWidth: CGFloat = 1
 
     @Environment(LibraryStore.self) private var library
     @Environment(\.colorScheme) private var colorScheme
@@ -194,9 +197,16 @@ struct TimelineScreen: View {
     private var weekdaySelector: some View {
         GeometryReader { proxy in
             let cellWidth = max(proxy.size.width, 1) / 7
+            // 跟手：翻页滚动时玻璃直接按滚动偏移算，手指到哪它到哪；
+            // 只有在拖星期条时才用 weekdayDragX 覆盖。
+            let pageFloat = pageViewportWidth > 1 ? pageOffsetX / max(pageViewportWidth, 1) : CGFloat(selectedWeekday)
+            let trackingX = cellWidth * (pageFloat + 0.5)
             let restX = cellWidth * (CGFloat(selectedWeekday) + 0.5)
+            // 正在滚就跟滚动走，静止时回到选中格中心；拖条时以手指为准。
+            let isPaging = abs(pageFloat - CGFloat(selectedWeekday)) > 0.01
+            let baseX: CGFloat = isPaging ? trackingX : restX
             let centerX: CGFloat = {
-                guard let x = weekdayDragX else { return restX }
+                guard let x = weekdayDragX else { return baseX }
                 return min(max(x, cellWidth / 2), max(proxy.size.width - cellWidth / 2, cellWidth / 2))
             }()
 
@@ -229,14 +239,15 @@ struct TimelineScreen: View {
             }
             .frame(height: Self.weekdayTrackHeight)
             .contentShape(Capsule(style: .continuous))
-            // 左右滑切天之类的「不是手指直接点」的切换，也让玻璃液一次再凝回去。
+            // 切天那一刻才液化，松手不直接凝——等 selectedWeekday 真变了再计时凝固。
             .onChange(of: selectedWeekday) { _, _ in
-                guard !isLiquidWeekday else { return }
                 weekdaySolidifyTask?.cancel()
-                withAnimation(.spring(response: 0.24, dampingFraction: 0.65)) {
-                    isLiquidWeekday = true
+                if !isLiquidWeekday {
+                    withAnimation(.spring(response: 0.24, dampingFraction: 0.65)) {
+                        isLiquidWeekday = true
+                    }
                 }
-                scheduleWeekdaySolidify(delayMilliseconds: 220)
+                scheduleWeekdaySolidify(delayMilliseconds: 420)
             }
             .gesture(weekdayDragGesture(width: proxy.size.width))
         }
@@ -331,12 +342,14 @@ struct TimelineScreen: View {
 
     private func selectWeekday(_ day: Int) {
         guard day != selectedWeekday else { return }
-        withAnimation(.snappy(duration: 0.26)) {
+        // 点选星期：让页面滑过去慢一点，玻璃跟着滚动走，不再用固定时长硬切。
+        withAnimation(.spring(response: 0.48, dampingFraction: 0.86)) {
             selectedWeekday = day
         }
     }
 
     /// 一碰就液化；横移超过 4 点玻璃跟着手指走，指到第几格就选第几格。
+    /// 松手不直接定凝固——等 Tab 真换天（selectedWeekday 变）那一刻才计时凝固。
     private func weekdayDragGesture(width: CGFloat) -> some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { value in
@@ -350,23 +363,25 @@ struct TimelineScreen: View {
                 if abs(value.translation.width) > 4 || weekdayDragX != nil {
                     let x = min(max(value.location.x, cellWidth / 2),
                                 max(width - cellWidth / 2, cellWidth / 2))
-                    withAnimation(.interactiveSpring(response: 0.2, dampingFraction: 0.78)) {
+                    withAnimation(.interactiveSpring(response: 0.18, dampingFraction: 0.82)) {
                         weekdayDragX = x
                     }
                     let day = weekdayIndex(at: value.location.x, cellWidth: cellWidth)
-                    if day != selectedWeekday { selectedWeekday = day }
+                    if day != selectedWeekday {
+                        withAnimation(.spring(response: 0.48, dampingFraction: 0.86)) {
+                            selectedWeekday = day
+                        }
+                    }
                 }
             }
             .onEnded { value in
                 let cellWidth = max(width, 1) / 7
                 let day = weekdayIndex(at: value.location.x, cellWidth: cellWidth)
-                let changed = day != selectedWeekday
-                // 玻璃飞过去慢一点（接近系统分段控件换选的速度），停一下再凝回实心。
-                withAnimation(.spring(response: 0.5, dampingFraction: 0.78)) {
+                withAnimation(.spring(response: 0.48, dampingFraction: 0.86)) {
                     selectedWeekday = day
                     weekdayDragX = nil
                 }
-                scheduleWeekdaySolidify(delayMilliseconds: changed ? 220 : 180)
+                // 不在这里定凝固，交给 onChange(selectedWeekday) 去定。
             }
     }
 
@@ -411,19 +426,40 @@ struct TimelineScreen: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
-            // 一页一天，翻页容器自己管左右滑：在卡片上起手也能滑（原来是
-            // ScrollView 上的 simultaneousGesture，手指从卡片上划过去会被卡片点掉，
-            // 直接跳详情页），并且页面跟手指走，切天那一下就变成了横向翻页的动画。
-            TabView(selection: $selectedWeekday) {
-                ForEach(0..<7, id: \.self) { day in
-                    dayPage(day)
-                        .tag(day)
+            // 一页一天：用横向分页 ScrollView，滚动偏移直接驱动星期条玻璃，
+            // 手指到哪玻璃到哪；松手弹到最近页，真换天那一刻才开始凝固计时。
+            GeometryReader { pageProxy in
+                ScrollView(.horizontal) {
+                    HStack(spacing: 0) {
+                        ForEach(0..<7, id: \.self) { day in
+                            dayPage(day)
+                                .frame(width: pageProxy.size.width)
+                                .id(day)
+                        }
+                    }
+                    .scrollTargetLayout()
+                }
+                .scrollTargetBehavior(.paging)
+                .scrollPosition(id: Binding<Int?>(get: { selectedWeekday }, set: { if let v = $0 { selectedWeekday = v } }))
+                .scrollIndicators(.hidden)
+                .onScrollGeometryChange(for: CGFloat.self, of: { geo in
+                    geo.contentOffset.x
+                }, action: { _, new in
+                    pageOffsetX = new
+                })
+                .onAppear { pageViewportWidth = max(pageProxy.size.width, 1) }
+                .onChange(of: pageProxy.size.width) { _, new in
+                    pageViewportWidth = max(new, 1)
                 }
             }
-            .tabViewStyle(.page(indexDisplayMode: .never))
-            // 轻触感反馈：滑切与点选星期都会触发。
-            .sensoryFeedback(.selection, trigger: selectedWeekday)
+            // 轻触感反馈：滑切与点选星期都会触发；LP 清单「触感反馈」关掉后不再震。
+            .sensoryFeedback(.selection, trigger: hapticTrigger)
         }
+    }
+
+    /// 触感反馈关闭时传 nil：`.sensoryFeedback` 不比较到新值就不触发。
+    private var hapticTrigger: Int? {
+        settings.hapticFeedbackEnabled ? selectedWeekday : nil
     }
 
     @ViewBuilder
@@ -437,6 +473,7 @@ struct TimelineScreen: View {
                     ForEach(items) { item in
                         BangumiTimelineCard(
                             item: item,
+                            showRating: settings.showRating,
                             isWatching: watchingIDs.contains(item.id),
                             updateText: controller.updateText(for: item),
                             currentEpisode: controller.currentEpisode(for: item),

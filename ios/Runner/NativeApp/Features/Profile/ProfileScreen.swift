@@ -29,10 +29,10 @@ struct ProfileScreen: View {
                     Row(symbol: "puzzlepiece.extension", title: "规则管理", subtitle: "管理番剧来源", route: .pluginList),
                     Row(symbol: "bell", title: "通知设置", subtitle: "追番更新提醒", route: .notificationSettings),
                     Row(symbol: "play.rectangle", title: "播放设置", subtitle: "播放器与画质", route: .playerSettings),
-                    Row(symbol: "captions.bubble", title: "弹幕设置", subtitle: "弹幕与屏蔽规则", route: .danmakuSettings),
+                    Row(symbol: "captions.bubble", title: "弹幕设置", subtitle: "弹幕来源与关键词屏蔽", route: .danmakuSettings),
                 ])
                 section("数据与应用", rows: [
-                    Row(symbol: "icloud", title: "账号与备份", subtitle: "Bangumi 令牌与备份", route: .syncBackup),
+                    Row(symbol: "icloud", title: "同步设置", subtitle: "追番同步与多设备同步", route: .syncBackup),
                     Row(symbol: "externaldrive", title: "存储与日志", subtitle: "图片缓存与错误日志", route: .storage),
                     Row(symbol: "info.circle", title: "关于 Kazumi", subtitle: "版本与开源许可", route: .about),
                 ])
@@ -54,7 +54,8 @@ struct ProfileScreen: View {
                 Button {
                     router.push(.settings)
                 } label: {
-                    Image(systemName: "slider.horizontal.3")
+                    // LP 2026-10-25：右上角是设置入口，用齿轮符号。
+                    Image(systemName: "gearshape")
                 }
                 .accessibilityLabel("全部设置")
             }
@@ -109,8 +110,8 @@ struct ProfileScreen: View {
             )
             toolCard(
                 symbol: "arrow.down.circle",
-                title: "离线缓存",
-                caption: "管理已缓存的剧集",
+                title: "离线下载",
+                caption: "管理离线内容",
                 route: .download
             )
         }

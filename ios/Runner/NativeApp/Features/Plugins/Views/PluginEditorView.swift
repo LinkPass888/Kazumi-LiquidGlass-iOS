@@ -262,7 +262,14 @@ struct PluginEditorView: View {
         EditorCard {
             Text("行为设置").font(.subheadline.weight(.semibold))
             Toggle("旧版解析器", isOn: $draft.useLegacyParser)
-            Toggle("广告拦截", isOn: $draft.adBlocker)
+            Toggle(isOn: $draft.adBlocker) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("广告过滤")
+                    Text("启用 HLS 广告过滤")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
         }
         EditorCard {
             Text("网络设置").font(.subheadline.weight(.semibold))

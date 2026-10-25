@@ -19,9 +19,9 @@ struct DownloadScreen: View {
                     Image(systemName: "arrow.down.circle")
                         .font(.system(size: 38, weight: .semibold))
                         .foregroundStyle(.tertiary)
-                    Text("暂无离线缓存")
+                    Text("暂无下载")
                         .font(.headline)
-                    Text("本机还没有缓存的剧集。")
+                    Text("本机还没有下载的剧集。")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
@@ -60,7 +60,7 @@ struct DownloadScreen: View {
             }
         }
         .background(KazumiPalette.background(for: colorScheme).ignoresSafeArea())
-        .navigationTitle("离线缓存")
+        .navigationTitle("下载管理")
         .navigationBarTitleDisplayMode(.inline)
         .task { cachedURLs = Self.loadCachedFiles() }
     }

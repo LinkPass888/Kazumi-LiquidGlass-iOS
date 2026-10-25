@@ -352,6 +352,45 @@ enum BangumiAPI {
         }
     }
 
+    /// 对应 `getBangumiEpisodeByID`：取某条番某话在 Bangumi 上的 episodeId。
+    /// 失败时返回 nil，调用方就退回整部番的吐槽。
+    static func episodeID(subjectID: Int, episode: Int) async -> Int? {
+        // /v0/episodes?subject_id=xxx&offset=n&limit=1，对应 EpisodeInfo.fromJson
+        let url = BangumiEndpoints.apiDomain + BangumiEndpoints.episodes
+            + "?subject_id=\(subjectID)&offset=\(max(0, episode - 1))&limit=1"
+        do {
+            let json = try await get(url)
+            if let list = json["data"].arrayValue, let first = list.first {
+                return first["id"].intValue
+            }
+            return nil
+        } catch {
+            KazumiLog.network.error(
+                "Resolve bangumi episode id failed: \(error.localizedDescription, privacy: .public)"
+            )
+            return nil
+        }
+    }
+
+    /// 对应 `getBangumiCommentsByEpisodeID`：单集评论（next 域，整集返回为数组）。
+    static func episodeComments(episodeID: Int) async -> BangumiCommentPage {
+        let url = BangumiEndpoints.apiNextDomain + "/p1/episodes/\(episodeID)/comments"
+        do {
+            let json = try await get(url)
+            let list = json.arrayValue ?? json["data"].arrayValue ?? []
+            // next 域的单集评论目前直接返回数组，total 以 count 为准
+            return BangumiCommentPage(
+                items: list.map(BangumiCommentItem.fromJSON),
+                total: json["total"].intValue ?? list.count
+            )
+        } catch {
+            KazumiLog.network.error(
+                "Resolve episode comments failed: \(error.localizedDescription, privacy: .public)"
+            )
+            return BangumiCommentPage(items: [], total: 0)
+        }
+    }
+
     // MARK: - 写收藏 / 吐槽
 
     /// 对应 addOrUpdateBangumiEvaluationBySubjectID：把「追番状态 + 吐槽 + 评分」

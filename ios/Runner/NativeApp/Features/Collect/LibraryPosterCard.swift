@@ -88,15 +88,13 @@ struct LibraryPosterCard: View {
         CollectStatusMenu(current: entry.collectType, onChange: onChangeType) {
             // LP 2026-10-24：不用三个点，直接画当前的追番状态（在看那颗心、想看那颗星…），
             // 一眼就知道这部现在是什么状态；点它还是开菜单改状态。
+            // LP 2026-10-24 晚：符号改主题色——白底圆 + 主题色符号，浅色封面上也看得清。
             Image(systemName: entry.collectType.statusSymbol)
                 .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(.white)
+                .foregroundStyle(KazumiPalette.accent(for: colorScheme))
                 .frame(width: 32, height: 32)
-                .background(
-                    // 0.55 而不是 0.42：评分和状态名都撤掉以后，角上这颗符号
-                    // 是卡片上唯一说状态的地方，白符号压白封面要按正文的 4.5:1 取。
-                    Circle().fill(.black.opacity(0.55))
-                )
+                .background(Circle().fill(Color.white))
+                .shadow(color: .black.opacity(0.12), radius: 4, y: 1)
                 .hitTarget44()
                 .opacity(isPending ? 0.4 : 1)
         }
