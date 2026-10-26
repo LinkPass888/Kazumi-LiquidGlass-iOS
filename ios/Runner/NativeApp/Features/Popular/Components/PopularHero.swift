@@ -33,9 +33,12 @@ private let heroTags: [String] = [
 struct PopularHero: View {
     let items: [PopularPoster]
     var zoomNamespace: Namespace.ID?
-    /// 下拉过界时封面的放大倍数（LP 2938 / Colo 2939）：外层按位移算好传进来，上滑时是 1。
-    /// 只放大这张图，块的位置、名称、按钮、渐隐都不动。
+    /// 下拉过界时封面的放大倍数（LP 2938 / Colo 2939 / LP 2944）：外层按位移算好传进来，上滑时是 1。
+    /// 图从顶边放大，左右下三个方向一起长。
     var pullScale: CGFloat = 1
+    /// 下拉位移（LP 2944）：名称、元信息、开始观看、收藏、渐隐跟着手指往下走这么多。
+    /// 图不跟着走，它只放大——顶边钉着，底边自己长下来。
+    var pullOffset: CGFloat = 0
 
     @Environment(AppRouter.self) private var router
     @Environment(LibraryStore.self) private var library
@@ -51,15 +54,14 @@ struct PopularHero: View {
     static let textBottomInset: CGFloat = 50
     /// 顶上那层渐变遮罩的高度（Colo 2856）。
     static let maskHeight: CGFloat = 100
-    /// 底边渐隐：从圆点那行底下（名称上面）一直化到封面底边（LP 2928 / Colo 2930），
-    /// 位置随标题行数而变，所以起点是量出来的（`fadeTop`）。
-    /// 1 行标题时那个位置在 436，离封面底边 164。
-    static let fadeDefaultTop: CGFloat = coverHeight - 164
+    /// 文字块（圆点、名称、元信息、按钮，含块底那 50）的高度：标题行数一变它就变，
+    /// 所以量出来（`textBlockHeight`）。1 行标题时是 180，块顶落在 420。
+    static let textBlockDefaultHeight: CGFloat = 180
+    /// 渐隐从圆点那行底下开始（Colo 2930）：圆点整行 14 高，再让 2。
+    static let fadeDotsInset: CGFloat = 16
     /// 提前到离封面底边 40 就满页面底色：560 往下的 40 点一直是满底色（Colo 2922），
     /// 最后这一段已经是纯底色，封面底边那条线就露不出来。
     static let fadeFullInset: CGFloat = 40
-    /// 量文字块位置用的坐标空间名。
-    static let heroSpace = "popularHero"
     /// 下拉时块往下长的封顶位移：再往下拽块也不再变高（原先是放大封顶 1.22）。
     static let maxPullDistance: CGFloat = 120
     /// 竖版封面偏上对齐时顶部保留的比例。
@@ -75,9 +77,9 @@ struct PopularHero: View {
     @State private var isLoadingSources = false
     /// 顶栏本体的实际高度：提示语要落在它下面。
     @State private var topBarHeight: CGFloat = 59
-    /// 渐隐的起点：圆点那行底下再让 2（圆点整行留在原图上，LP 2928 / Colo 2930）。
-    /// 用 `onGeometryChange` 按坐标空间量（`PreferenceKey` 那条路在这版没吃到值）。
-    @State private var fadeTop: CGFloat = PopularHero.fadeDefaultTop
+    /// 文字块的实际高度（含块底那 50 的留白），渐隐由它推出来。
+    /// 用 `onGeometryChange` 量（`PreferenceKey` 那条路在这版没吃到值）。
+    @State private var textBlockHeight: CGFloat = PopularHero.textBlockDefaultHeight
     /// 圆钮按下时弹一下：缩到 0.8 再回弹，120 毫秒（Colo 2803）。
     @State private var followScale: CGFloat = 1
 
@@ -98,10 +100,11 @@ struct PopularHero: View {
             // 挂在图上时，它的下沿跟着图片自己的高度走（图只有 582 高），
             // 渐隐就提前 18 点结束，封面底边那条线就露出来了。
             fade
+                .offset(y: pullOffset)
             textBlock
+                .offset(y: pullOffset)
         }
         .frame(height: Self.coverHeight)
-        .coordinateSpace(.named(Self.heroSpace))
         // 这里不裁：下拉过界时封面放大，底边要真的往下长出来（LP 2942）。
         // 平时图正好 600 高，没有东西溢出去。
 
@@ -209,12 +212,12 @@ struct PopularHero: View {
     /// 第一档必须是 0（LP 2925 / 2926 / Colo 2930）：之前起手就给 20%，圆点那行以上是原图、
     /// 以下一层白纱，那条台阶看着就像在封面上贴了一张透明白图。
     private var fade: some View {
-        // 下沿贴死封面底边 600，上沿是圆点那行底下、名称上面（`fadeTop`，1 行标题时 436）。
-        let height = max(1, Self.coverHeight - fadeTop)
+        // 下沿贴死封面底边 600，高度＝文字块高减去圆点那行（1 行标题时 164，上沿落在 436）。
+        // 用块高而不是量绝对位置：下拉时文字块整体位移，绝对位置会带着位移走，块高不会。
+        let height = max(1, textBlockHeight - Self.fadeDotsInset)
         // 满底色那一点（封面底边往上 40，即 560）在整条渐变的百分之几上。
-        // 别忘了减掉起点：从 fadeTop 到 600 才是这整条渐变。
-        let full = min(1, max(0.01, (Self.coverHeight - Self.fadeFullInset - fadeTop) / height))
-        // 七档等分在 fadeTop…560 这 124 点上（Colo 2930），第一档是 0——
+        let full = min(1, max(0.01, (height - Self.fadeFullInset) / height))
+        // 七档等分在渐隐的顶…560 上（Colo 2930），第一档是 0——
         // 顶部那一档要是直接给 20%，圆点那行就会成一条台阶（LP 2925 / 2926）。
         let steps: [CGFloat] = [0, 0.20, 0.40, 0.60, 0.80, 0.90, 0.95]
         var stops = steps.enumerated().map { index, opacity in
@@ -266,11 +269,10 @@ struct PopularHero: View {
             VStack(spacing: 0) {
                 dots
                     .padding(.bottom, 14)
-                    // 渐隐的起点：圆点那行的底再让 2（Colo 2930）。圆点整行留在原图上，
-                    // 底下垫的白胶囊也就不受影响；量不到按 436 兜底。
+                    // 量一下文字块（含块底留白）有多高，渐隐由它推出来。
                     .onGeometryChange(for: CGFloat.self) { proxy in
-                        proxy.frame(in: .named(Self.heroSpace)).maxY + 2
-                    } action: { fadeTop = $0 }
+                        proxy.size.height
+                    } action: { textBlockHeight = $0 }
 
                 Text(current?.displayName ?? "")
                     .font(.system(size: 22, weight: .bold))
