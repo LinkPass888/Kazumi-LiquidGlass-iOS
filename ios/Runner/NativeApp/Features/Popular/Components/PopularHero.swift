@@ -232,9 +232,13 @@ struct PopularHero: View {
     private var fade: some View {
         // 下沿贴死封面底边 600，高度＝文字块高减去圆点那行（1 行标题时 164，上沿落在 436）。
         // 用块高而不是量绝对位置：下拉时文字块整体位移，绝对位置会带着位移走，块高不会。
-        let height = max(1, textBlockHeight + Self.textBottomInset)
+        // 文字块本身 ＋ 块底那 50，再补上「图放大后比文字块多长出来的那截」：
+        // 下拉时文字块只跟手位移、图却按 1.22 长，不补的话图会在渐隐下面露出一条（LP 2963）。
+        let base = max(1, textBlockHeight + Self.textBottomInset)
+        let extra = max(0, Self.coverHeight * (pullScale - 1) - pullOffset)
+        let height = base + extra
         // 满底色那一点（封面底边往上 40，即 560）在整条渐变的百分之几上。
-        let full = min(1, max(0.01, (height - Self.fadeFullInset) / height))
+        let full = min(1, max(0.01, (base - Self.fadeFullInset) / height))
         // 七档等分在渐隐的顶…560 上（Colo 2930），第一档是 0——
         // 顶部那一档要是直接给 20%，圆点那行就会成一条台阶（LP 2925 / 2926）。
         let steps: [CGFloat] = [0, 0.20, 0.40, 0.60, 0.80, 0.90, 0.95]
