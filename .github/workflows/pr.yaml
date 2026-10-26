@@ -39,11 +39,10 @@ jobs:
       - name: Clone repository
         uses: actions/checkout@v4
 
-      # 钉到 Xcode 27.0：iOS SDK 27.0，跟模拟器（iOS 27.0）同一套。
-      # 这台镜像默认是 Xcode 27.1（iOS SDK 27.1），不钉的话编出来还是对不上。
-      - name: Select Xcode 27.0
+      # 不钉版本，就用 xcode-27 镜像默认那个（现在是 Xcode 27.1 / iOS SDK 27.1，LP 3253/3254 定的）。
+      # 只把版本号打进日志，编完能直接看到这次是拿哪套 SDK 编的。
+      - name: Show Xcode version
         run: |
-          sudo xcode-select -s /Applications/Xcode_27.app
           xcodebuild -version
           xcrun --sdk iphoneos --show-sdk-version
 
