@@ -28,7 +28,11 @@ jobs:
   build-ios:
     if: ${{ github.event_name == 'workflow_dispatch' || ! github.event.pull_request.draft }}
     name: "Build for iOS"
-    runs-on: "macos-26"
+    # 用 Xcode 27 的镜像（公开预览，label 就叫 xcode-27）：默认 Xcode 27.1、iOS 27 的 SDK。
+    # 之前跑在 macos-26 上，默认 Xcode 26.6 / iOS SDK 26.5——同一个 App 编出来的包
+    # 和模拟器那版（iOS 27 SDK）不是一套 SDK，系统边缘效果这类东西表现会不一样
+    # （LP：手机上顶栏那条模糊看不到，模拟器上有）。改成 27 是为了让两边对齐。
+    runs-on: "xcode-27"
     permissions:
       contents: read
     steps:
