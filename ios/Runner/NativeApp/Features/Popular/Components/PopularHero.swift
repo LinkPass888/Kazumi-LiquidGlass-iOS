@@ -36,6 +36,13 @@ struct PopularHero: View {
     /// 下拉过界时封面的放大倍数（LP 2938 / Colo 2939 / LP 2944）：外层按位移算好传进来，上滑时是 1。
     /// 图从顶边放大，左右下三个方向一起长。
     var pullScale: CGFloat = 1
+    /// 下拉位移（LP 2963）：名称、元信息、开始观看、收藏跟着手指往下走这么多，尺寸不变。
+    var pullOffset: CGFloat = 0
+    /// 渐隐的位移：文字块那截照手走，再补上「图放大后比文字块多长出来的那截」，
+    /// 下沿才能一直贴着图的新底边。
+    private var fadeOffset: CGFloat {
+        pullOffset + max(0, Self.coverHeight * (pullScale - 1) - pullOffset)
+    }
 
     @Environment(AppRouter.self) private var router
     @Environment(LibraryStore.self) private var library
@@ -93,32 +100,29 @@ struct PopularHero: View {
     }
 
     var body: some View {
-        ZStack(alignment: .bottom) {
-            // 整块（图、渐隐、名称、元信息、开始观看、收藏）从顶边一起放大（Colo 2953）：
-            // 顶边钉在屏幕顶端，块里的一切按同一个比例往下走。
-            ZStack(alignment: .bottom) {
-                pager
-                // 底边渐隐挂在封面这一整个 600 高的盒子上，不挂在图里（Colo 2922）：
-                // 挂在图上时，它的下沿跟着图片自己的高度走（图只有 582 高），
-                // 渐隐就提前 18 点结束，封面底边那条线就露出来了。
-                fade
-                textBlock
-            }
-            // 这一层必须钉死 600：里面那张图按自己的比例只有 582 高，
-            // 不钉的话整层的底就落在 582，渐隐的下沿也跟着早 18 点，
-            // 封面底边到 600 之间会露出一条没被渐隐盖住的图（Colo 2922 / LP 2921）。
-            .frame(height: Self.coverHeight, alignment: .bottom)
-            .scaleEffect(pullScale, anchor: .top)
-            // 可视宽度始终钉在页宽，横向多出来的一律裁掉，只有底部允许往下长（Colo 2959）：
-            // 不裁的话放大后右边多出 44 点，隔壁那张就从这条缝里挤进来（LP 2958）。
-            .mask(alignment: .top) {
-                Rectangle()
-                    .frame(maxWidth: .infinity)
-                    .frame(height: Self.coverHeight * Self.maxPullScale)
-            }
+    ZStack(alignment: .bottom) {
+            // 下拉时只有那张图从顶边放大（LP 2963 / Colo 2939）：横向钉死页宽 402，
+            // 纵向往下长，多出来的露在下面。可视宽度不跟着放大，隔壁才不会挤进来（Colo 2959）。
+            pager
+                .scaleEffect(pullScale, anchor: .top)
+                .mask(alignment: .top) {
+                    Rectangle()
+                        .frame(maxWidth: .infinity)
+                        .frame(height: Self.coverHeight * Self.maxPullScale)
+                }
 
-            // 顶部那截模糊不参与放大，钉在原位（LP 2952）。
+            // 顶部那截模糊不参与放大也不位移，钉在原位（LP 2952）。
             mask
+
+            // 底边渐隐挂在封面这一整个 600 高的盒子上，不挂在图里（Colo 2922）：
+            // 挂在图上时，它的下沿跟着图片自己的高度走（图只有 582 高），
+            // 渐隐就提前 18 点结束，封面底边那条线就露出来了。
+            fade
+                .offset(y: fadeOffset)
+
+            // 文字块不参与放大，只跟着手指往下移（LP 2963）。
+            textBlock
+                .offset(y: pullOffset)
         }
         .frame(height: Self.coverHeight)
         // 这里不裁：下拉过界时封面放大，底边要真的往下长出来（LP 2942）。
