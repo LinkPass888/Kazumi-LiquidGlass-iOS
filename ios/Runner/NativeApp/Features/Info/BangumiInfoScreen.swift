@@ -22,6 +22,8 @@ struct BangumiInfoScreen: View {
     var zoomNamespace: Namespace.ID?
 
     @State private var controller: InfoController?
+    /// 详情页第一次进来没拉到数据：不再画一张空页，改为给「重新加载」（LP 2996）。
+    @State private var didFailToLoad = false
     @State private var isShowingSources = false
     @State private var selectedTab: InfoTab = .overview
     @State private var scrollOffset: CGFloat = 0
@@ -40,6 +42,8 @@ struct BangumiInfoScreen: View {
         Group {
             if let controller {
                 content(controller)
+            } else if didFailToLoad {
+                failedView
             } else {
                 ProgressView()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -61,6 +65,40 @@ struct BangumiInfoScreen: View {
                 await load()
             }
         }
+        .onChange(of: bangumiID) { _, _ in
+            controller = nil
+            didFailToLoad = false
+        }
+    }
+
+    /// 第一次进来没拉到数据：说清楚，并给一个能再来一次的按钮。
+    private var failedView: some View {
+        VStack(spacing: 14) {
+            Image(systemName: "wifi.exclamationmark")
+                .font(.system(size: 34, weight: .regular))
+                .foregroundStyle(KazumiPalette.secondaryText(for: colorScheme))
+            Text("详情没能加载")
+                .font(.system(size: 17, weight: .semibold))
+            Text("网络好像不太顺，点一下重新加载。")
+                .font(.system(size: 14))
+                .foregroundStyle(KazumiPalette.secondaryText(for: colorScheme))
+                .multilineTextAlignment(.center)
+            Button {
+                didFailToLoad = false
+                Task { await load() }
+            } label: {
+                Text("重新加载")
+                    .font(.system(size: 15, weight: .semibold))
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 10)
+                    .background(Capsule(style: .continuous).fill(KazumiPalette.accent(for: colorScheme)))
+                    .foregroundStyle(KazumiPalette.onAccent(for: colorScheme))
+            }
+            .buttonStyle(.plain)
+            .padding(.top, 4)
+        }
+        .padding(.horizontal, 40)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     // MARK: - 内容
@@ -641,9 +679,19 @@ extension BangumiInfoScreen {
             return
         }
 
-        // 2. 没有缓存（第一次进这部番）：等接口，整页转圈是唯一的兜底。
-        let base = await BangumiAPI.info(id: bangumiID)
-            ?? BangumiItem(id: bangumiID, name: "未知番剧", nameCn: "")
+        // 2. 没有缓存（第一次进这部番）：等接口。
+        //
+        // 拉不到不要马上塞一个「未知番剧」的占位（LP 2990 / 2996）：那样页面会停在
+        // 一张没有封面、没有简介、没有评分的空页上，还会把标题写成「未知番剧」。
+        // 先重试一次，仍失败就留着转圈、给出「重新加载」，用户点一下就能再来。
+        var base = await BangumiAPI.info(id: bangumiID)
+        if base == nil {
+            base = await BangumiAPI.info(id: bangumiID)
+        }
+        guard let base else {
+            didFailToLoad = true
+            return
+        }
         let created = InfoController(item: base, plugins: environment.plugins)
         controller = created
         await refresh(created)
