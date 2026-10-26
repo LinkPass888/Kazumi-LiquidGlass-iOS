@@ -22,6 +22,7 @@
 //
 
 import SwiftUI
+import UIKit
 
 /// 顶栏点开「热门番组」选的那排标签：与搜索页、constants.dart 的清单一致。
 private let heroTags: [String] = [
@@ -210,19 +211,20 @@ struct PopularHero: View {
         // 下沿贴死封面底边 600，上沿是圆点那行底下、名称上面（`fadeTop`，1 行标题时 436）。
         let height = max(1, Self.coverHeight - fadeTop)
         // 满底色那一点（封面底边往上 40，即 560）在整条渐变的百分之几上。
-        let full = min(1, max(0.01, (Self.coverHeight - Self.fadeFullInset) / height))
+        // 别忘了减掉起点：从 fadeTop 到 600 才是这整条渐变。
+        let full = min(1, max(0.01, (Self.coverHeight - Self.fadeFullInset - fadeTop) / height))
         // 七档等分在 fadeTop…560 这 124 点上（Colo 2930），第一档是 0——
         // 顶部那一档要是直接给 20%，圆点那行就会成一条台阶（LP 2925 / 2926）。
         let steps: [CGFloat] = [0, 0.20, 0.40, 0.60, 0.80, 0.90, 0.95]
         var stops = steps.enumerated().map { index, opacity in
             Gradient.Stop(
-                color: background.opacity(opacity),
+                color: pageBackground.opacity(opacity),
                 location: full * CGFloat(index) / CGFloat(steps.count)
             )
         }
         // 满底色落在 560，600 往上这 40 点一直是满底色（Colo 2922）。
-        stops.append(.init(color: background, location: full))
-        stops.append(.init(color: background, location: 1))
+        stops.append(.init(color: pageBackground, location: full))
+        stops.append(.init(color: pageBackground, location: 1))
         return LinearGradient(
             stops: stops,
             startPoint: .top,
@@ -232,6 +234,11 @@ struct PopularHero: View {
         .frame(height: height)
         .allowsHitTesting(false)
     }
+
+    /// 页面真正的底色：封面块下面那块没有自己刷底色，用的是系统背景
+    /// （浅色纯白、深色纯黑）。渐隐收尾必须用它，用 `KazumiPalette.background`
+    /// （浅色是 0.98）在 600 处会差 5 级，正好显出一条线。
+    private var pageBackground: Color { Color(uiColor: .systemBackground) }
 
     /// 顶上那 100 高的渐变遮罩：顶部 55% 页面底色 → 末端全透明（Colo 2856）。
     /// 它是封面块里的一层，跟着封面一起滚走，所以封面不在了它也不会压在货架上。
