@@ -51,10 +51,10 @@ struct PopularHero: View {
     static let pullZoomBase: CGFloat = 550
     /// 顶上那层渐变遮罩的高度（Colo 2856）。
     static let maskHeight: CGFloat = 100
-    /// 底边渐隐：从圆点那行（文字块的顶）一直化到封面底边（LP 2912 / Colo 2913），
-    /// 文字块高随标题行数、元信息有无而变，所以起点位置是量出来的（`fadeTop`）。
-    /// 1 行标题时那个位置在 420，离封面底边 180。
-    static let fadeDefaultTop: CGFloat = coverHeight - 180
+    /// 底边渐隐：从名称那一行一直化到封面底边（LP 2912 / Colo 2913 / LP 2928），
+    /// 名称位置随标题行数而变，所以起点是量出来的（`fadeTop`）。
+    /// 1 行标题时那个位置在 448，离封面底边 152。
+    static let fadeDefaultTop: CGFloat = coverHeight - 152
     /// 提前到离封面底边 40 就满页面底色：560 往下的 40 点一直是满底色（Colo 2922），
     /// 最后这一段已经是纯底色，封面底边那条线就露不出来。
     static let fadeFullInset: CGFloat = 40
@@ -75,7 +75,7 @@ struct PopularHero: View {
     @State private var isLoadingSources = false
     /// 顶栏本体的实际高度：提示语要落在它下面。
     @State private var topBarHeight: CGFloat = 59
-    /// 渐隐的起点：文字块（圆点那行）在封面盒子里的 y。
+    /// 渐隐的起点：名称那一行在封面盒子里的 y（圆点那行留在原图上，LP 2928）。
     /// 用 `onGeometryChange` 按坐标空间量（`PreferenceKey` 那条路在这版没吃到值）。
     @State private var fadeTop: CGFloat = PopularHero.fadeDefaultTop
     /// 圆钮按下时弹一下：缩到 0.8 再回弹，120 毫秒（Colo 2803）。
@@ -201,7 +201,7 @@ struct PopularHero: View {
         .accessibilityHint("打开详情")
     }
 
-    /// 底边渐隐：从圆点那行开始往下，把封面渐成页面底色，满底色落在 560，
+    /// 底边渐隐：从名称那行开始往下，把封面渐成页面底色，满底色落在 560，
     /// 再往下 40 点一直是满底色（Colo 2922）。
     ///
     /// 曲线不是等分七档（LP 2924）：等分的时候 20% 就直接顶在圆点那行上，圆点之上还是原图、
@@ -265,6 +265,11 @@ struct PopularHero: View {
                     .lineLimit(2)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 24)
+                    // 渐隐的起点就是名称的顶：圆点那行留在原图上，名称往下才开始化
+                    // （LP 2928）。量的是它在封面盒子里的 y，量不到按 448 兜底。
+                    .onGeometryChange(for: CGFloat.self) { proxy in
+                        proxy.frame(in: .named(Self.heroSpace)).minY
+                    } action: { fadeTop = $0 }
 
                 if let meta = current?.metaLine {
                     Text(meta)
@@ -282,11 +287,6 @@ struct PopularHero: View {
         // 1 行标题时正好是 78，2 行会更高——78 说的是单行那个位置。
         // 块底从 550 抬到 600 之后文字块跟着留出这 50，屏上位置一点不变（LP 2901 / Colo 2902）。
         .padding(.bottom, Self.textBottomInset)
-        // 渐隐的起点就是这个块的顶（圆点那行）：在这里量一下它在封面盒子里的位置，
-        // 量不到就按 600 - 180 = 420 兜底。
-        .onGeometryChange(for: CGFloat.self) { proxy in
-            proxy.frame(in: .named(Self.heroSpace)).minY
-        } action: { fadeTop = $0 }
     }
 
     private var actions: some View {
