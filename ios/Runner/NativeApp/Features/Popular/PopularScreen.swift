@@ -21,8 +21,7 @@ struct PopularScreen: View {
             LazyVStack(spacing: 0) {
                 PopularHero(
                     items: controller.heroItems,
-                    zoomNamespace: zoomNamespace,
-                    extraHeight: heroExtraHeight
+                    zoomNamespace: zoomNamespace
                 )
                 // 上拉过界时往回补，视觉上封面钉在屏幕顶端不动（Colo 2847 / LP 2887）；
                 // 上滑时补偿是 0，封面跟着内容一起滚走（LP 2846）。
@@ -85,11 +84,6 @@ struct PopularScreen: View {
         max(0, -scrollY)
     }
 
-    /// 下拉过界时封面块多出来的高度：跟下拉位移 1:1 涨，封顶 120（原先是放大倍数封顶 1.22，
-    /// 现在改成整块往下长，名称、按钮、渐隐都跟着下来 —— LP 2934）。
-    private var heroExtraHeight: CGFloat {
-        min(overPull, PopularHero.maxPullDistance)
-    }
 
     /// 下面那几行横向海报架。
     private var shelves: some View {
