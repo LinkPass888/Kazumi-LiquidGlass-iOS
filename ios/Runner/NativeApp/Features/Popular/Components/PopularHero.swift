@@ -102,7 +102,9 @@ struct PopularHero: View {
         }
         .frame(height: Self.coverHeight)
         .coordinateSpace(.named(Self.heroSpace))
-        .clipped()
+        // 这里不裁：下拉过界时封面放大，底边要真的往下长出来（LP 2942）。
+        // 平时图正好 600 高，没有东西溢出去。
+
         .onPreferenceChange(TopBarHeightKey.self) { topBarHeight = $0 }
         // 选源面板：直接复用详情页那张（`SourceSheet`）和它那一套回调，
         // 不在推荐页另定一套（LP 2903 / 2904 / Colo 2907）。
@@ -193,7 +195,6 @@ struct PopularHero: View {
                     // 从中心放的话顶边会往上钻进状态栏；从顶边放，顶边钉着不动、往下长，
                     // 多出来的部分裁掉。块的位置和文字都不参与。
                     .scaleEffect(poster.id == current?.id ? pullScale : 1, anchor: .top)
-                    .clipped()
             }
         }
         .buttonStyle(.plain)
