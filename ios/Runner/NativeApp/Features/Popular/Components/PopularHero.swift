@@ -51,10 +51,10 @@ struct PopularHero: View {
     static let pullZoomBase: CGFloat = 550
     /// 顶上那层渐变遮罩的高度（Colo 2856）。
     static let maskHeight: CGFloat = 100
-    /// 底边渐隐：从名称那一行一直化到封面底边（LP 2912 / Colo 2913 / LP 2928），
-    /// 名称位置随标题行数而变，所以起点是量出来的（`fadeTop`）。
-    /// 1 行标题时那个位置在 448，离封面底边 152。
-    static let fadeDefaultTop: CGFloat = coverHeight - 152
+    /// 底边渐隐：从圆点那行底下（名称上面）一直化到封面底边（LP 2928 / Colo 2930），
+    /// 位置随标题行数而变，所以起点是量出来的（`fadeTop`）。
+    /// 1 行标题时那个位置在 436，离封面底边 164。
+    static let fadeDefaultTop: CGFloat = coverHeight - 164
     /// 提前到离封面底边 40 就满页面底色：560 往下的 40 点一直是满底色（Colo 2922），
     /// 最后这一段已经是纯底色，封面底边那条线就露不出来。
     static let fadeFullInset: CGFloat = 40
@@ -75,7 +75,7 @@ struct PopularHero: View {
     @State private var isLoadingSources = false
     /// 顶栏本体的实际高度：提示语要落在它下面。
     @State private var topBarHeight: CGFloat = 59
-    /// 渐隐的起点：名称那一行在封面盒子里的 y（圆点那行留在原图上，LP 2928）。
+    /// 渐隐的起点：圆点那行底下再让 2（圆点整行留在原图上，LP 2928 / Colo 2930）。
     /// 用 `onGeometryChange` 按坐标空间量（`PreferenceKey` 那条路在这版没吃到值）。
     @State private var fadeTop: CGFloat = PopularHero.fadeDefaultTop
     /// 圆钮按下时弹一下：缩到 0.8 再回弹，120 毫秒（Colo 2803）。
@@ -201,24 +201,24 @@ struct PopularHero: View {
         .accessibilityHint("打开详情")
     }
 
-    /// 底边渐隐：从名称那行开始往下，把封面渐成页面底色，满底色落在 560，
+    /// 底边渐隐：从圆点那行底下开始往下，把封面渐成页面底色，满底色落在 560，
     /// 再往下 40 点一直是满底色（Colo 2922）。
     ///
-    /// 曲线不是等分七档（LP 2924）：等分的时候 20% 就直接顶在圆点那行上，圆点之上还是原图、
-    /// 之下一层白纱，看着就像在封面上贴了一张透明白图。现在从 0 起、下半段才快速收掉。
+    /// 第一档必须是 0（LP 2925 / 2926 / Colo 2930）：之前起手就给 20%，圆点那行以上是原图、
+    /// 以下一层白纱，那条台阶看着就像在封面上贴了一张透明白图。
     private var fade: some View {
-        // 下沿贴死封面底边 600，上沿就是圆点那行（`fadeTop`）。
+        // 下沿贴死封面底边 600，上沿是圆点那行底下、名称上面（`fadeTop`，1 行标题时 436）。
         let height = max(1, Self.coverHeight - fadeTop)
         // 满底色那一点（封面底边往上 40，即 560）在整条渐变的百分之几上。
         let full = min(1, max(0.01, (Self.coverHeight - Self.fadeFullInset) / height))
-        // 曲线从 0 起，先把图让出来，到下半段才快速收掉（LP 2924：平铺七档看着像
-        // 在封面上贴了一张透明白图）。
-        let curve: [(CGFloat, CGFloat)] = [
-            (0.00, 0.00), (0.12, 0.02), (0.28, 0.06), (0.44, 0.13),
-            (0.60, 0.26), (0.74, 0.44), (0.86, 0.67), (0.95, 0.88),
-        ]
-        var stops = curve.map {
-            Gradient.Stop(color: background.opacity($0.1), location: full * $0.0)
+        // 七档等分在 fadeTop…560 这 124 点上（Colo 2930），第一档是 0——
+        // 顶部那一档要是直接给 20%，圆点那行就会成一条台阶（LP 2925 / 2926）。
+        let steps: [CGFloat] = [0, 0.20, 0.40, 0.60, 0.80, 0.90, 0.95]
+        var stops = steps.enumerated().map { index, opacity in
+            Gradient.Stop(
+                color: background.opacity(opacity),
+                location: full * CGFloat(index) / CGFloat(steps.count)
+            )
         }
         // 满底色落在 560，600 往上这 40 点一直是满底色（Colo 2922）。
         stops.append(.init(color: background, location: full))
@@ -258,6 +258,11 @@ struct PopularHero: View {
             VStack(spacing: 0) {
                 dots
                     .padding(.bottom, 14)
+                    // 渐隐的起点：圆点那行的底再让 2（Colo 2930）。圆点整行留在原图上，
+                    // 底下垫的白胶囊也就不受影响；量不到按 436 兜底。
+                    .onGeometryChange(for: CGFloat.self) { proxy in
+                        proxy.frame(in: .named(Self.heroSpace)).maxY + 2
+                    } action: { fadeTop = $0 }
 
                 Text(current?.displayName ?? "")
                     .font(.system(size: 22, weight: .bold))
@@ -265,11 +270,6 @@ struct PopularHero: View {
                     .lineLimit(2)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 24)
-                    // 渐隐的起点就是名称的顶：圆点那行留在原图上，名称往下才开始化
-                    // （LP 2928）。量的是它在封面盒子里的 y，量不到按 448 兜底。
-                    .onGeometryChange(for: CGFloat.self) { proxy in
-                        proxy.frame(in: .named(Self.heroSpace)).minY
-                    } action: { fadeTop = $0 }
 
                 if let meta = current?.metaLine {
                     Text(meta)
