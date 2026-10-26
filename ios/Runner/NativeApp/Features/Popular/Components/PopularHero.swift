@@ -61,6 +61,8 @@ struct PopularHero: View {
     static let fadeFullInset: CGFloat = 40
     /// 下拉时块往下长的封顶位移：再往下拽块也不再变高（原先是放大封顶 1.22）。
     static let maxPullDistance: CGFloat = 120
+    /// 下拉放大的封顶比例（Colo 2953）：550 点下拉到 1.22，再往下不再放大。
+    static let maxPullScale: CGFloat = 1.22
     /// 竖版封面偏上对齐时顶部保留的比例。
     static let topReserve: CGFloat = 0.08
 
@@ -106,6 +108,13 @@ struct PopularHero: View {
             // 封面底边到 600 之间会露出一条没被渐隐盖住的图（Colo 2922 / LP 2921）。
             .frame(height: Self.coverHeight)
             .scaleEffect(pullScale, anchor: .top)
+            // 可视宽度始终钉在页宽，横向多出来的一律裁掉，只有底部允许往下长（Colo 2959）：
+            // 不裁的话放大后右边多出 44 点，隔壁那张就从这条缝里挤进来（LP 2958）。
+            .mask(alignment: .top) {
+                Rectangle()
+                    .frame(maxWidth: .infinity)
+                    .frame(height: Self.coverHeight * Self.maxPullScale)
+            }
 
             // 顶部那截模糊不参与放大，钉在原位（LP 2952）。
             mask
@@ -203,10 +212,9 @@ struct PopularHero: View {
                 // 露出来（LP 2899 / Colo 2900）。
                 BangumiRemoteImage(url: poster.imageURL)
                     .containerRelativeFrame(.horizontal)
-                    // 下拉过界时只有这张图放大，而且从顶边对齐放（Colo 2939）：
-                    // 从中心放的话顶边会往上钻进状态栏；从顶边放，顶边钉着不动、往下长，
-                    // 多出来的部分裁掉。块的位置和文字都不参与。
-                    .scaleEffect(poster.id == current?.id ? pullScale : 1, anchor: .top)
+                    // 放大由整块那层统一做（Colo 2953）：图自己再放一次会变成 1.22 的平方。
+                    // 这里只管裁：显示尺寸永远等于页宽 402。
+                    .clipped()
             }
         }
         .buttonStyle(.plain)
