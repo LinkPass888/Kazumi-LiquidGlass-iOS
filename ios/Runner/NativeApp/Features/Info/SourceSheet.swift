@@ -32,6 +32,9 @@ struct SourceSheet: View {
     @State private var expanded: Set<String> = []
     /// 正在选别名去检索的来源；为空表示没有打开别名选择器。
     @State private var aliasPickerTarget: AliasPickerTarget?
+    /// 正在修改检索词的来源；为空表示没有弹出输入框。
+    @State private var keywordTarget: String?
+    @State private var keywordDraft = ""
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
 
@@ -51,20 +54,14 @@ struct SourceSheet: View {
             .navigationTitle("选择播放源")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
+                // 关闭在右上，左上留空。原来右上的「重新检索」（全部刷新）已经删掉：
+                // 每条来源的菜单里都有自己的「重新检索此来源」，而全量刷新在失败态
+                // 下会把已经出来的结果冲掉。
+                ToolbarItem(placement: .topBarTrailing) {
                     Button("关闭") {
                         controller.cancelSourceSearch()
                         dismiss()
                     }
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        Task { await controller.searchAllSources() }
-                    } label: {
-                        Image(systemName: "arrow.clockwise")
-                    }
-                    .disabled(controller.isSearchingSources)
-                    .accessibilityLabel("重新检索")
                 }
             }
         }
@@ -76,6 +73,26 @@ struct SourceSheet: View {
         }
         .sheet(item: $aliasPickerTarget) { target in
             aliasPicker(for: target.sourceName)
+        }
+        // 修改此来源的检索词（main 的 onSourceSearch）：只重检这一个来源。
+        .alert(
+            "修改检索词",
+            isPresented: Binding(
+                get: { keywordTarget != nil },
+                set: { if !$0 { keywordTarget = nil } }
+            )
+        ) {
+            TextField("检索词", text: $keywordDraft)
+            Button("取消", role: .cancel) { keywordTarget = nil }
+            Button("检索") {
+                guard let name = keywordTarget else { return }
+                let keyword = keywordDraft
+                keywordTarget = nil
+                expanded.insert(name)
+                Task { await controller.retrySource(name, keyword: keyword) }
+            }
+        } message: {
+            Text(keywordTarget.map { "仅检索来源：\($0)" } ?? "")
         }
     }
 
@@ -164,35 +181,26 @@ struct SourceSheet: View {
                 }
             }
 
-            if group.status == .error || group.status == .captcha {
+            // 一格里最多一行动作：失败只留「重试」，找不到只留「使用别名」。
+            // 两个一起给过，看着就是「这一块到底该点哪个」。
+            if group.status == .error {
                 Divider().padding(.leading, 14)
                 Button {
                     Task { await controller.retrySource(group.name) }
                 } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: group.status == .captcha ? "lock.shield" : "arrow.clockwise")
-                            .font(.system(size: 13, weight: .semibold))
-                        Text(group.status == .captcha ? "完成验证后重试" : "重试")
-                            .font(.subheadline.weight(.semibold))
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 10)
-                    .foregroundStyle(KazumiPalette.accent(for: colorScheme))
+                    actionRowLabel(icon: "arrow.clockwise", title: "重试")
                 }
                 .buttonStyle(.plain)
             }
 
-            // 原版：没有结果时给「使用别名」，规则菜单里也有「使用别名检索此来源」。
-            if !group.hasResults && group.status != .pending && !controller.aliases.isEmpty {
+            // 找不到时只给「使用别名」。字用「使用别名」不用「更换别名」：
+            // 这一屏是挑一个别名拿去搜，不是改别名（弹层标题就叫「别名检索」）。
+            if group.status == .noResult && !controller.aliases.isEmpty {
                 Divider().padding(.leading, 14)
                 Button {
                     aliasPickerTarget = AliasPickerTarget(sourceName: group.name)
                 } label: {
-                    Text("使用别名")
-                        .font(.subheadline.weight(.semibold))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
-                        .foregroundStyle(KazumiPalette.accent(for: colorScheme))
+                    actionRowLabel(icon: nil, title: "使用别名")
                 }
                 .buttonStyle(.plain)
             }
@@ -203,14 +211,34 @@ struct SourceSheet: View {
         )
     }
 
-    /// 每条规则的「更多」菜单，对应原版 source_sheet_view.dart 的 _buildSourceMenu：
-    /// 修改此来源的检索词 / 使用别名检索此来源 / 重新检索此来源。
+    /// 卡片下面那一行动作按钮的样式：整行宽、上下 10、强调色。
+    private func actionRowLabel(icon: String?, title: String) -> some View {
+        HStack(spacing: 6) {
+            if let icon {
+                Image(systemName: icon)
+                    .font(.system(size: 13, weight: .semibold))
+            }
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 10)
+        .foregroundStyle(KazumiPalette.accent(for: colorScheme))
+        .contentShape(Rectangle())
+    }
+
+    /// 每条规则的「更多」菜单，对应原版 source_sheet_view.dart 的 _buildSourceMenu。
+    ///
+    /// main 是四项，这里放三项：「在浏览器中打开」不放——规则检索的地址要按
+    /// 规则自己拼（很多是 POST、带变量），拿不到一个能直接打开的网页；
+    /// 放一颗点了没反应的菜单项比不放更糟。
     private func sourceMenu(_ group: InfoController.SourceGroup) -> some View {
         Menu {
             Button {
-                Task { await controller.retrySource(group.name) }
+                keywordDraft = group.keyword
+                keywordTarget = group.name
             } label: {
-                Label("重新检索此来源", systemImage: "arrow.clockwise")
+                Label("修改此来源的检索词", systemImage: "text.cursor")
             }
             if !controller.aliases.isEmpty {
                 Button {
@@ -218,6 +246,11 @@ struct SourceSheet: View {
                 } label: {
                     Label("使用别名检索此来源", systemImage: "textformat.alt")
                 }
+            }
+            Button {
+                Task { await controller.retrySource(group.name) }
+            } label: {
+                Label("重新检索此来源", systemImage: "arrow.clockwise")
             }
         } label: {
             Image(systemName: "ellipsis")

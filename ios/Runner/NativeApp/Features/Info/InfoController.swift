@@ -19,16 +19,31 @@ final class InfoController {
     private(set) var isLoadingEpisodes = false
 
     /// 选源面板的聚合结果，按规则名索引。
-    private(set) var sourceGroups: [SourceGroup] = []
+    ///
+    /// 是算出来的、不是快照：每条来源的状态会一个个变（检索中 → 结果 / 失败 /
+    /// 超时），存一份快照就只有整轮跑完才刷新，单条超时或被看门狗判失败时
+    /// 界面不会动。读的是 `searchService` 上的可观察状态，变了就重画。
+    var sourceGroups: [SourceGroup] {
+        let fallback = defaultKeyword
+        return plugins.pluginList.map { plugin in
+            SourceGroup(
+                name: plugin.name,
+                status: searchService.status(for: plugin.name) ?? .pending,
+                results: searchService.responses(for: plugin.name),
+                keyword: sourceKeywords[plugin.name] ?? fallback
+            )
+        }
+    }
     private(set) var isSearchingSources = false
 
     let searchService: PluginSearchService
     private let plugins: PluginsController
-    private var sourceKeyword = ""
     /// 每个来源各自的检索词。对应原版 _SourceSearchGroup.keyword：
     /// 默认是番剧名，改过检索词或用别名检索后，这个来源就用自己的词。
     private var sourceKeywords: [String: String] = [:]
 
+    /// 默认检索词：中文名优先，缺失时用原名（与原版一致）。
+    private var defaultKeyword: String { item.nameCn.isEmpty ? item.name : item.nameCn }
     struct SourceGroup: Identifiable, Sendable {
         var id: String { name }
         var name: String
@@ -188,23 +203,19 @@ final class InfoController {
     /// 对应 SourceSheet 的 init：用中文名优先作为检索词。
     func searchAllSources() async {
         guard !plugins.pluginList.isEmpty else { return }
-        let keyword = item.nameCn.isEmpty ? item.name : item.nameCn
-        sourceKeyword = keyword
         sourceKeywords = [:]
         isSearchingSources = true
-        await searchService.queryAllSource(keyword)
+        await searchService.queryAllSource(defaultKeyword)
         isSearchingSources = false
-        refreshSourceGroups()
     }
 
     /// 对应原版 source_sheet.dart 的 _querySource：只检索指定来源。
     func retrySource(_ name: String, keyword: String? = nil) async {
-        let resolved = (keyword ?? sourceKeywords[name] ?? sourceKeyword)
+        let resolved = (keyword ?? sourceKeywords[name] ?? defaultKeyword)
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard !resolved.isEmpty else { return }
         sourceKeywords[name] = resolved
         await searchService.querySource(resolved, pluginName: name)
-        refreshSourceGroups()
     }
 
     /// 对应原版 _showAliasPicker → _querySource(alias, pluginName)：
@@ -221,18 +232,6 @@ final class InfoController {
     func cancelSourceSearch() {
         searchService.cancel()
         isSearchingSources = false
-    }
-
-    private func refreshSourceGroups() {
-        sourceKeyword = item.nameCn.isEmpty ? item.name : item.nameCn
-        sourceGroups = plugins.pluginList.map { plugin in
-            SourceGroup(
-                name: plugin.name,
-                status: searchService.status(for: plugin.name) ?? .pending,
-                results: searchService.responses(for: plugin.name),
-                keyword: sourceKeywords[plugin.name] ?? sourceKeyword
-            )
-        }
     }
 }
 

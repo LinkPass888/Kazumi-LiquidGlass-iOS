@@ -98,12 +98,6 @@ struct PopularHero: View {
     @State private var isPageVisible = true
     /// 手指正按着／还在滑：这时候不切，松手后重新起算（Colo 3067）。
     @State private var isScrolling = false
-    /// 刚翻完一页后的滑动冷却：半秒内不接新的拖动（LP 3136 / 3138：0.5 秒，不是 1 秒）。
-    /// 快速连滑时，绕回第一张之后的「挪回真页」还没走完就又滑一下，而落着的那页是
-    /// 克隆页、后面没有下一页，看着就是「翻不动」。
-    @State private var swipeLocked = false
-    /// 冷却的计时：每翻一页重新起算。
-    @State private var swipeLockTask: Task<Void, Never>?
     @Environment(\.scenePhase) private var scenePhase
 
     /// 自动切换的三个前提：不止一张、这一页在前台、封面没被滚出屏幕。
@@ -228,21 +222,6 @@ struct PopularHero: View {
         }
     }
 
-    /// 手指离手后 0.5 秒内不接新的拖动（LP 3136 / 3138）。
-    ///
-    /// 上闸就是立刻上，不等落定：等落定再上闸，减速途中那半秒里还能再滑一下，
-    /// 那一下会一次跳两页。闸上的是「手指」不是滚动本身，这次的减速和吸附照常走完，
-    /// 绕回第一张之后「挪回真页」也在这 0.5 秒里做完。
-    private func lockSwipe() {
-        swipeLockTask?.cancel()
-        swipeLocked = true
-        swipeLockTask = Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(500))
-            guard !Task.isCancelled else { return }
-            swipeLocked = false
-        }
-    }
-
     /// 轮播里的一页。两头各多一页克隆（最后一张、第一张各复制一份），
     /// 这样「最后一张 → 第一张」是继续往右翻过去，不是往回倒（LP 3064）。
     private struct CarouselPage: Identifiable {
@@ -280,7 +259,7 @@ struct PopularHero: View {
     ZStack(alignment: .bottom) {
             // 下拉时只有那张图从顶边放大（LP 2963 / Colo 2939）：横向钉死页宽 402，
             // 纵向往下长，多出来的露在下面。可视宽度不跟着放大，隔壁才不会挤进来（Colo 2959）。
-            pagerWithGate
+            pager
                 .scaleEffect(pullScale, anchor: .top)
                 .mask(alignment: .top) {
                     Rectangle()
@@ -401,33 +380,6 @@ struct PopularHero: View {
 
     // MARK: - 封面
 
-    private var pagerWithGate: some View {
-        pager
-            // 光靠上面那层挡不住：覆盖层明明在（调试时画成红色看得见），
-            // 手指照样能推动这一排——SwiftUI 的覆盖层对 ScrollView 的 pan 不起作用。
-            // 所以直接把这一排自己设成不吃触摸，覆盖层加在它外面、留着吃手指
-            // （不吃的话触摸会掉到外层竖着那个 ScrollView，变成下拉，LP 3156）。
-            .allowsHitTesting(!swipeLocked)
-            // 冷却期间挡手指（LP 3136 / 3138）：一层透明覆盖层吃掉触摸，
-            // 底下的翻页动画不受影响，0.5 秒后自己撤掉。
-            .overlay {
-                if swipeLocked {
-                    // 挂一个空手势把它吃掉：不挂的话触摸会掉到下面那层，
-                    // 侧滑被挡住就变成下拉（LP 3156）。
-                    Color.clear
-                        .contentShape(Rectangle())
-                        // 必须是 highPriorityGesture ＋ 真有回调：
-                        // 空手势会被优化掉，普通 gesture 又抢不过外层竖着那个 ScrollView
-                        // 的 pan（抢不过就变成下拉，LP 3156）。
-                        .highPriorityGesture(
-                            DragGesture(minimumDistance: 0)
-                                .onChanged { _ in }
-                                .onEnded { _ in }
-                        )
-                }
-            }
-    }
-
     private var pager: some View {
         ScrollView(.horizontal) {
             // 这里用 HStack 而不是 LazyHStack（LP 3074）：只有 5 张加两页克隆，
@@ -446,11 +398,6 @@ struct PopularHero: View {
         // 手指按住、还在滑都不切，松手（回到 idle）后计时重新起算（Colo 3067）。
         .onScrollPhaseChange { _, phase in
             isScrolling = phase != .idle
-            // 手指一离开就上闸（LP 3136）：等落定再上闸太晚——减速途中还能再滑一下，
-            // 那一下会一次跳两页（实测 1→4）。闸只挡新的触摸，底下这次的减速和吸附照常走完。
-            if phase != .interacting, phase != .tracking {
-                lockSwipe()
-            }
         }
         .scrollIndicators(.hidden)
         // 横向裁在翻页容器这一层：外面那层不能裁（下拉时封面要往下长出来），
