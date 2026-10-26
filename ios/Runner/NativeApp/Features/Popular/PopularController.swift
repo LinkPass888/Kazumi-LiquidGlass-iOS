@@ -59,12 +59,16 @@ final class PopularController {
         ]
     }
 
-    /// 某一行的缓存键（带镜像来源；季度那行还带季度标签，换季自动失效）。
+    /// 某一行的缓存键（带镜像来源）。
+    ///
+    /// 本季新番、综合排名、收藏榜都带季度标签（LP 2983）：换季那一刻键就变了，
+    /// 旧键自然失效、自动重取一次。本周热门不带——它本来就是 7 天一轮。
     private func cacheKey(for spec: RowSpec) -> String {
-        PopularRowCache.key(
+        let seasonScoped = spec.name == "season" || spec.name == "ranked" || spec.name == "collected"
+        return PopularRowCache.key(
             spec.name,
             source: PopularRowCache.currentSource,
-            extra: spec.name == "season" ? PopularRowCache.currentSeasonTag() : nil
+            extra: seasonScoped ? PopularRowCache.currentSeasonTag() : nil
         )
     }
 
