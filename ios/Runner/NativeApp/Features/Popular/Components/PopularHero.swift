@@ -184,6 +184,9 @@ struct PopularHero: View {
         .scrollTargetBehavior(.paging)
         .scrollPosition(id: $currentID)
         .scrollIndicators(.hidden)
+        // 横向裁在翻页容器这一层：外面那层不能裁（下拉时封面要往下长出来），
+        // 但隔壁那张页就在右边，不裁的话它会被一起画出来（LP 2958）。
+        .clipped()
     }
 
     /// 封面图 ＋ 底边渐隐：点击只挂在这一层（Ato 2852），整块都是命中区。
