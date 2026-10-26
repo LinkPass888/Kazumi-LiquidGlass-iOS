@@ -28,8 +28,10 @@ struct PopularScreen: View {
                 // 上滑时补偿是 0，封面跟着内容一起滚走（LP 2846）。
                 .offset(y: -overPull)
 
+                // 封面底边下面留 24 就够：渐隐到封面底边 600 已经是页面底色，底下不用再留一层
+                // 让它化开（LP 2912 / Colo 2913：本周热门回到封面底边下 24，即 624）。
                 shelves
-                    .padding(.top, 24)
+                    .padding(.top, 8)
             }
             .padding(.bottom, 40)
         }

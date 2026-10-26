@@ -51,8 +51,10 @@ struct PopularHero: View {
     static let pullZoomBase: CGFloat = 550
     /// 顶上那层渐变遮罩的高度（Colo 2856）。
     static let maskHeight: CGFloat = 100
-    /// 底边渐隐高度（Colo 2868：120 → 150）。
-    static let fadeHeight: CGFloat = 150
+    /// 底边渐隐高度：从圆点那行（文字块的顶）一直化到封面底边（LP 2912 / Colo 2913），
+    /// 文字块高随标题行数、元信息有无而变，所以这段高度是量出来的（`textBlockHeight`）。
+    /// 1 行标题时那个位置在 428 高（量过），离封面底边 172。
+    static let fadeDefaultHeight: CGFloat = 122
     /// 下拉放大的封顶位移：再往下拽放大也不涨了（Colo 2870）。
     static let maxPullDistance: CGFloat = 120
     /// 竖版封面偏上对齐时顶部保留的比例。
@@ -68,6 +70,9 @@ struct PopularHero: View {
     @State private var isLoadingSources = false
     /// 顶栏本体的实际高度：提示语要落在它下面。
     @State private var topBarHeight: CGFloat = 59
+    /// 文字块实际高度（含块底那 50 的留白）：渐隐从它的顶（圆点那行）一直盖到封面底边。
+    /// 用 `onGeometryChange` 量（`PreferenceKey` 那条路在这版没吃到值，量出来是 0）。
+    @State private var textBlockHeight: CGFloat = PopularHero.fadeDefaultHeight + PopularHero.textBottomInset
     /// 圆钮按下时弹一下：缩到 0.8 再回弹，120 毫秒（Colo 2803）。
     @State private var followScale: CGFloat = 1
 
@@ -187,23 +192,29 @@ struct PopularHero: View {
         .accessibilityHint("打开详情")
     }
 
-    /// 底边渐隐：顶端全透明 → 底端页面底色（Colo 2868 定死的五档）。
+    /// 底边渐隐：从圆点那行开始往下，按 LP 2917 的七档走——上面还能看出封面剩 80%，
+    /// 往下 60 / 40 / 20 / 10 / 5 / 0，到底边 600 已经是货架那块的底色了。
+    ///
+    /// 起点就是文字块的顶 — 圆点那排小点。读的是一串「封面还剩多少」，所以页面底色
+    /// 从 0 涨到满；这张图到底边 600 处已经完全变成货架那块的颜色了。
     ///
     /// 末端那档必须是页面底色本身：这里写死纯白的话，货架那块的底色一旦不是纯白，
     /// 渐变结束的地方就会有一条缝，看起来就是「渐变没原来好」。
     private var fade: some View {
         LinearGradient(
             stops: [
-                .init(color: background.opacity(0), location: 0),
-                .init(color: background.opacity(0.30), location: 0.40),
-                .init(color: background.opacity(0.70), location: 0.70),
-                .init(color: background.opacity(0.95), location: 0.90),
+                .init(color: background.opacity(0.20), location: 0),
+                .init(color: background.opacity(0.40), location: 1.0 / 6.0),
+                .init(color: background.opacity(0.60), location: 2.0 / 6.0),
+                .init(color: background.opacity(0.80), location: 3.0 / 6.0),
+                .init(color: background.opacity(0.90), location: 4.0 / 6.0),
+                .init(color: background.opacity(0.95), location: 5.0 / 6.0),
                 .init(color: background, location: 1),
             ],
             startPoint: .top,
             endPoint: .bottom
         )
-        .frame(height: Self.fadeHeight)
+        .frame(height: textBlockHeight)
     }
 
     /// 顶上那 100 高的渐变遮罩：顶部 55% 页面底色 → 末端全透明（Colo 2856）。
@@ -255,6 +266,10 @@ struct PopularHero: View {
         // 1 行标题时正好是 78，2 行会更高——78 说的是单行那个位置。
         // 块底从 550 抬到 600 之后文字块跟着留出这 50，屏上位置一点不变（LP 2901 / Colo 2902）。
         .padding(.bottom, Self.textBottomInset)
+        // 渐隐的起点就是这个块的顶（圆点那行），所以量一下它连块底留白一起的高度。
+        .onGeometryChange(for: CGFloat.self) { proxy in
+            proxy.size.height
+        } action: { textBlockHeight = $0 }
     }
 
     private var actions: some View {
@@ -323,10 +338,16 @@ struct PopularHero: View {
             ForEach(items) { poster in
                 let selected = poster.id == (currentID ?? items.first?.id)
                 Capsule(style: .continuous)
-                    .fill(selected ? KazumiPalette.accent(for: colorScheme) : Color.black.opacity(0.25))
+                    // 未选中的点 25% 墨压在封面上等于不存在，改 55%（Colo 2916）。
+                    .fill(selected ? KazumiPalette.accent(for: colorScheme) : Color.black.opacity(0.55))
                     .frame(width: selected ? 18 : 6, height: 6)
             }
         }
+        // 圆点底下垫一条胶囊底（Colo 2916）：亮封面、暗封面都读得出来。
+        // 白 50%、左右各留 8（宽＝圆点总宽 +16）、高 14、圆角 7。
+        .padding(.horizontal, 8)
+        .frame(height: 14)
+        .background(Capsule(style: .continuous).fill(.white.opacity(0.5)))
         .animation(.easeOut(duration: 0.2), value: currentID)
     }
 
