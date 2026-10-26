@@ -80,6 +80,10 @@ final class BangumiSubjectCache {
               Date().timeIntervalSince1970 - savedAt < Self.episodesMaxAge
         else { return nil }
         let parsed = raw.map { BangumiEpisode.fromJSON(JSONValue(any: $0)) }
+        // 一集首播日期都没有的缓存当没有（LP 3013）：早期版本存过没有 airdate 的
+        // 剧集，结果「更新进度」永远算成 0 集、整行不显示，缓存还挡着不再去拉。
+        // 只认「一条日期都没有」这种情况，正常的未播出番（日期为空）不受影响。
+        guard parsed.contains(where: { !$0.airdate.isEmpty }) else { return nil }
         episodes[bangumiID] = parsed
         episodesSavedAt[bangumiID] = payload.episodesSavedAt
         return parsed

@@ -91,9 +91,13 @@ struct PopularListScreen: View {
             Image(systemName: "wifi.exclamationmark")
                 .font(.system(size: 40, weight: .semibold))
                 .foregroundStyle(.secondary)
-            Text("无法获取番剧列表")
+            Text("列表没能加载")
                 .font(.headline)
-            Button("重试") {
+            Text("网络好像不太顺，点一下重新加载。")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+            Button("重新加载") {
                 Task { await controller.loadFirstPage() }
             }
             .buttonStyle(.borderedProminent)

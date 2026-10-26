@@ -293,7 +293,8 @@ extension BangumiInfoScreen {
             infoColumn(controller, coverHeight: height)
         }
         .padding(12)
-        .frame(height: height + 24, alignment: .top)
+        // 同上：封面高是下限，不是上限；信息列长高了整块跟着长。
+        .frame(minHeight: height + 24, alignment: .top)
         .background { backdrop(controller) }
         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         .accessibilityElement(children: .contain)
@@ -384,7 +385,9 @@ extension BangumiInfoScreen {
                 .frame(minWidth: 96, minHeight: 36, alignment: .leading)
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
-        .frame(height: coverHeight, alignment: .topLeading)
+        // 至少和封面一样高，行多了往下长（Colo 3013）：行数是变的——有排名没排名、
+        // 有更新进度没更新进度，钉死等于赌行数不变，多出来那行会被挤没。
+        .frame(minHeight: coverHeight, alignment: .topLeading)
     }
 
     /// 「放送时间」：星期菜单 + 具体时刻 + 时间表开关。
