@@ -101,6 +101,10 @@ struct PopularHero: View {
                 fade
                 textBlock
             }
+            // 这一层必须钉死 600：里面那张图按自己的比例只有 582 高，
+            // 不钉的话整层的底就落在 582，渐隐的下沿也跟着早 18 点，
+            // 封面底边到 600 之间会露出一条没被渐隐盖住的图（Colo 2922 / LP 2921）。
+            .frame(height: Self.coverHeight)
             .scaleEffect(pullScale, anchor: .top)
 
             // 顶部那截模糊不参与放大，钉在原位（LP 2952）。
