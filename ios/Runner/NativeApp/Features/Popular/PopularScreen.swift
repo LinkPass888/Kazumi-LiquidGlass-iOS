@@ -22,7 +22,7 @@ struct PopularScreen: View {
                 PopularHero(
                     items: controller.heroItems,
                     zoomNamespace: zoomNamespace,
-                    pullScale: pullScale
+                    extraHeight: heroExtraHeight
                 )
                 // 上拉过界时往回补，视觉上封面钉在屏幕顶端不动（Colo 2847 / LP 2887）；
                 // 上滑时补偿是 0，封面跟着内容一起滚走（LP 2846）。
@@ -85,10 +85,10 @@ struct PopularScreen: View {
         max(0, -scrollY)
     }
 
-    /// 下拉过界时封面的放大倍数：下拉 d，放大 1 + d/550，封顶 1.22（LP 2869 / Colo 2870）。
-    /// 分母是 Colo 给的 550，跟封面块现在的高度无关；只随下拉位移走，上滑立刻回到 1。
-    private var pullScale: CGFloat {
-        1 + min(overPull, PopularHero.maxPullDistance) / PopularHero.pullZoomBase
+    /// 下拉过界时封面块多出来的高度：跟下拉位移 1:1 涨，封顶 120（原先是放大倍数封顶 1.22，
+    /// 现在改成整块往下长，名称、按钮、渐隐都跟着下来 —— LP 2934）。
+    private var heroExtraHeight: CGFloat {
+        min(overPull, PopularHero.maxPullDistance)
     }
 
     /// 下面那几行横向海报架。
