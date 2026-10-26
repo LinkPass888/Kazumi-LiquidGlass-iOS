@@ -28,6 +28,11 @@ struct SearchIntRange: Hashable, Sendable {
     func toToken() -> String {
         "\(min.map(String.init) ?? "")..\(max.map(String.init) ?? "")"
     }
+
+    /// 人话写法：1–5000（整数，中间是短横线 U+2013）。
+    var displayText: String {
+        "\(min ?? 1)–\(max ?? 10000)"
+    }
 }
 
 /// 评分区间（对应 SearchDoubleRange）。
@@ -39,6 +44,14 @@ struct SearchDoubleRange: Hashable, Sendable {
 
     func toToken() -> String {
         "\(Self.format(min))..\(Self.format(max))"
+    }
+
+    /// 人话写法：7.0–10.0（一位小数，中间是短横线 U+2013）。
+    /// 面板和条件摘要共用这一处，别写第二份（Camo 3036）。
+    var displayText: String {
+        let low = String(format: "%.1f", min ?? 0)
+        let high = String(format: "%.1f", max ?? 10)
+        return "\(low)–\(high)"
     }
 
     /// 保留一位小数并去掉末尾的 .0，与 Dart 的 _formatDouble 一致。
@@ -270,3 +283,51 @@ struct SearchParser {
     }
 }
 
+
+// MARK: - 给人看的说法
+
+extension SearchFilterState {
+    /// 排序名，对应 search_widgets.dart 的 _searchSortLabels。
+    static func sortLabel(_ sort: String) -> String {
+        switch sort {
+        case "rank": return "排名"
+        case "score": return "评分"
+        case "match": return "匹配"
+        default: return "热度"
+        }
+    }
+
+    /// 条件摘要，对应 _filterSummary：题材 · 季度/日期 · 评分 · 排名 · 星期。
+    var summary: String {
+        var parts: [String] = []
+        parts.append(contentsOf: tags)
+        if !season.isEmpty {
+            parts.append(season)
+        } else if let dateRange {
+            parts.append("\(dateRange.start) 至 \(dateRange.end)")
+        }
+        if let scoreRange, scoreRange.isValid {
+            // LP 3040：先照 main——摘要就用 toToken，屏上是「评分 7..10」。
+            parts.append("评分 \(scoreRange.toToken())")
+        }
+        if let rankRange, rankRange.isValid {
+            parts.append("排名 \(rankRange.toToken())")
+        }
+        if !weekdays.isEmpty {
+            let titles = ["一", "二", "三", "四", "五", "六", "日"]
+            parts.append("周" + weekdays.map { titles[$0 - 1] }.joined(separator: "、"))
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    /// 搜索语法翻成人话，对应 _readableQuery：搜索框里、历史记录里都只给人看这个。
+    var readableQuery: String {
+        var parts: [String] = []
+        if !keyword.isEmpty { parts.append(keyword) }
+        if !id.isEmpty { parts.append("条目 \(id)") }
+        let summary = self.summary
+        if !summary.isEmpty { parts.append(summary) }
+        if sort != "heat" { parts.append("\(Self.sortLabel(sort))排序") }
+        return parts.joined(separator: " · ")
+    }
+}

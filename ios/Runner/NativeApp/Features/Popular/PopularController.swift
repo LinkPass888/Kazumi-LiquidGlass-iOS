@@ -4,13 +4,13 @@
 //
 //  推荐页（竖版焦点区 + 横向货架）的数据装配。
 //
-//  四行固定（Ato 2739 / 2820）：本周热门 / 本季新番 / 综合排名 / 收藏榜，每行 10 条
+//  四行固定（Ato 2739 / 2820）：热门番组 / 本季新番 / 综合排名 / 收藏榜，每行 10 条
 //  （LP 2740：一个分组十条差不多，滑不到的点「更多」）。
 //  焦点区吃第一行的前 5 条，不单独发请求。
 //
 //  取数口径（LP 2733 / Ato 2734 / LP 2827）：
 //  * 进页面先把缓存画出来，再后台刷新，冷启动不空页等网；
-//  * 没过期的行不重新拉（本周热门 7 天，其余三行 15 天）；
+//  * 没过期的行不重新拉（热门番组 7 天，其余三行 15 天）；
 //  * 这页没有下拉刷新（LP 2823 / Colo 2824）：各行只按自己的过期时间换新。
 //
 
@@ -31,9 +31,9 @@ final class PopularController {
     /// 四行全空且网络也失败。
     private(set) var isFailed = false
 
-    /// 焦点区那几张：本周热门的前 5 条。
+    /// 焦点区那几张：热门番组的前 5 条。
     ///
-    /// 单独存一份而不是从第一行取：本周热门那行要把这几部剔掉（LP 2809），
+    /// 单独存一份而不是从第一行取：热门番组那行要把这几部剔掉（LP 2809），
     /// 剔完之后焦点区就没法再从行里取到自己了。
     private(set) var heroItems: [PopularPoster] = []
 
@@ -51,7 +51,8 @@ final class PopularController {
 
     private var specs: [RowSpec] {
         [
-            RowSpec(name: "trending", title: "本周热门", ttl: PopularRowCache.TTL.fast, list: .trending),
+            // LP 3044：这一行改名「热门番组」，原来挂在封面大标题上的标签菜单也挪到它头上。
+            RowSpec(name: "trending", title: "热门番组", ttl: PopularRowCache.TTL.fast, list: .trending),
             RowSpec(name: "season", title: "本季新番", ttl: PopularRowCache.TTL.slow, list: .season),
             RowSpec(name: "ranked", title: "综合排名", ttl: PopularRowCache.TTL.slow, list: .ranked),
             // 收藏数变得慢，跟综合排名同档走慢缓存（Ato 2820）。
@@ -62,7 +63,7 @@ final class PopularController {
     /// 某一行的缓存键（带镜像来源）。
     ///
     /// 本季新番、综合排名、收藏榜都带季度标签（LP 2983）：换季那一刻键就变了，
-    /// 旧键自然失效、自动重取一次。本周热门不带——它本来就是 7 天一轮。
+    /// 旧键自然失效、自动重取一次。热门番组不带——它本来就是 7 天一轮。
     private func cacheKey(for spec: RowSpec) -> String {
         let seasonScoped = spec.name == "season" || spec.name == "ranked" || spec.name == "collected"
         return PopularRowCache.key(
@@ -141,7 +142,7 @@ final class PopularController {
 
     /// 把一组条目装成一行。
     ///
-    /// 本周热门那行要把焦点区露过面的几条剔掉（LP 2809，按 bangumi id 去重）：
+    /// 热门番组那行要把焦点区露过面的几条剔掉（LP 2809，按 bangumi id 去重）：
     /// 焦点区吃这份清单的前 5 条，那一行只放剩下的，所以这一行取数要一次多要 5 条，
     /// 剔完才还是满的 10 条。
     private func makeRow(_ spec: RowSpec, items: [PopularPoster]) -> PopularRow {

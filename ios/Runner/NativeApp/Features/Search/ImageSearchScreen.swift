@@ -26,6 +26,8 @@ struct ImageSearchScreen: View {
     @State private var isPicking = false
     @State private var debounceTask: Task<Void, Never>?
     @State private var isShowingHelp = false
+    /// 介绍里那颗句内链接点开后的地址（走应用内浏览器）。
+    @State private var browserURL: BrowserLink?
     @State private var isShowingPicker = false
     @State private var photoSelection: PhotosPickerItem?
     @State private var toast: String?
@@ -463,7 +465,8 @@ struct ImageSearchScreen: View {
                     .font(.headline)
                     .padding(.top, 28)
                     .padding(.bottom, 12)
-                VStack(spacing: 4) {
+                // 行距 12（Colo 3102）：原来 4，几行挤在一起。
+                VStack(spacing: 12) {
                     ForEach(controller.results.dropFirst()) { item in
                         OtherMatchRow(result: item) { pick(item) }
                     }
@@ -496,6 +499,17 @@ struct ImageSearchScreen: View {
 
     // MARK: - 弹窗
 
+    /// 第三段：站点名是主题色＋下划线的链接（Colo 3103），其余是普通正文。
+    private var privacyNotice: AttributedString {
+        var text = AttributedString("识别由 trace.moe 提供。开始识别后，所选图片或图片链接会发送至该服务。")
+        if let range = text.range(of: "trace.moe") {
+            text[range].link = URL(string: "https://trace.moe")
+            text[range].underlineStyle = .single
+            text[range].foregroundColor = KazumiPalette.accent(for: colorScheme)
+        }
+        return text
+    }
+
     /// 对应 _showHelp。
     private var helpSheet: some View {
         NavigationStack {
@@ -503,7 +517,16 @@ struct ImageSearchScreen: View {
                 VStack(alignment: .leading, spacing: 16) {
                     Text("使用动画正片截图，保留原始比例。尽量避开黑边、字幕遮挡、水印与拼接画面。")
                     Text("插画、漫画和经过大幅裁剪的图片通常无法匹配。相似度仅供参考，建议对照画面或预览片段确认。")
-                    Text("识别由 trace.moe 提供。开始识别后，所选图片或图片链接会发送至该服务。")
+                    // 站点名做成链接、主题色、点了跳过去（LP 3092 / Camo 3093）：
+                    // 地址就在这句话里，不再单独给一颗「访问 trace.moe」的按钮。
+                    // 「发送至该服务」是隐私告知，不能删。
+                    Text(privacyNotice)
+                        // 句内的链接点了在 App 内打开，不跳出去（Colo 3098）。
+                        // 命中区就是那几个字，不撑到 44 高，免得把行距顶开。
+                        .environment(\.openURL, OpenURLAction { url in
+                            browserURL = BrowserLink(url: url)
+                            return .handled
+                        })
                 }
                 .font(.callout)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -511,13 +534,11 @@ struct ImageSearchScreen: View {
             }
             .navigationTitle("让截图更容易被找到")
             .navigationBarTitleDisplayMode(.inline)
+            .sheet(item: $browserURL) { link in
+                InAppBrowser(url: link.url)
+                    .ignoresSafeArea()
+            }
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    if let url = URL(string: "https://trace.moe") {
-                        Link("访问 trace.moe", destination: url)
-                            .font(.callout)
-                    }
-                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("知道了") { isShowingHelp = false }
                 }
@@ -651,4 +672,10 @@ struct ImageSearchScreen: View {
             }
         }
     }
+}
+
+/// `.sheet(item:)` 要一个 Identifiable，URL 不是，包一层最省事。
+private struct BrowserLink: Identifiable {
+    let id = UUID()
+    let url: URL
 }

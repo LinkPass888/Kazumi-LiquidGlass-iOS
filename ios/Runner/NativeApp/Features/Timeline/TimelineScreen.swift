@@ -185,20 +185,33 @@ struct TimelineScreen: View {
         Button {
             isShowingSeasonPicker = true
         } label: {
-            HStack(spacing: 4) {
+            // LP 3058 定了名字「新番」（Camo 3055 推的）：两字、切到哪季都成立。
+            // 标题不再写季度，季度就落在下面一行小字里——页面上得看得见自己在看哪一季。
+            // 字号字重回大标题那档（34 半粗），菜单不变，点它还是弹放送季度。
+            // 季度小字放在标题右边、同一行（LP 3081）：放到标题下面会把标题顶上去，
+            // 而右上那颗按钮不会跟着动，两下就错位了。
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                HStack(spacing: 4) {
+                    Text("新番")
+                        .font(.system(size: 34, weight: .semibold))
+                        .tracking(-0.4)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                    // 尖角跟着标题一档走：34 配 17（Colo 3035 定的是 28 配 15）。
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                }
                 Text(controller.seasonLabel)
-                    // LP 2631 → 2652：标题一路收到 30（原 34）。
-                    .font(.system(size: 30, weight: .semibold))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 15, weight: .semibold))
+                    // 13 号、次要色（Colo 3061）。
+                    .font(.system(size: 13))
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("切换放送季度，当前 \(controller.seasonLabel)")
+        .accessibilityLabel("新番，切换放送季度，当前 \(controller.seasonLabel)")
     }
 
     /// 右上角：排序与筛选。LP 2631/2632/2637：去掉排序名，只留符号，玻璃底留着。
@@ -248,19 +261,20 @@ struct TimelineScreen: View {
     @ViewBuilder
     private func iconCapsule(hasFilters: Bool) -> some View {
         let circle = Circle()
+        // 标题回到大标题那档，这颗也跟着长一档：40 正圆、图标 20（LP 3050）。
         let icon = Image(systemName: "line.3.horizontal.decrease")
-            .font(.system(size: 18, weight: .bold))
+            .font(.system(size: 20, weight: .bold))
         if hasFilters {
             icon
                 .foregroundStyle(KazumiPalette.onAccent(for: colorScheme))
-                .frame(width: 36, height: 36)
+                .frame(width: 40, height: 40)
                 .background(circle.fill(KazumiPalette.accent(for: colorScheme)))
                 .contentShape(circle)
                 .frame(width: 44, height: 44)
         } else {
             icon
                 .foregroundStyle(.secondary)
-                .frame(width: 36, height: 36)
+                .frame(width: 40, height: 40)
                 .kazumiGlassCapsule(interactive: true)
                 .contentShape(circle)
                 .frame(width: 44, height: 44)

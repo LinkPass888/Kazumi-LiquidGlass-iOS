@@ -92,6 +92,8 @@ struct BestMatchCard: View {
     let onPreview: (URL) -> Void
 
     @Environment(\.colorScheme) private var colorScheme
+    /// 卡片自己的宽度：够 600 才左右分栏（照 main），不够就上下排。
+    @State private var cardWidth: CGFloat = 0
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -110,29 +112,41 @@ struct BestMatchCard: View {
             }
             .padding(20)
 
-            ViewThatFits(in: .horizontal) {
+            // 按卡片自己的宽度分支，照 main 的 600 阈值（Colo 3112）：
+            // 原来用 ViewThatFits，画面那侧是弹性宽度、永远「装得下」，
+            // 于是手机上也被判成左右两栏——画面挤在左边、文字挤在右边，就是那个错位。
+            if cardWidth >= 600 {
                 HStack(alignment: .top, spacing: 0) {
+                    // 并排时画面给死宽度（卡宽的 45%，Colo 3119）：不给的话它按理想尺寸缩，
+                    // 又会被压成左边一条，跟手机那次是同一个毛病。
                     TraceFrame(result: result)
+                        .frame(width: max(200, cardWidth * 0.45))
                         .padding(.leading, 12)
+                        .padding(.bottom, 12)
                     details
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
+            } else {
                 VStack(alignment: .leading, spacing: 0) {
+                    // 画面跟下面的文字同一条左边（Colo 3102）。
                     TraceFrame(result: result)
-                        .padding(.horizontal, 12)
+                        .padding(.horizontal, 20)
                     details
                 }
             }
         }
         .background(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(KazumiPalette.background(for: colorScheme))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .strokeBorder(Color.secondary.opacity(0.22), lineWidth: 0.5)
-                }
+            GeometryReader { proxy in
+                Color.clear.preference(key: CardWidthKey.self, value: proxy.size.width)
+            }
         )
-        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .onPreferenceChange(CardWidthKey.self) { cardWidth = $0 }
+        // 跟下面「其他相似片段」那几行同一种底：cardSurface、无描边、圆角 16（Colo 3102）。
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(KazumiPalette.cardSurface(for: colorScheme))
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 
     private var details: some View {
@@ -206,9 +220,10 @@ struct OtherMatchRow: View {
 
     var body: some View {
         Button(action: onSelect) {
-            HStack(spacing: 14) {
+            // 缩略图 120 宽、跟文字列顶部对齐（Colo 3102）：原来 104 且居中，上下各空一截。
+            HStack(alignment: .top, spacing: 14) {
                 TraceFrame(result: result)
-                    .frame(width: 104)
+                    .frame(width: 120)
 
                 VStack(alignment: .leading, spacing: 6) {
                     Text(result.displayTitle)
@@ -228,11 +243,15 @@ struct OtherMatchRow: View {
 
                 Spacer(minLength: 0)
 
+                // 撑满行高再居中：行是顶部对齐的，不这样箭头会贴在文字第一行上（Colo 3115）。
                 Image(systemName: "arrow.up.forward")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(.secondary)
+                    .frame(maxHeight: .infinity, alignment: .center)
             }
-            .padding(14)
+            // 水平 20 跟上面「相似度最高」那张对齐，两种卡的封面左边缘在同一条线上（Colo 3115）。
+            .padding(.horizontal, 20)
+            .padding(.vertical, 14)
             .background(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .fill(KazumiPalette.cardSurface(for: colorScheme))
@@ -240,5 +259,13 @@ struct OtherMatchRow: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("搜索 \(result.displayTitle)")
+    }
+}
+
+/// 量卡片宽度用。
+private struct CardWidthKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
     }
 }

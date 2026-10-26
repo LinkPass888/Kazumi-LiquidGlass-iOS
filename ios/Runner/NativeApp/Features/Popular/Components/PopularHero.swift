@@ -24,8 +24,8 @@
 import SwiftUI
 import UIKit
 
-/// 顶栏点开「热门番组」选的那排标签：与搜索页、constants.dart 的清单一致。
-private let heroTags: [String] = [
+/// 第一行「热门番组」标题点开选的那排标签：与搜索页、constants.dart 的清单一致。
+let heroTags: [String] = [
     "日常", "原创", "校园", "搞笑", "奇幻", "百合", "恋爱", "悬疑",
     "热血", "后宫", "机战", "轻改", "偶像", "治愈", "异世界",
 ]
@@ -33,6 +33,8 @@ private let heroTags: [String] = [
 struct PopularHero: View {
     let items: [PopularPoster]
     var zoomNamespace: Namespace.ID?
+    /// 封面是不是还在屏幕上：滚过去了就停掉自动切换（Colo 3047），不在看不见的地方空转。
+    var isOnScreen: Bool = true
     /// 下拉过界时封面的放大倍数（LP 2938 / Colo 2939 / LP 2944）：外层按位移算好传进来，上滑时是 1。
     /// 图从顶边放大，左右下三个方向一起长。
     var pullScale: CGFloat = 1
@@ -41,7 +43,10 @@ struct PopularHero: View {
     /// 渐隐的位移：文字块那截照手走，再补上「图放大后比文字块多长出来的那截」，
     /// 下沿才能一直贴着图的新底边。
     private var fadeOffset: CGFloat {
-        pullOffset + max(0, Self.coverHeight * (pullScale - 1) - pullOffset)
+        // 渐隐下沿永远贴封面底边：封面放大后底边往下长多少，它就跟多少（LP 3152）。
+        // 原来这里是 `pullOffset + 补出来的那截`，下拉得深一点时它会被推到底边下面，
+        // 于是「满底色」那一点落到封面底边以下，底边那一截就透出封面、收成一条硬边。
+        Self.coverHeight * (pullScale - 1)
     }
 
     @Environment(AppRouter.self) private var router
@@ -51,18 +56,14 @@ struct PopularHero: View {
     @Environment(\.colorScheme) private var colorScheme
 
     /// 封面块高度（LP 2843 / Colo 2844：400 → 480 → 500 → 550；LP 2901 / Colo 2902：550 → 600）。
-    /// 加高是为了把封面底边推到「开始观看」和「本周热门」中间，文字块本身不动（见 `textBottomInset`）。
+    /// 加高是为了把封面底边推到「开始观看」和第一行货架中间，文字块本身不动（见 `textBottomInset`）。
     static let coverHeight: CGFloat = 600
     /// 文字块离块底的留白（LP 2901 / Colo 2902）：封面加高 50，文字块原地不动，
     /// 所以「开始观看」那排仍在原来的位置，封面底边落到它下面、货架上面。
     static let textBottomInset: CGFloat = 50
-    /// 顶上那层渐变遮罩的高度（Colo 2856）。
-    static let maskHeight: CGFloat = 100
-    /// 文字块（圆点、名称、元信息、按钮，含块底那 50）的高度：标题行数一变它就变，
-    /// 所以量出来（`textBlockHeight`）。1 行标题时是 180，块顶落在 420。
-    static let textBlockDefaultHeight: CGFloat = 114
-    /// 渐隐从圆点那行底下开始（Colo 2930）：圆点整行 14 高，再让 2。
-    static let fadeDotsInset: CGFloat = 16
+    /// 文字块（名称、元信息、按钮、滚动点，含块底那 50）的高度：标题行数一变它就变，
+    /// 所以整块量出来（`textBlockHeight`）。1 行标题时是 164，块顶落在 436。
+    static let textBlockDefaultHeight: CGFloat = 164
     /// 提前到离封面底边 40 就满页面底色：560 往下的 40 点一直是满底色（Colo 2922），
     /// 最后这一段已经是纯底色，封面底边那条线就露不出来。
     static let fadeFullInset: CGFloat = 40
@@ -77,6 +78,8 @@ struct PopularHero: View {
 
     @State private var currentID: Int?
     @State private var isToggling = false
+    /// 顶栏本体的实际高度：提示语要落在它下面。
+    @State private var topBarHeight: CGFloat = 59
     @State private var toastMessage: String?
     /// 选源面板的载体：与番剧详情页同一套（LP 2903 / Colo 2907）。
     @State private var sourceController: InfoController?
@@ -84,13 +87,185 @@ struct PopularHero: View {
     /// 第一次点「开始观看」要先把条目备齐（缓存优先，没有才请求），期间不再接第二次点。
     @State private var isLoadingSources = false
     /// 顶栏本体的实际高度：提示语要落在它下面。
-    @State private var topBarHeight: CGFloat = 59
-    /// 文字块的实际高度（含块底那 50 的留白），渐隐由它推出来。
-    /// 用 `onGeometryChange` 量（`PreferenceKey` 那条路在这版没吃到值）。
-    /// 文字块本身的高度（不含块底那 50）。单行标题量出来是 114，两行会更高。
+    /// 文字块整块的实际高度（含块底那 50 的留白），渐隐由它推出来。
+    /// 用 `onGeometryChange` 量（`PreferenceKey` 那条路在这版没吃到值）。单行标题是 164。
     @State private var textBlockHeight: CGFloat = PopularHero.textBlockDefaultHeight
     /// 圆钮按下时弹一下：缩到 0.8 再回弹，120 毫秒（Colo 2803）。
     @State private var followScale: CGFloat = 1
+    /// 轮播停在第几页（含两头的克隆页）。滚动位置绑它，绕回不往回翻（LP 3064）。
+    @State private var pageIndex: Int?
+    /// 这一页在不在前台（切走 tab 会走 onDisappear）：切走就停掉自动切换（Colo 3047）。
+    @State private var isPageVisible = true
+    /// 手指正按着／还在滑：这时候不切，松手后重新起算（Colo 3067）。
+    @State private var isScrolling = false
+    /// 刚翻完一页后的滑动冷却：半秒内不接新的拖动（LP 3136 / 3138：0.5 秒，不是 1 秒）。
+    /// 快速连滑时，绕回第一张之后的「挪回真页」还没走完就又滑一下，而落着的那页是
+    /// 克隆页、后面没有下一页，看着就是「翻不动」。
+    @State private var swipeLocked = false
+    /// 冷却的计时：每翻一页重新起算。
+    @State private var swipeLockTask: Task<Void, Never>?
+    @Environment(\.scenePhase) private var scenePhase
+
+    /// 自动切换的三个前提：不止一张、这一页在前台、封面没被滚出屏幕。
+    private var canAutoAdvance: Bool {
+        items.count > 1 && isPageVisible && isOnScreen && !isScrolling && scenePhase == .active
+    }
+
+    /// 封面的解码档位：和 `BangumiRemoteImage` 在封面这个尺寸上算出来的那一档一致，
+    /// 不然预取的图和视图要的不是同一份，等于白取。
+    private var coverPixelSize: Int {
+        KazumiImageLoader.pixelSize(for: CGSize(width: 402, height: Self.coverHeight))
+    }
+
+    /// 自动翻页的下一张（可能落在尾部那页克隆上，画的是第一张）。
+    private var nextPoster: PopularPoster? {
+        let from = pageIndex ?? firstRealPage
+        let next = from + 1
+        guard pages.indices.contains(next) else { return nil }
+        return pages[next].poster
+    }
+
+    /// 下一张的封面已经在内存里了才翻（Colo 3067）。
+    private var isNextCoverReady: Bool {
+        guard let next = nextPoster else { return false }
+        return KazumiImageLoader.shared.cachedImage(for: next.imageURL, pixelSize: coverPixelSize) != nil
+    }
+
+    private func prefetchNextCover() {
+        guard let next = nextPoster else { return }
+        KazumiImageLoader.shared.prefetch([next.imageURL], pixelSize: coverPixelSize)
+    }
+
+    /// 从当前页往后取两张（到尾部就绕回开头），保证下一次自动翻页时图已经就绪。
+    private func prefetchAhead() {
+        guard items.count > 1 else { return }
+        let from = pageIndex ?? firstRealPage
+        var urls: [String] = []
+        for step in 1...2 {
+            let index = from + step
+            guard pages.indices.contains(index) else { continue }
+            urls.append(pages[index].poster.imageURL)
+        }
+        guard !urls.isEmpty else { return }
+        KazumiImageLoader.shared.prefetch(urls, pixelSize: coverPixelSize)
+    }
+
+    /// 计时任务的身份：任何一个前提变了，或者换了一张，旧计时就作废重来。
+    private var autoAdvanceKey: String {
+        "\(pageIndex ?? -1)|\(isPageVisible)|\(isOnScreen)|\(isScrolling)|\(scenePhase == .active)"
+    }
+
+    /// 换到下一张：永远往右翻一页。翻到最后一张时下一页就是尾部那页克隆，
+    /// 画的是第一张；落定后再悄悄挪回第一张真页（LP 3064）。
+    private func advanceCover() {
+        guard items.count > 1 else { return }
+        let from = pageIndex ?? firstRealPage
+        // 还停在两头的克隆页上（快速连滑时常见）：先无声挪回对应的真页。
+        // 克隆页画的本来就是同一张，挪这一下看不见。原来这里直接 return，
+        // 于是停在克隆页之后再也翻不动，得往回滑一次才行（LP 3106）。
+        if let real = realPageIndex(for: from) {
+            withTransaction(silentScrollTransaction) { pageIndex = real }
+            return
+        }
+        let next = from + 1
+        guard pages.indices.contains(next) else { return }
+        withAnimation(.easeInOut(duration: 0.55)) {
+            pageIndex = next
+        }
+    }
+
+    /// 无声挪页用的事务：关掉动画，并保住滚动速度（Colo 3114）——
+    /// 不然挪回去之后系统会按旧的惯性再弹一下，等于白挪。
+    private var silentScrollTransaction: Transaction {
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        if #available(iOS 18.0, *) {
+            transaction.scrollPositionUpdatePreservesVelocity = true
+        }
+        return transaction
+    }
+
+    /// 停在克隆页上就无声挪回真页；不然下一次翻页会因为没有下一页而卡住。
+    private func settleIfOnClone() {
+        guard let index = pageIndex, let real = realPageIndex(for: index) else { return }
+        withTransaction(silentScrollTransaction) { pageIndex = real }
+    }
+
+    /// 克隆页下标 → 对应的真页下标；本来就是真页时返回 nil。
+    private func realPageIndex(for index: Int) -> Int? {
+        guard items.count > 1 else { return nil }
+        if index == 0 { return items.count }
+        if index == pages.count - 1 { return 1 }
+        return nil
+    }
+
+    /// 落在两头的克隆页时，等翻页动画走完再无声无息地挪到对应的真页。
+    private func recenterIfNeeded(landed: Int) {
+        guard items.count > 1 else { return }
+        let target: Int?
+        if landed == 0 {
+            target = items.count
+        } else if landed == pages.count - 1 {
+            target = 1
+        } else {
+            target = nil
+        }
+        guard let target else { return }
+        Task {
+            // 等这一页真的停稳再挪（LP 3075）：翻页动画还没走完就改滚动位置，
+            // 系统会把这次改动丢掉，于是「绕回第一张后的第一次翻页」不动一下。
+            // 手指还按着就一直等，别一看到在滑就放弃——快速连滑时那正是常态，
+            // 放弃了就永远停在克隆页上（LP 3106）。
+            for _ in 0..<40 {
+                if pageIndex != landed { return }
+                if !isScrolling { break }
+                try? await Task.sleep(for: .milliseconds(100))
+            }
+            guard pageIndex == landed, !isScrolling else { return }
+            try? await Task.sleep(for: .milliseconds(120))
+            guard pageIndex == landed, !isScrolling else { return }
+            withTransaction(silentScrollTransaction) { pageIndex = target }
+        }
+    }
+
+    /// 手指离手后 0.5 秒内不接新的拖动（LP 3136 / 3138）。
+    ///
+    /// 上闸就是立刻上，不等落定：等落定再上闸，减速途中那半秒里还能再滑一下，
+    /// 那一下会一次跳两页。闸上的是「手指」不是滚动本身，这次的减速和吸附照常走完，
+    /// 绕回第一张之后「挪回真页」也在这 0.5 秒里做完。
+    private func lockSwipe() {
+        swipeLockTask?.cancel()
+        swipeLocked = true
+        swipeLockTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(500))
+            guard !Task.isCancelled else { return }
+            swipeLocked = false
+        }
+    }
+
+    /// 轮播里的一页。两头各多一页克隆（最后一张、第一张各复制一份），
+    /// 这样「最后一张 → 第一张」是继续往右翻过去，不是往回倒（LP 3064）。
+    private struct CarouselPage: Identifiable {
+        let index: Int
+        let poster: PopularPoster
+        var id: Int { index }
+    }
+
+    /// 只有一张时没有克隆页，也不用绕。
+    private var pages: [CarouselPage] {
+        guard items.count > 1 else {
+            return items.enumerated().map { CarouselPage(index: $0.offset, poster: $0.element) }
+        }
+        var result: [CarouselPage] = [CarouselPage(index: 0, poster: items[items.count - 1])]
+        for (offset, item) in items.enumerated() {
+            result.append(CarouselPage(index: offset + 1, poster: item))
+        }
+        result.append(CarouselPage(index: items.count + 1, poster: items[0]))
+        return result
+    }
+
+    /// 第一张真页的下标（有克隆页时是 1）。
+    private var firstRealPage: Int { items.count > 1 ? 1 : 0 }
 
     private var current: PopularPoster? {
         items.first { $0.id == (currentID ?? items.first?.id) }
@@ -105,16 +280,13 @@ struct PopularHero: View {
     ZStack(alignment: .bottom) {
             // 下拉时只有那张图从顶边放大（LP 2963 / Colo 2939）：横向钉死页宽 402，
             // 纵向往下长，多出来的露在下面。可视宽度不跟着放大，隔壁才不会挤进来（Colo 2959）。
-            pager
+            pagerWithGate
                 .scaleEffect(pullScale, anchor: .top)
                 .mask(alignment: .top) {
                     Rectangle()
                         .frame(maxWidth: .infinity)
                         .frame(height: Self.coverHeight * Self.maxPullScale)
                 }
-
-            // 顶部那截模糊不参与放大也不位移，钉在原位（LP 2952）。
-            mask
 
             // 底边渐隐挂在封面这一整个 600 高的盒子上，不挂在图里（Colo 2922）：
             // 挂在图上时，它的下沿跟着图片自己的高度走（图只有 582 高），
@@ -127,13 +299,13 @@ struct PopularHero: View {
                 .offset(y: pullOffset)
         }
         .frame(height: Self.coverHeight)
+        .onPreferenceChange(TopBarHeightKey.self) { topBarHeight = $0 }
         // 封面块不做缩放转场，走默认的横向翻页（LP 2976）：缩放转场返回时只飞回一张快照，
         // 渐隐和按钮要等动画结束才出现，看着就是「图先落回、底下一闪」。
         // 不登记源视图，详情页那边会自动回落到系统默认转场。
         // 这里不裁：下拉过界时封面放大，底边要真的往下长出来（LP 2942）。
         // 平时图正好 600 高，没有东西溢出去。
 
-        .onPreferenceChange(TopBarHeightKey.self) { topBarHeight = $0 }
         // 选源面板：直接复用详情页那张（`SourceSheet`）和它那一套回调，
         // 不在推荐页另定一套（LP 2903 / 2904 / Colo 2907）。
         .sheet(isPresented: $isShowingSources) {
@@ -158,17 +330,56 @@ struct PopularHero: View {
                 }
             }
         }
+        // 分页一变就更新「当前是哪部」，落到克隆页则等动画走完再悄悄挪回真页：
+        // 两页画的是同一张图，挪过去看不出接缝。
+        .onChange(of: isScrolling) { _, scrolling in
+            // 兜底：手一松，只要还停在两头的克隆页上就挪回真页。
+            // 自动切换那条路已经管了，这条管「滑到克隆页就停手」的情况（LP 3106）。
+            guard !scrolling else { return }
+            settleIfOnClone()
+        }
+        .onChange(of: pageIndex) { _, newValue in
+            guard let newValue, pages.indices.contains(newValue) else { return }
+            currentID = pages[newValue].poster.id
+            recenterIfNeeded(landed: newValue)
+            // 每换一页就把后面两张补取进来（Colo 3076）：只在进页时取一次的话，
+            // 隔一张就没图了。
+            prefetchAhead()
+        }
+        // 大封面自己走：停 5 秒换下一张，到头绕回第一张（LP 3044 / 3064）。
+        // 只在看得见、在前台时走（Colo 3047）：切走 tab、退后台、封面滚出屏幕都停。
+        // 计时挂在 currentID 上：手指翻页也会重新起算，不会刚滑完就被换走。
+        .task(id: autoAdvanceKey) {
+            // 等 5 秒；到点了下一张封面还没解码好就先不翻——旧封面留在原地，
+            // 再过 5 秒看一次（Colo 3067：宁可晚一点，也不许翻出一片白）。
+            while canAutoAdvance, !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(5))
+                if Task.isCancelled || !canAutoAdvance { return }
+                if isNextCoverReady {
+                    advanceCover()
+                    return
+                }
+                prefetchNextCover()
+            }
+        }
+        .onAppear { isPageVisible = true }
+        .onDisappear { isPageVisible = false }
         // 条目换成 5 张以内时把圆点状态收敛回第一张。
         .onAppear {
             if currentID == nil { currentID = items.first?.id }
+            if pageIndex == nil, !items.isEmpty { pageIndex = firstRealPage }
+            // 只补取「当前往后两张」，不把五张全取进来（LP 3077 要省内存）：
+            // 翻页前下一张一定已经就绪，再往后的一张有 5 秒慢慢来。
+            prefetchAhead()
         }
         .onChange(of: items.first?.id) { _, _ in
             if let first = items.first?.id, !items.contains(where: { $0.id == currentID }) {
                 currentID = first
+                pageIndex = firstRealPage
             }
         }
-        // 顶栏是封面块最上面那一层（LP 2865 / Colo 2866）：压在封面顶边那 100 高的
-        // 遮罩上，跟着封面、跟着内容一起滚。
+        // 顶栏是封面块最上面那一层（LP 2865 / Colo 2866）：压在封面顶边，
+        // 跟着封面、跟着内容一起滚。LP 3132 说了照旧滚动，只把固定那条模糊改成上滑才出现。
         .overlay(alignment: .top) {
             topBar
                 .padding(.top, Self.statusBarHeight)
@@ -190,18 +401,57 @@ struct PopularHero: View {
 
     // MARK: - 封面
 
+    private var pagerWithGate: some View {
+        pager
+            // 光靠上面那层挡不住：覆盖层明明在（调试时画成红色看得见），
+            // 手指照样能推动这一排——SwiftUI 的覆盖层对 ScrollView 的 pan 不起作用。
+            // 所以直接把这一排自己设成不吃触摸，覆盖层加在它外面、留着吃手指
+            // （不吃的话触摸会掉到外层竖着那个 ScrollView，变成下拉，LP 3156）。
+            .allowsHitTesting(!swipeLocked)
+            // 冷却期间挡手指（LP 3136 / 3138）：一层透明覆盖层吃掉触摸，
+            // 底下的翻页动画不受影响，0.5 秒后自己撤掉。
+            .overlay {
+                if swipeLocked {
+                    // 挂一个空手势把它吃掉：不挂的话触摸会掉到下面那层，
+                    // 侧滑被挡住就变成下拉（LP 3156）。
+                    Color.clear
+                        .contentShape(Rectangle())
+                        // 必须是 highPriorityGesture ＋ 真有回调：
+                        // 空手势会被优化掉，普通 gesture 又抢不过外层竖着那个 ScrollView
+                        // 的 pan（抢不过就变成下拉，LP 3156）。
+                        .highPriorityGesture(
+                            DragGesture(minimumDistance: 0)
+                                .onChanged { _ in }
+                                .onEnded { _ in }
+                        )
+                }
+            }
+    }
+
     private var pager: some View {
         ScrollView(.horizontal) {
-            LazyHStack(spacing: 0) {
-                ForEach(items) { poster in
-                    cover(poster)
+            // 这里用 HStack 而不是 LazyHStack（LP 3074）：只有 5 张加两页克隆，
+            // 全部先摆好；懒加载会在自动翻页滚过去的半路上才建下一页，那一下就是白片。
+            HStack(spacing: 0) {
+                ForEach(pages) { page in
+                    cover(page.poster)
                         .containerRelativeFrame(.horizontal)
                 }
             }
             .scrollTargetLayout()
         }
         .scrollTargetBehavior(.paging)
-        .scrollPosition(id: $currentID)
+        .scrollPosition(id: $pageIndex)
+
+        // 手指按住、还在滑都不切，松手（回到 idle）后计时重新起算（Colo 3067）。
+        .onScrollPhaseChange { _, phase in
+            isScrolling = phase != .idle
+            // 手指一离开就上闸（LP 3136）：等落定再上闸太晚——减速途中还能再滑一下，
+            // 那一下会一次跳两页（实测 1→4）。闸只挡新的触摸，底下这次的减速和吸附照常走完。
+            if phase != .interacting, phase != .tracking {
+                lockSwipe()
+            }
+        }
         .scrollIndicators(.hidden)
         // 横向裁在翻页容器这一层：外面那层不能裁（下拉时封面要往下长出来），
         // 但隔壁那张页就在右边，不裁的话它会被一起画出来（LP 2958）。
@@ -223,8 +473,13 @@ struct PopularHero: View {
                 // 露出来（LP 2899 / Colo 2900）。
                 BangumiRemoteImage(url: poster.imageURL)
                     .containerRelativeFrame(.horizontal)
+                    // 高度必须钉死 600（Colo 3165）：不钉的话这一层的高度是按海报自己的
+                    // 比例算出来的（同一页宽 402，矮的 568、高的 611），底边就不在 600 上。
+                    // 渐隐的底边是按 600 算的，高海报的底边会落到渐隐下面，露出一条——
+                    // 换一张海报露的多少还不一样，这就是「一直漏」。
+                    .frame(height: Self.coverHeight)
                     // 放大由整块那层统一做（Colo 2953）：图自己再放一次会变成 1.22 的平方。
-                    // 这里只管裁：显示尺寸永远等于页宽 402。
+                    // 这里只管裁：显示尺寸永远等于页宽 402、页高 600。
                     .clipped()
             }
         }
@@ -242,15 +497,14 @@ struct PopularHero: View {
     /// 第一档必须是 0（LP 2925 / 2926 / Colo 2930）：之前起手就给 20%，圆点那行以上是原图、
     /// 以下一层白纱，那条台阶看着就像在封面上贴了一张透明白图。
     private var fade: some View {
-        // 下沿贴死封面底边 600，高度＝文字块高减去圆点那行（1 行标题时 164，上沿落在 436）。
+        // 下沿＝封面底边（放大后也跟着走），上沿压在文字块顶上。
         // 用块高而不是量绝对位置：下拉时文字块整体位移，绝对位置会带着位移走，块高不会。
-        // 文字块本身 ＋ 块底那 50，再补上「图放大后比文字块多长出来的那截」：
-        // 下拉时文字块只跟手位移、图却按 1.22 长，不补的话图会在渐隐下面露出一条（LP 2963）。
-        let base = max(1, textBlockHeight + Self.textBottomInset)
-        let extra = max(0, Self.coverHeight * (pullScale - 1) - pullOffset)
-        let height = base + extra
-        // 满底色那一点（封面底边往上 40，即 560）在整条渐变的百分之几上。
-        let full = min(1, max(0.01, (base - Self.fadeFullInset) / height))
+        let coverBottom = Self.coverHeight * pullScale
+        let textTop = Self.coverHeight - textBlockHeight + pullOffset
+        let height = max(1, coverBottom - textTop)
+        // 满底色永远落在封面底边往上 40：这样底边那一截是纯底色，
+        // 封面图的下边缘不会透出来成一条硬边（LP 3152）。
+        let full = min(1, max(0.01, (height - Self.fadeFullInset) / height))
         // 七档等分在渐隐的顶…560 上（Colo 2930），第一档是 0——
         // 顶部那一档要是直接给 20%，圆点那行就会成一条台阶（LP 2925 / 2926）。
         let steps: [CGFloat] = [0, 0.20, 0.40, 0.60, 0.80, 0.90, 0.95]
@@ -278,32 +532,13 @@ struct PopularHero: View {
     /// （浅色是 0.98）在 600 处会差 5 级，正好显出一条线。
     private var pageBackground: Color { Color(uiColor: .systemBackground) }
 
-    /// 顶上那 100 高的渐变遮罩：顶部 55% 页面底色 → 末端全透明（Colo 2856）。
-    /// 它是封面块里的一层，跟着封面一起滚走，所以封面不在了它也不会压在货架上。
-    private var mask: some View {
-        LinearGradient(
-            colors: [
-                KazumiPalette.background(for: colorScheme).opacity(0.55),
-                KazumiPalette.background(for: colorScheme).opacity(0),
-            ],
-            startPoint: .top,
-            endPoint: .bottom
-        )
-        .frame(height: Self.maskHeight)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .allowsHitTesting(false)
-    }
-
     // MARK: - 文字
 
     private var textBlock: some View {
         VStack(spacing: 0) {
-            // 圆点、名称、元信息不吃点击（Ato 2852）：点击只挂封面图那一层，
+            // 名称、元信息不吃点击（Ato 2852）：点击只挂封面图那一层，
             // 文字压在上面也不会把按钮的点击吃掉。
             VStack(spacing: 0) {
-                dots
-                    .padding(.bottom, 14)
-
                 Text(current?.displayName ?? "")
                     .font(.system(size: 22, weight: .bold))
                     .foregroundStyle(.primary)
@@ -318,21 +553,26 @@ struct PopularHero: View {
                         .padding(.top, 6)
                 }
             }
-            // 量文字块本身（不含块底那 50）：渐隐的高度＝它＋`textBottomInset`。
-            // 之前这条量在了圆点那行上，量到的是圆点胶囊的 14，渐隐就只剩十几点、
-            // 看着像整条没了（Colo 2922 那一版起就一直在犯）。
-            .onGeometryChange(for: CGFloat.self) { proxy in
-                proxy.size.height
-            } action: { textBlockHeight = $0 }
             .allowsHitTesting(false)
 
             actions
                 .padding(.top, 14)
+
+            // 滚动点挪到「开始观看」下面（LP 3127）：上面那排（含右侧收藏）整体上移 28 让出位置，
+            // 点落在原来那排占的地方。
+            dots
+                .padding(.top, 12)
         }
         // 文字块贴块底：开始观看那排压在块底上，名称落在块底往上 78（Colo 2853 / 2868）。
         // 1 行标题时正好是 78，2 行会更高——78 说的是单行那个位置。
         // 块底从 550 抬到 600 之后文字块跟着留出这 50，屏上位置一点不变（LP 2901 / Colo 2902）。
         .padding(.bottom, Self.textBottomInset)
+        // 量整块（含块底那 50）：渐隐的高度直接用它，块里再多一行点也不会露出封面。
+        // 之前这条量在了圆点那行上，量到的是圆点胶囊的 14，渐隐就只剩十几点、
+        // 看着像整条没了（Colo 2922 那一版起就一直在犯）。
+        .onGeometryChange(for: CGFloat.self) { proxy in
+            proxy.size.height
+        } action: { textBlockHeight = $0 }
     }
 
     private var actions: some View {
@@ -422,30 +662,16 @@ struct PopularHero: View {
     @ViewBuilder
     private var topBar: some View {
         HStack(alignment: .center, spacing: 10) {
-            Menu {
-                Button {
-                    router.push(.popularList(.trending))
-                } label: {
-                    Text("热门番组")
-                }
-                ForEach(heroTags, id: \.self) { tag in
-                    Button(tag) { router.push(.popularList(.tag(tag))) }
-                }
-            } label: {
-                HStack(spacing: 4) {
-                    Text("热门番组")
-                        .font(.system(size: 34, weight: .semibold))
-                        // 压在封面上的字得有一层才读得清（Colo 2864）：就这一层，别更重。
-                        .shadow(color: .black.opacity(0.30), radius: 8, y: 1)
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(KazumiPalette.secondaryText(for: colorScheme))
-                }
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(.primary)
-            .accessibilityLabel("热门番组")
-            .accessibilityHint("选标签")
+            // LP 3044：首页几页大标题都收成两个字，这页就是「推荐」。
+            // 原来挂在标题上的「热门番组」标签菜单挪到了下面第一行货架（见 PopularScreen）。
+            Text("推荐")
+                .font(.system(size: 34, weight: .semibold))
+                // 34 半粗、字距 −0.4（Colo 3032）。
+                .tracking(-0.4)
+                // 压在封面上的字得有一层才读得清（Colo 2864）：就这一层，别更重。
+                .shadow(color: .black.opacity(0.30), radius: 8, y: 1)
+                .foregroundStyle(.primary)
+                .accessibilityAddTraits(.isHeader)
 
             Spacer()
 
@@ -475,9 +701,10 @@ struct PopularHero: View {
     private func circleButton(symbol: String, label: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: 16, weight: .semibold))
+                // 跟时间表那颗统一到 40 正圆、图标 20（Colo 3061 的「统一 40」）。
+                .font(.system(size: 20, weight: .semibold))
                 .foregroundStyle(.primary)
-                .frame(width: 36, height: 36)
+                .frame(width: 40, height: 40)
                 .kazumiGlassCapsule(interactive: true)
         }
         .buttonStyle(.plain)

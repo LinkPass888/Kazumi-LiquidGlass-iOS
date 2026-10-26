@@ -17,6 +17,9 @@ struct PopularShelf: View {
     let row: PopularRow
     var zoomNamespace: Namespace.ID?
     var onMore: (PopularListSource) -> Void
+    /// 行标题上挂的标签菜单：只有第一行「热门番组」有（LP 3044，从封面大标题挪下来）。
+    var tagOptions: [String] = []
+    var onPickTag: ((String) -> Void)?
 
     @Environment(\.colorScheme) private var colorScheme
 
@@ -40,10 +43,7 @@ struct PopularShelf: View {
 
     private var header: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text(row.title)
-                .font(.system(size: 20, weight: .semibold))
-                .foregroundStyle(.primary)
-                .accessibilityAddTraits(.isHeader)
+            titleLabel
 
             Spacer(minLength: 8)
 
@@ -62,5 +62,37 @@ struct PopularShelf: View {
             }
         }
         .padding(.horizontal, 16)
+    }
+
+    /// 行标题。带菜单的那一行点标题弹出标签清单（原来在封面大标题上，LP 3044 挪下来）：
+    /// 第一项是行名本身（进这一类列表页），下面是那排标签。
+    @ViewBuilder
+    private var titleLabel: some View {
+        if let onPickTag, let list = row.list {
+            Menu {
+                Button(row.title) { onMore(list) }
+                ForEach(tagOptions, id: \.self) { tag in
+                    Button(tag) { onPickTag(tag) }
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    Text(row.title)
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundStyle(.primary)
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .buttonStyle(.plain)
+            .accessibilityAddTraits(.isHeader)
+            .accessibilityLabel(row.title)
+            .accessibilityHint("选标签")
+        } else {
+            Text(row.title)
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundStyle(.primary)
+                .accessibilityAddTraits(.isHeader)
+        }
     }
 }

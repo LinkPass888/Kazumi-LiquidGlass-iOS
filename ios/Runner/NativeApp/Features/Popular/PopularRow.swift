@@ -11,8 +11,8 @@ import Foundation
 /// 「更多」点进去是哪一页。每一行都有对应列表页（Ato 2739），
 /// 没有列表页的行不放「更多」——点了没地方去比没有更糟。
 enum PopularListSource: Hashable, Sendable {
-    /// 趋势榜：next.bgm.tv，按 offset 续接。点进去的列表页标题叫「热门番组」（Camo 2845）：
-    /// 页说的是这一类，行名「本周热门」说的是这一周，两处不同。
+    /// 趋势榜：next.bgm.tv，按 offset 续接。行名和点进去的列表页标题都叫「热门番组」
+    /// （LP 3044 把行名从「本周热门」改成了这个）。
     case trending
     /// 本季新番：镜像季度接口，一次给全季。
     case season

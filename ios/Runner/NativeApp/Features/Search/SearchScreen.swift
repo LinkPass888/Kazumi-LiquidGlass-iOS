@@ -4,7 +4,7 @@
 //
 //  1:1 复刻 lib/pages/search/search_page.dart：
 //  * 顶部是大号搜索框（左侧搜索图标，右侧清空与筛选）；
-//  * 未搜索时展示「按条件查找」入口与搜索语法提示；
+//  * 未搜索时展示「按条件查找」入口（条件串只在内部拼，屏上不出现搜索语法）；
 //  * 搜索结果复用推荐页的竖版卡片网格，滚到底自动续页。
 //
 
@@ -20,19 +20,37 @@ struct SearchScreen: View {
     @State private var submittedQuery: String?
     @State private var isShowingFilters = false
     @State private var isShowingImageSearch = false
+    /// 两颗「隐藏」开关：不在条件串里，是搜索页自己的设置（与 main 一致），落盘记住。
+    @State private var notShowWatched = UserDefaults.standard.bool(forKey: "kazumi.settings.searchNotShowWatched")
+    @State private var notShowAbandoned = UserDefaults.standard.bool(forKey: "kazumi.settings.searchNotShowAbandoned")
     @FocusState private var isInputFocused: Bool
     @Environment(\.colorScheme) private var colorScheme
     @Environment(AppRouter.self) private var router
+    @Environment(LibraryStore.self) private var library
 
     private var hasSearched: Bool { submittedQuery != nil }
 
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
-                searchField
-                    .padding(.top, hasSearched ? 8 : 20)
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 16)
+                HStack(spacing: 8) {
+                    searchField
+                    // 以图搜番：直径 44、图标 20 半粗、无底，跟返回按钮同一档；
+                    // 贴右 16，跟搜索框同一行垂直居中（Colo 3098）。
+                    Button {
+                        openImageSearch()
+                    } label: {
+                        Image(systemName: "photo.on.rectangle")
+                            .font(.system(size: 20, weight: .semibold))
+                            .frame(width: 44, height: 44)
+                            .contentShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("以图搜番")
+                }
+                .padding(.top, hasSearched ? 8 : 20)
+                .padding(.horizontal, 16)
+                .padding(.bottom, 16)
 
                 if hasSearched {
                     results
@@ -48,8 +66,18 @@ struct SearchScreen: View {
         .navigationTitle("搜索")
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $isShowingFilters) {
-            SearchFilterSheet(initial: SearchParser(input).toFilterState()) { state in
-                let query = SearchParser.fromFilterState(state)
+            SearchFilterSheet(
+                initial: SearchParser(input).toFilterState(),
+                notShowWatched: notShowWatched,
+                notShowAbandoned: notShowAbandoned
+            ) { result in
+                notShowWatched = result.notShowWatched
+                notShowAbandoned = result.notShowAbandoned
+                UserDefaults.standard.set(notShowWatched, forKey: "kazumi.settings.searchNotShowWatched")
+                UserDefaults.standard.set(notShowAbandoned, forKey: "kazumi.settings.searchNotShowAbandoned")
+                // LP 3048：条件按 main 的格式写回搜索框（tag:后宫 score:7..10），
+                // 用户改一个字就能接着搜。
+                let query = SearchParser.fromFilterState(result.state)
                 input = query
                 submit(query)
             }
@@ -92,21 +120,14 @@ struct SearchScreen: View {
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundStyle(.tertiary)
+                        // 命中区给到 44（Colo 3084）：原来只有图标那么大。
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("清空搜索")
             }
 
-            // 与原版一致：搜索框右侧第二个按钮是「以图搜番」，筛选在发现态的「按条件查找」里。
-            // 图标沿用项目里已验证可用的 photo.on.rectangle。
-            Button {
-                openImageSearch()
-            } label: {
-                Image(systemName: "photo.on.rectangle")
-                    .font(.system(size: 17, weight: .semibold))
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("以图搜番")
         }
         .padding(.horizontal, 14)
         .frame(minHeight: 52)
@@ -150,18 +171,6 @@ struct SearchScreen: View {
             .buttonStyle(.plain)
             .padding(.horizontal, 16)
 
-            VStack(alignment: .leading, spacing: 6) {
-                Text("搜索语法")
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                Text("tag:标签  season:2026Q1  score:8..10  rank:1..100  weekday:1,3  id:400602")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-                    .textSelection(.enabled)
-            }
-            .padding(.horizontal, 20)
-            .padding(.top, 24)
-
             recentSearches
         }
     }
@@ -189,10 +198,12 @@ struct SearchScreen: View {
                 ) {
                     ForEach(recents.prefix(8), id: \.self) { keyword in
                         Button {
+                            // LP 3072：历史里那条写人话（后宫），点它搜索框里要放查询串
+                            // （tag:后宫），按条件查找里那颗标签也就是选中的——都走同一份状态。
                             input = keyword
                             submit(keyword)
                         } label: {
-                            Text(keyword)
+                            Text(readable(keyword))
                                 .font(.footnote)
                                 .lineLimit(1)
                                 .padding(.horizontal, 12)
@@ -215,8 +226,119 @@ struct SearchScreen: View {
 
     // MARK: - 结果
 
+    /// 隐藏看过／抛弃之后剩下的条目（对应 main 的 _resultSlivers 前半段）。
+    private var visibleItems: [BangumiItem] {
+        guard notShowWatched || notShowAbandoned else { return controller.bangumiList }
+        var hidden: Set<Int> = []
+        for entry in library.entries {
+            let type = CollectType(rawValue: entry.type)
+            if notShowWatched, type == .watched { hidden.insert(entry.id) }
+            if notShowAbandoned, type == .dropped { hidden.insert(entry.id) }
+        }
+        guard !hidden.isEmpty else { return controller.bangumiList }
+        return controller.bangumiList.filter { !hidden.contains($0.id) }
+    }
+
+    /// 结果表头：标题 + 结果数 + 排序 + 筛选入口，一行读完（LP 3068）。
+    private var resultsHeader: some View {
+        let state = SearchParser(submittedQuery ?? "").toFilterState()
+        // LP 3068：「搜索结果」右边只放搜到多少部，条件串本身不在这儿重复一遍
+        // （它就在上面搜索框里，能直接改）。
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 4) {
+                Text("搜索结果")
+                    .font(.headline)
+                Text(countText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .padding(.leading, 4)
+                Spacer(minLength: 8)
+                if !state.isIdSearch {
+                    sortMenu(current: state.sort)
+                        .padding(.trailing, 4)
+                }
+                Button {
+                    isShowingFilters = true
+                } label: {
+                    Image(systemName: "slider.horizontal.3")
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundStyle(.primary)
+                        .frame(width: 44, height: 44)
+                        .overlay(alignment: .topTrailing) {
+                            if state.hasAdvancedFilters {
+                                Circle()
+                                    .fill(KazumiPalette.accent(for: colorScheme))
+                                    .frame(width: 7, height: 7)
+                                    .padding(.top, 8)
+                                    .padding(.trailing, 8)
+                            }
+                        }
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("筛选番剧")
+            }
+
+        }
+        .padding(.horizontal, 16)
+        .padding(.bottom, 10)
+    }
+
+    /// 结果数那行：搜索中 / 共几部 / 被隐藏了几部（与 main 同一句）。
+    private var countText: String {
+        let all = controller.bangumiList
+        if controller.isLoading && all.isEmpty { return "正在搜索…" }
+        let shown = visibleItems.count
+        if shown < all.count {
+            return "\(shown) 部番剧 · 隐藏 \(all.count - shown) 部"
+        }
+        return "\(shown) 部番剧"
+    }
+
+    /// 排序：按热度 / 排名 / 评分 / 匹配（原版是同一颗菜单，改完立刻重搜）。
+    private func sortMenu(current: String) -> some View {
+        Menu {
+            ForEach(["heat", "rank", "score", "match"], id: \.self) { value in
+                Button {
+                    var state = SearchParser(submittedQuery ?? "").toFilterState()
+                    state.sort = value
+                    submit(SearchParser.fromFilterState(state))
+                } label: {
+                    if value == current {
+                        Label("按\(SearchFilterState.sortLabel(value))排序", systemImage: "checkmark")
+                    } else {
+                        Text("按\(SearchFilterState.sortLabel(value))排序")
+                    }
+                }
+            }
+        } label: {
+            // LP 3048 / 3072：只写「热度」这类名字，颜色提上来，右边跟一个下箭头——
+            // 跟别的菜单长一个样，让人看得出这是能点的。
+            HStack(spacing: 4) {
+                Text(SearchFilterState.sortLabel(current))
+                    .font(.system(size: 15, weight: .medium))
+                // 尖角 17 半粗，跟时间表标题那颗一档（Colo 3085）。
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 17, weight: .semibold))
+            }
+            .foregroundStyle(.primary)
+            // 内边距 12 / 14，命中区撑到 44（Colo 3085）。
+            .padding(.horizontal, 12)
+            .padding(.vertical, 14)
+            .contentShape(Rectangle())
+        }
+    }
+
+    /// 历史串翻成人话：条件串本身不给用户看（LP 3022）。
+    private func readable(_ query: String) -> String {
+        let text = SearchParser(query).toFilterState().readableQuery
+        return text.isEmpty ? query : text
+    }
+
     @ViewBuilder
     private var results: some View {
+        resultsHeader
+
         if controller.isLoading && controller.bangumiList.isEmpty {
             ProgressView()
                 .frame(maxWidth: .infinity)
@@ -226,7 +348,7 @@ struct SearchScreen: View {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 36, weight: .semibold))
                     .foregroundStyle(.tertiary)
-                Text(controller.isTimeOut ? "没有找到匹配结果" : "换个关键词试试")
+                Text("没有找到番剧")
                     .font(.headline)
                 Button("修改条件") { isShowingFilters = true }
                     .buttonStyle(.bordered)
@@ -234,23 +356,39 @@ struct SearchScreen: View {
             .frame(maxWidth: .infinity)
             .padding(.top, 60)
         } else {
-            LazyVGrid(columns: columns, alignment: .leading, spacing: 6) {
-                ForEach(controller.bangumiList) { item in
-                    BangumiPosterCard(item: item, zoomNamespace: zoomNamespace)
+            LazyVGrid(columns: columns, alignment: .leading, spacing: 20) {
+                ForEach(visibleItems) { item in
+                    SearchResultCard(item: item, width: cardWidth, zoomNamespace: zoomNamespace)
                         .task { await loadMoreIfNeeded(current: item) }
                 }
             }
-            .padding(.horizontal, 8)
+            .padding(.horizontal, 16)
             .padding(.bottom, 24)
         }
     }
 
-    private var columns: [GridItem] {
+    /// 列数按可用宽算（Colo 3053）：max(2, floor(可用宽 / 180))，402 屏是 2 列。
+    /// 列间距 12、行间距 20；卡宽 =(可用宽 −(列数−1)×12)/列数，402 屏是 179。
+    private var availableWidth: CGFloat {
         let width = UIApplication.shared.connectedScenes
             .compactMap { $0 as? UIWindowScene }
             .first?.screen.bounds.width ?? 390
-        let count = width > KazumiLayout.mediumWidth ? 6 : (width > KazumiLayout.compactWidth ? 5 : 3)
-        return Array(repeating: GridItem(.flexible(), spacing: 8, alignment: .top), count: count)
+        return width - 32
+    }
+
+    private var columnCount: Int {
+        max(2, Int(floor(availableWidth / 180)))
+    }
+
+    private var cardWidth: CGFloat {
+        (availableWidth - CGFloat(columnCount - 1) * 12) / CGFloat(columnCount)
+    }
+
+    private var columns: [GridItem] {
+        Array(
+            repeating: GridItem(.fixed(cardWidth), spacing: 12, alignment: .top),
+            count: columnCount
+        )
     }
 
     // MARK: - 行为
@@ -265,7 +403,8 @@ struct SearchScreen: View {
         let state = SearchParser(value).toFilterState()
         let query = SearchParser.fromFilterState(state)
         isInputFocused = false
-        input = query
+        // 面板点「查看结果」时会把条件串写回输入框（LP 3048，格式同 main），
+        // 用户改一个字就能接着搜；打字搜索这条路不动输入框。
         submittedQuery = query
         if !query.isEmpty { SearchHistoryStore.record(query) }
         Task { await controller.searchBangumi(query, type: "init") }

@@ -15,6 +15,8 @@ struct PopularScreen: View {
 
     /// 滚动内容上沿在滚动空间里的 y：0 是原位，负数是上拉过界（下拉出来的那段）。
     @State private var scrollY: CGFloat = 0
+    /// 顶部那条模糊开没开：只有真的上滑才开，回弹和手抖不算（LP 3145 / 3147）。
+    @State private var showsTopBlur = false
 
     var body: some View {
         ScrollView {
@@ -22,6 +24,8 @@ struct PopularScreen: View {
                 PopularHero(
                     items: controller.heroItems,
                     zoomNamespace: zoomNamespace,
+                    // 封面整块滚出屏幕就停掉自动切换（Colo 3047）。
+                    isOnScreen: scrollY < PopularHero.coverHeight,
                     pullScale: pullScale,
                     pullOffset: overPull
                 )
@@ -37,16 +41,29 @@ struct PopularScreen: View {
             .padding(.bottom, 40)
         }
         .scrollIndicators(.hidden)
+        // 顶部那条模糊改成上滑才出现（LP 3125 / 3126 / 3132）：在顶部时没有，内容滚上来才有，
+        // 跟番剧详情页同一条。顶栏照旧跟着封面滚（LP 2865），不钉住。
+        .scrollEdgeEffectStyle(.soft, for: .top)
+        // 不上滑就不显示（LP 3139 / 3145）。这页的滚动区忽略了顶部安全区，内容正好压在那条边上，
+        // 系统就当成「已经滚上来了」，一进页就挂着一条模糊、往下拉才消失。
+        // 关掉之后由上面那条 style 管上滑时出现，回到顶部就没有。
+        .scrollEdgeEffectHidden(!showsTopBlur, for: .top)
         // 下拉位移用 onScrollGeometryChange 量（LP 2887）：PreferenceKey 在橡皮筋
         // 回弹那段不更新，补偿算出来一直是 0，封面就跟着内容一起下来。
         .onScrollGeometryChange(for: CGFloat.self) { geometry in
             geometry.contentOffset.y
         } action: { _, newValue in
             scrollY = newValue
+            // 真的滚上去一段才开、回落到很浅才关（LP 3147）：中间留出这一段差，
+            // 系统自己回弹、手抖出来的那几点的位移就不算数了。
+            if newValue > 12, !showsTopBlur {
+                showsTopBlur = true
+            } else if newValue < 4, showsTopBlur {
+                showsTopBlur = false
+            }
         }
         // 封面要铺到状态栏，所以滚动区从屏幕最上方开始算。
         .ignoresSafeArea(edges: .top)
-        // 顶栏不在这儿了：它是封面块自己最上面那一层，跟着封面一起滚（LP 2865 / Colo 2866）。
         // 一行都没拉到（缓存空 + 网络也失败）时给个能重试的页；否则就是顶层一个顶栏的空页。
         .overlay {
             if !controller.isLoading, controller.rows.isEmpty, controller.isFailed {
@@ -104,7 +121,10 @@ struct PopularScreen: View {
                 PopularShelf(
                     row: row,
                     zoomNamespace: zoomNamespace,
-                    onMore: { router.push(.popularList($0)) }
+                    onMore: { router.push(.popularList($0)) },
+                    // 第一行「热门番组」标题点开选标签（LP 3044：菜单从封面大标题挪到这儿）。
+                    tagOptions: row.list == .trending ? heroTags : [],
+                    onPickTag: row.list == .trending ? { router.push(.popularList(.tag($0))) } : nil
                 )
                 .padding(.top, 8)
             }
