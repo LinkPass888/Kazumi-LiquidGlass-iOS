@@ -51,10 +51,15 @@ struct PopularHero: View {
     static let pullZoomBase: CGFloat = 550
     /// 顶上那层渐变遮罩的高度（Colo 2856）。
     static let maskHeight: CGFloat = 100
-    /// 底边渐隐高度：从圆点那行（文字块的顶）一直化到封面底边（LP 2912 / Colo 2913），
-    /// 文字块高随标题行数、元信息有无而变，所以这段高度是量出来的（`textBlockHeight`）。
-    /// 1 行标题时那个位置在 428 高（量过），离封面底边 172。
-    static let fadeDefaultHeight: CGFloat = 122
+    /// 底边渐隐：从圆点那行（文字块的顶）一直化到封面底边（LP 2912 / Colo 2913），
+    /// 文字块高随标题行数、元信息有无而变，所以起点位置是量出来的（`fadeTop`）。
+    /// 1 行标题时那个位置在 420，离封面底边 180。
+    static let fadeDefaultTop: CGFloat = coverHeight - 180
+    /// 提前到离封面底边 40 就满页面底色：560 往下的 40 点一直是满底色（Colo 2922），
+    /// 最后这一段已经是纯底色，封面底边那条线就露不出来。
+    static let fadeFullInset: CGFloat = 40
+    /// 量文字块位置用的坐标空间名。
+    static let heroSpace = "popularHero"
     /// 下拉放大的封顶位移：再往下拽放大也不涨了（Colo 2870）。
     static let maxPullDistance: CGFloat = 120
     /// 竖版封面偏上对齐时顶部保留的比例。
@@ -70,9 +75,9 @@ struct PopularHero: View {
     @State private var isLoadingSources = false
     /// 顶栏本体的实际高度：提示语要落在它下面。
     @State private var topBarHeight: CGFloat = 59
-    /// 文字块实际高度（含块底那 50 的留白）：渐隐从它的顶（圆点那行）一直盖到封面底边。
-    /// 用 `onGeometryChange` 量（`PreferenceKey` 那条路在这版没吃到值，量出来是 0）。
-    @State private var textBlockHeight: CGFloat = PopularHero.fadeDefaultHeight + PopularHero.textBottomInset
+    /// 渐隐的起点：文字块（圆点那行）在封面盒子里的 y。
+    /// 用 `onGeometryChange` 按坐标空间量（`PreferenceKey` 那条路在这版没吃到值）。
+    @State private var fadeTop: CGFloat = PopularHero.fadeDefaultTop
     /// 圆钮按下时弹一下：缩到 0.8 再回弹，120 毫秒（Colo 2803）。
     @State private var followScale: CGFloat = 1
 
@@ -89,9 +94,14 @@ struct PopularHero: View {
         ZStack(alignment: .bottom) {
             pager
             mask
+            // 底边渐隐挂在封面这一整个 600 高的盒子上，不挂在图里（Colo 2922）：
+            // 挂在图上时，它的下沿跟着图片自己的高度走（图只有 582 高），
+            // 渐隐就提前 18 点结束，封面底边那条线就露出来了。
+            fade
             textBlock
         }
         .frame(height: Self.coverHeight)
+        .coordinateSpace(.named(Self.heroSpace))
         .clipped()
         .onPreferenceChange(TopBarHeightKey.self) { topBarHeight = $0 }
         // 选源面板：直接复用详情页那张（`SourceSheet`）和它那一套回调，
@@ -183,7 +193,6 @@ struct PopularHero: View {
                     // 位置由外层补偿钉住不动，这里只负责把图放大、超出的裁掉。
                     .scaleEffect(poster.id == current?.id ? pullScale : 1, anchor: .center)
                     .clipped()
-                fade
             }
         }
         .buttonStyle(.plain)
@@ -192,29 +201,36 @@ struct PopularHero: View {
         .accessibilityHint("打开详情")
     }
 
-    /// 底边渐隐：从圆点那行开始往下，按 LP 2917 的七档走——上面还能看出封面剩 80%，
-    /// 往下 60 / 40 / 20 / 10 / 5 / 0，到底边 600 已经是货架那块的底色了。
+    /// 底边渐隐：从圆点那行开始往下，把封面渐成页面底色，满底色落在 560，
+    /// 再往下 40 点一直是满底色（Colo 2922）。
     ///
-    /// 起点就是文字块的顶 — 圆点那排小点。读的是一串「封面还剩多少」，所以页面底色
-    /// 从 0 涨到满；这张图到底边 600 处已经完全变成货架那块的颜色了。
-    ///
-    /// 末端那档必须是页面底色本身：这里写死纯白的话，货架那块的底色一旦不是纯白，
-    /// 渐变结束的地方就会有一条缝，看起来就是「渐变没原来好」。
+    /// 曲线不是等分七档（LP 2924）：等分的时候 20% 就直接顶在圆点那行上，圆点之上还是原图、
+    /// 之下一层白纱，看着就像在封面上贴了一张透明白图。现在从 0 起、下半段才快速收掉。
     private var fade: some View {
-        LinearGradient(
-            stops: [
-                .init(color: background.opacity(0.20), location: 0),
-                .init(color: background.opacity(0.40), location: 1.0 / 6.0),
-                .init(color: background.opacity(0.60), location: 2.0 / 6.0),
-                .init(color: background.opacity(0.80), location: 3.0 / 6.0),
-                .init(color: background.opacity(0.90), location: 4.0 / 6.0),
-                .init(color: background.opacity(0.95), location: 5.0 / 6.0),
-                .init(color: background, location: 1),
-            ],
+        // 下沿贴死封面底边 600，上沿就是圆点那行（`fadeTop`）。
+        let height = max(1, Self.coverHeight - fadeTop)
+        // 满底色那一点（封面底边往上 40，即 560）在整条渐变的百分之几上。
+        let full = min(1, max(0.01, (Self.coverHeight - Self.fadeFullInset) / height))
+        // 曲线从 0 起，先把图让出来，到下半段才快速收掉（LP 2924：平铺七档看着像
+        // 在封面上贴了一张透明白图）。
+        let curve: [(CGFloat, CGFloat)] = [
+            (0.00, 0.00), (0.12, 0.02), (0.28, 0.06), (0.44, 0.13),
+            (0.60, 0.26), (0.74, 0.44), (0.86, 0.67), (0.95, 0.88),
+        ]
+        var stops = curve.map {
+            Gradient.Stop(color: background.opacity($0.1), location: full * $0.0)
+        }
+        // 满底色落在 560，600 往上这 40 点一直是满底色（Colo 2922）。
+        stops.append(.init(color: background, location: full))
+        stops.append(.init(color: background, location: 1))
+        return LinearGradient(
+            stops: stops,
             startPoint: .top,
             endPoint: .bottom
         )
-        .frame(height: textBlockHeight)
+        .frame(maxWidth: .infinity)
+        .frame(height: height)
+        .allowsHitTesting(false)
     }
 
     /// 顶上那 100 高的渐变遮罩：顶部 55% 页面底色 → 末端全透明（Colo 2856）。
@@ -266,10 +282,11 @@ struct PopularHero: View {
         // 1 行标题时正好是 78，2 行会更高——78 说的是单行那个位置。
         // 块底从 550 抬到 600 之后文字块跟着留出这 50，屏上位置一点不变（LP 2901 / Colo 2902）。
         .padding(.bottom, Self.textBottomInset)
-        // 渐隐的起点就是这个块的顶（圆点那行），所以量一下它连块底留白一起的高度。
+        // 渐隐的起点就是这个块的顶（圆点那行）：在这里量一下它在封面盒子里的位置，
+        // 量不到就按 600 - 180 = 420 兜底。
         .onGeometryChange(for: CGFloat.self) { proxy in
-            proxy.size.height
-        } action: { textBlockHeight = $0 }
+            proxy.frame(in: .named(Self.heroSpace)).minY
+        } action: { fadeTop = $0 }
     }
 
     private var actions: some View {
