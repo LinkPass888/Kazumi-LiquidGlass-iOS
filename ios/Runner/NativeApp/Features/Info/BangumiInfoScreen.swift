@@ -786,13 +786,23 @@ extension BangumiInfoScreen {
         BangumiTimelineStore.shared.dropIfNotWatching(item.id, collectType: type)
     }
 
-    /// 当前放送星期：用户手动改过就用手动的，否则用条目的开播日。
+    /// 当前放送星期：用户手动改过就用手动的，否则用时间表里实际所在的那一列。
+    ///
+    /// 顺序和 main 一致：手动选的星期 → 时间表的分组（含凌晨档换列）→
+    /// 开播日过一遍凌晨档规则。不能直接拿开播日：接口经常不给开播日，退回
+    /// 默认值就会和时间表对不上（时间表排周一、这里写周日）。
     private func currentWeekday(_ controller: InfoController) -> Int {
         let store = BangumiTimelineStore.shared
         if let entry = store.entry(for: controller.item.id), entry.weekdayCustom {
             return max(1, min(7, entry.weekday))
         }
-        return max(1, min(7, controller.item.airWeekday))
+        if let column = TimelineWeekdayCache.weekday(of: controller.item.id) {
+            return column
+        }
+        return TimelineColumn.weekday(
+            bangumiWeekday: controller.item.airWeekday,
+            airTimeOf: controller.item.id
+        )
     }
 
     private func isInTimeline(_ controller: InfoController) -> Bool {
@@ -855,7 +865,8 @@ extension BangumiInfoScreen {
         BangumiTimelineStore.shared.setShowInTimeline(
             true,
             for: item.id,
-            weekday: max(1, min(7, item.airWeekday))
+            weekday: TimelineWeekdayCache.weekday(of: item.id)
+                ?? TimelineColumn.weekday(bangumiWeekday: item.airWeekday, airTimeOf: item.id)
         )
         toastMessage = "已标记为在看，并添加到时间表"
     }

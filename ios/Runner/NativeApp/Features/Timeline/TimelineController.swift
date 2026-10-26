@@ -174,7 +174,7 @@ final class TimelineController {
         await BangumiAirTimeService.shared.ensureAniListLoaded(calendar.flatMap { $0.map(\.id) })
 
         baseCalendar = calendar
-        let merged = await mergeCustomEntries(into: calendar, collectTypes: collectTypes)
+        let merged = await mergeCustomEntries(into: groupedBaseCalendar(), collectTypes: collectTypes)
         bangumiCalendar = applySort(merged)
         isTimeOut = bangumiCalendar.allSatisfy(\.isEmpty)
     }
@@ -185,8 +185,34 @@ final class TimelineController {
     /// 而不是两处都留一份。
     func refreshCustomEntries(collectTypes: [Int: CollectType]) async {
         guard !baseCalendar.isEmpty else { return }
-        let merged = await mergeCustomEntries(into: baseCalendar, collectTypes: collectTypes)
+        let merged = await mergeCustomEntries(into: groupedBaseCalendar(), collectTypes: collectTypes)
         bangumiCalendar = applySort(merged)
+    }
+
+    /// bangumi 日历按放进时间表的**列**重新分一次桶（0 = 星期一）。
+    ///
+    /// 分组仍以 bangumi 的星期为准，只在一种情况下换列：更新时刻在凌晨
+    /// 0–5 点时，bangumi 记的是前一天的节目日（日曜 24:00 / 25:05），本地
+    /// 时钟却已经是第二天，放进第二天才和卡片上的 HH:mm 对得上。规则见
+    /// `TimelineColumn.weekday`，与 main 的 `_groupedBaseCalendar` 一致。
+    ///
+    /// 接口返回空（超时 / 无数据）时保持空表：调用方用 isEmpty 判断是否
+    /// 显示「加载失败」，补成 7 个空列表会把它误判成「这周没有番」。
+    private func groupedBaseCalendar() -> [[BangumiItem]] {
+        guard !baseCalendar.isEmpty else { return [] }
+        var grouped: [[BangumiItem]] = Array(repeating: [], count: 7)
+        for (day, items) in baseCalendar.enumerated() {
+            for item in items {
+                let column = TimelineColumn.weekday(
+                    bangumiWeekday: day + 1,
+                    airTimeOf: item.id
+                )
+                grouped[column - 1].append(item)
+            }
+        }
+        // 详情页 / 追番页拿不到日历，用这份结果对齐同一列。
+        TimelineWeekdayCache.replace(with: grouped)
+        return grouped
     }
 
     /// 把用户设置过的条目并进日历（对应 _applyCustomTimelineEntries）。

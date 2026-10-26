@@ -547,10 +547,23 @@ struct LibraryScreen: View {
 
         var weekdays: [Int: Int] = [:]
         for entry in entries {
+            if let custom = custom[entry.id] {
+                weekdays[entry.id] = custom
+                continue
+            }
+            // 和时间表同一列：优先用日历里的分组（已含凌晨 0–5 点换到第二天），
+            // 日历里没有才退回开播日过一遍同一条规则。
+            if let column = TimelineWeekdayCache.weekday(of: entry.id) {
+                weekdays[entry.id] = column
+                continue
+            }
             let airWeekday = DateTimeHelper.dateStringToWeekday(
                 entry.airDate.isEmpty ? "2000-11-11" : entry.airDate
             )
-            weekdays[entry.id] = custom[entry.id] ?? airWeekday
+            weekdays[entry.id] = TimelineColumn.weekday(
+                bangumiWeekday: airWeekday,
+                airTimeOf: entry.id
+            )
         }
         return weekdays
     }
