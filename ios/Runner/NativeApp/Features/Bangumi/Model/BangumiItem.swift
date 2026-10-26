@@ -65,6 +65,9 @@ struct BangumiItem: Identifiable, Hashable, Sendable {
     var votes: Int
     var votesCount: [Int]
     var info: String
+    /// 总话数（接口的 `eps`）。推荐页焦点区的元信息要用「28 话」这一项，
+    /// 拿不到就是 0，元信息里直接省掉，不显示「0 话」。
+    var eps: Int
     /// 时间表接口附带的元标签，与用户标签分开统计，不参与持久化。
     var metaTags: [String]
     var interest: BangumiInterest?
@@ -85,6 +88,7 @@ struct BangumiItem: Identifiable, Hashable, Sendable {
         votes: Int = 0,
         votesCount: [Int] = [],
         info: String = "",
+        eps: Int = 0,
         metaTags: [String] = [],
         interest: BangumiInterest? = nil
     ) {
@@ -103,6 +107,7 @@ struct BangumiItem: Identifiable, Hashable, Sendable {
         self.votes = votes
         self.votesCount = votesCount
         self.info = info
+        self.eps = eps
         self.metaTags = metaTags
         self.interest = interest
     }
@@ -166,6 +171,7 @@ struct BangumiItem: Identifiable, Hashable, Sendable {
             votes: json["rating"]["total"].intValue ?? 0,
             votesCount: parseVoteCount(json),
             info: json["info"].stringValue ?? "",
+            eps: json["eps"].intValue ?? 0,
             metaTags: parseMetaTags(json),
             interest: interest
         )

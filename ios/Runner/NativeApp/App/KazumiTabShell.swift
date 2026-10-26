@@ -155,6 +155,8 @@ struct AppRouteView: View {
             BangumiInfoScreen(bangumiID: bangumiID, zoomNamespace: zoomNamespace)
         case .search(let keyword):
             SearchScreen(initialKeyword: keyword, zoomNamespace: zoomNamespace)
+        case .popularList(let source):
+            PopularListScreen(source: source, zoomNamespace: zoomNamespace)
         case .imageSearch(let onPick):
             ImageSearchScreen(onPickKeyword: onPick)
         case .webSearchHistory:

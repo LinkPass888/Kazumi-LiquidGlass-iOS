@@ -22,8 +22,10 @@ struct SearchFilterSheet: View {
         "热血", "后宫", "机战", "轻改", "偶像", "治愈", "异世界",
     ]
 
+    /// 排序那几项的名字按 next.bgm.tv 的接口文档写：heat 是**收藏人数**，
+    /// 不是热度（文档 SubjectSearchSort：match/heat/rank/score）。
     private static let sorts: [(value: String, title: String)] = [
-        ("heat", "热度"),
+        ("heat", "收藏人数"),
         ("rank", "排名"),
         ("score", "评分"),
         ("match", "匹配度"),

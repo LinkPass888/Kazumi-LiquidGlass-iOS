@@ -174,6 +174,58 @@ enum BangumiAPI {
         }
     }
 
+    /// 综合排名（原名「评分最高」）：官方搜索按 rank 升序的**固定区间**（不是随机名次）。
+    ///
+    /// 推荐页「综合排名」那行和它的列表页用这一个口子。原来的 `listByTag`
+    /// 按标签取的时候用的是随机名次（`Int.random(in: 1...8000)`），同一行两次
+    /// 打开内容不一样，Ato 定过这种不稳的源不能进首页。
+    static func ranked(limit: Int = 10, offset: Int = 0) async -> [BangumiItem] {
+        let params = searchParams(
+            keyword: "",
+            tags: ["日本"],
+            sort: "rank",
+            rankFilter: [">0", "<=99999"]
+        )
+        do {
+            let url = BangumiEndpoints.format(
+                BangumiEndpoints.apiDomain + BangumiEndpoints.rankSearch,
+                [limit, offset]
+            )
+            let json = try await post(url, body: params)
+            let items: [BangumiItem] = (json["data"].arrayValue ?? []).compactMap { entry -> BangumiItem? in
+                BangumiItem.fromJSON(entry)
+            }
+            await BangumiSubjectCache.shared.remember(items)
+            return items
+        } catch {
+            KazumiLog.network.error("Resolve bangumi ranked failed: \(error.localizedDescription, privacy: .public)")
+            return []
+        }
+    }
+
+    /// 收藏榜：官方搜索按 heat 降序。
+    ///
+    /// next.bgm.tv 的 SubjectSearchSort 里 `heat` 的定义就是「收藏人数」，
+    /// 所以这是收藏总数榜——跟「本周热门」（趋势，正在涨的）不是一回事。
+    static func collected(limit: Int = 10, offset: Int = 0) async -> [BangumiItem] {
+        let params = searchParams(keyword: "", sort: "heat")
+        do {
+            let url = BangumiEndpoints.format(
+                BangumiEndpoints.apiDomain + BangumiEndpoints.rankSearch,
+                [limit, offset]
+            )
+            let json = try await post(url, body: params)
+            let items: [BangumiItem] = (json["data"].arrayValue ?? []).compactMap { entry -> BangumiItem? in
+                BangumiItem.fromJSON(entry)
+            }
+            await BangumiSubjectCache.shared.remember(items)
+            return items
+        } catch {
+            KazumiLog.network.error("Resolve bangumi collected failed: \(error.localizedDescription, privacy: .public)")
+            return []
+        }
+    }
+
     /// 对应 getBangumiList：按标签（或随机名次）从官方搜索接口取 100 条。
     static func listByTag(rank: Int = 2, tag: String = "") async -> [BangumiItem] {
         let params = searchParams(

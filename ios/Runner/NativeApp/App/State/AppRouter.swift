@@ -68,6 +68,8 @@ enum AppDestination: String, CaseIterable, Identifiable, Hashable, Sendable {
 enum AppRoute: Hashable, Sendable {
     case bangumiInfo(bangumiID: Int)
     case search(keyword: String)
+    /// 推荐页某一行「更多」的落点：看这一组的全部（原来那套网格）。
+    case popularList(PopularListSource)
     case webSearchHistory
     /// 以图搜番：从搜索页顶栏进入的二级页面（原版路径 /search/image）。
     /// `onPick` 由 SearchScreen 传入，用于把识别到的番名直接填进搜索框。
@@ -158,6 +160,8 @@ extension AppRoute {
         case .updateSettings: 25
         case .downloadSettings: 26
         case .changelog: 27
+        // 28 是追加序号：推荐页某一行「更多」的列表页。
+        case .popularList: 28
         }
     }
 
@@ -177,6 +181,8 @@ extension AppRoute {
         case let (.pluginEditor(lhs), .pluginEditor(rhs)):
             lhs == rhs
         case let (.pluginTest(lhs), .pluginTest(rhs)):
+            lhs == rhs
+        case let (.popularList(lhs), .popularList(rhs)):
             lhs == rhs
         case (.pluginShop, .pluginShop),
              (.pluginList, .pluginList),
@@ -216,6 +222,8 @@ extension AppRoute {
             hasher.combine(ruleID)
         case .pluginTest(let ruleID):
             hasher.combine(ruleID)
+        case .popularList(let source):
+            hasher.combine(source)
         case .webSearchHistory,
              .imageSearch,
              .pluginShop,

@@ -10,7 +10,7 @@
 //    * 关联     —— 只显示动画，关系名是遍历出来的前传 / 续集（见 RelatedAnimeChain）；
 //    * 制作人员 —— 左侧头像 + 姓名 + 中文名 + 职务。
 //
-//  标题一律左对齐、28pt 粗体，与推荐页的「热门番剧」同一套字重字号。
+//  标题一律左对齐、28pt 粗体，与推荐页的「热门番组」同一套字重字号。
 //
 
 import SwiftUI
@@ -37,7 +37,7 @@ enum InfoTab: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
-/// 详情页里的区块标题：左对齐，字号字重与「热门番剧」一致。
+/// 详情页里的区块标题：左对齐，字号字重与「热门番组」一致。
 struct InfoSectionTitle: View {
     let text: String
 
