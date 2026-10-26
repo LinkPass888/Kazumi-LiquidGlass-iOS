@@ -33,6 +33,9 @@ private let heroTags: [String] = [
 struct PopularHero: View {
     let items: [PopularPoster]
     var zoomNamespace: Namespace.ID?
+    /// 下拉过界时多出来的高度（LP 2934）：外层按位移算好传进来，上滑时是 0。
+    /// 封面块顶边钉在屏幕顶端，块底下沿跟着往下走——名称、按钮、渐隐都在块里，一起下来。
+    var extraHeight: CGFloat = 0
 
     @Environment(AppRouter.self) private var router
     @Environment(LibraryStore.self) private var library
@@ -57,6 +60,8 @@ struct PopularHero: View {
     static let fadeFullInset: CGFloat = 40
     /// 量文字块位置用的坐标空间名。
     static let heroSpace = "popularHero"
+    /// 下拉时块往下长的封顶位移：再往下拽块也不再变高（原先是放大封顶 1.22）。
+    static let maxPullDistance: CGFloat = 120
     /// 竖版封面偏上对齐时顶部保留的比例。
     static let topReserve: CGFloat = 0.08
 
@@ -95,7 +100,7 @@ struct PopularHero: View {
             fade
             textBlock
         }
-        .frame(height: Self.coverHeight)
+        .frame(height: Self.coverHeight + extraHeight)
         .coordinateSpace(.named(Self.heroSpace))
         .clipped()
         .onPreferenceChange(TopBarHeightKey.self) { topBarHeight = $0 }
@@ -184,7 +189,8 @@ struct PopularHero: View {
                 // 露出来（LP 2899 / Colo 2900）。
                 BangumiRemoteImage(url: poster.imageURL)
                     .containerRelativeFrame(.horizontal)
-                    // 下拉过界时这张图不动：不位移、不放大，只有松手后的回弹（Colo 2937）。
+                    // 下拉过界时不再单独缩放这张图：整个块变高（`extraHeight`），
+                    // 图按填充自己就跟着放大，底沿跟着下来（LP 2934）。
                     .clipped()
             }
         }
@@ -200,11 +206,12 @@ struct PopularHero: View {
     /// 第一档必须是 0（LP 2925 / 2926 / Colo 2930）：之前起手就给 20%，圆点那行以上是原图、
     /// 以下一层白纱，那条台阶看着就像在封面上贴了一张透明白图。
     private var fade: some View {
-        // 下沿贴死封面底边 600，上沿是圆点那行底下、名称上面（`fadeTop`，1 行标题时 436）。
-        let height = max(1, Self.coverHeight - fadeTop)
+        // 下沿贴死封面块底边（600，下拉时跟着走），上沿是圆点那行底下、名称上面（436）。
+        let blockHeight = Self.coverHeight + extraHeight
+        let height = max(1, blockHeight - fadeTop)
         // 满底色那一点（封面底边往上 40，即 560）在整条渐变的百分之几上。
         // 别忘了减掉起点：从 fadeTop 到 600 才是这整条渐变。
-        let full = min(1, max(0.01, (Self.coverHeight - Self.fadeFullInset - fadeTop) / height))
+        let full = min(1, max(0.01, (blockHeight - Self.fadeFullInset - fadeTop) / height))
         // 七档等分在 fadeTop…560 这 124 点上（Colo 2930），第一档是 0——
         // 顶部那一档要是直接给 20%，圆点那行就会成一条台阶（LP 2925 / 2926）。
         let steps: [CGFloat] = [0, 0.20, 0.40, 0.60, 0.80, 0.90, 0.95]
