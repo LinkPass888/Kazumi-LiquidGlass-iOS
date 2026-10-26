@@ -127,7 +127,9 @@ struct PopularHero: View {
                 .offset(y: pullOffset)
         }
         .frame(height: Self.coverHeight)
-        .kazumiZoomSource(id: current?.id ?? Self.posterSourceFallbackID, namespace: zoomNamespace)
+        // 封面块不做缩放转场，走默认的横向翻页（LP 2976）：缩放转场返回时只飞回一张快照，
+        // 渐隐和按钮要等动画结束才出现，看着就是「图先落回、底下一闪」。
+        // 不登记源视图，详情页那边会自动回落到系统默认转场。
         // 这里不裁：下拉过界时封面放大，底边要真的往下长出来（LP 2942）。
         // 平时图正好 600 高，没有东西溢出去。
 
