@@ -13,8 +13,8 @@ struct PopularScreen: View {
     @State private var controller = PopularController()
     @Environment(AppRouter.self) private var router
 
-    /// 滚动内容上沿在滚动空间里的 y：0 是原位，正数是上拉过界（下拉出来的那段）。
-    @State private var contentOffset: CGFloat = 0
+    /// 滚动内容上沿在滚动空间里的 y：0 是原位，负数是上拉过界（下拉出来的那段）。
+    @State private var scrollY: CGFloat = 0
 
     var body: some View {
         ScrollView {
@@ -24,7 +24,7 @@ struct PopularScreen: View {
                     zoomNamespace: zoomNamespace,
                     pullScale: pullScale
                 )
-                // 上拉过界时往回补，视觉上封面钉在屏幕顶端不动（Colo 2847）；
+                // 上拉过界时往回补，视觉上封面钉在屏幕顶端不动（Colo 2847 / LP 2887）；
                 // 上滑时补偿是 0，封面跟着内容一起滚走（LP 2846）。
                 .offset(y: -overPull)
 
@@ -32,17 +32,15 @@ struct PopularScreen: View {
                     .padding(.top, 24)
             }
             .padding(.bottom, 40)
-            .background(
-                GeometryReader { proxy in
-                    Color.clear.preference(
-                        key: ContentOffsetKey.self,
-                        value: proxy.frame(in: .named("shelves")).minY
-                    )
-                }
-            )
         }
         .scrollIndicators(.hidden)
-        .coordinateSpace(name: "shelves")
+        // 下拉位移用 onScrollGeometryChange 量（LP 2887）：PreferenceKey 在橡皮筋
+        // 回弹那段不更新，补偿算出来一直是 0，封面就跟着内容一起下来。
+        .onScrollGeometryChange(for: CGFloat.self) { geometry in
+            geometry.contentOffset.y
+        } action: { _, newValue in
+            scrollY = newValue
+        }
         // 封面要铺到状态栏，所以滚动区从屏幕最上方开始算。
         .ignoresSafeArea(edges: .top)
         // 顶栏不在这儿了：它是封面块自己最上面那一层，跟着封面一起滚（LP 2865 / Colo 2866）。
@@ -54,7 +52,6 @@ struct PopularScreen: View {
         }
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .navigationBar)
-        .onPreferenceChange(ContentOffsetKey.self) { contentOffset = $0 }
         .onAppear {
             // 先把缓存画出来，再后台刷新（LP 2733 / Ato 2734）：
             // 冷启动不该对着空页等网。
@@ -83,7 +80,7 @@ struct PopularScreen: View {
 
     /// 下拉出来的那段：只在过界时为正，上滑时是 0（Colo 2847）。
     private var overPull: CGFloat {
-        max(0, contentOffset)
+        max(0, -scrollY)
     }
 
     /// 下拉过界时封面的放大倍数：下拉 d，放大 1 + d/550，封顶 1.22（LP 2869 / Colo 2870）。
@@ -104,13 +101,5 @@ struct PopularScreen: View {
                 .padding(.top, 8)
             }
         }
-    }
-}
-
-/// 滚动内容上沿在滚动空间里的 y：0 是原位，正数是上拉过界。
-private struct ContentOffsetKey: PreferenceKey {
-    static let defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
     }
 }

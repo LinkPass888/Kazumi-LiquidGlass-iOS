@@ -341,13 +341,18 @@ struct PopularHero: View {
     /// 顶栏那两颗圆钮：36 玻璃正圆、命中区给到 44（Colo 2864 / 2866）。
     /// 玻璃用全 App 那一套（`kazumiGlassCapsule`：ultraThinMaterial ＋ 0.5 白描边），
     /// 跟详情页返回 / 更多同一副面孔，不在这儿另立一份。
+    ///
+    /// 唯一与别处不同的是 tint（LP 2884 / Colo 2885 / LP 2893）：这两颗压在封面上，
+    /// 封面是深色的，ultraThinMaterial 会在上面铺一层亮纱——量过像素，圆里亮度 205、
+    /// 旁边封面 127，看着就是一块不透的圆（详情页那两颗压在浅色底上，同一副玻璃看不出来）。
+    /// 所以只给这两颗压一层黑 tint，让封面透出来；收藏圆钮压在渐隐上，不用加。
     private func circleButton(symbol: String, label: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
                 .font(.system(size: 16, weight: .semibold))
                 .foregroundStyle(.primary)
                 .frame(width: 36, height: 36)
-                .kazumiGlassCapsule(interactive: true)
+                .kazumiGlassCapsule(tint: Color.black.opacity(0.3), interactive: true)
         }
         .buttonStyle(.plain)
         // 画 36，点按区域给到 44。
