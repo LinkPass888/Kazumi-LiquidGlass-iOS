@@ -211,7 +211,8 @@ struct PopularHero: View {
     /// 封面图 ＋ 底边渐隐：点击只挂在这一层（Ato 2852），整块都是命中区。
     private func cover(_ poster: PopularPoster) -> some View {
         Button {
-            router.push(.bangumiInfo(bangumiID: poster.id))
+            // 大封面点开走系统默认的横向翻页，不做缩放转场（LP 2976 / 2985）。
+            router.push(.bangumiInfo(bangumiID: poster.id, zoom: false))
         } label: {
             ZStack(alignment: .bottom) {
                 // 竖图铺满整块：宽度钉在页宽上（`containerRelativeFrame`），高度超出 600 的裁掉。

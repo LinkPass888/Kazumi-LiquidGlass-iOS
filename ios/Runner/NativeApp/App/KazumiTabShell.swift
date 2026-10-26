@@ -151,8 +151,8 @@ struct AppRouteView: View {
 
     var body: some View {
         switch route {
-        case .bangumiInfo(let bangumiID):
-            BangumiInfoScreen(bangumiID: bangumiID, zoomNamespace: zoomNamespace)
+        case .bangumiInfo(let bangumiID, let zoom):
+            BangumiInfoScreen(bangumiID: bangumiID, zoomNamespace: zoom ? zoomNamespace : nil)
         case .search(let keyword):
             SearchScreen(initialKeyword: keyword, zoomNamespace: zoomNamespace)
         case .popularList(let source):

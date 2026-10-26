@@ -66,7 +66,8 @@ enum AppDestination: String, CaseIterable, Identifiable, Hashable, Sendable {
 
 /// 二级路由（对应原项目 pushNamed 的页面路径）。
 enum AppRoute: Hashable, Sendable {
-    case bangumiInfo(bangumiID: Int)
+    /// `zoom: false` 时这一页不做缩放转场、走系统默认的横向翻页（推荐页大封面用）。
+    case bangumiInfo(bangumiID: Int, zoom: Bool = true)
     case search(keyword: String)
     /// 推荐页某一行「更多」的落点：看这一组的全部（原来那套网格）。
     case popularList(PopularListSource)
@@ -167,8 +168,8 @@ extension AppRoute {
 
     private func associatedValuesEqual(_ other: AppRoute) -> Bool {
         switch (self, other) {
-        case let (.bangumiInfo(lhs), .bangumiInfo(rhs)):
-            lhs == rhs
+        case let (.bangumiInfo(lhsID, lhsZoom), .bangumiInfo(rhsID, rhsZoom)):
+            lhsID == rhsID && lhsZoom == rhsZoom
         case let (.search(lhs), .search(rhs)):
             lhs == rhs
         case (.webSearchHistory, .webSearchHistory):
@@ -210,8 +211,9 @@ extension AppRoute {
 
     private func hashAssociatedValues(into hasher: inout Hasher) {
         switch self {
-        case .bangumiInfo(let bangumiID):
+        case .bangumiInfo(let bangumiID, let zoom):
             hasher.combine(bangumiID)
+            hasher.combine(zoom)
         case .search(let keyword):
             hasher.combine(keyword)
         case .player(let bangumiID, let episode, let source):

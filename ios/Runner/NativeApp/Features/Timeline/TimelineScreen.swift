@@ -127,7 +127,7 @@ struct TimelineScreen: View {
 
     /// 导航栈顶如果就是详情页，返回它打开的是哪部番；否则 nil。
     private var openedDetailID: Int? {
-        if case .bangumiInfo(let bangumiID) = router.timelinePath.last { return bangumiID }
+        if case .bangumiInfo(let bangumiID, _) = router.timelinePath.last { return bangumiID }
         return nil
     }
 
