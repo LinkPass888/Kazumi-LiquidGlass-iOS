@@ -203,14 +203,14 @@ struct PlayerScreen: View {
     @State private var activeSheet: PlayerSheet?
     /// 定时关闭：还剩多少秒，nil 就是没定。
     /// 侧滑返回时页面跟着手走多少点。
-    @State private var backDragOffset: CGFloat = 0
     /// 这一次拖动是不是从左边边缘起手、按侧滑返回处理。
-    @State private var backDragArmed = false
     @State private var sleepTimerRemaining: Int?
     @State private var sleepTimerTask: Task<Void, Never>?
 
     @Environment(AppEnvironment.self) private var environment
     @Environment(SettingsStore.self) private var settings
+    /// 主题色分深浅两档，菜单跟着走（Colo 3344）。
+    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
 
@@ -237,7 +237,6 @@ struct PlayerScreen: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-            .offset(x: backDragOffset)
         }
         .background(Color.black.ignoresSafeArea())
         // 竖屏全屏不做：先真的横过屏，之后用户又转回竖屏，才退出全屏。
@@ -256,8 +255,6 @@ struct PlayerScreen: View {
                     }
             }
         }
-        // 竖屏侧滑返回（全屏不认，免得跟横屏的手势打架）。
-        .simultaneousGesture(backSwipeGesture)
         .statusBarHidden(isFullscreen)
         .persistentSystemOverlays(isFullscreen ? .hidden : .automatic)
         .navigationBarTitleDisplayMode(.inline)
@@ -603,6 +600,23 @@ struct PlayerScreen: View {
             }
     }
 
+    private var controllerPhase: PlayerController.Phase {
+        controller?.phase ?? .idle
+    }
+
+    /// 控制层是不是该露面。
+    ///
+    /// 暂停、播放失败：控制层和左上返回一直在，这时候用户最可能想退出去（Colo 3307）。
+    /// 加载中按正常状态处理，跟正在播放一样随控制条自动隐藏、点一下唤回来。
+    private var controlsShown: Bool {
+        controlsVisible || pinsControls
+    }
+
+    private var pinsControls: Bool {
+        if case .failed = controllerPhase { return true }
+        return controllerPhase == .ready && !surface.isPlaying
+    }
+
     /// 控制层：顶一行、底一行，都浮在画面上；几秒不碰淡出，点一下回来。
     /// 隐藏只降透明度、不动布局，画面不会跳。
     private func controlLayer(_ controller: PlayerController) -> some View {
@@ -612,8 +626,8 @@ struct PlayerScreen: View {
                 Spacer(minLength: 0)
                 transportBar(controller)
             }
-            .opacity(controlsVisible ? 1 : 0)
-            .allowsHitTesting(controlsVisible)
+            .opacity(controlsShown ? 1 : 0)
+            .allowsHitTesting(controlsShown)
             .animation(.easeOut(duration: 0.2), value: controlsVisible)
             .background {
                 // 上下两条压暗，让白字压在亮画面上也读得清（原版是两条等高的渐变）。
@@ -630,7 +644,7 @@ struct PlayerScreen: View {
                 .allowsHitTesting(false)
             }
 
-            if !controlsVisible {
+            if !controlsShown {
                 // 控制层收起时，整块画面都是「把控制层叫回来」的命中区。
                 Color.clear
                     .contentShape(Rectangle())
@@ -640,58 +654,6 @@ struct PlayerScreen: View {
         }
     }
 
-    /// 竖屏侧滑返回：从屏幕左边缘往右拖，松手就退出播放页。
-    ///
-    /// 导航栏藏了以后系统那条边缘手势会被停掉，而把 `interactivePopGestureRecognizer`
-    /// 的 delegate 换掉这条路，SwiftUI 每次更新导航栈都会把它换回去，试过没生效
-    /// （LP 2026-10-25 报「侧滑返回还是无效」）。所以自己认这次拖动：
-    /// 起手点在左边缘 28 点内、往右拖过 70 点、横向为主，就退。
-    /// 挂在整页上而不是画面上，控制层收着、失败页显示着也一样能退。
-    private var backSwipeGesture: some Gesture {
-        DragGesture(minimumDistance: 6, coordinateSpace: .global)
-            .onChanged { value in
-                guard !isFullscreen else { return }
-                if !backDragArmed {
-                    // 只有从左边边缘起手、而且是在横着走，才认成返回：
-                    // 画面中间横向划是进度，边缘竖着划是别的手势。
-                    guard value.startLocation.x < 32,
-                          value.translation.width > 0,
-                          abs(value.translation.width) > abs(value.translation.height)
-                    else { return }
-                    backDragArmed = true
-                }
-                // 手指拖多少，页面就挪多少——这一条是「跟手」的关键。
-                backDragOffset = max(0, value.translation.width)
-            }
-            .onEnded { value in
-                guard backDragArmed else { return }
-                backDragArmed = false
-                let width = max(screenWidth, 1)
-                // 松手时按「拖过半屏」或「甩得够快」决定退回还是弹回。
-                let dragged = value.translation.width
-                let projected = value.predictedEndTranslation.width
-                if dragged > width * 0.32 || projected > width * 0.5 {
-                    withAnimation(.easeOut(duration: 0.22)) {
-                        backDragOffset = width
-                    }
-                    Task { @MainActor in
-                        try? await Task.sleep(nanoseconds: 180_000_000)
-                        backDragOffset = 0
-                        dismiss()
-                    }
-                } else {
-                    withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
-                        backDragOffset = 0
-                    }
-                }
-            }
-    }
-
-    private var screenWidth: CGFloat {
-        UIApplication.shared.connectedScenes
-            .compactMap { ($0 as? UIWindowScene)?.keyWindow?.bounds.width }
-            .first ?? 402
-    }
 
     /// 画面按压：短按切控制栏 / 播放暂停，长按临时倍速（对应原版
     /// `player_item.dart` 的 onLongPressStart / onLongPressEnd）。
@@ -1320,25 +1282,10 @@ struct PlayerScreen: View {
                         .lineLimit(1)
                         .padding(.horizontal, 24)
                 }
-            case .failed(let message):
-                Image(systemName: "exclamationmark.triangle")
-                    .font(.system(size: 28, weight: .semibold))
-                    .foregroundStyle(.orange)
-                Text(message)
-                    .font(.footnote)
-                    .foregroundStyle(.white.opacity(0.85))
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 28)
-                HStack(spacing: 10) {
-                    Button("重试") {
-                        Task { await controller.retry() }
-                    }
-                    .buttonStyle(.borderedProminent)
-
-                    Button("返回选源") { dismiss() }
-                        .buttonStyle(.bordered)
-                        .tint(.white)
-                }
+            case .failed:
+                // 失败提示不压在画面正中间：挪到下面「选集」那一块里
+                // （平时列剧集的位置），跟页面一起推进来（LP 3286 / Colo 3287）。
+                EmptyView()
             case .ready:
                 EmptyView()
             }
@@ -1350,7 +1297,7 @@ struct PlayerScreen: View {
         switch phase {
         case .idle: "准备中…"
         case .searchingSource: "正在查找播放源…"
-        case .resolvingChapters: "正在抓取剧集列表…"
+        case .resolvingChapters: "正在加载剧集列表…"
         case .parsingMedia: "正在解析播放地址…"
         case .ready: ""
         case .failed: ""
@@ -1809,6 +1756,28 @@ struct PlayerScreen: View {
         .background(Color(.systemBackground))
     }
 
+    /// 剧集没能加载时，这句话和「重试」就放在平时列剧集的位置（LP 3286 / Colo 3287）。
+    /// 「返回选源」先留着：用户还能退回去挑别的来源。
+    private func episodeFailure(_ message: String, controller: PlayerController) -> some View {
+        VStack(spacing: 12) {
+            Text(message)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 24)
+            HStack(spacing: 10) {
+                Button("重试") {
+                    Task { await controller.retry() }
+                }
+                .buttonStyle(.borderedProminent)
+
+                Button("返回选源") { dismiss() }
+                    .buttonStyle(.bordered)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
     @ViewBuilder
     private func episodesPane(_ controller: PlayerController) -> some View {
         let total = controller.episodes.count
@@ -1822,31 +1791,30 @@ struct PlayerScreen: View {
             HStack(spacing: 8) {
                 if controller.roads.count > 1 { roadMenu(controller) }
                 if pages > 1 {
-                    Menu {
-                        ForEach(0 ..< pages, id: \.self) { page in
+                    SystemMenuButton(
+                        items: (0 ..< pages).map { page in
                             let a = page * pageSize + 1
                             let b = min(total, (page + 1) * pageSize)
-                            Button("\(a)–\(b) 话") { episodeGridPage = page }
-                        }
-                    } label: {
-                        HStack(spacing: 4) {
-                            Text("\(lo + 1)–\(hi) 话")
-                                .font(.subheadline)
-                            Image(systemName: "chevron.down")
-                                .font(.caption2)
-                        }
-                        .foregroundStyle(Color.accentColor)
-                        .frame(minHeight: 44)
-                        .contentShape(Rectangle())
-                    }
-                    .accessibilityLabel("快速跳转，现在显示第 \(lo + 1) 到 \(hi) 话")
+                            return SystemMenuButton.Item(title: "\(a)–\(b) 话", symbol: "") {
+                                episodeGridPage = page
+                            }
+                        },
+                        title: "\(lo + 1)–\(hi) 话",
+                        symbol: "",
+                        accessibilityLabel: "快速跳转，现在显示第 \(lo + 1) 到 \(hi) 话",
+                        tint: KazumiPalette.accent(for: colorScheme),
+                        showsChevron: true
+                    )
+                    .frame(height: 44)
                 }
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 16)
             .frame(height: 44)
 
-            if total == 0 {
+            if case .failed(let message) = controller.phase {
+                episodeFailure(message, controller: controller)
+            } else if total == 0 {
                 Text("暂无选集")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
@@ -1871,6 +1839,9 @@ struct PlayerScreen: View {
                 }
             }
         }
+        // 铺满并靠左：VStack 默认把没铺满的子视图摆到中间，线路按钮那一行
+        // 就会被摆到屏幕中间（LP 3389 / Colo 3390）。
+        .frame(maxWidth: .infinity, alignment: .leading)
         .onAppear {
             // 进来就把当前集那一块翻出来，不用用户再去找
             if total > 0 {
@@ -1905,21 +1876,17 @@ struct PlayerScreen: View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
                 // 左：当前集（默认当集，不再提供「整部番」）
-                Menu {
-                    if let controller, let ep = commentEpisode {
-                        episodeCommentPicker(controller, selectedEpisode: ep)
-                    }
-                } label: {
-                    HStack(spacing: 4) {
-                        Text(commentEpisode.map { "第 \($0) 话" } ?? "第 — 话")
-                            .font(.subheadline)
-                        Image(systemName: "chevron.down").font(.caption2)
-                    }
-                    .foregroundStyle(.primary)
-                    .frame(minHeight: 44)
-                    .contentShape(Rectangle())
-                }
-                .accessibilityLabel(commentEpisode.map { "当前查看第 \($0) 话评论" } ?? "当前查看集数评论")
+                // 也用 UIKit 菜单：播放中视图每秒重建，SwiftUI 的 Menu 弹出来的是旧的那份、
+                // 点了不执行（LP 3321「剧集和评论下边的都换了吗」）。
+                SystemMenuButton(
+                    items: commentEpisodeItems(),
+                    title: commentEpisode.map { "第 \($0) 话" } ?? "第 — 话",
+                    symbol: "",
+                    accessibilityLabel: commentEpisode.map { "当前查看第 \($0) 话评论" } ?? "当前查看集数评论",
+                    tint: KazumiPalette.accent(for: colorScheme),
+                    showsChevron: true
+                )
+                .frame(height: 44)
                 Spacer(minLength: 8)
                 // 中：只读条数文案
                 Text(commentTotal == 0 ? "还没有人评论" : "共 \(commentTotal) 条评论")
@@ -1929,29 +1896,30 @@ struct PlayerScreen: View {
                     .contentTransition(.numericText())
                 Spacer(minLength: 8)
                 // 右：排序（按钮上直接写当前排序方式） + 刷新
-                Menu {
-                    Button {
-                        if isCommentsAscending { isCommentsAscending = false }
-                        applyCommentsSort()
-                    } label: {
-                        if !isCommentsAscending { Label("最新优先", systemImage: "checkmark") } else { Text("最新优先") }
-                    }
-                    Button {
-                        if !isCommentsAscending { isCommentsAscending = true }
-                        applyCommentsSort()
-                    } label: {
-                        if isCommentsAscending { Label("最早优先", systemImage: "checkmark") } else { Text("最早优先") }
-                    }
-                } label: {
-                    HStack(spacing: 4) {
-                        Text(isCommentsAscending ? "最早优先" : "最新优先")
-                            .font(.subheadline)
-                        Image(systemName: "chevron.down").font(.system(size: 13, weight: .semibold))
-                    }
-                    .foregroundStyle(.primary)
-                    .frame(minHeight: 44)
-                    .contentShape(Rectangle())
-                }
+                SystemMenuButton(
+                    items: [
+                        SystemMenuButton.Item(
+                            title: "最新优先",
+                            symbol: isCommentsAscending ? "" : "checkmark"
+                        ) {
+                            if isCommentsAscending { isCommentsAscending = false }
+                            applyCommentsSort()
+                        },
+                        SystemMenuButton.Item(
+                            title: "最早优先",
+                            symbol: isCommentsAscending ? "checkmark" : ""
+                        ) {
+                            if !isCommentsAscending { isCommentsAscending = true }
+                            applyCommentsSort()
+                        }
+                    ],
+                    title: isCommentsAscending ? "最早优先" : "最新优先",
+                    symbol: "",
+                    accessibilityLabel: "评论排序",
+                    tint: KazumiPalette.accent(for: colorScheme),
+                    showsChevron: true
+                )
+                .frame(height: 44)
                 Button {
                     Task { await reloadComments() }
                 } label: {
@@ -2002,59 +1970,55 @@ struct PlayerScreen: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             } else {
-                List {
-                    ForEach(comments) { comment in
-                        commentRow(comment)
-                            .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16))
+                // 用 ScrollView 不用 List：展开回复时要喊列表滚一滚（Colo 3366），
+                // List 不给滚。分隔线照原来 List 的留法，从左缩 16。
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        // 必须写 alignment: .leading：LazyVStack 默认居中，整条评论（连头像）
+                        // 会被摆到屏幕中间（LP 3389 / Colo 3390）。
+                        LazyVStack(alignment: .leading, spacing: 0) {
+                            ForEach(comments) { comment in
+                                CommentRowView(
+                                    comment: comment,
+                                    rateText: comment.rate > 0 ? "★ \(comment.rate)" : nil,
+                                    onExpand: { proxy.scrollTo(comment.id, anchor: .center) }
+                                )
+                                // 行自己也要铺满：不然行宽只到内容那么宽，还是会被居中。
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16))
+                                .id(comment.id)
+
+                                Divider().padding(.leading, 16)
+                            }
+                            if commentTotal > comments.count {
+                                Text("已显示 \(comments.count) / \(commentTotal) 条评论")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .frame(maxWidth: .infinity, alignment: .center)
+                                    .padding(.vertical, 10)
+                            }
+                        }
                     }
-                    if commentTotal > comments.count {
-                        Text("已显示 \(comments.count) / \(commentTotal) 条评论")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity, alignment: .center)
-                            .listRowSeparator(.hidden)
-                    }
+                    .scrollContentBackground(.hidden)
                 }
-                .listStyle(.plain)
-                .scrollContentBackground(.hidden)
             }
         }
+        // 跟选集那块一样：铺满并靠左，头部那行才不会整体被摆到中间。
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     /// 换集菜单里的集数列表。
     @ViewBuilder
-    private func episodeCommentPicker(_ controller: PlayerController, selectedEpisode: Int?) -> some View {
-        let total = controller.episodes.count
-        ForEach(0 ..< total, id: \.self) { index in
-            let ep = index + 1
-            Button {
+    /// 评论页左上那颗菜单的条目：每一集一条，当前这集打勾。
+    private func commentEpisodeItems() -> [SystemMenuButton.Item] {
+        let total = controller?.episodes.count ?? 0
+        guard total > 0 else { return [] }
+        return (1 ... total).map { ep in
+            SystemMenuButton.Item(
+                title: "第 \(ep) 话",
+                symbol: commentEpisode == ep ? "checkmark" : ""
+            ) {
                 switchCommentEpisode(ep)
-            } label: {
-                Label("第 \(ep) 话", systemImage: selectedEpisode == ep ? "checkmark" : "number")
-            }
-        }
-    }
-
-    private func commentRow(_ comment: BangumiCommentItem) -> some View {
-        HStack(alignment: .top, spacing: 10) {
-            BangumiRemoteImage(url: comment.userAvatar, contentMode: .fill)
-                .frame(width: 32, height: 32)
-                .clipShape(Circle())
-
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 6) {
-                    Text(comment.userName)
-                        .font(.footnote.weight(.medium))
-                        .lineLimit(1)
-                    if comment.rate > 0 {
-                        Text("★ \(comment.rate)")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                Text(comment.comment)
-                    .font(.subheadline)
-                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -2132,37 +2096,46 @@ struct PlayerScreen: View {
         .contentShape(Rectangle())
     }
 
-    /// 线路：多于一条时才出现，右侧显示当前线路。
+    /// 线路：多于一条时才出现，按钮上写当前实际在用的那条线路名。
     private func roadMenu(_ controller: PlayerController) -> some View {
-        Menu {
-            ForEach(Array(controller.roads.enumerated()), id: \.offset) { index, road in
-                Button {
-                    if index != controller.selectedRoad {
-                        // 换线路 = 重新解析这一集，进度按原版先落一次。
-                        persistProgress(controller)
-                        surface.prepareForNewEpisode()
-                        Task { await controller.selectRoad(index) }
-                    }
-                } label: {
-                    if index == controller.selectedRoad {
-                        Label(road.name.isEmpty ? "线路 \(index + 1)" : road.name, systemImage: "checkmark")
-                    } else {
-                        Text(road.name.isEmpty ? "线路 \(index + 1)" : road.name)
-                    }
+        // 用 UIKit 的菜单按钮，不用 SwiftUI 的 `Menu`：播放中视图每秒重建，
+        // `Menu` 弹出来的是旧的那一份，点了不执行（播放器里那两颗也是这么修的）。
+        SystemMenuButton(
+            items: controller.roads.enumerated().map { index, road in
+                SystemMenuButton.Item(
+                    title: Self.roadItemTitle(road),
+                    symbol: index == controller.selectedRoad ? "checkmark" : ""
+                ) {
+                    guard index != controller.selectedRoad else { return }
+                    // 换线路 = 重新解析这一集，进度按原版先落一次。
+                    persistProgress(controller)
+                    surface.prepareForNewEpisode()
+                    Task { await controller.selectRoad(index) }
                 }
-            }
-        } label: {
-            HStack(spacing: 4) {
-                Text(controller.roads.indices.contains(controller.selectedRoad)
-                     ? "线路 \(controller.selectedRoad + 1)"
-                     : "线路")
-                    .font(.subheadline)
-                Image(systemName: "chevron.up.chevron.down")
-                    .font(.caption2)
-            }
-            .foregroundStyle(.primary)
-            .frame(minHeight: 44)
-        }
+            },
+            // 不预设「线路 1」：来源给什么名字就显示什么名字（cht／chs 这种照抄），
+            // 也不自己编号（LP 3370 / Colo 3371）。
+            title: controller.roads.indices.contains(controller.selectedRoad)
+                ? Self.roadName(controller.roads[controller.selectedRoad])
+                : "线路",
+            symbol: "",
+            accessibilityLabel: "选择线路",
+            tint: KazumiPalette.accent(for: colorScheme),
+            showsChevron: true
+        )
+        .frame(height: 44)
+    }
+
+    /// 线路名照抄来源给的；来源没给名字就只写「线路」，不编号。
+    private static func roadName(_ road: Road) -> String {
+        let name = road.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return name.isEmpty ? "线路" : name
+    }
+
+    /// 菜单里那一条：线路名 · N 集（集数拿不到就不标，别写 0）。
+    private static func roadItemTitle(_ road: Road) -> String {
+        let name = roadName(road)
+        return road.data.isEmpty ? name : "\(name) · \(road.data.count) 集"
     }
 
     private func switchEpisode(to number: Int, controller: PlayerController) {
@@ -2300,3 +2273,4 @@ private struct SyncPlaySheet: View {
         }
     }
 }
+

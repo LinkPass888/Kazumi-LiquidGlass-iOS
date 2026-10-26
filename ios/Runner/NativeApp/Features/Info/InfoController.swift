@@ -36,6 +36,17 @@ final class InfoController {
     }
     private(set) var isSearchingSources = false
 
+    /// 面板里哪些来源是展开着的。放在控制器上，是为了返回播放页再弹回面板时还在。
+    var sourceExpanded: Set<String> = []
+
+    /// 这一部番已经检索过一轮没有。没检索过才查，重检会把已有结果冲掉。
+    private var hasSearchedSources = false
+
+    /// 按名字取规则，供「在浏览器中打开」拼网址用。
+    func plugin(named name: String) -> Plugin? {
+        plugins.plugin(named: name)
+    }
+
     let searchService: PluginSearchService
     private let plugins: PluginsController
     /// 每个来源各自的检索词。对应原版 _SourceSearchGroup.keyword：
@@ -201,12 +212,24 @@ final class InfoController {
     // MARK: - 选源
 
     /// 对应 SourceSheet 的 init：用中文名优先作为检索词。
+    ///
+    /// 返回播放页再弹回面板时不能重检：那批结果和展开状态都还在，重检会把它们冲掉。
     func searchAllSources() async {
         guard !plugins.pluginList.isEmpty else { return }
+        guard !hasSearchedSources else { return }
+        hasSearchedSources = true
         sourceKeywords = [:]
         isSearchingSources = true
         await searchService.queryAllSource(defaultKeyword)
         isSearchingSources = false
+    }
+
+    /// 手动关掉面板：下次再点「开始观看」要重新检索一遍。
+    func closeSourceSearch() {
+        searchService.cancel()
+        isSearchingSources = false
+        hasSearchedSources = false
+        sourceExpanded = []
     }
 
     /// 对应原版 source_sheet.dart 的 _querySource：只检索指定来源。
@@ -228,11 +251,6 @@ final class InfoController {
 
     /// 当前条目的别名（来自 infobox 的「别名」），对应原版 bangumiItem.alias。
     var aliases: [String] { item.alias }
-
-    func cancelSourceSearch() {
-        searchService.cancel()
-        isSearchingSources = false
-    }
 }
 
 /// 剧集条目（对应 getBangumiEpisodesByID 返回的 EpisodeInfo 子集）。

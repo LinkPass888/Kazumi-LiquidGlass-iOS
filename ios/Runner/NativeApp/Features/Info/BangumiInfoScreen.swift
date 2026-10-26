@@ -30,6 +30,16 @@ struct BangumiInfoScreen: View {
     @State private var toastMessage: String?
     /// 添加到时间表但番剧还没标成在看时，先弹确认。
     @State private var pendingTimelineItem: BangumiItem?
+    /// 刚才是从选源面板点进播放页的：返回时要记得把面板放回来。
+    @State private var returnToSourcesAfterPlayer = false
+    /// 推播放页之前的栈深，用来判断已经退回详情页了。
+    @State private var depthBeforePlayer = 0
+
+    /// 当前所在 Tab 的导航栈深度。四个 Tab 都算上，页面不关心自己在哪个 Tab。
+    private var navigationDepth: Int {
+        router.popularPath.count + router.timelinePath.count
+            + router.collectPath.count + router.myPath.count
+    }
 
     @Environment(AppEnvironment.self) private var environment
     @Environment(LibraryStore.self) private var library
@@ -105,41 +115,50 @@ struct BangumiInfoScreen: View {
 
     private func content(_ controller: InfoController) -> some View {
         ZStack(alignment: .bottomTrailing) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    // 标题与 hero 是一个紧凑的整体：两者间距 12，与下方分隔用 18。
-                    VStack(alignment: .leading, spacing: 12) {
-                        // 展开态 28pt bold。不再主动淡出：让它随内容滚进顶部模糊里，
-                        // 只在最后一小段行程里收掉，顶栏那份同一时间接上（见 titleRevealProgress），
-                        // 避开两份标题同时半透明重叠的那几帧。
-                        Text(controller.item.displayName)
-                            .font(.system(size: 28, weight: .bold))
-                            .foregroundStyle(.primary)
-                            .lineLimit(2)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .opacity(1 - titleRevealProgress)
+            // ScrollViewReader 包在外面：展开评论的回复时要喊这个列表滚一滚（Colo 3366）。
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 18) {
+                        // 标题与 hero 是一个紧凑的整体：两者间距 12，与下方分隔用 18。
+                        VStack(alignment: .leading, spacing: 12) {
+                            // 展开态 28pt bold。不再主动淡出：让它随内容滚进顶部模糊里，
+                            // 只在最后一小段行程里收掉，顶栏那份同一时间接上（见 titleRevealProgress），
+                            // 避开两份标题同时半透明重叠的那几帧。
+                            Text(controller.item.displayName)
+                                .font(.system(size: 28, weight: .bold))
+                                .foregroundStyle(.primary)
+                                .lineLimit(2)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .opacity(1 - titleRevealProgress)
 
-                        hero(controller)
+                            hero(controller)
+                        }
+
+                        tabStrip(controller)
+                        tabContent(controller, onExpandComment: { id in
+                            // 在上半部往下展开、在下半部往上展开：都把这条滚到中间，
+                            // 展开出来的回复就不会跑出屏幕外。
+                            withAnimation(.easeOut(duration: 0.2)) {
+                                proxy.scrollTo(id, anchor: .center)
+                            }
+                        })
                     }
-
-                    tabStrip(controller)
-                    tabContent(controller)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 96)
                 }
-                .padding(.horizontal, 16)
-                .padding(.bottom, 96)
-            }
-            .scrollIndicators(.hidden)
-            // 顶部渐进模糊：只作用顶部那一条，不叠材质、不加底色。
-            .scrollEdgeEffectStyle(.soft, for: .top)
-            .onScrollGeometryChange(for: CGFloat.self) { geometry in
-                max(0, geometry.contentOffset.y)
-            } action: { _, newValue in
-                scrollOffset = newValue
-            }
-            // 顶栏吸附在安全区（不再是 ScrollView 的兄弟节点）：内容从它下方滚过去，
-            // 顶部模糊才盖得住标题那一行；否则模糊只能铺在顶栏下面，内容滚上来是硬切一刀。
-            .safeAreaInset(edge: .top, spacing: 0) {
-                topBar(controller)
+                .scrollIndicators(.hidden)
+                // 顶部渐进模糊：只作用顶部那一条，不叠材质、不加底色。
+                .scrollEdgeEffectStyle(.soft, for: .top)
+                .onScrollGeometryChange(for: CGFloat.self) { geometry in
+                    max(0, geometry.contentOffset.y)
+                } action: { _, newValue in
+                    scrollOffset = newValue
+                }
+                // 顶栏吸附在安全区（不再是 ScrollView 的兄弟节点）：内容从它下方滚过去，
+                // 顶部模糊才盖得住标题那一行；否则模糊只能铺在顶栏下面，内容滚上来是硬切一刀。
+                .safeAreaInset(edge: .top, spacing: 0) {
+                    topBar(controller)
+                }
             }
 
             startPlayingButton
@@ -151,8 +170,12 @@ struct BangumiInfoScreen: View {
         .navigationTitle(controller.item.displayName)
         .sheet(isPresented: $isShowingSources) {
             let current = controller
+            // 点结果：先关面板、再往右推进播放页（LP 3273 / Colo 3275）。
+            // 返回时下面 onChange 把面板带着原来那批结果放回来，不重新检索。
             SourceSheet(controller: current) { pluginName, result in
                 isShowingSources = false
+                returnToSourcesAfterPlayer = true
+                depthBeforePlayer = navigationDepth
                 router.push(
                     .player(
                         bangumiID: current.item.id,
@@ -160,15 +183,19 @@ struct BangumiInfoScreen: View {
                         source: PlaybackSource(
                             pluginName: pluginName,
                             itemName: result.name,
-                            detailURL: EpisodeURL.normalize(
-                                baseUrl: environment.plugins.plugin(named: pluginName)?.baseUrl ?? "",
-                                raw: result.src
-                            ),
+                            // 原样传 src：接口模式的规则拿它当 vod_id，拼成网址就查不到剧集。
+                            detailURL: result.src,
                             directMediaURL: MediaUtility.isMediaURL(result.src) ? result.src : nil
                         )
                     )
                 )
             }
+        }
+        // 从播放页返回：把面板放回来。栈深回到推播放页之前就说明回来了。
+        .onChange(of: navigationDepth) { _, newDepth in
+            guard returnToSourcesAfterPlayer, newDepth <= depthBeforePlayer else { return }
+            returnToSourcesAfterPlayer = false
+            isShowingSources = true
         }
         .confirmationDialog(
             "添加到时间表",
@@ -563,7 +590,10 @@ extension BangumiInfoScreen {
 
     /// 标签对应的内容面板。
     @ViewBuilder
-    private func tabContent(_ controller: InfoController) -> some View {
+    private func tabContent(
+        _ controller: InfoController,
+        onExpandComment: @escaping (String) -> Void
+    ) -> some View {
         switch selectedTab {
         case .overview:
             InfoOverviewPanel(item: controller.item)
@@ -572,10 +602,12 @@ extension BangumiInfoScreen {
                 comments: controller.comments,
                 total: controller.commentsTotal,
                 isLoading: controller.isLoadingComments,
-                isPosting: controller.isPostingComment
-            ) { text in
-                await controller.postComment(text, type: currentType(controller))
-            }
+                isPosting: controller.isPostingComment,
+                onSend: { text in
+                    await controller.postComment(text, type: currentType(controller))
+                },
+                onExpandComment: onExpandComment
+            )
         case .characters:
             InfoCharactersPanel(
                 characters: controller.characters,

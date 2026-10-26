@@ -26,10 +26,11 @@ struct AliasPickerTarget: Identifiable, Hashable {
 @MainActor
 struct SourceSheet: View {
     let controller: InfoController
+    /// 点了某条结果：关面板、从详情页往右推进播放页（LP 3273 / Colo 3275）。
+    /// 返回时详情页再把面板带着原来那批结果放回来。
     var onPlay: (String, SearchItem) -> Void
-
-
-    @State private var expanded: Set<String> = []
+    /// 打不开外部浏览器时的一句话。
+    @State private var browserFailure = false
     /// 正在选别名去检索的来源；为空表示没有打开别名选择器。
     @State private var aliasPickerTarget: AliasPickerTarget?
     /// 正在修改检索词的来源；为空表示没有弹出输入框。
@@ -59,7 +60,7 @@ struct SourceSheet: View {
                 // 下会把已经出来的结果冲掉。
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("关闭") {
-                        controller.cancelSourceSearch()
+                        controller.closeSourceSearch()
                         dismiss()
                     }
                 }
@@ -68,7 +69,7 @@ struct SourceSheet: View {
         .task {
             await controller.searchAllSources()
             if let first = controller.sourceGroups.first(where: \.hasResults) {
-                expanded.insert(first.name)
+                controller.sourceExpanded.insert(first.name)
             }
         }
         .sheet(item: $aliasPickerTarget) { target in
@@ -88,11 +89,40 @@ struct SourceSheet: View {
                 guard let name = keywordTarget else { return }
                 let keyword = keywordDraft
                 keywordTarget = nil
-                expanded.insert(name)
+                controller.sourceExpanded.insert(name)
                 Task { await controller.retrySource(name, keyword: keyword) }
             }
         } message: {
             Text(keywordTarget.map { "仅检索来源：\($0)" } ?? "")
+        }
+        .alert("无法打开浏览器，请稍后重试", isPresented: $browserFailure) {
+            Button("好", role: .cancel) {}
+        }
+    }
+
+    // MARK: - 动作
+
+    /// 「在浏览器中打开」，网址照 main 的 _openInBrowser 取：
+    /// 走接口的规则开 baseUrl，走网页的规则开 searchURL 并把 @keyword 换成这一条的检索词。
+    /// 用外部浏览器，不是应用内。
+    private func openInBrowser(_ group: InfoController.SourceGroup) {
+        guard let plugin = controller.plugin(named: group.name) else {
+            browserFailure = true
+            return
+        }
+        let usesApi = plugin.searchMode == .api || !plugin.searchApiConfig.request.url.isEmpty
+        let raw = usesApi
+            ? plugin.baseUrl
+            : plugin.searchURL.replacingOccurrences(
+                of: "@keyword",
+                with: group.keyword.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? group.keyword
+            )
+        guard let url = URL(string: raw), !raw.isEmpty else {
+            browserFailure = true
+            return
+        }
+        UIApplication.shared.open(url, options: [:]) { success in
+            if !success { browserFailure = true }
         }
     }
 
@@ -115,10 +145,10 @@ struct SourceSheet: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 0) {
                 Button {
-                    if expanded.contains(group.name) {
-                        expanded.remove(group.name)
+                    if controller.sourceExpanded.contains(group.name) {
+                        controller.sourceExpanded.remove(group.name)
                     } else {
-                        expanded.insert(group.name)
+                        controller.sourceExpanded.insert(group.name)
                     }
                 } label: {
                     HStack(spacing: 10) {
@@ -133,7 +163,7 @@ struct SourceSheet: View {
                         }
                         Spacer(minLength: 4)
                         if group.hasResults {
-                            Image(systemName: expanded.contains(group.name) ? "chevron.up" : "chevron.down")
+                            Image(systemName: controller.sourceExpanded.contains(group.name) ? "chevron.up" : "chevron.down")
                                 .font(.caption.weight(.bold))
                                 .foregroundStyle(.tertiary)
                         }
@@ -149,19 +179,15 @@ struct SourceSheet: View {
                     .padding(.trailing, 8)
             }
 
-            if group.hasResults, expanded.contains(group.name) {
+            if group.hasResults, controller.sourceExpanded.contains(group.name) {
                 Divider().padding(.leading, 14)
                 ForEach(Array(group.results.enumerated()), id: \.offset) { index, result in
                     Button {
                         onPlay(group.name, result)
                     } label: {
                         HStack(spacing: 8) {
-                            Text("\(index + 1)")
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(.secondary)
-                                .frame(width: 20, alignment: .trailing)
                             Text(result.name)
-                                .font(.subheadline)
+                                .font(.body)
                                 .multilineTextAlignment(.leading)
                                 .foregroundStyle(.primary)
                             Spacer(minLength: 4)
@@ -169,14 +195,15 @@ struct SourceSheet: View {
                                 .font(.system(size: 18, weight: .semibold))
                                 .foregroundStyle(KazumiPalette.accent(for: colorScheme))
                         }
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 10)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 14)
+                        .frame(minHeight: 64, alignment: .leading)
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
 
                     if index < group.results.count - 1 {
-                        Divider().padding(.leading, 42)
+                        Divider().padding(.leading, 16)
                     }
                 }
             }
@@ -229,9 +256,9 @@ struct SourceSheet: View {
 
     /// 每条规则的「更多」菜单，对应原版 source_sheet_view.dart 的 _buildSourceMenu。
     ///
-    /// main 是四项，这里放三项：「在浏览器中打开」不放——规则检索的地址要按
-    /// 规则自己拼（很多是 POST、带变量），拿不到一个能直接打开的网页；
-    /// 放一颗点了没反应的菜单项比不放更糟。
+    /// 四项照 main。第四项「在浏览器中打开」一度没放，理由是「拿不到一个能直接
+    /// 打开的网址」——那是错的：main 并不开检索请求本身，走接口的规则开 baseUrl，
+    /// 走网页的规则开 searchURL 把关键词填进去，两个我们都有（LP 3260 / Colo）。
     private func sourceMenu(_ group: InfoController.SourceGroup) -> some View {
         Menu {
             Button {
@@ -251,6 +278,11 @@ struct SourceSheet: View {
                 Task { await controller.retrySource(group.name) }
             } label: {
                 Label("重新检索此来源", systemImage: "arrow.clockwise")
+            }
+            Button {
+                openInBrowser(group)
+            } label: {
+                Label("在浏览器中打开", systemImage: "safari")
             }
         } label: {
             Image(systemName: "ellipsis")
@@ -272,7 +304,7 @@ struct SourceSheet: View {
                     ForEach(controller.aliases, id: \.self) { alias in
                         Button {
                             // 先展开这一条，检索结果回来后就直接铺在下面。
-                            expanded.insert(sourceName)
+                            controller.sourceExpanded.insert(sourceName)
                             aliasPickerTarget = nil
                             Task {
                                 await controller.searchSourceWithAlias(alias, pluginName: sourceName)
@@ -337,3 +369,4 @@ struct SourceSheet: View {
         .padding(.horizontal, 32)
     }
 }
+

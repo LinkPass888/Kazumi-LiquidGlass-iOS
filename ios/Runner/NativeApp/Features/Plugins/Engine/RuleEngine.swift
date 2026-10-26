@@ -135,6 +135,12 @@ struct RuleEngine: Sendable {
                 )
                 : try xpathStrategy.parseChapters(raw, config: config)
             if parsed.roads.isEmpty {
+                // 上屏只说「没能加载」，这里把接口到底回了什么留下痕迹，方便查。
+                if logFailures {
+                    KazumiLog.plugin.warning(
+                        "Plugin: \(config.pluginName, privacy: .public) chapter parsed to 0 roads, raw \(raw.count, privacy: .public) bytes, source \(source, privacy: .public)"
+                    )
+                }
                 throw RuleError.chapterFailed(plugin: config.pluginName, cause: nil)
             }
             logDiagnostics(config, "chapter", parsed.diagnostics)

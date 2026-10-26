@@ -32,8 +32,12 @@ struct SystemMenuButton: UIViewRepresentable {
     var title: String?
     var symbol: String
     var accessibilityLabel: String
+    /// 按钮和字用什么颜色：播放器里是白的，选集那块要跟页面一样是正文色。
+    var tint: Color = .white
+    /// 标题右边要不要带一个小三角，表示「点开有菜单」。
+    var showsChevron: Bool = false
     /// 菜单被点开时回调：控制栏要靠它知道「先别收」。
-    var onOpen: () -> Void
+    var onOpen: () -> Void = {}
 
     func makeCoordinator() -> Coordinator {
         Coordinator()
@@ -46,7 +50,7 @@ struct SystemMenuButton: UIViewRepresentable {
         // 结果是屏幕上一个位置、真正的按钮在另一个位置（点了没反应、居中变歪都从这里来）。
         button.setContentHuggingPriority(.defaultLow, for: .horizontal)
         button.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        button.tintColor = .white
+        button.tintColor = Self.uiColor(tint)
         button.addAction(
             UIAction { [coordinator = context.coordinator] _ in
                 coordinator.onOpen()
@@ -72,11 +76,28 @@ struct SystemMenuButton: UIViewRepresentable {
         #endif
 
         if let title {
-            button.setImage(nil, for: .normal)
-            button.setTitle(title, for: .normal)
-            button.titleLabel?.font = .systemFont(ofSize: 13, weight: .semibold)
-            button.setTitleColor(.white, for: .normal)
+            // 用 configuration 才能「字 + 右边小三角」，setTitle/setImage 只能二选一。
+            var config = UIButton.Configuration.plain()
+            config.title = title
+            config.baseForegroundColor = Self.uiColor(tint)
+            config.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0)
+            if showsChevron {
+                config.image = UIImage(
+                    systemName: "chevron.up.chevron.down",
+                    withConfiguration: UIImage.SymbolConfiguration(pointSize: 9, weight: .semibold)
+                )
+                config.imagePlacement = .trailing
+                config.imagePadding = 4
+            }
+            config.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
+                var out = incoming
+                out.font = .systemFont(ofSize: 15, weight: .regular)
+                return out
+            }
+            button.configuration = config
+            button.setTitleColor(Self.uiColor(tint), for: .normal)
         } else {
+            button.configuration = nil
             button.setTitle(nil, for: .normal)
             button.setImage(
                 UIImage(
@@ -119,6 +140,19 @@ struct SystemMenuButton: UIViewRepresentable {
         }
     }
     #endif
+
+    /// 浅底深字、深底浅字：必须用系统的动态色。
+    /// `UIColor(Color.primary)` 会把动态色按当前深浅算成一个死颜色，
+    /// 换主题就还是原来那个（菜单「变黑」就是这里来的，Colo 3344）。
+    private static func uiColor(_ color: Color) -> UIColor {
+        switch color {
+        case .primary: return .label
+        case .secondary: return .secondaryLabel
+        case .white: return .white
+        case .black: return .black
+        default: return UIColor(color)
+        }
+    }
 
     /// 只在主线程上用；`UIAction` 的闭包签名要求 Sendable，这里显式标注。
     final class Coordinator: @unchecked Sendable {

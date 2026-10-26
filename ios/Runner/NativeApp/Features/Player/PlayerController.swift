@@ -211,7 +211,8 @@ final class PlayerController {
             source = PlaybackSource(
                 pluginName: plugin.name,
                 itemName: item.name,
-                detailURL: EpisodeURL.normalize(baseUrl: plugin.baseUrl, raw: item.src),
+                // 原样传 src，理由同选源面板：接口模式要的是 vod_id，不是网址。
+                detailURL: item.src,
                 directMediaURL: MediaUtility.isMediaURL(item.src) ? item.src : nil
             )
         } catch {

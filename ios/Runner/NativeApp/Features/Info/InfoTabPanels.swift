@@ -315,6 +315,8 @@ struct InfoCommentsPanel: View {
     let isPosting: Bool
     /// 「发送」回调。发表要碰 Bangumi 接口与控制器状态，因此固定在主线程执行。
     var onSend: @MainActor (String) async -> Bool
+    /// 展开某条评论的回复时喊一声，把列表滚一滚（Colo 3366）。
+    var onExpandComment: ((String) -> Void)?
 
     @Environment(\.colorScheme) private var colorScheme
     @State private var draft = ""
@@ -343,7 +345,13 @@ struct InfoCommentsPanel: View {
             } else {
                 VStack(alignment: .leading, spacing: 0) {
                     ForEach(comments) { comment in
-                        row(comment)
+                        CommentRowView(
+                            comment: comment,
+                            showsDate: true,
+                            rateText: comment.rate > 0 ? "\(comment.rate) 分" : nil,
+                            onExpand: { onExpandComment?(comment.id) }
+                        )
+                        .id(comment.id)
                         Divider().padding(.leading, 42)
                     }
                     if total > comments.count {
@@ -421,44 +429,6 @@ struct InfoCommentsPanel: View {
 
     // MARK: 单条
 
-    private func row(_ comment: BangumiCommentItem) -> some View {
-        HStack(alignment: .top, spacing: 10) {
-            KazumiAvatar(url: comment.userAvatar, size: 32, focus: 0.2)
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) {
-                    Text(comment.userName.isEmpty ? "匿名用户" : comment.userName)
-                        .font(.footnote.weight(.semibold))
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-                    if comment.rate > 0 {
-                        Text("\(comment.rate) 分")
-                            .font(.caption2.weight(.semibold))
-                            .foregroundStyle(KazumiPalette.accent(for: colorScheme))
-                    }
-                    Spacer(minLength: 0)
-                    Text(Self.dateText(comment.updatedAt))
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                }
-                Text(comment.comment)
-                    .font(.callout)
-                    .foregroundStyle(.primary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-        }
-        .padding(.vertical, 10)
-    }
-
-    /// 吐槽时间是 Unix 秒。
-    private static func dateText(_ epoch: Int) -> String {
-        guard epoch > 0 else { return "" }
-        let date = Date(timeIntervalSince1970: TimeInterval(epoch))
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "zh_Hans_CN")
-        formatter.dateFormat = "yyyy-MM-dd"
-        return formatter.string(from: date)
-    }
 }
 
 // MARK: - 角色

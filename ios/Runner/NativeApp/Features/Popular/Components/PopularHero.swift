@@ -84,6 +84,14 @@ struct PopularHero: View {
     /// 选源面板的载体：与番剧详情页同一套（LP 2903 / Colo 2907）。
     @State private var sourceController: InfoController?
     @State private var isShowingSources = false
+    /// 刚才是从选源面板点进播放页的：返回时把面板放回来（Colo 3275）。
+    @State private var returnToSourcesAfterPlayer = false
+    @State private var depthBeforePlayer = 0
+
+    private var navigationDepth: Int {
+        router.popularPath.count + router.timelinePath.count
+            + router.collectPath.count + router.myPath.count
+    }
     /// 第一次点「开始观看」要先把条目备齐（缓存优先，没有才请求），期间不再接第二次点。
     @State private var isLoadingSources = false
     /// 顶栏本体的实际高度：提示语要落在它下面。
@@ -289,8 +297,11 @@ struct PopularHero: View {
         // 不在推荐页另定一套（LP 2903 / 2904 / Colo 2907）。
         .sheet(isPresented: $isShowingSources) {
             if let current = sourceController {
+                // 点结果：先关面板、再往右推进播放页（LP 3273 / Colo 3275）。
                 SourceSheet(controller: current) { pluginName, result in
                     isShowingSources = false
+                    returnToSourcesAfterPlayer = true
+                    depthBeforePlayer = navigationDepth
                     router.push(
                         .player(
                             bangumiID: current.item.id,
@@ -298,16 +309,20 @@ struct PopularHero: View {
                             source: PlaybackSource(
                                 pluginName: pluginName,
                                 itemName: result.name,
-                                detailURL: EpisodeURL.normalize(
-                                    baseUrl: environment.plugins.plugin(named: pluginName)?.baseUrl ?? "",
-                                    raw: result.src
-                                ),
+                                // 原样传 src：接口模式要的是 vod_id，拼成网址就查不到剧集。
+                                detailURL: result.src,
                                 directMediaURL: MediaUtility.isMediaURL(result.src) ? result.src : nil
                             )
                         )
                     )
                 }
             }
+        }
+        // 从播放页返回：把面板放回来。
+        .onChange(of: navigationDepth) { _, newDepth in
+            guard returnToSourcesAfterPlayer, newDepth <= depthBeforePlayer else { return }
+            returnToSourcesAfterPlayer = false
+            isShowingSources = true
         }
         // 分页一变就更新「当前是哪部」，落到克隆页则等动画走完再悄悄挪回真页：
         // 两页画的是同一张图，挪过去看不出接缝。

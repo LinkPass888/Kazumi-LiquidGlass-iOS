@@ -169,20 +169,54 @@ struct BangumiCommentItem: Identifiable, Hashable, Sendable {
     var rate: Int
     var comment: String
     var updatedAt: Int
+    /// 对这条吐槽的回复（单集吐槽接口里在 `replies` 下）。
+    var replies: [BangumiCommentReply] = []
 
     /// 同一位用户可能有多条吐槽，用「用户 + 更新时间」做唯一标识。
     var id: String { "\(userID)-\(updatedAt)" }
 
+    /// 被删掉的吐槽，接口给回来的正文是空的：不显示成一片空白，
+    /// 改显示「该评论已被删除」（Colo 3356）。
+    var isDeleted: Bool { comment.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+
+    /// 两种形状都吃：
+    /// - 整部番的吐槽（/p1/subjects/{id}/comments）：正文在 `comment`。
+    /// - 单集的吐槽（/p1/episodes/{id}/comments）：正文在 `content`，没有评分，
+    ///   时间是 `createdAt`。只读 `comment` 的话单集评论就只剩头像和昵称（LP 3293）。
     static func fromJSON(_ json: JSONValue) -> BangumiCommentItem {
         let user = json["user"]
         let avatar = user["avatar"]
         return BangumiCommentItem(
-            userID: user["id"].intValue ?? 0,
+            userID: user["id"].intValue ?? json["creatorID"].intValue ?? 0,
             userName: user["nickname"].stringValue ?? user["username"].stringValue ?? "",
             userAvatar: avatar["large"].stringValue ?? avatar["medium"].stringValue ?? "",
             rate: json["rate"].intValue ?? 0,
-            comment: json["comment"].stringValue ?? "",
-            updatedAt: json["updatedAt"].intValue ?? 0
+            comment: json["comment"].stringValue ?? json["content"].stringValue ?? "",
+            updatedAt: json["updatedAt"].intValue ?? json["createdAt"].intValue ?? 0,
+            replies: (json["replies"].arrayValue ?? []).map { BangumiCommentReply.fromJSON($0) }
+        )
+    }
+}
+
+/// 一条吐槽下面的回复。
+struct BangumiCommentReply: Identifiable, Hashable, Sendable {
+    var id: Int
+    var userName: String
+    var content: String
+    /// 回复也画头像（跟主楼同款，Colo 3344）：地址在 `user.avatar` 下，跟主楼同一个地方。
+    var userAvatar: String
+
+    /// 回复被删掉时正文同样是空的，按同一条规矩显示。
+    var isDeleted: Bool { content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+
+    static func fromJSON(_ json: JSONValue) -> BangumiCommentReply {
+        let user = json["user"]
+        let avatar = user["avatar"]
+        return BangumiCommentReply(
+            id: json["id"].intValue ?? 0,
+            userName: user["nickname"].stringValue ?? user["username"].stringValue ?? "",
+            content: json["content"].stringValue ?? json["comment"].stringValue ?? "",
+            userAvatar: avatar["large"].stringValue ?? avatar["medium"].stringValue ?? ""
         )
     }
 }
