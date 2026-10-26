@@ -63,6 +63,9 @@ final class BangumiSubjectCache {
               Date().timeIntervalSince1970 - savedAt < Self.infoMaxAge
         else { return nil }
         let item = BangumiItem.fromJSON(JSONValue(any: info))
+        // 没标题的旧缓存当没有（LP 2997）：以前会把半截响应存进去，
+        // 之后详情页就一直拿它铺页面，停在「未知」那张空页上。
+        guard !item.displayName.isEmpty else { return nil }
         items[bangumiID] = item
         infoSavedAt[bangumiID] = payload.infoSavedAt
         return item
@@ -112,6 +115,8 @@ final class BangumiSubjectCache {
 
     /// 接口返回的完整条目，落盘。
     func store(info json: JSONValue, for bangumiID: Int) {
+        // 半截响应不落盘：存了会顶掉原来那份好的，还会被当成「有数据」不再刷新。
+        guard !BangumiItem.fromJSON(json).displayName.isEmpty else { return }
         var payload = loadPayload(bangumiID) ?? Payload()
         payload.info = AnyCodableJSON(json.foundationObject)
         payload.infoSavedAt = Date().timeIntervalSince1970

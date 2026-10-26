@@ -339,6 +339,13 @@ enum BangumiAPI {
             )
             let json = try await get(url)
             let item = BangumiItem.fromJSON(json)
+            // 没标题的响应当失败处理，不落盘（LP 2997）：
+            // 镜像偶尔会回一个缺字段的壳，存下来之后详情页会一整天显示
+            // 「未知」加一张没封面、没简介的空页，而缓存又算「有数据」，不再去拉。
+            guard !item.displayName.isEmpty else {
+                KazumiLog.network.error("Resolve bangumi item returned no title for id \(id, privacy: .public)")
+                return nil
+            }
             // 拉到的完整条目落盘：下次进详情页先拿它铺页面，不用再转圈等。
             await BangumiSubjectCache.shared.store(info: json, for: id)
             return item
