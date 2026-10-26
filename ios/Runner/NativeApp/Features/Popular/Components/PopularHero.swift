@@ -4,13 +4,13 @@
 //
 //  推荐页焦点区（Colo 竖版规格 v3，LP 2782 定的方向）。
 //
-//  封面通栏铺满上半屏：550 高、顶边钉在屏幕顶端（LP 2843 / Colo 2844）。
+//  封面通栏铺满上半屏：600 高、顶边钉在屏幕顶端（LP 2843 / Colo 2844；550 → 600 见 LP 2901 / Colo 2902）。
 //  封面在滚动内容里（LP 2846）：上滑跟着内容一起滚走；下拉到顶时不拉伸、不放大、
 //  不回弹——下拉出来的那段由外层往回补（Colo 2847），所以视觉上封面钉在屏幕顶端不动；
 //  同时封面自己从中心往四周放大（LP 2869 / Colo 2870），看起来就是封面被拽大。
 //
 //  层级自下而上，越上面越先响应自己（Ato 2852 / Colo 2842）：
-//  1. 封面图 ＋ 底边渐隐：点击只挂这一层，整块 550 都是命中区，点哪儿都进详情；
+//  1. 封面图 ＋ 底边渐隐：点击只挂这一层，整块 600 都是命中区，点哪儿都进详情；
 //  2. 顶上 100 高的渐变遮罩：压住封面图，让顶栏那颗大标题读得清；跟着封面一起滚走
 //     （Colo 2856，封面一走它就走，不会在货架第一行上糊一条色带），不吃点击；
 //  3. 圆点、名称、元信息：`allowsHitTesting(false)`，不吃点击；
@@ -41,8 +41,14 @@ struct PopularHero: View {
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.colorScheme) private var colorScheme
 
-    /// 封面块高度（LP 2843 / Colo 2844：400 → 480 → 500 → 550）。
-    static let coverHeight: CGFloat = 550
+    /// 封面块高度（LP 2843 / Colo 2844：400 → 480 → 500 → 550；LP 2901 / Colo 2902：550 → 600）。
+    /// 加高是为了把封面底边推到「开始观看」和「本周热门」中间，文字块本身不动（见 `textBottomInset`）。
+    static let coverHeight: CGFloat = 600
+    /// 文字块离块底的留白（LP 2901 / Colo 2902）：封面加高 50，文字块原地不动，
+    /// 所以「开始观看」那排仍在原来的位置，封面底边落到它下面、货架上面。
+    static let textBottomInset: CGFloat = 50
+    /// 下拉放大的分母（Colo 2870 给的 550，跟块高无关，块高改了它不改）。
+    static let pullZoomBase: CGFloat = 550
     /// 顶上那层渐变遮罩的高度（Colo 2856）。
     static let maskHeight: CGFloat = 100
     /// 底边渐隐高度（Colo 2868：120 → 150）。
@@ -55,6 +61,11 @@ struct PopularHero: View {
     @State private var currentID: Int?
     @State private var isToggling = false
     @State private var toastMessage: String?
+    /// 选源面板的载体：与番剧详情页同一套（LP 2903 / Colo 2907）。
+    @State private var sourceController: InfoController?
+    @State private var isShowingSources = false
+    /// 第一次点「开始观看」要先把条目备齐（缓存优先，没有才请求），期间不再接第二次点。
+    @State private var isLoadingSources = false
     /// 顶栏本体的实际高度：提示语要落在它下面。
     @State private var topBarHeight: CGFloat = 59
     /// 圆钮按下时弹一下：缩到 0.8 再回弹，120 毫秒（Colo 2803）。
@@ -78,6 +89,30 @@ struct PopularHero: View {
         .frame(height: Self.coverHeight)
         .clipped()
         .onPreferenceChange(TopBarHeightKey.self) { topBarHeight = $0 }
+        // 选源面板：直接复用详情页那张（`SourceSheet`）和它那一套回调，
+        // 不在推荐页另定一套（LP 2903 / 2904 / Colo 2907）。
+        .sheet(isPresented: $isShowingSources) {
+            if let current = sourceController {
+                SourceSheet(controller: current) { pluginName, result in
+                    isShowingSources = false
+                    router.push(
+                        .player(
+                            bangumiID: current.item.id,
+                            episode: 1,
+                            source: PlaybackSource(
+                                pluginName: pluginName,
+                                itemName: result.name,
+                                detailURL: EpisodeURL.normalize(
+                                    baseUrl: environment.plugins.plugin(named: pluginName)?.baseUrl ?? "",
+                                    raw: result.src
+                                ),
+                                directMediaURL: MediaUtility.isMediaURL(result.src) ? result.src : nil
+                            )
+                        )
+                    )
+                }
+            }
+        }
         // 条目换成 5 张以内时把圆点状态收敛回第一张。
         .onAppear {
             if currentID == nil { currentID = items.first?.id }
@@ -131,10 +166,14 @@ struct PopularHero: View {
             router.push(.bangumiInfo(bangumiID: poster.id))
         } label: {
             ZStack(alignment: .bottom) {
-                // 竖图填 550 高：aspectRatio(.fill) 会把上下裁掉一截，
-                // alignment: .top 让它偏上裁，保住画面顶部那 8%。
+                // 竖图铺满整块：宽度钉在页宽上（`containerRelativeFrame`），高度超出 600 的裁掉。
+                //
+                // 宽度必须钉：横向 ScrollView 给内容的宽度提议是无穷大，光靠
+                // `frame(maxWidth: .infinity)` 撑不开，图会按自己的比例算出一个比页宽更宽的
+                // 尺寸（实测 440 对 402），左右各溢出 19 点——左右滑时隔壁那张就从这条缝里
+                // 露出来（LP 2899 / Colo 2900）。
                 BangumiRemoteImage(url: poster.imageURL)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .containerRelativeFrame(.horizontal)
                     // 下拉过界时画面从中心向四周撑开（LP 2869 / Colo 2870）：
                     // 位置由外层补偿钉住不动，这里只负责把图放大、超出的裁掉。
                     .scaleEffect(poster.id == current?.id ? pullScale : 1, anchor: .center)
@@ -214,6 +253,8 @@ struct PopularHero: View {
         }
         // 文字块贴块底：开始观看那排压在块底上，名称落在块底往上 78（Colo 2853 / 2868）。
         // 1 行标题时正好是 78，2 行会更高——78 说的是单行那个位置。
+        // 块底从 550 抬到 600 之后文字块跟着留出这 50，屏上位置一点不变（LP 2901 / Colo 2902）。
+        .padding(.bottom, Self.textBottomInset)
     }
 
     private var actions: some View {
@@ -232,7 +273,7 @@ struct PopularHero: View {
     private var playButton: some View {
         Button {
             guard let poster = current else { return }
-            Task { await startWatching(poster) }
+            openSources(poster)
         } label: {
             Label(playTitle, systemImage: "play.fill")
                 .font(.system(size: 15, weight: .semibold))
@@ -242,8 +283,9 @@ struct PopularHero: View {
                 .background(Capsule().fill(KazumiPalette.accent(for: colorScheme)))
         }
         .buttonStyle(.plain)
+        .disabled(isLoadingSources)
         .accessibilityLabel(playTitle)
-        .accessibilityHint("播放这一部")
+        .accessibilityHint("选择播放源")
     }
 
     /// 有观看记录且没看完就是「继续观看」，否则「开始观看」（Colo v2）。
@@ -339,20 +381,19 @@ struct PopularHero: View {
     }
 
     /// 顶栏那两颗圆钮：36 玻璃正圆、命中区给到 44（Colo 2864 / 2866）。
-    /// 玻璃用全 App 那一套（`kazumiGlassCapsule`：ultraThinMaterial ＋ 0.5 白描边），
+    /// 玻璃就是全 App 那一套 `kazumiGlassCapsule`（iOS 26 上只有系统 `glassEffect`），
     /// 跟详情页返回 / 更多同一副面孔，不在这儿另立一份。
     ///
-    /// 唯一与别处不同的是 tint（LP 2884 / Colo 2885 / LP 2893）：这两颗压在封面上，
-    /// 封面是深色的，ultraThinMaterial 会在上面铺一层亮纱——量过像素，圆里亮度 205、
-    /// 旁边封面 127，看着就是一块不透的圆（详情页那两颗压在浅色底上，同一副玻璃看不出来）。
-    /// 所以只给这两颗压一层黑 tint，让封面透出来；收藏圆钮压在渐隐上，不用加。
+    /// 不压 tint、不加投影（LP 2897 / Colo 2898）：上一版为了让它透出封面压了一层
+    /// 黑 tint，结果看着是两颗黑圆；发亮的根子在垫底那层材质上，已经在 `LiquidGlass`
+    /// 里按系统版本分开了，这里不用再补任何颜色。
     private func circleButton(symbol: String, label: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
                 .font(.system(size: 16, weight: .semibold))
                 .foregroundStyle(.primary)
                 .frame(width: 36, height: 36)
-                .kazumiGlassCapsule(tint: Color.black.opacity(0.3), interactive: true)
+                .kazumiGlassCapsule(interactive: true)
         }
         .buttonStyle(.plain)
         // 画 36，点按区域给到 44。
@@ -362,22 +403,33 @@ struct PopularHero: View {
 
     // MARK: - 动作
 
-    /// 「开始观看」：拿到剧集后直接进播放器。
-    /// 有没看完的观看记录就接着那一集，否则从第一集开始。
-    private func startWatching(_ poster: PopularPoster) async {
-        let record = library.record(for: poster.id)
-        let episodes = await episodes(for: poster.id)
-        let number = record.flatMap { $0.isFinished ? nil : $0.episodeNumber }
-            ?? Int(episodes.first?.sort.rounded() ?? 1)
-        router.push(.player(bangumiID: poster.id, episode: number))
-    }
-
-    /// 剧集优先用详情页那份 24 小时缓存，没有才发请求。
-    private func episodes(for bangumiID: Int) async -> [BangumiEpisode] {
-        if let cached = BangumiSubjectCache.shared.episodes(for: bangumiID), !cached.isEmpty {
-            return cached
+    /// 「开始观看」：与番剧详情页那颗按钮同一条路（LP 2903 / 2904 / Colo 2907）——
+    /// 弹同一张「选择播放源」面板（`SourceSheet`），在那里选源、进去开播；
+    /// 播哪一话、用哪条规则全由播放器自己按观看记录接上，与详情页一致。
+    ///
+    /// 面板要一个 `InfoController`，所以先把条目备齐：缓存优先（从列表/以前进过
+    /// 详情页都有），没有才请求一次。同一部番点第二次直接用已经建好的那份。
+    private func openSources(_ poster: PopularPoster) {
+        if let controller = sourceController, controller.item.id == poster.id {
+            isShowingSources = true
+            return
         }
-        return await BangumiAPI.episodes(subjectID: bangumiID)
+        guard !isLoadingSources else { return }
+        isLoadingSources = true
+        Task {
+            defer { isLoadingSources = false }
+            // `??` 右边是 autoclosure，不能放 await，只能分两步写。
+            var cachedItem = BangumiSubjectCache.shared.item(for: poster.id)
+            if cachedItem == nil {
+                cachedItem = await BangumiAPI.info(id: poster.id)
+            }
+            let item = cachedItem
+                ?? BangumiItem(id: poster.id, name: poster.name, nameCn: poster.nameCn)
+            let controller = InfoController(item: item, plugins: environment.plugins)
+            controller.applyCachedEpisodes()
+            sourceController = controller
+            isShowingSources = true
+        }
     }
 
     /// 收藏圆钮：轻点是「在看 ↔ 未收藏」两态切换。

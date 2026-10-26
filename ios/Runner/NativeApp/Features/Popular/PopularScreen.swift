@@ -84,9 +84,9 @@ struct PopularScreen: View {
     }
 
     /// 下拉过界时封面的放大倍数：下拉 d，放大 1 + d/550，封顶 1.22（LP 2869 / Colo 2870）。
-    /// 只随下拉位移走，上滑立刻回到 1。
+    /// 分母是 Colo 给的 550，跟封面块现在的高度无关；只随下拉位移走，上滑立刻回到 1。
     private var pullScale: CGFloat {
-        1 + min(overPull, PopularHero.maxPullDistance) / PopularHero.coverHeight
+        1 + min(overPull, PopularHero.maxPullDistance) / PopularHero.pullZoomBase
     }
 
     /// 下面那几行横向海报架。

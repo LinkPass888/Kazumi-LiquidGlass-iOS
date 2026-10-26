@@ -54,19 +54,36 @@ private struct KazumiGlassShapeModifier: ViewModifier {
     let interactive: Bool
 
     func body(content: Content) -> some View {
-        content.background {
+        content.background { backdrop }
+            .contentShape(shape)
+            .modifier(KazumiNativeGlassEffect(shape: shape, tint: tint, interactive: interactive))
+    }
+
+    /// 玻璃底下垫的那一层。
+    ///
+    /// iOS 26 上系统 `glassEffect` 自己就是底，再垫一层 `ultraThinMaterial` 只会把它
+    /// 变成一块不透的亮纱——压在深色封面上尤其明显，看着就是「玻璃不透」（LP 2884 / 2893）。
+    /// 垫底本来就是给没有系统玻璃的低版本留的退路（Colo 2898），所以只在低版本上出现；
+    /// iOS 26 上只留一圈描边做边缘高光。
+    @ViewBuilder
+    private var backdrop: some View {
+        if #available(iOS 26.0, *) {
             if let tint {
-                shape
-                    .fill(tint.opacity(0.18))
+                shape.fill(tint.opacity(0.18))
             }
-            shape
-                .fill(.ultraThinMaterial)
-            // AnyShape 擦除了 InsettableShape 约束，只能用 stroke（strokeBorder 不可用）。
-            shape
-                .stroke(Color.white.opacity(0.16), lineWidth: 0.5)
+            rim
+        } else {
+            if let tint {
+                shape.fill(tint.opacity(0.18))
+            }
+            shape.fill(.ultraThinMaterial)
+            rim
         }
-        .contentShape(shape)
-        .modifier(KazumiNativeGlassEffect(shape: shape, tint: tint, interactive: interactive))
+    }
+
+    /// AnyShape 擦除了 InsettableShape 约束，只能用 stroke（strokeBorder 不可用）。
+    private var rim: some View {
+        shape.stroke(Color.white.opacity(0.16), lineWidth: 0.5)
     }
 }
 
