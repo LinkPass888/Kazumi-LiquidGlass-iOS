@@ -53,7 +53,7 @@ struct PopularHero: View {
     static let maskHeight: CGFloat = 100
     /// 文字块（圆点、名称、元信息、按钮，含块底那 50）的高度：标题行数一变它就变，
     /// 所以量出来（`textBlockHeight`）。1 行标题时是 180，块顶落在 420。
-    static let textBlockDefaultHeight: CGFloat = 180
+    static let textBlockDefaultHeight: CGFloat = 114
     /// 渐隐从圆点那行底下开始（Colo 2930）：圆点整行 14 高，再让 2。
     static let fadeDotsInset: CGFloat = 16
     /// 提前到离封面底边 40 就满页面底色：560 往下的 40 点一直是满底色（Colo 2922），
@@ -78,6 +78,7 @@ struct PopularHero: View {
     @State private var topBarHeight: CGFloat = 59
     /// 文字块的实际高度（含块底那 50 的留白），渐隐由它推出来。
     /// 用 `onGeometryChange` 量（`PreferenceKey` 那条路在这版没吃到值）。
+    /// 文字块本身的高度（不含块底那 50）。单行标题量出来是 114，两行会更高。
     @State private var textBlockHeight: CGFloat = PopularHero.textBlockDefaultHeight
     /// 圆钮按下时弹一下：缩到 0.8 再回弹，120 毫秒（Colo 2803）。
     @State private var followScale: CGFloat = 1
@@ -106,7 +107,7 @@ struct PopularHero: View {
             // 这一层必须钉死 600：里面那张图按自己的比例只有 582 高，
             // 不钉的话整层的底就落在 582，渐隐的下沿也跟着早 18 点，
             // 封面底边到 600 之间会露出一条没被渐隐盖住的图（Colo 2922 / LP 2921）。
-            .frame(height: Self.coverHeight)
+            .frame(height: Self.coverHeight, alignment: .bottom)
             .scaleEffect(pullScale, anchor: .top)
             // 可视宽度始终钉在页宽，横向多出来的一律裁掉，只有底部允许往下长（Colo 2959）：
             // 不裁的话放大后右边多出 44 点，隔壁那张就从这条缝里挤进来（LP 2958）。
@@ -231,7 +232,7 @@ struct PopularHero: View {
     private var fade: some View {
         // 下沿贴死封面底边 600，高度＝文字块高减去圆点那行（1 行标题时 164，上沿落在 436）。
         // 用块高而不是量绝对位置：下拉时文字块整体位移，绝对位置会带着位移走，块高不会。
-        let height = max(1, textBlockHeight - Self.fadeDotsInset)
+        let height = max(1, textBlockHeight + Self.textBottomInset)
         // 满底色那一点（封面底边往上 40，即 560）在整条渐变的百分之几上。
         let full = min(1, max(0.01, (height - Self.fadeFullInset) / height))
         // 七档等分在渐隐的顶…560 上（Colo 2930），第一档是 0——
@@ -286,10 +287,6 @@ struct PopularHero: View {
             VStack(spacing: 0) {
                 dots
                     .padding(.bottom, 14)
-                    // 量一下文字块（含块底留白）有多高，渐隐由它推出来。
-                    .onGeometryChange(for: CGFloat.self) { proxy in
-                        proxy.size.height
-                    } action: { textBlockHeight = $0 }
 
                 Text(current?.displayName ?? "")
                     .font(.system(size: 22, weight: .bold))
@@ -305,6 +302,12 @@ struct PopularHero: View {
                         .padding(.top, 6)
                 }
             }
+            // 量文字块本身（不含块底那 50）：渐隐的高度＝它＋`textBottomInset`。
+            // 之前这条量在了圆点那行上，量到的是圆点胶囊的 14，渐隐就只剩十几点、
+            // 看着像整条没了（Colo 2922 那一版起就一直在犯）。
+            .onGeometryChange(for: CGFloat.self) { proxy in
+                proxy.size.height
+            } action: { textBlockHeight = $0 }
             .allowsHitTesting(false)
 
             actions
