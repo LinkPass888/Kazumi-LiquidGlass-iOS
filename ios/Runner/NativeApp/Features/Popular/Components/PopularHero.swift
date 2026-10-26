@@ -36,9 +36,6 @@ struct PopularHero: View {
     /// 下拉过界时封面的放大倍数（LP 2938 / Colo 2939 / LP 2944）：外层按位移算好传进来，上滑时是 1。
     /// 图从顶边放大，左右下三个方向一起长。
     var pullScale: CGFloat = 1
-    /// 下拉位移（LP 2944）：名称、元信息、开始观看、收藏、渐隐跟着手指往下走这么多。
-    /// 图不跟着走，它只放大——顶边钉着，底边自己长下来。
-    var pullOffset: CGFloat = 0
 
     @Environment(AppRouter.self) private var router
     @Environment(LibraryStore.self) private var library
@@ -94,15 +91,20 @@ struct PopularHero: View {
 
     var body: some View {
         ZStack(alignment: .bottom) {
-            pager
+            // 整块（图、渐隐、名称、元信息、开始观看、收藏）从顶边一起放大（Colo 2953）：
+            // 顶边钉在屏幕顶端，块里的一切按同一个比例往下走。
+            ZStack(alignment: .bottom) {
+                pager
+                // 底边渐隐挂在封面这一整个 600 高的盒子上，不挂在图里（Colo 2922）：
+                // 挂在图上时，它的下沿跟着图片自己的高度走（图只有 582 高），
+                // 渐隐就提前 18 点结束，封面底边那条线就露出来了。
+                fade
+                textBlock
+            }
+            .scaleEffect(pullScale, anchor: .top)
+
+            // 顶部那截模糊不参与放大，钉在原位（LP 2952）。
             mask
-            // 底边渐隐挂在封面这一整个 600 高的盒子上，不挂在图里（Colo 2922）：
-            // 挂在图上时，它的下沿跟着图片自己的高度走（图只有 582 高），
-            // 渐隐就提前 18 点结束，封面底边那条线就露出来了。
-            fade
-                .offset(y: pullOffset)
-            textBlock
-                .offset(y: pullOffset)
         }
         .frame(height: Self.coverHeight)
         // 这里不裁：下拉过界时封面放大，底边要真的往下长出来（LP 2942）。
@@ -330,10 +332,11 @@ struct PopularHero: View {
         .accessibilityHint("选择播放源")
     }
 
-    /// 有观看记录且没看完就是「继续观看」，否则「开始观看」（Colo v2）。
+    /// 三个名字全 App 统一（Camo 2950）：没记录「开始观看」、看了一半「继续观看」、
+    /// 看完了「重新观看」——最后一档原来也叫「开始观看」，跟历史页的「重新观看」撞了。
     private var playTitle: String {
         guard let id = current?.id, let record = library.record(for: id) else { return "开始观看" }
-        return record.isFinished ? "开始观看" : "继续观看"
+        return record.isFinished ? "重新观看" : "继续观看"
     }
 
     /// 收藏圆钮：玻璃底 ＋ 一层轻投影（Colo 2864 / 2866），压在封面上也要托得出来。

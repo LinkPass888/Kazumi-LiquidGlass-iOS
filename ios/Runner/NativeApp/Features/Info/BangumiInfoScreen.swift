@@ -569,7 +569,7 @@ extension BangumiInfoScreen {
             HStack(spacing: 6) {
                 Image(systemName: "play.fill")
                     .font(.system(size: 15, weight: .semibold))
-                Text("开始播放")
+                Text("开始观看")
                     .font(.system(size: 15, weight: .semibold))
             }
             .foregroundStyle(KazumiPalette.onAccent(for: colorScheme))
@@ -581,7 +581,7 @@ extension BangumiInfoScreen {
         .shadow(color: .black.opacity(0.18), radius: 10, y: 4)
         .padding(.trailing, 18)
         .padding(.bottom, 22)
-        .accessibilityLabel("开始播放")
+        .accessibilityLabel("开始观看")
     }
 }
 
