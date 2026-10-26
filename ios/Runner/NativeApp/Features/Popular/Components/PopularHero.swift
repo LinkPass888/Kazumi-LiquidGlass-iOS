@@ -70,6 +70,8 @@ struct PopularHero: View {
     static let maxPullDistance: CGFloat = 120
     /// 下拉放大的封顶比例（Colo 2953）：550 点下拉到 1.22，再往下不再放大。
     static let maxPullScale: CGFloat = 1.22
+    /// 还没取到当前条目时给转场源用的兜底 ID（命名空间里没有同 ID 的目标，系统按默认转场走）。
+    static let posterSourceFallbackID: Int = -1
     /// 竖版封面偏上对齐时顶部保留的比例。
     static let topReserve: CGFloat = 0.08
 
@@ -125,6 +127,7 @@ struct PopularHero: View {
                 .offset(y: pullOffset)
         }
         .frame(height: Self.coverHeight)
+        .kazumiZoomSource(id: current?.id ?? Self.posterSourceFallbackID, namespace: zoomNamespace)
         // 这里不裁：下拉过界时封面放大，底边要真的往下长出来（LP 2942）。
         // 平时图正好 600 高，没有东西溢出去。
 
@@ -223,7 +226,9 @@ struct PopularHero: View {
             }
         }
         .buttonStyle(.plain)
-        .kazumiZoomSource(id: poster.id, namespace: zoomNamespace)
+        // 转场源登记在整块封面上，不挂在图那一层（LP 2970 / 2972）：
+        // 只挂图的话，返回时系统只把图那一张快照飞回来，渐隐和按钮要等动画结束才出现，
+        // 看着就是「图先落回、底下一闪」。
         .accessibilityLabel(poster.displayName)
         .accessibilityHint("打开详情")
     }
