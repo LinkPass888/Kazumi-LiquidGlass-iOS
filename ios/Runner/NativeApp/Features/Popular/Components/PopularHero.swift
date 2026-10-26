@@ -36,9 +36,6 @@ struct PopularHero: View {
     /// 下拉过界时封面的放大倍数（LP 2938 / Colo 2939 / LP 2944）：外层按位移算好传进来，上滑时是 1。
     /// 图从顶边放大，左右下三个方向一起长。
     var pullScale: CGFloat = 1
-    /// 下拉位移（LP 2944）：名称、元信息、开始观看、收藏、渐隐跟着手指往下走这么多。
-    /// 图不跟着走，它只放大——顶边钉着，底边自己长下来。
-    var pullOffset: CGFloat = 0
 
     @Environment(AppRouter.self) private var router
     @Environment(LibraryStore.self) private var library
@@ -100,9 +97,7 @@ struct PopularHero: View {
             // 挂在图上时，它的下沿跟着图片自己的高度走（图只有 582 高），
             // 渐隐就提前 18 点结束，封面底边那条线就露出来了。
             fade
-                .offset(y: pullOffset)
             textBlock
-                .offset(y: pullOffset)
         }
         .frame(height: Self.coverHeight)
         // 这里不裁：下拉过界时封面放大，底边要真的往下长出来（LP 2942）。

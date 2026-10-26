@@ -22,8 +22,7 @@ struct PopularScreen: View {
                 PopularHero(
                     items: controller.heroItems,
                     zoomNamespace: zoomNamespace,
-                    pullScale: pullScale,
-                    pullOffset: overPull
+                    pullScale: pullScale
                 )
                 // 上拉过界时往回补，视觉上封面钉在屏幕顶端不动（Colo 2847 / LP 2887）；
                 // 上滑时补偿是 0，封面跟着内容一起滚走（LP 2846）。
