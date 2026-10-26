@@ -132,8 +132,8 @@ private struct CommentImageRow: View {
 /// （LP 3326 贴的那条）。规则（Colo 3327 / 3366）：
 /// * `[color=grey]` 次要灰、`[size=10]` 小字；
 /// * `[url=地址]文字[/url]` 是可点的链接，文字照抄标记里给的那份，点开设外部浏览器；
-/// * `[url=地址]` 后面直接跟别的标记 ＝ 没带文字：链接挂到前面那条内容上
-///   （`[* Bangumi for android]` 那行），里面包着的字（「获取」「#X」这种）整段不显示；
+/// * `[url=地址]` 后面直接跟别的标记 ＝ 没带文字：链接挂到前面那条**标记给出来的**内容上
+///   （`[* Bangumi for android]` 那行，只那一行是链接），里面包着的字（「获取」「#X」这种）整段不显示；
 /// * `[* 文字]` 是列表项，前面一个圆点；
 /// * 不认识的、写错没闭合的标记一律吞掉，只留里面的文字，不许露标记字。
 private struct CommentRichText: View {
@@ -305,6 +305,10 @@ enum CommentMarkup {
     struct Run: Equatable {
         var text: String
         var style: Style
+        /// 这段字是不是某个 `[…]` 标记给出来的（现在只有 `[* 文字]`）。
+        /// 没带文字的链接只挂到这种段上，不能去挂普通正文 ——
+        /// 挂了就会把整条评论变成链接（LP 3397 / Colo 3401）。
+        var fromMark = false
     }
 
     static func runs(_ raw: String) -> [Run] {
@@ -328,13 +332,11 @@ enum CommentMarkup {
             return probe < raw.endIndex && raw[probe] != "["
         }
 
-        /// 没带文字的链接：挂到上一条有字的内容上（`[* Bangumi for android]` 那行）；
-        /// 挂不上才用域名＋路径（Colo 3366）。
+        /// 没带文字的链接：挂到前面那条**标记给出来的**内容上（`[* Bangumi for android]` 那行）；
+        /// 找不到才用域名＋路径。不能挂到普通正文上（会把整条评论变成链接，LP 3397）。
         func attachLink(_ address: URL?) {
             guard let address else { return }
-            if let index = runs.lastIndex(where: {
-                !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            }), runs[index].style.link == nil {
+            if let index = runs.lastIndex(where: { $0.fromMark && $0.style.link == nil }) {
                 runs[index].style.link = address
             } else {
                 runs.append(Run(text: addressText(address), style: Style(link: address)))
@@ -401,6 +403,8 @@ enum CommentMarkup {
                 buffer += "• "
                 buffer += rest
                 flush()
+                // 标出来：没带文字的链接只挂到这种段上。
+                if let index = runs.indices.last { runs[index].fromMark = true }
             } else {
                 // 不认识的标记（含残留的 `[img]`）整段吞掉，文字照排。
                 flush()

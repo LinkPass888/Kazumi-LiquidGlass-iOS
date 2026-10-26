@@ -48,7 +48,12 @@ struct SystemMenuButton: UIViewRepresentable {
         button.showsMenuAsPrimaryAction = true
         // 尺寸由外面的 `.frame` 给：在 updateUIView 里写死 frame 会和 SwiftUI 的布局打架，
         // 结果是屏幕上一个位置、真正的按钮在另一个位置（点了没反应、居中变歪都从这里来）。
-        button.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        //
+        // 水平方向必须「抱紧内容」：hugging 低了，HStack 里富余的空间会被按钮吃掉
+        // （Spacer 反而挤没），按钮铺满整行、标题在正中被居中 —— 选集里那颗线路按钮
+        // 就是这样从左边跑到屏幕中间的（LP 3389/3397）。纵向不管：外面都给了高。
+        button.setContentHuggingPriority(.required, for: .horizontal)
+        // 压缩抵抗留低：实在放不下时允许被挤，不至于把旁边的按钮顶出屏。
         button.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         button.tintColor = Self.uiColor(tint)
         button.addAction(
