@@ -670,6 +670,16 @@ enum BangumiAPI {
         guard (200..<300).contains(http.statusCode) else {
             throw NetworkError.badResponse(status: http.statusCode, body: text, headers: [:])
         }
+        // 2xx 但响应体是空的，是成功，不是解析失败。
+        //
+        // 写接口就是这样回的：`POST /v0/users/-/collections/{id}` 返回 202 Accepted、
+        // 一个字节都没有（LP 3568 的抓包）。原版 main 那边 `post` 只把 `response.data`
+        // 递出去，空的就当没有，状态码过了就算成功；这里原先无条件解码，
+        // 空 body 抛错，于是 Bangumi 明明改好了，本机却回滚并报「同步失败」。
+        // 评分、吐槽、单集进度走的是同一个 `send`，一起靠这一处兜住。
+        if data.isEmpty || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return .null
+        }
         do {
             return try JSONValue.decode(data)
         } catch {
