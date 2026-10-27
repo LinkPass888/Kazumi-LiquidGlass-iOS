@@ -144,6 +144,8 @@ struct PlayerScreen: View {
     @State private var surface = PlayerSurfaceModel()
     @State private var danmakuEnabled = true
     /// 横屏底栏那个发弹幕的输入框：草稿、焦点。
+    /// 画面量出来的宽度：横屏两行底栏按它判断。
+    @State private var surfaceWidth: CGFloat = 0
     @State private var danmakuDraft = ""
     @FocusState private var danmakuFieldFocused: Bool
     @State private var playbackRate: Float = 1.0
@@ -229,15 +231,13 @@ struct PlayerScreen: View {
             Color.black.ignoresSafeArea()
             Group {
                 if let controller {
-                if isFullscreen {
-                    // 横屏全屏：画面铺满，选集收起（本轮不改横屏行为）。
+                // 全屏与竖屏用同一棵树，只把下面那块收起来：
+                // 分成两支的话，切全屏时 SwiftUI 会把播放器整个拆掉重建，
+                // 画面从 0 重新起播（LP 3624「切全屏进度归零」）。
+                // 铺满还是 16:9 由画面自己的 PlayerBoxModifier 决定。
+                VStack(spacing: 0) {
                     playerArea(controller)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else {
-                    // 竖屏：16:9 画面在最上、占满屏宽，控制层浮在画面上；
-                    // 画面下面是选集与线路（对应原版 video_page 的落点）。
-                    VStack(spacing: 0) {
-                        playerArea(controller)
+                    if !isFullscreen {
                         episodeArea(controller)
                     }
                 }
@@ -491,7 +491,6 @@ struct PlayerScreen: View {
     /// 竖屏里这条就是页面最上面那一块；横屏全屏时铺满。
     @ViewBuilder
     private func playerArea(_ controller: PlayerController) -> some View {
-        GeometryReader { proxy in
         ZStack {
             interactiveSurface(controller)
 
@@ -499,7 +498,7 @@ struct PlayerScreen: View {
                 errorOverlay(error, controller: controller)
             }
 
-            controlLayer(controller, width: proxy.size.width)
+            controlLayer(controller, width: surfaceWidth)
 
             // 画面正中那三朵：亮度 / 音量横条、横滑的秒数、双击的播放暂停。
             // 同一时刻只会有一朵（起手就定死了这一次拖动在调什么）。
@@ -532,6 +531,13 @@ struct PlayerScreen: View {
                 .frame(width: 1, height: 1)
                 .opacity(0.01)
         )
+        // 控制层要知道画面有多宽：横屏才排两行底栏（宽 ≥ 600）。
+        // 用 onGeometryChange 量，不套 GeometryReader —— 那玩意会把可用空间全吃掉，
+        // 画面就不再是 16:9（LP 3623「竖屏播放器窗口变太大」就是这么来的）。
+        .onGeometryChange(for: CGFloat.self) { proxy in
+            proxy.size.width
+        } action: { width in
+            surfaceWidth = width
         }
     }
 
@@ -1411,7 +1417,9 @@ struct PlayerScreen: View {
     /// 横屏两行（Colo 3613，照 main 非 compact）：时间在上、进度条一行，按钮一行。
     private func transportBar(_ controller: PlayerController, width: CGFloat) -> some View {
         Group {
-            if width >= 600 {
+            // 全屏就是横屏（竖屏那颗全屏键是唯一入口），直接看它，
+            // 不等量出来的宽度——初值 0 会先画一帧单行再跳成两行（Colo 3627）。
+            if isFullscreen || width >= 600 {
                 landscapeTransport(controller)
             } else {
                 portraitTransport

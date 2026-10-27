@@ -238,6 +238,13 @@ final class DanmakuOverlayView: UIView {
             nextIndex = lowerBound(now)
         }
         lastNow = now
+        // 没在播就不出新弹幕：暂停停在 0 秒时，0 秒附近那些照样会被发出来，
+        // 看上去就是「还没播弹幕先飘了」（LP 3626）。已经在飞的照旧停着不动，
+        // 因为位置是按播放时间算的。
+        if let player = playerView?.playerLayer?.player, !player.isPlaying {
+            layoutLabels(at: now)
+            return
+        }
         emit(upTo: now)
         layoutLabels(at: now)
     }
