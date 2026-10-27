@@ -405,6 +405,15 @@ enum CommentMarkup {
                 flush()
                 // 标出来：没带文字的链接只挂到这种段上。
                 if let index = runs.indices.last { runs[index].fromMark = true }
+            } else if looksLikeText(content) {
+                // `[来自Bangumi for android]` 这种根本不是标记，是客户端塞的一句话
+                // （Bgm 安卓端每条评论尾巴上都有）。原版当文字排，后面的链接也挂在它上面：
+                // `[url=…][color=grey]获取[/color][/url]` 里那个「获取」不显示，
+                // 链接文字就是这句（LP 3407 / Colo 3410）。
+                flush()
+                buffer += content
+                flush()
+                if let index = runs.indices.last { runs[index].fromMark = true }
             } else {
                 // 不认识的标记（含残留的 `[img]`）整段吞掉，文字照排。
                 flush()
@@ -423,6 +432,16 @@ enum CommentMarkup {
             fixed.text = displayText(for: run.text, link: link)
             return fixed
         }
+    }
+
+    /// 方括号里不像标记、像一句话的：`[来自Bangumi for android]` 这种。
+    /// 带空格或者有中文就当文字排；`[/color]`、`[color=grey]`、`[quote]` 这些照旧吞掉。
+    private static func looksLikeText(_ content: String) -> Bool {
+        let trimmed = content.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return false }
+        if trimmed.contains("=") || trimmed.hasPrefix("/") { return false }
+        if trimmed.contains(where: { $0.isWhitespace }) { return true }
+        return trimmed.contains { !$0.isASCII }
     }
 
     /// 跳过「没带文字的链接」里包着的那段内容，返回收尾标记之后的位置。
