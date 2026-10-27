@@ -481,6 +481,20 @@ struct LibraryScreen: View {
             .kazumiGlassCapsule()
             .frame(minHeight: 44)
             .contentShape(Rectangle())
+
+            // Colo 3439：搜索条右边隔 8 点一颗「取消」，subheadline、默认色。
+            // 搜索条是弹性的，让它占掉剩下的宽度（402 屏还剩 328）。
+            Button {
+                cancelSearch()
+            } label: {
+                Text("取消")
+                    .font(.subheadline)
+                    .foregroundStyle(Color.primary)
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Text("取消搜索"))
         }
         .frame(minHeight: 44)
     }
@@ -587,8 +601,22 @@ struct LibraryScreen: View {
 
     // MARK: - 列表
 
-    @ViewBuilder
     private var content: some View {
+        contentBody
+            // LP 3438／Colo 3439：搜索状态下点列表里不是卡片的地方＝取消搜索。
+            // 这条手势原来只挂在 ScrollView 上，所以「无结果」「还没有追番」这两块
+            // 整页空白点了没反应——LP 有 27 部时搜一个查不到的词，撞的就是这个。
+            // 卡片用的是自己的 `onTapGesture`，比这层更具体，照旧进详情。
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                guard isSearching else { return }
+                cancelSearch()
+            }
+    }
+
+    @ViewBuilder
+    private var contentBody: some View {
         if filteredEntries.isEmpty {
             if !trimmedQuery.isEmpty {
                 searchEmptyState
@@ -623,12 +651,7 @@ struct LibraryScreen: View {
                 .padding(.top, 16)
                 .padding(.bottom, 24)
             }
-            // LP 2026-10-23：点空白处也该能取消搜索，不能只有那颗「取消」能退出。
-            .contentShape(Rectangle())
-            .onTapGesture {
-                guard isSearching else { return }
-                cancelSearch()
-            }
+            // 点空白处取消搜索的手势挪到 content 外层了（三个分支一起接）。
             .scrollIndicators(.hidden)
             // 顶部滚动边缘：内容从吸附的头部下方滚过，模糊盖住那一行。
             .scrollEdgeEffectStyle(.soft, for: .top)
