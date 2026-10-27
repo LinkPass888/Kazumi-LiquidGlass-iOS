@@ -28,7 +28,11 @@ private struct KazumiSettingsDetailStyle: ViewModifier {
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .scrollContentBackground(.hidden)
-            .background(KazumiPalette.background(for: colorScheme).ignoresSafeArea())
+            // LP 3524：二级页也要跟首页一个底色。原来铺的是 `background(for:)`
+            // （浅色白、深色 #121212），条目本身也是白的，浅色下整页糊成一片白。
+            // 这里换成分组页底 #F2F2F7／深色 #121212（OLED 开时纯黑）；
+            // 条目色不另外给——Form 的分组行本来就是白／#1C1C1E，跟规格同值。
+            .background(KazumiPalette.groupedBackground(for: colorScheme).ignoresSafeArea())
     }
 }
 
