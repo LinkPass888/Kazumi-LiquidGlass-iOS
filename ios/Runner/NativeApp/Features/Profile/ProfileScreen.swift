@@ -125,7 +125,9 @@ struct ProfileScreen: View {
                 rowButton(symbol: "clock.arrow.circlepath", title: "观看历史") {
                     router.push(.history)
                 }
-                // Camo 3523：一个番都没有的时候，沿用原来那句「暂无观看历史」。
+                // LP 3534／Colo 3536：一个番都没有的时候，「暂无观看历史」留在这一行下面，
+                // 但左边缘要跟「观看历史」四个字对齐——左起 54（14 卡片内边距 + 28 图标 + 12 间距），
+                // 跟上面那条分隔线同一条竖线。上 8 下 12，13 号次要灰。
                 if recentRecords.isEmpty {
                     emptyHistoryNote
                 } else {
@@ -140,7 +142,7 @@ struct ProfileScreen: View {
         }
     }
 
-    /// 空态那行灰字，挂在「观看历史」下面。
+    /// 空态那句，左边缘跟「观看历史」四个字对齐（Colo 3536）。
     private var emptyHistoryNote: some View {
         HStack {
             Text("暂无观看历史")
@@ -148,7 +150,9 @@ struct ProfileScreen: View {
                 .foregroundStyle(.secondary)
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 14)
+        // 54 = 卡片左右内边距 14 + 图标 28 + 图标与标题间距 12。
+        .padding(.leading, 54)
+        .padding(.trailing, 14)
         .padding(.top, 8)
         .padding(.bottom, 12)
     }
@@ -168,39 +172,38 @@ struct ProfileScreen: View {
     /// 观看历史那一行底下的三张海报。点一张直接进那部的详情，
     /// 点「观看历史」那一行才是历史页。
     private var recentStrip: some View {
+        // Colo 3543：照观看历史里那张封面（84 宽）稍微缩小——72 宽、高 111
+        // （72 ÷ 0.65）、圆角 14。三张顶左排、间距 10、右边留白，
+        // 不再占满整行（LP 3541 撤掉了 107 宽那版）。
         HStack(spacing: 10) {
             ForEach(recentRecords) { record in
                 Button {
                     router.push(.bangumiInfo(bangumiID: record.bangumiID))
                 } label: {
                     Color.clear
-                        // Colo 3529：跟全 App 的封面同一套比例和圆角，不是 3:4。
-                        .aspectRatio(BangumiPosterCard.coverAspectRatio, contentMode: .fit)
+                        .frame(
+                            width: 72,
+                            height: 72 / BangumiPosterCard.coverAspectRatio
+                        )
                         .overlay {
                             BangumiRemoteImage(url: record.imageURL)
                         }
-                        // `BangumiPosterCard.cornerRadius` 是 private，用同一个值（12）的公开常量。
                         .clipShape(
-                            RoundedRectangle(
-                                cornerRadius: PopularPosterTile.cornerRadius,
-                                style: .continuous
-                            )
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
                         )
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(Text(record.bangumiName))
                 .accessibilityAddTraits(.isButton)
             }
-            // 三张都顶左排，别让最后一行空着拉伸。
             Spacer(minLength: 0)
         }
-        // 宽 107 × 高 165（402 减左右各 16 外壳、各 14 内边距、两个 10 间距再除 3）。
+        // 卡内左右 14、上 8、下 12。
         .padding(.horizontal, 14)
         .padding(.top, 8)
         .padding(.bottom, 12)
     }
 
-    /// 分组里的一行：符号 + 文字 + 右箭头，行高对齐系统分组列表（Colo 3489）。
     private func rowButton(
         symbol: String,
         title: String,
