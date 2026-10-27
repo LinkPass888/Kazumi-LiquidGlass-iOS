@@ -43,6 +43,10 @@ struct ProfileScreen: View {
         // 顶栏换原生（LP 2026-10-24）：标题和设置按钮都归系统。
         // 原来那块自钉顶栏带不透明底色，会把滚动边缘的模糊整块挡住（Colo 1794 提的坑），
         // 所以这次连底色一起删掉，不再自己画任何一条栏。
+        // 这一页下面挂的记录也一样：封面空的读到时补一次。
+        .task {
+            WatchRecordMetaBackfill.fill(recentRecords, in: library)
+        }
         .navigationTitle("我的")
         .navigationBarTitleDisplayMode(.large)
         .toolbar {
@@ -169,39 +173,93 @@ struct ProfileScreen: View {
         return picked
     }
 
-    /// 观看历史那一行底下的三张海报。点一张直接进那部的详情，
-    /// 点「观看历史」那一行才是历史页。
+    /// 观看历史那一行底下最近的几条，竖放（LP 3557、Colo 3559）：
+    /// 番名普遍长，横放三张一截断就认不出是哪部，比高一点更糟。
+    /// 点一条进那部的详情，「观看历史」那一行才是历史页。
     private var recentStrip: some View {
-        // Colo 3543：照观看历史里那张封面（84 宽）稍微缩小——72 宽、高 111
-        // （72 ÷ 0.65）、圆角 14。三张顶左排、间距 10、右边留白，
-        // 不再占满整行（LP 3541 撤掉了 107 宽那版）。
-        HStack(spacing: 10) {
-            ForEach(recentRecords) { record in
-                Button {
-                    router.push(.bangumiInfo(bangumiID: record.bangumiID))
-                } label: {
-                    Color.clear
-                        .frame(
-                            width: 72,
-                            height: 72 / BangumiPosterCard.coverAspectRatio
-                        )
-                        .overlay {
-                            BangumiRemoteImage(url: record.imageURL)
-                        }
-                        .clipShape(
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        )
+        VStack(spacing: 0) {
+            ForEach(Array(recentRecords.enumerated()), id: \.element.id) { index, record in
+                if index > 0 {
+                    // Colo 3561：条带里面的分隔线跟文字块对齐（14 + 封面 64 + 12 = 90），
+                    // 不跟组里其它分隔线一样左起 54——那样会从封面中间穿过去。
+                    Divider().padding(.leading, 90)
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel(Text(record.bangumiName))
-                .accessibilityAddTraits(.isButton)
+                recentRow(record)
             }
-            Spacer(minLength: 0)
         }
-        // 卡内左右 14、上 8、下 12。
-        .padding(.horizontal, 14)
-        .padding(.top, 8)
-        .padding(.bottom, 12)
+    }
+
+    /// 一条：封面 64×98 在左，右边名字 15、集行 12、状态 12，下面一条进度。
+    private func recentRow(_ record: WatchRecord) -> some View {
+        Button {
+            router.push(.bangumiInfo(bangumiID: record.bangumiID))
+        } label: {
+            HStack(alignment: .top, spacing: 12) {
+                Color.clear
+                    .frame(width: 64, height: 64 / BangumiPosterCard.coverAspectRatio)
+                    .overlay {
+                        BangumiRemoteImage(url: record.imageURL)
+                    }
+                    .clipShape(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    )
+
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(record.bangumiName)
+                        .font(.system(size: 15))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+
+                    Text(episodeLine(for: record))
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .padding(.top, 2)
+
+                    Text(statusText(for: record))
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .padding(.top, 2)
+
+                    // Colo 3559：进度条在文字块下面，从封面右缘拉到右内边距，高 4，
+                    // 与状态行间距 6。
+                    KazumiGlassProgressBar(
+                        progress: record.fraction,
+                        tint: KazumiPalette.accent(for: colorScheme)
+                    )
+                    .padding(.top, 6)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            // 行高 114 = 封面 98 ＋ 上下各 8。
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(
+            Text("\(record.bangumiName)，\(episodeLine(for: record))，\(statusText(for: record))")
+        )
+        .accessibilityAddTraits(.isButton)
+    }
+
+    /// 底部状态，照观看历史页那四个词写，别换说法（Camo 3553）。
+    private func statusText(for record: WatchRecord) -> String {
+        if record.isFinished { return "已看完" }
+        guard record.durationSeconds > 0 else { return "继续观看" }
+        let percent = Int((record.fraction * 100).rounded())
+        return percent <= 1 ? "刚开始" : "看了 \(percent)%"
+    }
+
+    /// 「第 1 话」或「第 1 话 · 标题」，跟观看历史页同一份写法。
+    private func episodeLine(for record: WatchRecord) -> String {
+        let number = "第 \(record.episodeNumber) 话"
+        let title = record.episodeTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        return title.isEmpty || title == number ? number : "\(number) · \(title)"
     }
 
     private func rowButton(

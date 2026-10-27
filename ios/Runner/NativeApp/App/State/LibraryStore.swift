@@ -260,6 +260,30 @@ final class LibraryStore {
         save()
     }
 
+    /// 只补空着的名字 / 封面，别的字段（进度、集数、时间）一律不动。
+    ///
+    /// 播放页写记录时，没追过番的条目本地拿不到番剧名和封面（Colo 3554：
+    /// `PlayerScreen.swift` 那两处都是 `?? ""`），记录就成了空壳，
+    /// 历史列表和「我的」页上只剩一个占位框。补的时候走 Bangumi 取一次。
+    func backfillHistoryMeta(bangumiID: Int, name: String, imageURL: String) {
+        guard let index = history.firstIndex(where: { $0.bangumiID == bangumiID }) else { return }
+        var record = history[index]
+        var changed = false
+        if record.bangumiName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+           !name.isEmpty {
+            record.bangumiName = name
+            changed = true
+        }
+        if record.imageURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+           !imageURL.isEmpty {
+            record.imageURL = imageURL
+            changed = true
+        }
+        guard changed else { return }
+        history[index] = record
+        save()
+    }
+
     func removeHistory(bangumiID: Int) {
         history.removeAll { $0.bangumiID == bangumiID }
         save()

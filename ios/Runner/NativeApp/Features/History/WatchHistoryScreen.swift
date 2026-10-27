@@ -73,6 +73,8 @@ struct WatchHistoryScreen: View {
         }
         .task {
             KazumiImageLoader.shared.prefetch(library.history.map(\.imageURL))
+            // 老记录的名字和封面是空的，读到就补一次（Colo 3566）。
+            WatchRecordMetaBackfill.fill(library.history, in: library)
         }
     }
 

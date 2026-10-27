@@ -2174,10 +2174,13 @@ private func persistWatchProgress(
         progress = 0
     }
     let source = controller.source
+    let entry = library.entry(for: controller.bangumiID)
+    let storedName = source?.itemName ?? ""
+    let storedImage = entry?.imageURL ?? ""
     library.upsert(WatchRecord(
         bangumiID: controller.bangumiID,
-        bangumiName: source?.itemName ?? "",
-        imageURL: library.entry(for: controller.bangumiID)?.imageURL ?? "",
+        bangumiName: storedName,
+        imageURL: storedImage,
         sourceRuleName: source?.pluginName ?? "",
         // 原生这边只有 URL，没有集标题，留空由历史页回退成「第 N 话」。
         episodeTitle: "",
@@ -2186,6 +2189,20 @@ private func persistWatchProgress(
         durationSeconds: duration.isFinite && duration > 0 ? duration : 0,
         updatedAt: Date()
     ))
+
+    // 没追过番的条目，名字和封面在上面都是空串，记录就成了空壳。
+    // Colo 3554：缺的那几样用番剧 ID 向 Bangumi 取一次、写回同一条记录；
+    // 这里补、不在列表里就地补，别处读同一条记录也就都有名字了。
+    guard storedName.isEmpty || storedImage.isEmpty else { return }
+    let bangumiID = controller.bangumiID
+    Task { @MainActor in
+        guard let item = await BangumiAPI.info(id: bangumiID) else { return }
+        library.backfillHistoryMeta(
+            bangumiID: bangumiID,
+            name: item.displayName,
+            imageURL: item.largeImage
+        )
+    }
 }
 
 /// 画面框：竖屏里按画面比例的宽度占满（16:9 就是屏宽 × 屏宽×9/16），
