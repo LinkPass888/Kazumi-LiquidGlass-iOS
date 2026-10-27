@@ -132,8 +132,7 @@ struct SearchScreen: View {
         .padding(.horizontal, 14)
         .frame(minHeight: 52)
         .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(KazumiPalette.cardSurface(for: colorScheme))
+            KazumiPalette.cardShape(cornerRadius: 16, scheme: colorScheme)
         )
     }
 
@@ -164,8 +163,7 @@ struct SearchScreen: View {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
                 .background(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(KazumiPalette.cardSurface(for: colorScheme))
+                    KazumiPalette.cardShape(cornerRadius: 16, scheme: colorScheme)
                 )
             }
             .buttonStyle(.plain)

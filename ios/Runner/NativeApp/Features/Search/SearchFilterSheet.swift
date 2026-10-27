@@ -188,8 +188,7 @@ struct SearchFilterSheet: View {
                 .padding(.horizontal, 14)
                 .padding(.vertical, 12)
                 .background(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(KazumiPalette.cardSurface(for: colorScheme))
+                    KazumiPalette.cardShape(cornerRadius: 12, scheme: colorScheme)
                 )
             }
         }
@@ -229,8 +228,7 @@ struct SearchFilterSheet: View {
                         .padding(.horizontal, 14)
                         .padding(.vertical, 11)
                         .background(
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .fill(KazumiPalette.cardSurface(for: colorScheme))
+                            KazumiPalette.cardShape(cornerRadius: 12, scheme: colorScheme)
                         )
 
                     Button {
@@ -240,8 +238,7 @@ struct SearchFilterSheet: View {
                             .font(.system(size: 15, weight: .semibold))
                             .frame(width: 42, height: 42)
                             .background(
-                                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                    .fill(KazumiPalette.cardSurface(for: colorScheme))
+                                KazumiPalette.cardShape(cornerRadius: 12, scheme: colorScheme)
                             )
                     }
                     .buttonStyle(.plain)
@@ -295,8 +292,7 @@ struct SearchFilterSheet: View {
                     .padding(.horizontal, 14)
                     .padding(.vertical, 12)
                     .background(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .fill(KazumiPalette.cardSurface(for: colorScheme))
+                        KazumiPalette.cardShape(cornerRadius: 12, scheme: colorScheme)
                     )
                 }
 

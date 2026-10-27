@@ -37,8 +37,7 @@ struct LibraryPosterCard: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
-                .fill(KazumiPalette.cardSurface(for: colorScheme))
+            KazumiPalette.cardShape(cornerRadius: Self.cornerRadius, scheme: colorScheme)
         )
         .clipShape(RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous))
         // LP 2026-10-24：进详情页要整张卡片放大，不是只有封面。

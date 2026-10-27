@@ -376,8 +376,7 @@ struct InfoCommentsPanel: View {
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
                 .background(
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .fill(KazumiPalette.cardSurface(for: colorScheme))
+                    KazumiPalette.cardShape(cornerRadius: 20, scheme: colorScheme)
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 20, style: .continuous)
@@ -551,8 +550,7 @@ struct InfoRelationsPanel: View {
         }
         .padding(8)
         .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(KazumiPalette.cardSurface(for: colorScheme))
+            KazumiPalette.cardShape(cornerRadius: 16, scheme: colorScheme)
         )
     }
 }

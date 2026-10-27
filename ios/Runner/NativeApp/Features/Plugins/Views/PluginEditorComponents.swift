@@ -20,8 +20,7 @@ struct EditorCard<Content: View>: View {
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(KazumiPalette.cardSurface(for: colorScheme))
+            KazumiPalette.cardShape(cornerRadius: 20, scheme: colorScheme)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 20, style: .continuous)

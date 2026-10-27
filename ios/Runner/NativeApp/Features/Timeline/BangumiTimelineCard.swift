@@ -47,8 +47,7 @@ struct BangumiTimelineCard: View {
             .padding(Self.contentPadding)
             .frame(maxWidth: .infinity, minHeight: compact ? 144 : 160, alignment: .top)
             .background(
-                RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
-                    .fill(KazumiPalette.cardSurface(for: colorScheme))
+                KazumiPalette.cardShape(cornerRadius: Self.cornerRadius, scheme: colorScheme)
             )
         }
         .buttonStyle(.plain)

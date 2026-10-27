@@ -143,8 +143,7 @@ struct BestMatchCard: View {
         .onPreferenceChange(CardWidthKey.self) { cardWidth = $0 }
         // 跟下面「其他相似片段」那几行同一种底：cardSurface、无描边、圆角 16（Colo 3102）。
         .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(KazumiPalette.cardSurface(for: colorScheme))
+            KazumiPalette.cardShape(cornerRadius: 16, scheme: colorScheme)
         )
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
@@ -253,8 +252,7 @@ struct OtherMatchRow: View {
             .padding(.horizontal, 20)
             .padding(.vertical, 14)
             .background(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(KazumiPalette.cardSurface(for: colorScheme))
+                KazumiPalette.cardShape(cornerRadius: 16, scheme: colorScheme)
             )
         }
         .buttonStyle(.plain)

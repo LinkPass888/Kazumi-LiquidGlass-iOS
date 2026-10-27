@@ -165,8 +165,7 @@ struct AboutScreen: View {
             .padding(.vertical, 12)
             .contentShape(Rectangle())
             .background(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(KazumiPalette.cardSurface(for: colorScheme))
+                KazumiPalette.cardShape(cornerRadius: 14, scheme: colorScheme)
             )
         }
         .buttonStyle(.plain)
@@ -235,8 +234,7 @@ struct AboutScreen: View {
         .padding(.vertical, 12)
         .contentShape(Rectangle())
         .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(KazumiPalette.cardSurface(for: colorScheme))
+            KazumiPalette.cardShape(cornerRadius: 14, scheme: colorScheme)
         )
     }
 
@@ -257,8 +255,7 @@ struct AboutScreen: View {
             .padding(.vertical, 12)
             .contentShape(Rectangle())
             .background(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(KazumiPalette.cardSurface(for: colorScheme))
+                KazumiPalette.cardShape(cornerRadius: 14, scheme: colorScheme)
             )
         }
         .buttonStyle(.plain)

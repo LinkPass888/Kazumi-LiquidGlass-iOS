@@ -71,8 +71,7 @@ private struct KazumiPaletteCard: View {
     var body: some View {
         ZStack {
             // 卡片底。
-            RoundedRectangle(cornerRadius: KazumiPalette.cardCornerRadius, style: .continuous)
-                .fill(KazumiPalette.cardSurface(for: colorScheme))
+            KazumiPalette.cardShape(cornerRadius: KazumiPalette.cardCornerRadius, scheme: colorScheme)
                 .frame(width: 62, height: 62)
 
             // 三块色拼成的圆：上半 / 左下 / 右下。

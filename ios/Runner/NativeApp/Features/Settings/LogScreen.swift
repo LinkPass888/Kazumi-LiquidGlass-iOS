@@ -54,8 +54,7 @@ struct LogScreen: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(10)
                             .background(
-                                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                    .fill(KazumiPalette.cardSurface(for: colorScheme))
+                                KazumiPalette.cardShape(cornerRadius: 10, scheme: colorScheme)
                             )
                         }
                     }

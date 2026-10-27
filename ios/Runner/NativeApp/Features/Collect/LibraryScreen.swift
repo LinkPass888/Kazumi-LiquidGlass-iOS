@@ -869,8 +869,7 @@ private struct LibraryEntryCard: View {
         }
         .padding(12)
         .background(
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .fill(KazumiPalette.cardSurface(for: colorScheme))
+            KazumiPalette.cardShape(cornerRadius: 28, scheme: colorScheme)
         )
         // LP 2026-10-23：整张卡片都能点开，不再只有封面那一小块。
         // 右侧那颗「修改状态」是自己的按钮，会先吃掉它范围内的点击。

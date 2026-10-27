@@ -120,8 +120,7 @@ struct WatchHistoryScreen: View {
             .padding(.vertical, 10)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .fill(KazumiPalette.cardSurface(for: colorScheme))
+                KazumiPalette.cardShape(cornerRadius: 20, scheme: colorScheme)
             )
         }
         .buttonStyle(.plain)

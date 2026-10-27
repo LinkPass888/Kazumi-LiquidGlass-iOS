@@ -233,8 +233,7 @@ struct SourceSheet: View {
             }
         }
         .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(KazumiPalette.cardSurface(for: colorScheme))
+            KazumiPalette.cardShape(cornerRadius: 18, scheme: colorScheme)
         )
     }
 

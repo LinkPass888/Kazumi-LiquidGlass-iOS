@@ -344,8 +344,7 @@ struct ImageSearchScreen: View {
         .padding(.horizontal, 14)
         .frame(minHeight: 48)
         .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(KazumiPalette.cardSurface(for: colorScheme))
+            KazumiPalette.cardShape(cornerRadius: 14, scheme: colorScheme)
         )
     }
 
@@ -400,8 +399,7 @@ struct ImageSearchScreen: View {
         }
         .padding(16)
         .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(KazumiPalette.cardSurface(for: colorScheme))
+            KazumiPalette.cardShape(cornerRadius: 16, scheme: colorScheme)
         )
     }
 

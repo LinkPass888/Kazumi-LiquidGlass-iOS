@@ -48,8 +48,7 @@ struct DownloadScreen: View {
                             }
                             .padding(12)
                             .background(
-                                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                    .fill(KazumiPalette.cardSurface(for: colorScheme))
+                                KazumiPalette.cardShape(cornerRadius: 16, scheme: colorScheme)
                             )
                         }
                     }

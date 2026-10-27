@@ -75,14 +75,42 @@ enum KazumiPalette {
     /// 显式按 colorScheme 取（不用 `Color(.systemGroupedBackground)` 这类动态色）：
     /// 切主题走 `.preferredColorScheme` 时，动态色由 UIKit 自己解析，跟 SwiftUI 的
     /// colorScheme 可能对不上——同一个底会在不同页面取到不同的值（同上面强调色那条）。
-    /// 浅色 #F2F2F7、深色 #000000，与系统设置页一致。
+    /// 浅色 #F2F2F7；深色跟其它页同一套深浅规则：默认 #121212，
+    /// 开了 OLED 优化才用纯黑——纯黑不是深色模式的默认值（LP 3484）。
     static func groupedBackground(for scheme: ColorScheme) -> Color {
-        scheme == .dark ? .black : Color(red: 0.949, green: 0.949, blue: 0.969)
+        guard scheme == .dark else {
+            return Color(red: 0.949, green: 0.949, blue: 0.969)
+        }
+        return KazumiThemeColor.oledEnhance ? .black : Color(white: 0.07)
     }
 
     /// 分组列表里一条的底色：浅色 #FFFFFF、深色 #1C1C1E（系统设置页的条目色）。
     static func groupedRow(for scheme: ColorScheme) -> Color {
         scheme == .dark ? Color(red: 0.110, green: 0.110, blue: 0.118) : .white
+    }
+
+    /// 白底之上卡片的描边（Colo 3483）。
+    ///
+    /// 页面底改成纯白之后，卡片本身也是白的，不分边就分不出「卡」和「页」。
+    /// 取系统分隔线色的六成、0.5 点、不加阴影；圆角和内边距都不动。
+    static func cardStroke(for scheme: ColorScheme) -> Color {
+        // 系统分隔线色 = #3C3C43 @ 36%（深色下是白色 @ 24%），取它的六成。
+        if scheme == .dark {
+            return Color.white.opacity(0.14)
+        }
+        return Color(red: 0.235, green: 0.235, blue: 0.263).opacity(0.22)
+    }
+
+    /// 一张卡片的底：白底＋0.5 点淡描边（Colo 3483）。
+    ///
+    /// 页面底改白以后，卡片自己也是白的，靠这一个函数统一分边，免得到处写两份形状。
+    static func cardShape(cornerRadius: CGFloat, scheme: ColorScheme) -> some View {
+        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            .fill(cardSurface(for: scheme))
+            .overlay {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .strokeBorder(cardStroke(for: scheme), lineWidth: 0.5)
+            }
     }
 
     /// 卡片底色（对应 Material 的 surfaceContainerLow / 时间表卡片）。

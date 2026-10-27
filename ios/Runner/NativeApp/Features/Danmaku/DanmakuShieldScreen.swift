@@ -32,8 +32,7 @@ struct DanmakuShieldScreen: View {
                             .padding(.horizontal, 12)
                             .padding(.vertical, 10)
                             .background(
-                                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                    .fill(KazumiPalette.cardSurface(for: colorScheme))
+                                KazumiPalette.cardShape(cornerRadius: 12, scheme: colorScheme)
                             )
 
                         Toggle("正则", isOn: $isRegex)
@@ -115,8 +114,7 @@ struct DanmakuShieldScreen: View {
                     .padding(.horizontal, 14)
                     .padding(.vertical, 11)
                     .background(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .fill(KazumiPalette.cardSurface(for: colorScheme))
+                        KazumiPalette.cardShape(cornerRadius: 12, scheme: colorScheme)
                     )
                 }
             }
