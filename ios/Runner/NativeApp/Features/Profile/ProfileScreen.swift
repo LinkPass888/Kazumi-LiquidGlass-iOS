@@ -22,15 +22,11 @@ struct ProfileScreen: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 watchStats
-                quickTools
-                // 「规则管理」只保留「内容与偏好」里的那一行：原先这里还有一张
-                // 异形强调卡直达同一页，同屏两个入口反而让人怀疑是两个不同的功能。
-                section("内容与偏好", rows: [
-                    Row(symbol: "puzzlepiece.extension", title: "规则管理", route: .pluginList),
-                    Row(symbol: "bell", title: "通知设置", route: .notificationSettings),
-                    Row(symbol: "play.rectangle", title: "播放设置", route: .playerSettings),
-                    Row(symbol: "captions.bubble", title: "弹幕设置", route: .danmakuSettings),
-                ])
+                // 「规则管理」只保留这一处入口：原先这里还有一张异形强调卡直达同一页，
+                // 同屏两个入口反而让人怀疑是两个不同的功能。
+                // LP 3522：通知设置／播放设置／弹幕设置在「全部设置」里都有，这一页不再重复；
+                // 观看历史和离线下载从原来并排的两张工具卡收进这一组。
+                contentSection
                 section("数据与应用", rows: [
                     Row(symbol: "icloud", title: "同步设置", route: .syncBackup),
                     Row(symbol: "externaldrive", title: "存储与日志", route: .storage),
@@ -98,47 +94,120 @@ struct ProfileScreen: View {
         )
     }
 
-    // MARK: - 历史 / 下载
+    // MARK: - 内容与偏好
 
-    private var quickTools: some View {
-        HStack(spacing: 12) {
-            toolCard(
-                symbol: "clock.arrow.circlepath",
-                title: "观看历史",
-                caption: library.history.isEmpty ? "暂无观看历史" : "查看观看历史",
-                route: .history
-            )
-            toolCard(
-                symbol: "arrow.down.circle",
-                title: "离线下载",
-                caption: "管理离线内容",
-                route: .download
-            )
-        }
-    }
+    /// 规则管理 / 离线下载 / 观看历史三行，最后一行底下挂最近看过的三张海报。
+    /// 组名 Camo 3523 定的「内容管理」：原来那个里的「偏好」跟着通知、播放、弹幕一起删了，
+    /// 剩下这三行都是在这台设备上攒下的东西。
+    private var contentSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("内容管理")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .padding(.leading, 4)
 
-    private func toolCard(symbol: String, title: String, caption: String, route: AppRoute) -> some View {
-        Button {
-            router.push(route)
-        } label: {
-            VStack(alignment: .leading, spacing: 8) {
-                Image(systemName: symbol)
-                    .font(.system(size: 20, weight: .semibold))
-                    .foregroundStyle(KazumiPalette.accent(for: colorScheme))
-                Text(title)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.primary)
-                Text(caption)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+            VStack(spacing: 0) {
+                rowButton(symbol: "puzzlepiece.extension", title: "规则管理") {
+                    router.push(.pluginList)
+                }
+                Divider().padding(.leading, 54)
+                rowButton(symbol: "arrow.down.circle", title: "离线下载") {
+                    router.push(.download)
+                }
+                Divider().padding(.leading, 54)
+                rowButton(symbol: "clock.arrow.circlepath", title: "观看历史") {
+                    router.push(.history)
+                }
+                // Camo 3523：一个番都没有的时候，沿用原来那句「暂无观看历史」。
+                if recentRecords.isEmpty {
+                    emptyHistoryNote
+                } else {
+                    Divider().padding(.leading, 54)
+                    recentStrip
+                }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(14)
             .background(
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
                     .fill(KazumiPalette.groupedRow(for: colorScheme))
             )
+        }
+    }
+
+    /// 空态那行灰字，挂在「观看历史」下面。
+    private var emptyHistoryNote: some View {
+        HStack {
+            Text("暂无观看历史")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 14)
+        .padding(.bottom, 14)
+        .padding(.top, -4)
+    }
+
+    /// 最近看过的三张：按时间倒序取前三个，同一部番只出现一次。
+    private var recentRecords: [WatchRecord] {
+        var seen = Set<Int>()
+        var picked: [WatchRecord] = []
+        for record in library.history.sorted(by: { $0.updatedAt > $1.updatedAt }) {
+            guard seen.insert(record.bangumiID).inserted else { continue }
+            picked.append(record)
+            if picked.count == 3 { break }
+        }
+        return picked
+    }
+
+    /// 观看历史那一行底下的三张海报。点一张直接进那部的详情，
+    /// 点「观看历史」那一行才是历史页。
+    private var recentStrip: some View {
+        HStack(spacing: 10) {
+            ForEach(recentRecords) { record in
+                Button {
+                    router.push(.bangumiInfo(bangumiID: record.bangumiID))
+                } label: {
+                    Color.clear
+                        .aspectRatio(0.65, contentMode: .fit)
+                        .overlay {
+                            BangumiRemoteImage(url: record.imageURL)
+                        }
+                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(Text(record.bangumiName))
+                .accessibilityAddTraits(.isButton)
+            }
+            // 三张都顶左排，别让最后一行空着拉伸。
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+    }
+
+    /// 分组里的一行：符号 + 文字 + 右箭头，行高对齐系统分组列表（Colo 3489）。
+    private func rowButton(
+        symbol: String,
+        title: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                Image(systemName: symbol)
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(KazumiPalette.accent(for: colorScheme))
+                    .frame(width: 28)
+                Text(title)
+                    .font(.body)
+                    .foregroundStyle(.primary)
+                Spacer(minLength: 4)
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(.horizontal, 14)
+            // 单行 52：正文那行实测 20.3，上下各 16 补到 52。
+            .padding(.vertical, 16)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
@@ -161,32 +230,9 @@ struct ProfileScreen: View {
 
             VStack(spacing: 0) {
                 ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
-                    Button {
+                    rowButton(symbol: row.symbol, title: row.title) {
                         router.push(row.route)
-                    } label: {
-                        HStack(spacing: 12) {
-                            Image(systemName: row.symbol)
-                                .font(.system(size: 17, weight: .semibold))
-                                .foregroundStyle(KazumiPalette.accent(for: colorScheme))
-                                .frame(width: 28)
-                            Text(row.title)
-                                .font(.body)
-                                .foregroundStyle(.primary)
-                            Spacer(minLength: 4)
-                            Image(systemName: "chevron.right")
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(.tertiary)
-                        }
-                        .padding(.horizontal, 14)
-                        // Colo 3489：单行，行高对齐系统分组列表的 52（iOS 26 起，
-                        // 不是我按旧标准算的 44——模拟器里量系统「设置」每行都是 52）。
-                        // 实测：正文那行字量下来 20.3 点，不是估的 22，上下各 15 只有
-                        // 50.3，所以这里给 16 补到 52。
-                        .padding(.vertical, 16)
-                        .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
-
                     if index < rows.count - 1 {
                         Divider().padding(.leading, 54)
                     }

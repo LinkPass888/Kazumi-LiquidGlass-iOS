@@ -1214,7 +1214,9 @@ struct PlayerScreen: View {
         HStack(spacing: 4) {
             Image(systemName: "goforward")
                 .font(.system(size: 17, weight: .regular))
-            Text("\(settings.buttonSkipTime)s")
+            // Camo 3523：原来写的是 `10s`，英文单位。整屏都是中文，
+            // 改成「10 秒」，跟设置里那行「跳过时长…秒」一个说法。
+            Text("\(settings.buttonSkipTime) 秒")
                 .font(.caption.weight(.semibold))
                 .monospacedDigit()
         }
