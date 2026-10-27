@@ -279,6 +279,33 @@ struct PluginModelTests {
         #expect(VersionCompare.needUpdate(local: "1.2", remote: "1.2.0") == false)
         #expect(VersionCompare.needUpdate(local: "2.0.0", remote: "1.9.9") == false)
     }
+
+    /// 规则里的数字不能变布尔：JSONSerialization 给的是 NSNumber，
+    /// NSNumber 桥到 Bool 永远成功，`1` 曾经被发成 `page=true`（LP 3422 的抓包）。
+    @Test("数字与布尔分开解析，query 渲染不串") func numbersStayNumbers() throws {
+        let raw = #"""
+        {"api":"8","name":"数字","version":"1","searchMode":"api",
+         "searchApiConfig":{"request":{"method":"GET","url":"https://a.com/s",
+         "query":{"q":"@keyword","page":1,"page_size":50,"ratio":1.5,"deep":true,"off":false}}}}
+        """#
+        let plugin = Plugin(json: try JSONValue.decode(raw))
+        let query = plugin.searchApiConfig.request.query
+        #expect(query["page"] == .int(1))
+        #expect(query["page_size"] == .int(50))
+        #expect(query["ratio"] == .double(1.5))
+        #expect(query["deep"] == .bool(true))
+        #expect(query["off"] == .bool(false))
+
+        let request = try ApiRuleStrategy().prepareRequest(
+            plugin.searchApiConfig.request,
+            variables: ["keyword": .string("飙马野郎")]
+        )
+        #expect(request.query["page"]?.stringValue == "1")
+        #expect(request.query["page_size"]?.stringValue == "50")
+        #expect(request.query["ratio"]?.stringValue == "1.5")
+        #expect(request.query["deep"]?.stringValue == "true")
+        #expect(request.query["off"]?.stringValue == "false")
+    }
 }
 
 struct RuleEngineTests {

@@ -201,13 +201,18 @@ struct LibraryScreen: View {
         // 一行放得下就一行；放不下（最大字号下这四样加起来 504，比 370 宽）
         // 就折成两行：筛选＋排序一行，部数＋搜索一行。
         // 顶栏不能靠缩网格救——网格缩到一列，这一行照样出界（Colo 2026-10-24 实测）。
+        //
+        // 宽度很卡平（LP 3425）：402 屏、正文宽 370，四个胶囊实测 70.3 / 100 / 44 / 79，
+        // 间距 8 + Spacer 最少 8 时，「0 部」刚好 366 放得下，「27 部」多一位数就 371，
+        // 当场折成两行——看着像 27.1 的毛病，其实是余量正好为零。
+        // 间距改 6、Spacer 不留最小值，两位数的部数还有 16 点余量。
         ViewThatFits(in: .horizontal) {
-            HStack(spacing: 8) {
+            HStack(spacing: 6) {
                 categoryMenu
                 sortMenu
                 categoryCount
 
-                Spacer(minLength: 8)
+                Spacer(minLength: 0)
 
                 // LP 2026-10-23：默认就只是一颗放大镜按钮，点了才长成搜索条。
                 searchIconButton
