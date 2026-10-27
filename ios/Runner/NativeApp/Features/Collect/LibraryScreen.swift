@@ -173,6 +173,13 @@ struct LibraryScreen: View {
         .padding(.horizontal, 16)
         .padding(.top, 8)
         .padding(.bottom, 10)
+        // Colo 3461：搜索状态下，搜索框以上这一整块是取消的**主要落点**——
+        // 面积固定、永远在、不随结果多少变。列表那边不再挂手势。
+        .contentShape(Rectangle())
+        .onTapGesture {
+            guard isSearching else { return }
+            cancelSearch()
+        }
     }
 
     // MARK: - 控制条
@@ -603,10 +610,8 @@ struct LibraryScreen: View {
 
     private var content: some View {
         contentBody
-            // LP 3438／Colo 3439：搜索状态下点列表里不是卡片的地方＝取消搜索。
-            // 这条手势原来只挂在 ScrollView 上，所以「无结果」「还没有追番」这两块
-            // 整页空白点了没反应——LP 有 27 部时搜一个查不到的词，撞的就是这个。
-            // 卡片用的是自己的 `onTapGesture`，比这层更具体，照旧进详情。
+            // LP 3462／Colo 3463：两处并存——标题区那块是主要的，列表里的空白和
+            // 行间隙碰到也关。卡片自己的 onTapGesture 更具体，照旧进详情。
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .contentShape(Rectangle())
             .onTapGesture {

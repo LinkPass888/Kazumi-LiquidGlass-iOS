@@ -323,6 +323,11 @@ struct TimelineScreen: View {
             }
             .frame(height: Self.weekdayTrackHeight)
             .contentShape(Capsule(style: .continuous))
+            // Colo 3460：七格之间的空隙也得能点，按 x 落在哪格就选哪格。
+            // 轻点走这条（空格子也接得住）；拖拽另走 weekdayDragGesture 跟手。
+            .onTapGesture { location in
+                selectWeekday(weekdayIndex(at: location.x, cellWidth: cellWidth))
+            }
             .gesture(weekdayDragGesture(width: proxy.size.width))
         }
         .frame(height: Self.weekdayTrackHeight)
@@ -426,7 +431,9 @@ struct TimelineScreen: View {
             }
             .onEnded { value in
                 let cellWidth = max(width, 1) / 7
-                let day = weekdayIndex(at: value.location.x, cellWidth: cellWidth)
+                // 夹进轨道内再判格：落在最后一格右边缘外也不能算成不存在的第 8 格。
+                let x = min(max(value.location.x, 0), max(width, 1) - 0.001)
+                let day = weekdayIndex(at: x, cellWidth: cellWidth)
                 withAnimation(.spring(response: 0.48, dampingFraction: 0.86)) {
                     selectedWeekday = day
                     weekdayDragX = nil
@@ -465,6 +472,7 @@ struct TimelineScreen: View {
             // 一页一天：用横向分页 ScrollView，滚动偏移直接驱动星期条玻璃，
             // 手指到哪玻璃到哪；松手弹到最近页，真换天那一刻才开始凝固计时。
             GeometryReader { pageProxy in
+                ScrollViewReader { scrollProxy in
                 ScrollView(.horizontal) {
                     HStack(spacing: 0) {
                         ForEach(0..<7, id: \.self) { day in
@@ -477,6 +485,16 @@ struct TimelineScreen: View {
                 }
                 .scrollTargetBehavior(.paging)
                 .scrollPosition(id: Binding<Int?>(get: { selectedWeekday }, set: { if let v = $0 { selectedWeekday = v } }))
+                // LP 3457/3460：冷启动必须落在「今天」。光靠 scrollPosition 的初始 id 在
+                // .paging 下不一定生效（实测滑块停在周一、内容也是周一，而「今天」标在周二），
+                // 所以首帧布局完再显式滚一次。
+                .onAppear {
+                    let target = selectedWeekday
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .milliseconds(60))
+                        withAnimation(nil) { scrollProxy.scrollTo(target, anchor: .leading) }
+                    }
+                }
                 .scrollIndicators(.hidden)
                 .onScrollGeometryChange(for: CGFloat.self, of: { geo in
                     geo.contentOffset.x
@@ -486,6 +504,7 @@ struct TimelineScreen: View {
                 .onAppear { pageViewportWidth = max(pageProxy.size.width, 1) }
                 .onChange(of: pageProxy.size.width) { _, new in
                     pageViewportWidth = max(new, 1)
+                }
                 }
             }
             // 轻触感反馈：滑切与点选星期都会触发；LP 清单「触感反馈」关掉后不再震。
