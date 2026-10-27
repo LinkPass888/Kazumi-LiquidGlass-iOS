@@ -59,13 +59,15 @@ enum KazumiPalette {
         return KazumiThemeColor.swiftUIColor(tone.onContainer)
     }
 
-    /// 页面背景：与原版 Scaffold 的 surface 一致，浅色近白、深色近黑。
-    /// 深色下默认取近黑（`Color(white: 0.07)`），开启 OLED 优化时用纯黑。
+    /// 页面背景：LP 3482 要纯白（原来浅色是 #FAFAFC 近白）。
+    ///
+    /// 我的页与设置页另算，它们用上面的 `groupedBackground`（#F2F2F7）。
+    /// 深色下不变：默认近黑（`Color(white: 0.07)`），开启 OLED 优化时纯黑。
     static func background(for scheme: ColorScheme) -> Color {
         if scheme == .dark {
             return KazumiThemeColor.oledEnhance ? .black : Color(white: 0.07)
         }
-        return Color(red: 0.98, green: 0.98, blue: 0.99)
+        return .white
     }
 
     /// 我的页与设置页的页面底色：LP 3480 要 iOS 原生分组色。
@@ -92,8 +94,10 @@ enum KazumiPalette {
     }
 
     static func heroBackground(for scheme: ColorScheme) -> LinearGradient {
-        let base = scheme == .dark ? Color(white: 0.05) : Color(red: 0.97, green: 0.96, blue: 0.97)
-        let elevated = scheme == .dark ? Color(white: 0.12) : Color(red: 0.93, green: 0.92, blue: 0.95)
+        // 浅色的收口色跟着页面底走（LP 3482 起是纯白），否则渐变的尽头
+        // 跟页面底差一点点，会在页面下部留一道看得见的接缝。
+        let base = scheme == .dark ? Color(white: 0.05) : .white
+        let elevated = scheme == .dark ? Color(white: 0.12) : Color(red: 0.96, green: 0.96, blue: 0.97)
         return LinearGradient(
             colors: [elevated, base],
             startPoint: .top,
@@ -103,7 +107,7 @@ enum KazumiPalette {
 
     /// Hero 剧照底部与背景融合的渐隐。
     static func heroFade(for scheme: ColorScheme) -> LinearGradient {
-        let base = scheme == .dark ? Color(white: 0.05) : Color(red: 0.97, green: 0.96, blue: 0.97)
+        let base = scheme == .dark ? Color(white: 0.05) : .white
         return LinearGradient(
             stops: [
                 .init(color: base.opacity(0), location: 0),
