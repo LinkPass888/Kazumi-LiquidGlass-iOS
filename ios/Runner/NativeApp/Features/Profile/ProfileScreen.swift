@@ -194,8 +194,6 @@ struct ProfileScreen: View {
         Button {
             router.push(.bangumiInfo(bangumiID: record.bangumiID))
         } label: {
-            // Colo 3567：文字块上下居中，不顶对齐——封面 98 高、文字块只有 60 上下，
-            // 顶对齐会在这一条下面空出四十多，居中之后上下各留一半。
             HStack(alignment: .center, spacing: 12) {
                 Color.clear
                     .frame(width: 64, height: 64 / BangumiPosterCard.coverAspectRatio)
@@ -206,24 +204,31 @@ struct ProfileScreen: View {
                         RoundedRectangle(cornerRadius: 14, style: .continuous)
                     )
 
+                // Colo 3567：文字那三行上下居中，不跟封面顶对齐——封面 98 高、
+                // 三行字只有 50 上下，顶对齐会在这一条下面空出四十多。
+                // 进度条不跟着居中（LP 3580）：它留在这条底部，跟封面下沿齐，
+                // 三行字在被它让出来的空间里居中。
                 VStack(alignment: .leading, spacing: 0) {
-                    Text(record.bangumiName)
-                        .font(.system(size: 15))
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text(record.bangumiName)
+                            .font(.system(size: 15))
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
 
-                    Text(episodeLine(for: record))
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .padding(.top, 2)
+                        Text(episodeLine(for: record))
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .padding(.top, 2)
 
-                    Text(statusText(for: record))
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .padding(.top, 2)
+                        Text(statusText(for: record))
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .padding(.top, 2)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
 
                     // Colo 3559：进度条在文字块下面，从封面右缘拉到右内边距，高 4，
                     // 与状态行间距 6。
@@ -234,6 +239,8 @@ struct ProfileScreen: View {
                     .padding(.top, 6)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
+                // 这一列撑满封面高度：进度条落到封面下沿，三行字在里面居中。
+                .frame(height: 64 / BangumiPosterCard.coverAspectRatio)
             }
             // 行高 114 = 封面 98 ＋ 上下各 8。
             .padding(.horizontal, 14)
