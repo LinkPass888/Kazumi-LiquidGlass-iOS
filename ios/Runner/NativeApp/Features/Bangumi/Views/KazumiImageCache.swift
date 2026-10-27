@@ -55,7 +55,14 @@ final class KazumiImageLoader: @unchecked Sendable {
 
     private let memory = NSCache<NSString, Entry>()
     private let lock = NSLock()
-    private var inFlight: [String: Task<Void, Never>] = [:]
+    /// 在途下载。用它按身份比较，只有「真的在等这个任务」的调用方会在结束后
+    /// 把自己那条摘掉，任务体本身不碰这张表（否则直接 fetch 的路径会把别人的
+    /// 登记删掉，同一个地址被重复下载、把闸门占满）。
+    private final class InFlight {
+        let task: Task<Void, Never>
+        init(_ task: Task<Void, Never>) { self.task = task }
+    }
+    private var inFlight: [String: InFlight] = [:]
     private let directory: URL
     private let session: URLSession
     /// 同时在跑的下载上限。一屏几十张图全放出去，连接会被自己挤爆、
@@ -201,18 +208,26 @@ final class KazumiImageLoader: @unchecked Sendable {
         let bucket = Self.bucket(pixelSize)
         if cachedImage(for: url, pixelSize: pixelSize) != nil { return true }
 
-        let task: Task<Void, Never> = lock.withLock {
+        let box: InFlight = lock.withLock {
             if let existing = inFlight[key] { return existing }
-            let created = Task<Void, Never> { [weak self] in
+            let created = InFlight(Task<Void, Never> { [weak self] in
                 guard let self else { return }
                 await self.fetch(key: key, bucket: bucket, highPriority: highPriority)
-            }
+            })
             inFlight[key] = created
             return created
         }
-        await task.value
+        await box.task.value
+        lock.withLock { if inFlight[key] === box { inFlight[key] = nil } }
         if cachedImage(for: url, pixelSize: pixelSize) != nil { return true }
+
         // 那个任务按别的档位解的（例如预取用的是 600，这张要 800）：再解一次。
+        //
+        // LP 3457：这一步原来无条件用高优先级，于是**预取失败也会升级成三条
+        // 高优先级的重试**。换一天要预取一百多张，网络一抖就有上百个高优先级
+        // 请求排在闸门里，屏幕里要显示的封面全被压在后面——表现就是「封面一直
+        // 不出来、也不重新加载」。预取就让它失败，别抢屏幕的队。
+        guard highPriority else { return false }
         await fetch(key: key, bucket: bucket, highPriority: true)
         return cachedImage(for: url, pixelSize: pixelSize) != nil
     }
@@ -232,10 +247,6 @@ final class KazumiImageLoader: @unchecked Sendable {
     }
 
     private func fetch(key: String, bucket: Int, highPriority: Bool) async {
-        defer {
-            lock.withLock { _ = inFlight.removeValue(forKey: key) }
-        }
-
         let fileURL = directory.appendingPathComponent(Self.fileName(for: key))
 
         // 1. 磁盘：命中的是原图字节，再按当前显示尺寸解码。

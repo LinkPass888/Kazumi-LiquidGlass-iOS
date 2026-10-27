@@ -712,9 +712,15 @@ struct TimelineScreen: View {
     }
 
     /// 列表出现前先预热封面，滚动时不再一张张从网络取。
+    ///
+    /// 档位按卡片封面的真实尺寸给（88 宽、0.65 比例 → 约 135 高 → 300 档），
+    /// 不是默认的 600 档。一天一百多张封面，按 600 档解完要 150MB 以上，
+    /// 超过内存缓存的 128MB 上限，NSCache 只能反复淘汰——「缓存过的封面
+    /// 一会儿又没了」就是这么来的（LP 3457）。
     private func prefetchCovers() {
         let urls = controller.bangumiCalendar.flatMap { $0.map(\.largeImage) }
-        KazumiImageLoader.shared.prefetch(urls)
+        let cover = CGSize(width: 88, height: 88 / BangumiPosterCard.coverAspectRatio)
+        KazumiImageLoader.shared.prefetch(urls, pixelSize: KazumiImageLoader.pixelSize(for: cover))
     }
 }
 
