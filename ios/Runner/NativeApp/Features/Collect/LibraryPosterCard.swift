@@ -119,18 +119,21 @@ struct LibraryPosterCard: View {
     /// 状态已经在封面角上那颗符号上了，同一张卡不说两遍，
     /// 所以原来那行元信息（评分 / 状态名）整行去掉，也不留一条空横线。
     private var footer: some View {
-        // Colo 3501 §二：跟推荐页同一个样子——12pt 常规、居中、黑色、两行，
-        // 离海报 6 点，块高 34 不变，左右不留内边距（跟海报同宽）。
+        // Colo 3501 §二：12pt 常规、黑色、两行，离海报 6 点，块高 34，
+        // 左右不留内边距（跟海报同宽）。
+        // Colo 3519 改口：追番页是 3 列网格、每格 114 宽，名字改成左对齐——
+        // 每张都从海报左缘起，竖着扫下来是一条直线；居中反而长短不齐更乱。
+        // 推荐页那条货架还是居中，两页不一样是有意的。
         Text(entry.displayName)
             .font(.system(size: 12))
             .foregroundStyle(.primary)
             .lineLimit(2)
             .lineSpacing(1.3 * 12 - 12)
-            .multilineTextAlignment(.center)
+            .multilineTextAlignment(.leading)
             // `frame` 没有「无限宽 + 定高」这个组合，分开写：
             // 先定高、顶部对齐，再撑满整格宽度。
             .frame(height: titleBlockHeight, alignment: .top)
-            .frame(maxWidth: .infinity, alignment: .top)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
             .padding(.top, 6)
     }
 
