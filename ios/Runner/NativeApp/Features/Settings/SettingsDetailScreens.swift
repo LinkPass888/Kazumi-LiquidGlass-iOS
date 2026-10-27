@@ -50,46 +50,11 @@ struct PlayerSettingsScreen: View {
         Form {
             Section("播放行为") {
                 // 顺序照 main 的「播放行为」一段（Ato 2026-10-24：这三颗提到第一批）。
-                Toggle(isOn: backgroundPlaybackBinding) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("后台播放")
-                        Text("应用退到后台或熄屏时继续播放音频")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                Toggle(isOn: autoPlayNextBinding) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("自动连播")
-                        Text("当前视频播放完毕后自动播放下一集")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                Toggle(isOn: playResumeBinding) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("自动跳转")
-                        Text("自动跳转到上次播放的位置")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                Toggle(isOn: brightnessVolumeGestureBinding) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("滑动手势")
-                        Text("竖向滑动调节音量和亮度")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                Toggle(isOn: privateModeBinding) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("隐身模式")
-                        Text("不保留观看记录")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
+                Toggle("后台播放", isOn: backgroundPlaybackBinding)
+                Toggle("自动连播", isOn: autoPlayNextBinding)
+                Toggle("自动跳转到上次播放位置", isOn: playResumeBinding)
+                Toggle("竖向滑动调音量和亮度", isOn: brightnessVolumeGestureBinding)
+                Toggle("隐身模式", isOn: privateModeBinding)
             }
             Section("播放参数") {
                 Picker("默认倍速", selection: playSpeedBinding) {
@@ -98,27 +63,27 @@ struct PlayerSettingsScreen: View {
                         Text(PlaybackSpeed.label(speed)).tag(speed)
                     }
                 }
-                captionRow("跳过时长", caption: "顶栏跳过按钮的跳过秒数") {
+                row {
                     // LP 2026-10-25：一次加 1 秒，上限 90 秒（默认 80）。
                     Stepper(value: buttonSkipTimeBinding, in: 5...90, step: 1) {
                         LabeledContent("跳过时长", value: "\(settings.buttonSkipTime) 秒")
                     }
                 }
-                captionRow("双击快进时长", caption: "左右两侧双击和左右两个快进按钮的秒数") {
+                row {
                     Picker("双击快进时长", selection: doubleTapSkipTimeBinding) {
                         ForEach(Self.doubleTapSkipOptions, id: \.self) { seconds in
                             Text("\(seconds) 秒").tag(seconds)
                         }
                     }
                 }
-                captionRow("长按倍速", caption: "长按屏幕时的倍速") {
+                row {
                     Picker("长按倍速", selection: longPressSpeedBinding) {
                         ForEach(PlaybackSpeed.all, id: \.self) { speed in
                             Text(PlaybackSpeed.label(speed)).tag(speed)
                         }
                     }
                 }
-                captionRow("控制栏消失时间", caption: "播放控制器自动隐藏前的停留时长") {
+                row {
                     HStack {
                         Text("控制栏消失时间")
                         Spacer(minLength: 8)
@@ -128,7 +93,7 @@ struct PlayerSettingsScreen: View {
                     // 原版滑杆范围 1–10 秒、0.5 秒一档（divisions 18），默认 4 秒。
                     Slider(value: controlBarHideBinding, in: 1...10, step: 0.5)
                 }
-                captionRow("默认视频比例", caption: "进入播放器时的视频比例，播放器里也能临时改") {
+                row {
                     Picker("默认视频比例", selection: aspectRatioBinding) {
                         ForEach(PlayerAspectRatioMode.allCases) { mode in
                             Text(mode.label).tag(mode)
@@ -144,9 +109,9 @@ struct PlayerSettingsScreen: View {
                 } label: {
                     Text("恢复默认设置")
                 }
-            } footer: {
-                Text("将播放相关设置恢复为默认值")
             }
+            // 页脚那句「将相关设置恢复为默认值」删了（Camo 3510）：点下去弹的确认框里就是这句，
+            // 行里再说一遍是重复。
         }
         .kazumiSettingsDetail("播放设置")
         .confirmationDialog(
@@ -179,17 +144,13 @@ struct PlayerSettingsScreen: View {
         }
     }
 
-    /// 「标题 + 控件 + 说明小字」的一行。设置页每行都要有一句人话说明。
-    private func captionRow<Content: View>(
-        _ title: String,
-        caption: String,
-        @ViewBuilder content: () -> Content
-    ) -> some View {
+    /// 一行只放控件本身，不带说明小字。
+    /// LP 3507：内页的小字基本都能删——看大字就知道意思，省下来的一行还给列表。
+    /// 名字不够明确的，Colo 定的办法是改名，不是留着第二行灰字。
+    private func row<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        // 留这层 VStack：像「控制栏消失时间」那样的行是标题＋滑杆两截，得竖着叠。
         VStack(alignment: .leading, spacing: 4) {
             content()
-            Text(caption)
-                .font(.caption)
-                .foregroundStyle(.secondary)
         }
     }
 
@@ -331,33 +292,12 @@ struct DanmakuSettingsScreen: View {
                     range: 0...3,
                     step: 0.1
                 )
-                Toggle(isOn: followSpeedBinding) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("弹幕跟随视频倍速")
-                        Text("开启后弹幕速度会随视频倍速而改变")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
+                Toggle("弹幕跟随视频倍速", isOn: followSpeedBinding)
                 Toggle("顶部弹幕", isOn: topBinding)
                 Toggle("底部弹幕", isOn: bottomBinding)
                 Toggle("滚动弹幕", isOn: scrollBinding)
-                Toggle(isOn: massiveBinding) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("海量弹幕")
-                        Text("弹幕过多时进行叠加绘制")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                Toggle(isOn: dedupBinding) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("弹幕去重")
-                        Text("相同内容弹幕过多时合并为一条弹幕")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
+                Toggle("弹幕叠加绘制", isOn: massiveBinding)
+                Toggle("弹幕去重", isOn: dedupBinding)
             }
             Section("弹幕样式") {
                 Toggle("弹幕描边", isOn: borderBinding)
@@ -397,9 +337,9 @@ struct DanmakuSettingsScreen: View {
                 } label: {
                     Text("恢复默认设置")
                 }
-            } footer: {
-                Text("将弹幕相关设置恢复为默认值")
             }
+            // 页脚那句「将相关设置恢复为默认值」删了（Camo 3510）：点下去弹的确认框里就是这句，
+            // 行里再说一遍是重复。
         }
         .kazumiSettingsDetail("弹幕设置")
         .confirmationDialog(
@@ -777,19 +717,21 @@ struct ThemeSettingsScreen: View {
     var body: some View {
         Form {
             Section("主题") {
-                captionRow("深色模式", caption: "跟随系统时按系统的明暗自动切换") {
-                    Picker("深色模式", selection: themeBinding) {
+                row {
+                    // LP 3513／Colo 3514：叫「应用主题」更准——这一行本来就是跟随系统／浅色／深色三档。
+                    Picker("应用主题", selection: themeBinding) {
                         ForEach(KazumiThemeMode.allCases) { mode in
                             Text(mode.title).tag(mode)
                         }
                     }
                 }
-                captionRow("配色", caption: "选一个强调色，按钮与选中态都用它") {
+                row {
                     Button {
                         isShowingThemeColorSheet = true
                     } label: {
                         HStack {
-                            Label("配色", systemImage: "paintpalette")
+                            // LP 3513：配色改名「强调色」。
+                            Label("强调色", systemImage: "paintpalette")
                             Spacer()
                             Text(settings.themeColor.title)
                                 .foregroundStyle(.secondary)
@@ -802,22 +744,8 @@ struct ThemeSettingsScreen: View {
             // Colo 2595：显示效果一段装「屏幕上多显示点什么」的那几项。
             Section("显示效果") {
                 // 「OLED优化」中间没有空格，照 main 的写法。
-                Toggle(isOn: oledBinding) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("OLED优化")
-                        Text("深色模式下使用纯黑背景")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                Toggle(isOn: hapticBinding) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("触感反馈")
-                        Text("关掉后底栏、时间表等处的轻震一起停")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
+                Toggle("OLED优化", isOn: oledBinding)
+                Toggle("触感反馈", isOn: hapticBinding)
                 // 这句说明 LP 2285 定的，虽然两头都指空也照留（Camo 2599）。
                 Toggle(isOn: showRatingBinding) {
                     VStack(alignment: .leading, spacing: 2) {
@@ -827,14 +755,7 @@ struct ThemeSettingsScreen: View {
                             .foregroundStyle(.secondary)
                     }
                 }
-                Toggle(isOn: tabBarBinding) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("上滑时缩小底部标签栏")
-                        Text("关闭后上滑不再缩小底部标签栏")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
+                Toggle("上滑时缩小底部标签栏", isOn: tabBarBinding)
             }
             // Camo 2599：段已经叫「启动」，行里不再说一遍启动。
             Section("启动") {
@@ -888,17 +809,11 @@ struct ThemeSettingsScreen: View {
         )
     }
 
-    /// 「控件 + 说明小字」的一行，与播放设置页一致。
-    private func captionRow<Content: View>(
-        _ title: String,
-        caption: String,
-        @ViewBuilder content: () -> Content
-    ) -> some View {
+    /// 一行只放控件本身，不带说明小字（LP 3507）。
+    private func row<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        // 留这层 VStack：像「控制栏消失时间」那样的行是标题＋滑杆两截，得竖着叠。
         VStack(alignment: .leading, spacing: 4) {
             content()
-            Text(caption)
-                .font(.caption)
-                .foregroundStyle(.secondary)
         }
     }
 }
