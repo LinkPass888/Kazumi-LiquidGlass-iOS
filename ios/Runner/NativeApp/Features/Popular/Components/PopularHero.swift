@@ -604,16 +604,16 @@ struct PopularHero: View {
             ForEach(items) { poster in
                 let selected = poster.id == (currentID ?? items.first?.id)
                 Capsule(style: .continuous)
-                    // 未选中的点 25% 墨压在封面上等于不存在，改 55%（Colo 2916）。
-                    .fill(selected ? KazumiPalette.accent(for: colorScheme) : Color.black.opacity(0.55))
+                    // LP 3503：深色模式下未选中的灰点再浅一些。
+                    // 原来写死黑 55%，深色下压在暗封面上几乎看不见——改成跟深浅色走：
+                    // 浅色仍是黑 55%（亮封面上读得出来），深色用白 55%。
+                    .fill(selected ? KazumiPalette.accent(for: colorScheme)
+                                   : Color.primary.opacity(0.55))
                     .frame(width: selected ? 18 : 6, height: 6)
             }
         }
-        // 圆点底下垫一条胶囊底（Colo 2916）：亮封面、暗封面都读得出来。
-        // 白 50%、左右各留 8（宽＝圆点总宽 +16）、高 14、圆角 7。
-        .padding(.horizontal, 8)
+        // LP 3503：圆点底下那条胶囊底删掉，点直接压在封面上。
         .frame(height: 14)
-        .background(Capsule(style: .continuous).fill(.white.opacity(0.5)))
         .animation(.easeOut(duration: 0.2), value: currentID)
     }
 
