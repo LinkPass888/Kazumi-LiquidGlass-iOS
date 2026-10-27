@@ -230,13 +230,11 @@ struct ProfileScreen: View {
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
 
-                    // Colo 3559：进度条在文字块下面，从封面右缘拉到右内边距，高 4，
-                    // 与状态行间距 6。
+                    // 进度条是这一条的底边，跟状态行之间没有固定间距（Colo 3585）。
                     KazumiGlassProgressBar(
                         progress: record.fraction,
                         tint: KazumiPalette.accent(for: colorScheme)
                     )
-                    .padding(.top, 6)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 // 这一列撑满封面高度：进度条落到封面下沿，三行字在里面居中。
