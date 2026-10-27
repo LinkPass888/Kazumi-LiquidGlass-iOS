@@ -233,15 +233,31 @@ final class KazumiImageLoader: @unchecked Sendable {
     }
 
     /// 预取：给列表里即将出现的图片预热缓存，不阻塞调用方。
-    /// 走低优先级：屏幕里真正要显示的图先下，预取在后面排队。
+    ///
+    /// LP 3492：这条原来「不按屏幕内优先」。原因不在闸门的排序，而在这里——
+    /// 预取一上来就给每一张都登记一个在途任务，视图真要显示某张时，`load`
+    /// 发现同一张已经在途，就直接 `await` 预取那个任务。预取是低优先级、
+    /// 排在几十张后面，屏幕里那张也就跟着排在后面，它自己的高优先级根本没机会用。
+    ///
+    /// 现在预取**不登记在途、也不占名额**：只有闸门空着（没有高优先级在等、
+    /// 还有空位）才下下一张，屏幕里的请求随时能插到前面。URL 按显示顺序传进来，
+    /// 屏幕上那几张就先取。
     func prefetch(_ urls: [String], pixelSize: Int = defaultPixelSize) {
-        for url in urls {
-            let key = Self.cacheKey(for: url)
-            guard !key.isEmpty else { continue }
-            guard cachedImage(for: url, pixelSize: pixelSize) == nil else { continue }
-            Task(priority: .utility) { [weak self] in
-                guard let self else { return }
-                await self.load(url, pixelSize: pixelSize, highPriority: false)
+        guard !urls.isEmpty else { return }
+        let bucket = Self.bucket(pixelSize)
+        Task(priority: .utility) { [weak self] in
+            guard let self else { return }
+            for url in urls {
+                if Task.isCancelled { return }
+                let key = Self.cacheKey(for: url)
+                guard !key.isEmpty else { continue }
+                if self.cachedImage(for: url, pixelSize: pixelSize) != nil { continue }
+                // 屏幕里有东西在等，就先让路；别自己先占满名额再让屏幕排后面。
+                while await self.gate.shouldHoldPrefetch() {
+                    if Task.isCancelled { return }
+                    try? await Task.sleep(for: .milliseconds(150))
+                }
+                await self.fetch(key: key, bucket: bucket, highPriority: false)
             }
         }
     }
@@ -433,6 +449,11 @@ final class KazumiImageLoader: @unchecked Sendable {
 
         init(limit: Int) {
             self.limit = limit
+        }
+
+        /// 预取该不该让路：有高优先级在排队、或名额已经占满，就先别动。
+        func shouldHoldPrefetch() -> Bool {
+            !highWaiters.isEmpty || active >= limit
         }
 
         func acquire(high: Bool) async {

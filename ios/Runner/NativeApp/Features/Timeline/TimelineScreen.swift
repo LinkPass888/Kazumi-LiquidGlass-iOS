@@ -718,7 +718,12 @@ struct TimelineScreen: View {
     /// 超过内存缓存的 128MB 上限，NSCache 只能反复淘汰——「缓存过的封面
     /// 一会儿又没了」就是这么来的（LP 3457）。
     private func prefetchCovers() {
-        let urls = controller.bangumiCalendar.flatMap { $0.map(\.largeImage) }
+        // 当前这天排最前：预取是按顺序一张张取的，屏幕上先看到的就是这一天。
+        let others = (0..<7).filter { $0 != selectedWeekday }
+        let urls = ([selectedWeekday] + others).flatMap { day -> [String] in
+            guard day < controller.bangumiCalendar.count else { return [] }
+            return controller.bangumiCalendar[day].map(\.largeImage)
+        }
         let cover = CGSize(width: 88, height: 88 / BangumiPosterCard.coverAspectRatio)
         KazumiImageLoader.shared.prefetch(urls, pixelSize: KazumiImageLoader.pixelSize(for: cover))
     }
