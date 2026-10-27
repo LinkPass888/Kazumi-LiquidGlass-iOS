@@ -178,10 +178,11 @@ struct ProfileScreen: View {
                                 .foregroundStyle(.tertiary)
                         }
                         .padding(.horizontal, 14)
-                        // Colo 3489：单行，上下各 15 → 行高 52。
-                        // 52 是 iOS 26 起系统分组列表的标准行高，不是我按旧标准
-                        // 算的 44——模拟器里量系统「设置」，每一行都正好 52。
-                        .padding(.vertical, 15)
+                        // Colo 3489：单行，行高对齐系统分组列表的 52（iOS 26 起，
+                        // 不是我按旧标准算的 44——模拟器里量系统「设置」每行都是 52）。
+                        // 实测：正文那行字量下来 20.3 点，不是估的 22，上下各 15 只有
+                        // 50.3，所以这里给 16 补到 52。
+                        .padding(.vertical, 16)
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
