@@ -24,16 +24,8 @@ extension JSONValue {
         switch value {
         case is NSNull:
             self = .null
-        case let bool as Bool:
-            self = .bool(bool)
-        case let int as Int:
-            self = .int(int)
-        case let double as Double:
-            self = .double(double)
         case let string as String:
             self = .string(string)
-        case let number as NSNumber:
-            self = .double(number.doubleValue)
         case let array as [Any]:
             self = .array(array.map(JSONValue.init(any:)))
         case let dictionary as [String: Any]:
@@ -44,8 +36,29 @@ extension JSONValue {
                 object[String(describing: key)] = JSONValue(any: item)
             }
             self = .object(object)
+        case let number as NSNumber:
+            self = JSONValue(number: number)
         default:
             self = .string(String(describing: value))
+        }
+    }
+
+    /// 数字要分清是布尔还是整数。
+    ///
+    /// 这里不能用 `case let bool as Bool`：JSONSerialization 交回来的是 NSNumber，
+    /// 而 NSNumber 桥到 Bool 永远成功、`NSNumber(1)` 也会变成 `true`。
+    /// 踩过一次：规则里 `"page": 1` 发出去成了 `page=true`，服务端直接报
+    /// `strconv.ParseInt: parsing "true": invalid syntax`，搜不出东西（LP 3422 抓包）。
+    private init(number: NSNumber) {
+        if CFGetTypeID(number) == CFBooleanGetTypeID() {
+            self = .bool(number.boolValue)
+            return
+        }
+        let value = number.doubleValue
+        if value == value.rounded(), abs(value) <= 9_007_199_254_740_992 {
+            self = .int(number.intValue)
+        } else {
+            self = .double(value)
         }
     }
 
