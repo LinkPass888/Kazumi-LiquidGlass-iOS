@@ -25,10 +25,12 @@ struct LibraryPosterCard: View {
 
     /// 封面宽高比，与 `BangumiPosterCard.coverAspectRatio` 同一套。
     private static let coverAspectRatio = BangumiPosterCard.coverAspectRatio
+    /// 海报圆角：跟推荐页同一个值（Colo 3501 §二）。原来跟着卡片走 18，
+    /// 卡片底去掉之后海报自己就是主体，圆角按海报算。
+    private static let coverCornerRadius: CGFloat = PopularPosterTile.cornerRadius
     /// 标题两行的高度。跟着动态字体走：写死 34 的话，最大字号那一档
     /// 标题会长到页脚外面去。默认档量出来仍是 34，屏上不变。
     @ScaledMetric(relativeTo: .footnote) private var titleBlockHeight: CGFloat = 34
-    private static let cornerRadius: CGFloat = 18
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -36,16 +38,13 @@ struct LibraryPosterCard: View {
             footer
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            KazumiPalette.cardShape(cornerRadius: Self.cornerRadius, scheme: colorScheme)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous))
+        // Colo 3501 §二：卡底和 18 圆角整个去掉——这一格和推荐页是同一件事
+        // （海报＋名字），海报自己就是主体，不需要再包一层底。
+        // 交互没动：整卡命中区、缩放转场、读屏标签与六项操作都留在下面。
         // LP 2026-10-24：进详情页要整张卡片放大，不是只有封面。
-        // 转场源登记在整张卡上（封面＋标题那一块），侧滑返回时也收回到整张卡。
-        // 以前只登记封面，所以放大的是海报、标题留在原地不动。
         .kazumiZoomSource(id: entry.id, namespace: zoomNamespace)
-        // 整张卡片（封面、标题、空白）都是命中区。
-        .contentShape(RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous))
+        // 整格（海报、名字、空白）都是命中区。
+        .contentShape(Rectangle())
         .onTapGesture { onOpen() }
         // 整卡合成一个元素。读屏念到这张卡时听到的是「片名，在看」——
         // 这是状态唯一念得出来的地方，不许撤。
@@ -75,7 +74,7 @@ struct LibraryPosterCard: View {
                 .overlay {
                     BangumiRemoteImage(url: entry.imageURL)
                 }
-                .clipped()
+                .clipShape(RoundedRectangle(cornerRadius: Self.coverCornerRadius, style: .continuous))
 
             statusMenu
                 .padding(6)
@@ -120,17 +119,16 @@ struct LibraryPosterCard: View {
     /// 状态已经在封面角上那颗符号上了，同一张卡不说两遍，
     /// 所以原来那行元信息（评分 / 状态名）整行去掉，也不留一条空横线。
     private var footer: some View {
+        // Colo 3501 §二：跟推荐页同一个样子——12pt 常规、居中、黑色、两行，
+        // 离海报 6 点，块高 34 不变，左右不留内边距（跟海报同宽）。
         Text(entry.displayName)
-            .font(.footnote.weight(.semibold))
+            .font(.system(size: 12))
             .foregroundStyle(.primary)
             .lineLimit(2)
-            .lineSpacing(1)
-            .multilineTextAlignment(.leading)
-            .frame(height: titleBlockHeight, alignment: .topLeading)
-            .padding(.horizontal, 8)
-            .padding(.top, 8)
-            .padding(.bottom, 8)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .lineSpacing(1.3 * 12 - 12)
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: .infinity, height: titleBlockHeight, alignment: .top)
+            .padding(.top, 6)
     }
 
     /// 与屏上同一句话：卡片上不显示评分，念出来的也不念；

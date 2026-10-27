@@ -42,7 +42,9 @@ struct PopularPosterTile: View {
                 Text(poster.displayName)
                     .font(.system(size: 12))
                     .lineSpacing(1.3 * 12 - 12)
-                    .foregroundStyle(KazumiPalette.secondaryText(for: colorScheme))
+                    // Colo 3501 §三：海报下面那行是**名字**，不是说明——用户靠它认片。
+                    // 原来用次要色，等于把名字降成了附注；改主色（深色下自动变白）。
+                    .foregroundStyle(.primary)
                     .lineLimit(2)
                     .multilineTextAlignment(.center)
                     .frame(width: Self.width, height: Self.titleHeight, alignment: .top)

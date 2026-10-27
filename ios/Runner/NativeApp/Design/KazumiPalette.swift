@@ -89,6 +89,15 @@ enum KazumiPalette {
         scheme == .dark ? Color(red: 0.110, green: 0.110, blue: 0.118) : .white
     }
 
+    /// 内容卡的底：白底之上给一块**实的浅灰面**（Colo 3501 §一）。
+    ///
+    /// 时间表这种「一张卡里装着海报＋标题＋胶囊」的，需要一块面把它们框住；
+    /// 白底上再描一道发丝线只会看着像个空框，所以要的是这个实底，不是描边。
+    /// 浅色 #F2F2F7、深色 #1C1C1E。
+    static func contentCardSurface(for scheme: ColorScheme) -> Color {
+        scheme == .dark ? Color(red: 0.110, green: 0.110, blue: 0.118) : Color(red: 0.949, green: 0.949, blue: 0.969)
+    }
+
     /// 白底之上卡片的描边（Colo 3483）。
     ///
     /// 页面底改成纯白之后，卡片本身也是白的，不分边就分不出「卡」和「页」。
@@ -111,6 +120,12 @@ enum KazumiPalette {
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .strokeBorder(cardStroke(for: scheme), lineWidth: 0.5)
             }
+    }
+
+    /// 内容卡的形状：浅灰实底、不描边（Colo 3501）。时间表的卡片用它。
+    static func contentCardShape(cornerRadius: CGFloat, scheme: ColorScheme) -> some View {
+        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            .fill(contentCardSurface(for: scheme))
     }
 
     /// 卡片底色（对应 Material 的 surfaceContainerLow / 时间表卡片）。

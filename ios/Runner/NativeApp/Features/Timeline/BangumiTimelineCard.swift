@@ -46,8 +46,10 @@ struct BangumiTimelineCard: View {
             }
             .padding(Self.contentPadding)
             .frame(maxWidth: .infinity, minHeight: compact ? 144 : 160, alignment: .top)
+            // Colo 3501 §一：卡片多、每张里装着海报＋标题＋胶囊，需要「一块面」把它们
+            // 框住——给实的浅灰底，不描边（白卡加发丝线看着像个空框）。
             .background(
-                KazumiPalette.cardShape(cornerRadius: Self.cornerRadius, scheme: colorScheme)
+                KazumiPalette.contentCardShape(cornerRadius: Self.cornerRadius, scheme: colorScheme)
             )
         }
         .buttonStyle(.plain)
