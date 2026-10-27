@@ -174,6 +174,10 @@ struct SettingsScreen: View {
                 Section {
                     ForEach(group.categories) { category in
                         categoryRow(category)
+                            // Colo 3481：每行显式给底色。上面把
+                            // `scrollContentBackground(.hidden)` 关掉了，靠 List 默认
+                            // 不一定是白（深色下也不一定是 #1C1C1E）。
+                            .listRowBackground(KazumiPalette.groupedRow(for: colorScheme))
                     }
                 } header: {
                     Text(group.title)
@@ -185,7 +189,7 @@ struct SettingsScreen: View {
         .navigationTitle("设置")
         .navigationBarTitleDisplayMode(.inline)
         .scrollContentBackground(.hidden)
-        .background(KazumiPalette.groupedBackground.ignoresSafeArea())
+        .background(KazumiPalette.groupedBackground(for: colorScheme).ignoresSafeArea())
     }
 
     // MARK: - 分类行

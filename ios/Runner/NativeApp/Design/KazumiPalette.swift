@@ -68,17 +68,19 @@ enum KazumiPalette {
         return Color(red: 0.98, green: 0.98, blue: 0.99)
     }
 
-    /// 我的页与设置页的页面底色：LP 3478 要 iOS 原生分组色。
+    /// 我的页与设置页的页面底色：LP 3480 要 iOS 原生分组色。
     ///
-    /// 直接取系统语义色：浅色 #F2F2F7、深色 #000000，跟着系统走，不用自己算。
-    /// 只给这两页用，其它页仍是上面那个近白/近黑的 `background`。
-    static var groupedBackground: Color {
-        Color(uiColor: .systemGroupedBackground)
+    /// 显式按 colorScheme 取（不用 `Color(.systemGroupedBackground)` 这类动态色）：
+    /// 切主题走 `.preferredColorScheme` 时，动态色由 UIKit 自己解析，跟 SwiftUI 的
+    /// colorScheme 可能对不上——同一个底会在不同页面取到不同的值（同上面强调色那条）。
+    /// 浅色 #F2F2F7、深色 #000000，与系统设置页一致。
+    static func groupedBackground(for scheme: ColorScheme) -> Color {
+        scheme == .dark ? .black : Color(red: 0.949, green: 0.949, blue: 0.969)
     }
 
-    /// 分组列表里一条的底色：浅色 #FFFFFF、深色 #1C1C1E（系统语义色）。
-    static var groupedItem: Color {
-        Color(uiColor: .secondarySystemGroupedBackground)
+    /// 分组列表里一条的底色：浅色 #FFFFFF、深色 #1C1C1E（系统设置页的条目色）。
+    static func groupedRow(for scheme: ColorScheme) -> Color {
+        scheme == .dark ? Color(red: 0.110, green: 0.110, blue: 0.118) : .white
     }
 
     /// 卡片底色（对应 Material 的 surfaceContainerLow / 时间表卡片）。

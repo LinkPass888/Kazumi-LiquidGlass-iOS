@@ -43,7 +43,7 @@ struct ProfileScreen: View {
         }
         // 顶部滚动边缘：渐进模糊（.soft），不额外叠材质或底色。
         .scrollEdgeEffectStyle(.soft, for: .top)
-        .background(KazumiPalette.groupedBackground.ignoresSafeArea())
+        .background(KazumiPalette.groupedBackground(for: colorScheme).ignoresSafeArea())
         // 顶栏换原生（LP 2026-10-24）：标题和设置按钮都归系统。
         // 原来那块自钉顶栏带不透明底色，会把滚动边缘的模糊整块挡住（Colo 1794 提的坑），
         // 所以这次连底色一起删掉，不再自己画任何一条栏。
@@ -94,7 +94,7 @@ struct ProfileScreen: View {
         .padding(.vertical, 16)
         .background(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(KazumiPalette.groupedItem)
+                .fill(KazumiPalette.groupedRow(for: colorScheme))
         )
     }
 
@@ -137,7 +137,7 @@ struct ProfileScreen: View {
             .padding(14)
             .background(
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(KazumiPalette.groupedItem)
+                    .fill(KazumiPalette.groupedRow(for: colorScheme))
             )
         }
         .buttonStyle(.plain)
@@ -192,7 +192,7 @@ struct ProfileScreen: View {
             }
             .background(
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(KazumiPalette.groupedItem)
+                    .fill(KazumiPalette.groupedRow(for: colorScheme))
             )
         }
     }
