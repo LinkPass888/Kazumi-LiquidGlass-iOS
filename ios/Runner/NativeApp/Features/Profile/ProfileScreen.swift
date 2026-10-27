@@ -26,15 +26,15 @@ struct ProfileScreen: View {
                 // 「规则管理」只保留「内容与偏好」里的那一行：原先这里还有一张
                 // 异形强调卡直达同一页，同屏两个入口反而让人怀疑是两个不同的功能。
                 section("内容与偏好", rows: [
-                    Row(symbol: "puzzlepiece.extension", title: "规则管理", subtitle: "管理番剧来源", route: .pluginList),
-                    Row(symbol: "bell", title: "通知设置", subtitle: "追番更新提醒", route: .notificationSettings),
-                    Row(symbol: "play.rectangle", title: "播放设置", subtitle: "播放器与画质", route: .playerSettings),
-                    Row(symbol: "captions.bubble", title: "弹幕设置", subtitle: "弹幕来源与关键词屏蔽", route: .danmakuSettings),
+                    Row(symbol: "puzzlepiece.extension", title: "规则管理", route: .pluginList),
+                    Row(symbol: "bell", title: "通知设置", route: .notificationSettings),
+                    Row(symbol: "play.rectangle", title: "播放设置", route: .playerSettings),
+                    Row(symbol: "captions.bubble", title: "弹幕设置", route: .danmakuSettings),
                 ])
                 section("数据与应用", rows: [
-                    Row(symbol: "icloud", title: "同步设置", subtitle: "追番同步与多设备同步", route: .syncBackup),
-                    Row(symbol: "externaldrive", title: "存储与日志", subtitle: "图片缓存与错误日志", route: .storage),
-                    Row(symbol: "info.circle", title: "关于 Kazumi", subtitle: "版本与开源许可", route: .about),
+                    Row(symbol: "icloud", title: "同步设置", route: .syncBackup),
+                    Row(symbol: "externaldrive", title: "存储与日志", route: .storage),
+                    Row(symbol: "info.circle", title: "关于 Kazumi", route: .about),
                 ])
             }
             .padding(.horizontal, 16)
@@ -149,7 +149,6 @@ struct ProfileScreen: View {
         let id = UUID()
         var symbol: String
         var title: String
-        var subtitle: String
         var route: AppRoute
     }
 
@@ -170,21 +169,18 @@ struct ProfileScreen: View {
                                 .font(.system(size: 17, weight: .semibold))
                                 .foregroundStyle(KazumiPalette.accent(for: colorScheme))
                                 .frame(width: 28)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(row.title)
-                                    .font(.body)
-                                    .foregroundStyle(.primary)
-                                Text(row.subtitle)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
+                            Text(row.title)
+                                .font(.body)
+                                .foregroundStyle(.primary)
                             Spacer(minLength: 4)
                             Image(systemName: "chevron.right")
                                 .font(.caption.weight(.semibold))
                                 .foregroundStyle(.tertiary)
                         }
                         .padding(.horizontal, 14)
-                        .padding(.vertical, 12)
+                        // Colo 3474：单行了，上下各 11 → 行高 44（系统单行）。
+                        // 原来「标题＋小字」两行、上下各 12，一行 64。
+                        .padding(.vertical, 11)
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)

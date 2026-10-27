@@ -247,17 +247,14 @@ struct SettingsScreen: View {
                 .font(.system(size: 18, weight: .semibold)) // 图标尺寸：与列表其他分类图标的视觉大小对齐
                 .foregroundStyle(KazumiPalette.accent(for: colorScheme))
                 .frame(width: 30)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(category.label)
-                    .font(.body)
-                    .foregroundStyle(.primary)
-                Text(category.description)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+            // Colo 3474：说明那行删掉，行落回 44。原来每行都是「标题＋说明」两行，
+            // 再叠 List 自己的一层内边距，比系统单行（44）松出一截；那些说明
+            // 只是把标题换个说法，没有新信息。
+            Text(category.label)
+                .font(.body)
+                .foregroundStyle(.primary)
             Spacer(minLength: 0)
         }
-        .padding(.vertical, 4)
         // 整行都是点击目标；视觉高度可以随文字走，可点区域不低于 44pt。
         .hitTarget44(alignment: .leading)
     }
