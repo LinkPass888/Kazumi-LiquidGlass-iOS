@@ -127,7 +127,10 @@ struct LibraryPosterCard: View {
             .lineLimit(2)
             .lineSpacing(1.3 * 12 - 12)
             .multilineTextAlignment(.center)
-            .frame(maxWidth: .infinity, height: titleBlockHeight, alignment: .top)
+            // `frame` 没有「无限宽 + 定高」这个组合，分开写：
+            // 先定高、顶部对齐，再撑满整格宽度。
+            .frame(height: titleBlockHeight, alignment: .top)
+            .frame(maxWidth: .infinity, alignment: .top)
             .padding(.top, 6)
     }
 
