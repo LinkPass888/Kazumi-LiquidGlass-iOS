@@ -604,11 +604,12 @@ struct PopularHero: View {
             ForEach(items) { poster in
                 let selected = poster.id == (currentID ?? items.first?.id)
                 Capsule(style: .continuous)
-                    // LP 3503：深色模式下未选中的灰点再浅一些。
-                    // 原来写死黑 55%，深色下压在暗封面上几乎看不见——改成跟深浅色走：
-                    // 浅色仍是黑 55%（亮封面上读得出来），深色用白 55%。
+                    // LP 3503／Colo 3505：未选中的点跟页面底色对着来——
+                    // 浅色页面白底，用黑 50%；深色页面深灰，用白 50%。
+                    // 原来写死黑 55%，深色下等于看不见。
                     .fill(selected ? KazumiPalette.accent(for: colorScheme)
-                                   : Color.primary.opacity(0.55))
+                                   : (colorScheme == .dark ? Color.white.opacity(0.50)
+                                                           : Color.black.opacity(0.50)))
                     .frame(width: selected ? 18 : 6, height: 6)
             }
         }
