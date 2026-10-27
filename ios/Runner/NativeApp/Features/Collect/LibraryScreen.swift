@@ -301,7 +301,8 @@ struct LibraryScreen: View {
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(Color.secondary)
         }
-        .padding(.horizontal, 12)
+        // 12 → 10（Colo 3429 的省宽顺序第一条）：两颗胶囊各省 4 点。
+        .padding(.horizontal, 10)
         .frame(minHeight: 36)
         .kazumiGlassCapsule(interactive: true)
         .fixedSize(horizontal: true, vertical: false)
