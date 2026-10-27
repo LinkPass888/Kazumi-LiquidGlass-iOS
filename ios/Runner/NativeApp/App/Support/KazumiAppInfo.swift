@@ -52,7 +52,9 @@ enum KazumiAppInfo {
     static let bangumiExtLinkerURL = URL(string: "https://github.com/Rhilip/BangumiExtLinker")!
     static let aniSkipIndexURL = URL(string: "https://github.com/aniskip")!
     static let aniListIndexURL = URL(string: "https://anilist.co")!
-    static let ksPlayerURL = URL(string: "https://github.com/kingslay/KSPlayer")!
+    /// 播放内核（LP 3671–3673：KSPlayer → mpv）。
+    static let mpvKitURL = URL(string: "https://github.com/mpvkit/MPVKit")!
+    static let mpvURL = URL(string: "https://mpv.io")!
     static let fuziURL = URL(string: "https://github.com/cezheng/Fuzi")!
     static let anime4KURL = URL(string: "https://github.com/bloc97/Anime4K")!
     static let licenseURL = URL(string: "https://github.com/LinkPass888/Kazumi-LiquidGlass-iOS/blob/main/LICENSE")!

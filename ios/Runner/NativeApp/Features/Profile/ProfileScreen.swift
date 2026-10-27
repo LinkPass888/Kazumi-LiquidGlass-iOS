@@ -190,9 +190,10 @@ struct ProfileScreen: View {
     }
 
     /// 一条：封面 64×98 在左，右边名字 15、集行 12、状态 12，下面一条进度。
+    /// 点一条直接播那一集（LP 2026-10-27，跟 main 一样），不进详情页。
     private func recentRow(_ record: WatchRecord) -> some View {
         Button {
-            router.push(.bangumiInfo(bangumiID: record.bangumiID))
+            router.push(.player(bangumiID: record.bangumiID, episode: record.episodeNumber))
         } label: {
             HStack(alignment: .center, spacing: 12) {
                 Color.clear

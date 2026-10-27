@@ -2,7 +2,7 @@
 //  DanmakuOverlayView.swift
 //  Kazumi
 //
-//  弹幕渲染层：叠在 KSPlayer 的视频画面之上，自己用 CADisplayLink 按播放时间
+//  弹幕渲染层：叠在播放内核的画面之上，自己用 CADisplayLink 按播放时间
 //  排布弹幕，不经过 SwiftUI 的每帧刷新。
 //
 //  行为对齐原版 canvas_danmaku 的默认观感：
@@ -12,7 +12,6 @@
 //   * 透明度 / 字号 / 显示区域（屏幕高度占比）来自弹幕设置。
 //
 
-import KSPlayer
 import QuartzCore
 import UIKit
 
@@ -92,8 +91,8 @@ final class DanmakuOverlayView: UIView {
 
     private var enabled: Bool { style.enabled }
 
-    /// 播放内核；时间每帧直接从 KSPlayer 读，比等回调插值更跟手。
-    weak var playerView: PlayerView?
+    /// 播放时钟（换内核后由 `PlayerSurfaceModel` 提供）；每帧直接读，比等回调插值更跟手。
+    weak var clock: PlayerClockProvider?
 
     /// 当前倍速。「弹幕跟随视频倍速」开着时，用它把停留时间缩短。
     private var playbackRate: Double = 1
@@ -179,10 +178,10 @@ final class DanmakuOverlayView: UIView {
 
     // MARK: - 时钟
 
-    /// 直接读内核的播放时间：KSPlayer 的进度回调只有每秒几次，靠插值仍然会抖。
+    /// 直接读播放时钟：内核的进度回调只有每秒几次，靠插值仍然会抖。
     private func clockNow() -> Double {
-        guard let player = playerView?.playerLayer?.player else { return lastNow }
-        return max(0, player.currentPlaybackTime)
+        guard let clock else { return lastNow }
+        return max(0, clock.currentPlaybackTime)
     }
 
     private func lowerBound(_ time: Double) -> Int {
@@ -241,7 +240,7 @@ final class DanmakuOverlayView: UIView {
         // 没在播就不出新弹幕：暂停停在 0 秒时，0 秒附近那些照样会被发出来，
         // 看上去就是「还没播弹幕先飘了」（LP 3626）。已经在飞的照旧停着不动，
         // 因为位置是按播放时间算的。
-        if let player = playerView?.playerLayer?.player, !player.isPlaying {
+        if let clock, !clock.isPlayingNow {
             layoutLabels(at: now)
             return
         }

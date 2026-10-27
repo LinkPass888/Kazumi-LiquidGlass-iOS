@@ -55,6 +55,8 @@ final class BangumiAirTimeService {
 
     /// 季度数据 7 天更新一次，与原版 _maxAge 一致。
     private static let maxAge: TimeInterval = 7 * 24 * 60 * 60
+    /// 缓存文件保留一年：目录原来只写不删，季度一多就会无限长下去。
+    private static let cacheMaxAge: TimeInterval = 365 * 24 * 60 * 60
 
     private let directory: URL
     private let session: URLSession
@@ -227,6 +229,25 @@ final class BangumiAirTimeService {
         directory.appendingPathComponent("\(season.id).json")
     }
 
+    /// 清掉一年前的季度文件（按修改时间）。
+    ///
+    /// 只动 `.json`，刚写的那一份永远跳过；删不掉就跳过——
+    /// 清理失败不该影响本次放送时刻的使用。
+    private func pruneOldCaches(keeping current: URL) {
+        let manager = FileManager.default
+        let cutoff = Date().addingTimeInterval(-Self.cacheMaxAge)
+        let files = (try? manager.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: [.contentModificationDateKey]
+        )) ?? []
+        for file in files where file.pathExtension == "json" && file != current {
+            let modified = (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?
+                .contentModificationDate
+            guard let modified, modified < cutoff else { continue }
+            try? manager.removeItem(at: file)
+        }
+    }
+
     // MARK: - 加载
 
     private func loadSeason(id: String) async {
@@ -279,6 +300,7 @@ final class BangumiAirTimeService {
                     apply(data)
                     applied = true
                     try? data.write(to: fileURL, options: .atomic)
+                    pruneOldCaches(keeping: fileURL)
                     return
                 }
             } catch {

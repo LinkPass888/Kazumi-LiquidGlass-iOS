@@ -45,6 +45,10 @@ final class PlayerController {
     private(set) var logLines: [String] = []
 
     /// 当前这一集的弹幕与加载状态（对应 PlayerDanmakuController）。
+    /// AniSkip 查到的片头 / 片尾时间轴（对应 main 的 `PlayerController.skipSegments`）。
+    private(set) var skipSegments: SkipSegments = .empty
+    /// 上次查过时间轴的媒体地址：同一个地址只查一次。
+    private var skipSegmentsURL: String?
     private(set) var danmakuComments: [DanmakuComment] = []
     private(set) var danmakuStatus: DanmakuStatus = .idle
     private(set) var danmakuMessage: String?
@@ -120,7 +124,10 @@ final class PlayerController {
                     return
                 }
             } catch {
-                phase = .failed(error.localizedDescription)
+                // 系统给的英文错误串（「The data couldn't be read…」之类）不往用户脸上贴：
+                // 界面上说人话，原始原因写进运行日志。
+                appendLog("解析剧集失败：\(error.localizedDescription)")
+                phase = .failed("解析剧集失败，换条线路或换个源试试")
                 return
             }
         }
@@ -149,6 +156,7 @@ final class PlayerController {
         phase = .idle
         playbackURL = nil
         resetDanmaku()
+        resetSkipSegments()
         await start()
     }
 
@@ -157,6 +165,7 @@ final class PlayerController {
         phase = .idle
         playbackURL = nil
         resetDanmaku()
+        resetSkipSegments()
         await start()
     }
 
@@ -164,7 +173,41 @@ final class PlayerController {
         phase = .idle
         playbackURL = nil
         resetDanmaku()
+        resetSkipSegments()
         await start()
+    }
+
+    /// AniSkip 片头片尾时间轴。
+    ///
+    /// 跟 main 的 `_maybeLoadSkipSegments` 同一套判据：只在设置开着、在线
+    /// 播放、同一个地址只查一次、且播放器已经拿到片长（≥30 秒）时才查——
+    /// AniSkip 按片长匹配，时长太短查出来的段对不上压制版本。
+    func maybeLoadSkipSegments(duration: Double, enabled: Bool) {
+        guard enabled, !isLocalPlayback else { return }
+        guard let url = playbackURL, !url.isEmpty, skipSegmentsURL != url else { return }
+        guard bangumiID > 0, currentEpisode > 0, duration >= 30 else { return }
+        skipSegmentsURL = url
+        let bangumiID = bangumiID
+        let episode = currentEpisode
+        Task { [weak self] in
+            let segments = await AniSkipClient.lookup(
+                bangumiID: bangumiID,
+                episode: episode,
+                duration: duration
+            )
+            guard self?.playbackURL == url else { return }
+            self?.skipSegments = segments
+            KazumiLogBuffer.player(
+                segments.isEmpty
+                    ? "AniSkip: 这集没有片头片尾"
+                    : "AniSkip: 片头片尾已加载"
+            )
+        }
+    }
+
+    /// 本地文件（`file://`）不查 AniSkip：时间轴是按在线片源测的。
+    private var isLocalPlayback: Bool {
+        playbackURL?.hasPrefix("file://") ?? false
     }
 
     func stop() {
@@ -262,6 +305,11 @@ final class PlayerController {
             danmakuStatus = .failed
             danmakuMessage = message
         }
+    }
+
+    private func resetSkipSegments() {
+        skipSegments = .empty
+        skipSegmentsURL = nil
     }
 
     private func resetDanmaku() {

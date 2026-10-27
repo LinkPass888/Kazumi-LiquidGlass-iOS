@@ -19,6 +19,9 @@ struct SystemMenuButton: UIViewRepresentable {
         /// 菜单项的标题，也是重建菜单时比对用的凭据。
         var title: String
         var symbol: String
+        /// 图标是两颗符号叠出来的时候给这张合成图（比如弹幕设置：
+        /// `captions.bubble` 打底 + 右下角小齿轮）。给了就用它，`symbol` 只当凭据。
+        var symbolImage: UIImage? = nil
         var isDestructive: Bool = false
         /// 二级菜单那一行右边的小字，写当前值。
         var subtitle: String? = nil
@@ -55,6 +58,11 @@ struct SystemMenuButton: UIViewRepresentable {
         button.setContentHuggingPriority(.required, for: .horizontal)
         // 压缩抵抗留低：实在放不下时允许被挤，不至于把旁边的按钮顶出屏。
         button.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        // 图标钮（收藏 / 更多）不能再被挤：横竖屏切换时 Spacer 一旦把它压到 0 宽，
+        // SwiftUI 给的 frame 和 UIKit 自己算的位置就会对不上，按钮被留在屏幕左上角。
+        if title == nil {
+            button.setContentCompressionResistancePriority(.required, for: .horizontal)
+        }
         button.tintColor = Self.uiColor(tint)
         button.addAction(
             UIAction { [coordinator = context.coordinator] _ in
@@ -68,6 +76,35 @@ struct SystemMenuButton: UIViewRepresentable {
 
     func updateUIView(_ button: UIButton, context: Context) {
         apply(to: button, context: context)
+        // 旋转后 UIKit 可能还拿着旧 bounds：内容（符号）停在旧位置。
+        // frame 仍由 SwiftUI 给，这里只催它按新 frame 重排。
+        button.setNeedsLayout()
+    }
+
+    /// 尺寸交给 SwiftUI 定。不返回 nil（默认会去问 UIKit 的 intrinsicContentSize，
+    /// 旋转后那份缓存可能还是旧的，按钮就被留在屏幕左上角）。
+    /// 图标钮至少 44×44（点击区），带标题的按内容宽，且都不超过外面给的提案。
+    func sizeThatFits(
+        _ proposal: ProposedViewSize,
+        uiView: UIButton,
+        context: Context
+    ) -> CGSize? {
+        let intrinsic = uiView.intrinsicContentSize
+        // 图标钮给到 44×44（点击区）；带标题的保持原来的内容尺寸，不改大小。
+        let minimum: CGFloat = title == nil ? 44 : 0
+        let hasWidth = intrinsic.width.isFinite && intrinsic.width > 0
+        let hasHeight = intrinsic.height.isFinite && intrinsic.height > 0
+        // 带标题的按钮如果量不出内容尺寸，交给 SwiftUI 默认测量，别把它压成 0。
+        guard hasWidth || minimum > 0, hasHeight || minimum > 0 else { return nil }
+        var width = hasWidth ? max(minimum, intrinsic.width) : minimum
+        var height = hasHeight ? max(minimum, intrinsic.height) : minimum
+        if let proposed = proposal.width, proposed.isFinite, proposed > 0 {
+            width = min(width, proposed)
+        }
+        if let proposed = proposal.height, proposed.isFinite, proposed > 0 {
+            height = min(height, proposed)
+        }
+        return CGSize(width: width, height: height)
     }
 
     private func apply(to button: UIButton, context: Context) {
@@ -80,45 +117,69 @@ struct SystemMenuButton: UIViewRepresentable {
         Self.auditSymbols(buttonSymbol: title == nil ? symbol : nil, items: items)
         #endif
 
-        if let title {
-            // 用 configuration 才能「字 + 右边小三角」，setTitle/setImage 只能二选一。
-            var config = UIButton.Configuration.plain()
-            config.title = title
-            config.baseForegroundColor = Self.uiColor(tint)
-            config.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0)
-            if showsChevron {
-                config.image = UIImage(
-                    systemName: "chevron.up.chevron.down",
-                    withConfiguration: UIImage.SymbolConfiguration(pointSize: 9, weight: .semibold)
+        // 内容没变就别再重置 configuration / image：播放中视图每 250ms 重建一次，
+        // 反复重置会让 UIKit 不停作废 intrinsicContentSize，旋转时更容易和 SwiftUI 的
+        // 布局对不上（按钮被留在左上角就是这么来的）。
+        let tintColor = Self.uiColor(tint)
+        // 图标钮（收藏 / 更多）只在内容真的变了才重置；带标题的照旧每次重设，
+        // 免得深浅色切换时 configuration 里的标题颜色不跟着换。
+        let isIcon = title == nil
+        let appearanceChanged = isIcon
+            ? (!coordinator.hasAppliedAppearance
+                || coordinator.appliedSymbol != symbol
+                || button.tintColor != tintColor)
+            : true
+        if appearanceChanged {
+            if let title {
+                // 用 configuration 才能「字 + 右边小三角」，setTitle/setImage 只能二选一。
+                var config = UIButton.Configuration.plain()
+                config.title = title
+                config.baseForegroundColor = tintColor
+                config.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0)
+                if showsChevron {
+                    config.image = UIImage(
+                        systemName: "chevron.up.chevron.down",
+                        withConfiguration: UIImage.SymbolConfiguration(pointSize: 9, weight: .semibold)
+                    )
+                    config.imagePlacement = .trailing
+                    config.imagePadding = 4
+                }
+                config.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
+                    var out = incoming
+                    out.font = .systemFont(ofSize: 15, weight: .regular)
+                    return out
+                }
+                button.configuration = config
+                button.setTitleColor(tintColor, for: .normal)
+            } else {
+                button.configuration = nil
+                button.setTitle(nil, for: .normal)
+                button.setImage(
+                    UIImage(
+                        systemName: symbol,
+                        withConfiguration: UIImage.SymbolConfiguration(pointSize: 17, weight: .semibold)
+                    ),
+                    for: .normal
                 )
-                config.imagePlacement = .trailing
-                config.imagePadding = 4
             }
-            config.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
-                var out = incoming
-                out.font = .systemFont(ofSize: 15, weight: .regular)
-                return out
-            }
-            button.configuration = config
-            button.setTitleColor(Self.uiColor(tint), for: .normal)
-        } else {
-            button.configuration = nil
-            button.setTitle(nil, for: .normal)
-            button.setImage(
-                UIImage(
-                    systemName: symbol,
-                    withConfiguration: UIImage.SymbolConfiguration(pointSize: 17, weight: .semibold)
-                ),
-                for: .normal
-            )
+            coordinator.appliedSymbol = symbol
+            coordinator.hasAppliedAppearance = true
         }
+        button.tintColor = tintColor
         button.accessibilityLabel = accessibilityLabel
-        button.accessibilityLabel = accessibilityLabel
-        button.accessibilityLabel = accessibilityLabel
+        // 旋转后 UIKit 重排内容时始终以按钮中心为锚，别让符号贴着左上角画。
+        button.contentHorizontalAlignment = .center
+        button.contentVerticalAlignment = .center
 
         // 只在内容真的变了才重建菜单：菜单开着的时候重建，会把手上那一份换成没人认领的空壳。
+        // 二级菜单里的勾（symbol）和右侧小字也算进凭据：只比标题的话，
+        // 换个档位标题没变、勾该挪位置，菜单却不重建，勾就一直停在原来那项
+        // （LP 2026-10-27「点了不会切换，还一直在默认那里✓」）。
         let signature = items.map { item in
-            "\(item.title)|\(item.symbol)|\(item.isDestructive)|\(item.submenu?.map(\.title).joined(separator: ",") ?? "")"
+            let children = item.submenu?.map { "\($0.title)~\($0.symbol)~\($0.subtitle ?? "")" }
+                .joined(separator: ",") ?? ""
+            let composite = item.symbolImage == nil ? "" : "合成图"
+            return "\(item.title)|\(item.symbol)|\(composite)|\(item.isDestructive)|\(item.subtitle ?? "")|\(children)"
         }.joined(separator: "#")
         guard signature != coordinator.signature else { return }
         coordinator.signature = signature
@@ -165,6 +226,9 @@ struct SystemMenuButton: UIViewRepresentable {
         var flat: [Item] = []
         var onOpen: () -> Void = {}
         var signature: String = ""
+        /// 按钮外观（标题 / 符号 / 小三角）上次应用的值：没变就不重置 UIKit 内容。
+        var hasAppliedAppearance = false
+        var appliedSymbol: String?
 
         func makeActions(count: Int) -> [UIMenuElement] {
             // 一级和二级的点法做成一件事：所有能点的项按顺序进 `flat`，
@@ -175,7 +239,7 @@ struct SystemMenuButton: UIViewRepresentable {
                 let index = flat.count - 1
                 return UIAction(
                     title: item.title,
-                    image: item.symbol.isEmpty ? nil : UIImage(systemName: item.symbol),
+                    image: item.symbolImage ?? (item.symbol.isEmpty ? nil : UIImage(systemName: item.symbol)),
                     attributes: item.isDestructive ? .destructive : []
                 ) { [weak self] _ in
                     self?.flat[safe: index]?.action()
@@ -187,7 +251,7 @@ struct SystemMenuButton: UIViewRepresentable {
                 return UIMenu(
                     title: item.title,
                     subtitle: item.subtitle ?? "",
-                    image: item.symbol.isEmpty ? nil : UIImage(systemName: item.symbol),
+                    image: item.symbolImage ?? (item.symbol.isEmpty ? nil : UIImage(systemName: item.symbol)),
                     children: submenu.map(leaf)
                 )
             }

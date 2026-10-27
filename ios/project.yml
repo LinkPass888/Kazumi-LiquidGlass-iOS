@@ -31,16 +31,18 @@ settings:
     CLANG_ENABLE_OBJC_ARC: YES
     GCC_C_LANGUAGE_STANDARD: gnu17
     ENABLE_BITCODE: NO
-    # KSPlayer 的 FFmpeg / mpv 静态库体积较大，保留完整的调试符号映射。
+    # mpv / FFmpeg 静态库体积较大，保留完整的调试符号映射。
     DEBUG_INFORMATION_FORMAT: dwarf-with-dsym
 
 packages:
   Fuzi:
     url: https://github.com/cezheng/Fuzi.git
     from: 3.1.3
-  KSPlayer:
-    url: https://github.com/kingslay/KSPlayer.git
-    from: 2.1.0
+  # 播放内核（LP 3671–3673）：mpv，只有 C 接口，Swift 那层在 Features/Player/MPV*。
+  # 用 GPL 那条产品：Kazumi 本体就是 GPL-3.0，多出来的 samba 支持用不上但不冲突。
+  MPVKit:
+    url: https://github.com/mpvkit/MPVKit.git
+    exactVersion: 1.1.0-n9.0.2
 
 targets:
   Runner:
@@ -148,11 +150,10 @@ targets:
     dependencies:
       # XHTML / XPath 解析（libxml2），对应原项目 xpath_selector 的职责。
       - package: Fuzi
-      # 播放内核（含 FFmpeg / mpv），支持 http-header-fields 与 GLSL 滤镜注入。
-      # 2.3.x 起上游把 UIKit / SwiftUI 播放控件（IOSVideoPlayerView 等）并入
-      # 唯一的 `KSPlayer` 产品，不再单独发布 `KSPlayerUI`，因此这里只声明一次。
-      - package: KSPlayer
-        product: KSPlayer
+      # 播放内核 mpv。只取 LGPL 那条产品（`MPVKit`）：GPL 那条多了 samba，
+      # 本项目用不到，License 也更简单。
+      - package: MPVKit
+        product: MPVKit
 
   RunnerTests:
     type: bundle.unit-test

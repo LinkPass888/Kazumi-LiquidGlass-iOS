@@ -52,7 +52,7 @@ struct StorageScreen: View {
                     HStack {
                         Label("更新时间缓存", systemImage: "clock.arrow.circlepath")
                         Spacer()
-                        Text("\(airTimeCache.fileCount) 个季度 / \(airTimeCache.bytes) 字节")
+                        Text(airTimeCacheDescription)
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
@@ -114,6 +114,17 @@ struct StorageScreen: View {
         if isClearing { return "正在清除…" }
         guard let cacheBytes else { return "正在统计…" }
         return String(format: "%.2f MB", Double(cacheBytes) / (1024 * 1024))
+    }
+
+    /// 更新时间缓存只显示占用大小。原来的「N 个季度」读起来像在数番剧季度，
+    /// 而且目录没有上限时那个数只会一直涨。空目录写「—」。
+    private var airTimeCacheDescription: String {
+        guard airTimeCache.bytes > 0 else { return "—" }
+        let bytes = Double(airTimeCache.bytes)
+        if bytes >= 1024 * 1024 {
+            return String(format: "%.1f MB", bytes / (1024 * 1024))
+        }
+        return String(format: "%.0f KB", max(1, bytes / 1024))
     }
 
     private func refreshSize() async {

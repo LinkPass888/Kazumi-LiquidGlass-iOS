@@ -35,7 +35,9 @@ struct PopularPoster: Identifiable, Codable, Hashable, Sendable {
         var parts: [String] = []
         let year = String(airDate.prefix(4))
         if year.count == 4, year.allSatisfy(\.isNumber) { parts.append(year) }
-        if totalEpisodes > 0 { parts.append("\(totalEpisodes) 话") }
+        // 话数拿不到就写「？？ 话」：跟原版 main 一样，宁可露出不知道，
+        // 也不拿信息框里那个累计话数顶（LP 2026-10-27）。
+        parts.append(totalEpisodes > 0 ? "\(totalEpisodes) 话" : "？？ 话")
         if rating > 0 { parts.append(String(format: "%.1f", rating)) }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
@@ -75,7 +77,13 @@ struct PopularPoster: Identifiable, Codable, Hashable, Sendable {
             summary: item.summary,
             airDate: item.airDate.isEmpty ? Self.yearFromInfo(info) : item.airDate,
             rating: item.ratingScore,
-            totalEpisodes: item.eps > 0 ? item.eps : Self.episodesFromInfo(info)
+            // 不再从 info 的「36话」里兜底。
+            //
+            // 那是番剧信息框里人填的话数，跨季连载的番写的是累计话数：某一季
+            // 从第 25 集放到第 36 集，info 里写 36，实际这一季只有 12 集
+            // （LP 2026-10-27 拿 subject/530104 举的例子）。接口没给 `eps` 时
+            // 宁可不显示话数，也不能显示一个错的。
+            totalEpisodes: max(item.eps, 0)
         )
     }
 

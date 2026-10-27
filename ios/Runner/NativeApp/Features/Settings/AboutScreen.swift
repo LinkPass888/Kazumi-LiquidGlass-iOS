@@ -110,7 +110,8 @@ struct AboutScreen: View {
                     Text("致谢 · 开源项目")
                         .font(.footnote.weight(.semibold))
                         .foregroundStyle(.secondary)
-                    linkRow("KSPlayer（播放内核）", url: KazumiAppInfo.ksPlayerURL)
+                    linkRow("mpv / MPVKit（播放内核）", url: KazumiAppInfo.mpvKitURL)
+                    linkRow("Anime4K（超分辨率着色器）", url: KazumiAppInfo.anime4KURL)
                     linkRow("Fuzi（XPath 解析）", url: KazumiAppInfo.fuziURL)
                     linkRow("GPL-3.0 许可证", url: KazumiAppInfo.licenseURL)
                 }

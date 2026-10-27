@@ -98,6 +98,14 @@ struct PlayerSettingsScreen: View {
                         }
                     }
                     row {
+                        // 跟播放器里「更多 → 超分辨率」是同一个值，两处改哪边都算。
+                        Picker("超分辨率", selection: superResolutionBinding) {
+                            ForEach(SuperResolutionMode.allCases) { mode in
+                                Text(mode.title).tag(mode)
+                            }
+                        }
+                    }
+                    row {
                         Picker("长按倍速", selection: longPressSpeedBinding) {
                             ForEach(PlaybackSpeed.all, id: \.self) { speed in
                                 Text(PlaybackSpeed.label(speed)).tag(speed)
@@ -123,6 +131,25 @@ struct PlayerSettingsScreen: View {
                     }
                 }
                 .listRowBackground(KazumiPalette.groupedRow(for: colorScheme))
+            }
+            // `Section("标题") { } footer: { }` 这个重载不存在，带页脚就得改成 header 写法。
+            Section {
+                Group {
+                    // 键名与默认值跟 main 的 `SettingsKeys.aniSkipLookup` 一致
+                    // （默认开），两边的设置备份因此能互认。
+                    Toggle(
+                        "AniSkip 片头片尾",
+                        isOn: Binding(
+                            get: { settings.aniSkipLookup },
+                            set: { settings.aniSkipLookup = $0 }
+                        )
+                    )
+                }
+                .listRowBackground(KazumiPalette.groupedRow(for: colorScheme))
+            } header: {
+                Text("片头片尾")
+            } footer: {
+                Text("在线查询 AniSkip 社区时间轴，进入片头/片尾时提示跳过")
             }
             Section {
                 Group {

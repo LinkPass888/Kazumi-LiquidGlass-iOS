@@ -67,8 +67,27 @@ struct SourceSheet: View {
             }
         }
         .task {
-            await controller.searchAllSources()
-            if let first = controller.sourceGroups.first(where: \.hasResults) {
+            // 第一个回来的源就地展开，不等所有规则跑完
+            // （LP 2026-10-27：原来要等最后一轮检索结束才展开，慢的源拖着整屏）。
+            let search = Task { await controller.searchAllSources() }
+            // 轮询要一直跑到检索真的结束，不能看 `isSearchingSources` 一开始是 false
+            // 就 break —— 那一帧检索还没起跑，于是永远不展开（LP 2026-10-27
+            //「播放源有检索结果却不展开」）。
+            let expander = Task { @MainActor in
+                while !Task.isCancelled {
+                    if let first = controller.sourceGroups.first(where: \.hasResults) {
+                        controller.sourceExpanded.insert(first.name)
+                        return
+                    }
+                    try? await Task.sleep(for: .milliseconds(100))
+                }
+            }
+            await search.value
+            expander.cancel()
+            // 最后一批结果可能是和检索结束同一帧到的，补一次；
+            // 用户自己收起过就不再替他展开。
+            if controller.sourceExpanded.isEmpty,
+               let first = controller.sourceGroups.first(where: \.hasResults) {
                 controller.sourceExpanded.insert(first.name)
             }
         }

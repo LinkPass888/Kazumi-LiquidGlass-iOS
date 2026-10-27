@@ -58,12 +58,23 @@ enum SuperResolutionMode: Int, CaseIterable, Identifiable, Sendable {
         }
     }
 
+    /// 设置里那一行下面的说明（Camo 3740 定的词）。
+    ///
+    /// 旧的两句说的是 KSPlayer 时代的 lanczos＋锐化，换 mpv 之后已经不成立。
     var detail: String {
         switch self {
-        case .off: "原画质，不做处理"
-        case .efficiency: "放大 1.5×，轻度锐化"
-        case .quality: "放大 2×，锐化更明显"
+        case .off: "不做处理"
+        case .efficiency: "放大并修线条，省电"
+        case .quality: "线条修得更细，更耗电"
         }
+    }
+
+    /// 交给 mpv 的 GLSL 着色器文件路径（Anime4K）。
+    ///
+    /// 着色器文件还没打进包里（待办：把 Anime4K 的 GLSL 放进 Runner 资源），
+    /// 现在返回空数组，等于不做超分——菜单能选，但画面上还没有效果。
+    var shaderPaths: [String] {
+        []
     }
 
     /// 交给 KSOptions.videoFilters 的 FFmpeg 滤镜链。
@@ -157,6 +168,8 @@ enum SettingsKey {
     static let brightnessVolumeGesture = "brightnessVolumeGesture"
     /// 隐身模式（不保留观看记录），沿用原版 `SettingsKeys.privateMode` 的键名，默认关闭。
     static let privateMode = "privateMode"
+    /// AniSkip 片头片尾时间轴，沿用原版 `SettingsKeys.aniSkipLookup` 的键名，默认开启。
+    static let aniSkipLookup = "aniSkipLookup"
     /// 控制栏自动隐藏前的停留时长（毫秒），沿用原版
     /// `SettingsKeys.playerControllerLayerDisappearTime` 的键名，默认 4000。
     static let playerControllerLayerDisappearTime = "playerControllerLayerDisappearTime"
@@ -311,6 +324,13 @@ final class SettingsStore {
     /// 上滑时缩小底部标签栏。默认开：上滑把标签栏收起。
     var tabBarShrinkOnScroll: Bool {
         didSet { persist(tabBarShrinkOnScroll, SettingsKey.tabBarShrinkOnScroll) }
+    }
+
+    /// AniSkip：在线查片头片尾时间轴，进入片头/片尾时提示跳过。
+    /// 键名与默认值照 main 的 `SettingsKeys.aniSkipLookup`（默认开），
+    /// 两边的设置备份因此能互认。
+    var aniSkipLookup: Bool {
+        didSet { persist(aniSkipLookup, SettingsKey.aniSkipLookup) }
     }
 
     var danmakuEnabled: Bool {
@@ -692,6 +712,7 @@ final class SettingsStore {
         hapticFeedbackEnabled = Self.read(defaults, SettingsKey.hapticFeedbackEnabled, true)
         showRating = Self.read(defaults, SettingsKey.showRating, true)
         tabBarShrinkOnScroll = Self.read(defaults, SettingsKey.tabBarShrinkOnScroll, true)
+        aniSkipLookup = Self.read(defaults, SettingsKey.aniSkipLookup, true)
         danmakuEnabled = Self.read(defaults, SettingsKey.danmakuEnabled, true)
         danmakuOpacity = Self.read(defaults, SettingsKey.danmakuOpacity, 1.0)
         danmakuFontSize = Self.read(defaults, SettingsKey.danmakuFontSize, 20.0)

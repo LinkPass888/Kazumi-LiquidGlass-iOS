@@ -93,7 +93,6 @@ struct PopularHero: View {
             + router.collectPath.count + router.myPath.count
     }
     /// 第一次点「开始观看」要先把条目备齐（缓存优先，没有才请求），期间不再接第二次点。
-    @State private var isLoadingSources = false
     /// 顶栏本体的实际高度：提示语要落在它下面。
     /// 文字块整块的实际高度（含块底那 50 的留白），渐隐由它推出来。
     /// 用 `onGeometryChange` 量（`PreferenceKey` 那条路在这版没吃到值）。单行标题是 164。
@@ -563,7 +562,6 @@ struct PopularHero: View {
                 .background(Capsule().fill(KazumiPalette.accent(for: colorScheme)))
         }
         .buttonStyle(.plain)
-        .disabled(isLoadingSources)
         .accessibilityLabel(playTitle)
         .accessibilityHint("选择播放源")
     }
@@ -689,22 +687,16 @@ struct PopularHero: View {
             isShowingSources = true
             return
         }
-        guard !isLoadingSources else { return }
-        isLoadingSources = true
-        Task {
-            defer { isLoadingSources = false }
-            // `??` 右边是 autoclosure，不能放 await，只能分两步写。
-            var cachedItem = BangumiSubjectCache.shared.item(for: poster.id)
-            if cachedItem == nil {
-                cachedItem = await BangumiAPI.info(id: poster.id)
-            }
-            let item = cachedItem
-                ?? BangumiItem(id: poster.id, name: poster.name, nameCn: poster.nameCn)
-            let controller = InfoController(item: item, plugins: environment.plugins)
-            controller.applyCachedEpisodes()
-            sourceController = controller
-            isShowingSources = true
-        }
+        // 点这颗钮不需要网络，也就不能等网络（LP 3665）：有缓存就用缓存，
+        // 没有就先用列表里那份名称把面板打开。面板里的检索本来就要联网，
+        // 没网时在那儿失败、在那儿提示，不挡面板弹出来。
+        // 详情信息由面板自己按需补（`loadDetailIfNeeded`），补回来会换上。
+        let item = BangumiSubjectCache.shared.item(for: poster.id)
+            ?? BangumiItem(id: poster.id, name: poster.name, nameCn: poster.nameCn)
+        let controller = InfoController(item: item, plugins: environment.plugins)
+        controller.applyCachedEpisodes()
+        sourceController = controller
+        isShowingSources = true
     }
 
     /// 收藏圆钮：轻点是「在看 ↔ 未收藏」两态切换。

@@ -96,8 +96,7 @@ struct WebDAVClient {
             case .unauthorized: "认证失败，请检查用户名与密码"
             case .notFound: "服务器上还没有备份，先点「立即备份」上传一份"
             case .badStatus(let status): "服务器出错了（\(status)），请稍后再试。"
-            case .decoding:
-                "备份文件读不出来，可能不是这个 App 存的。"
+            case .decoding(let message): message
             case .notReadableBack:
                 "文件已经写上去了，但读回来核对不上，这次不算备份成功。"
             }
@@ -138,10 +137,25 @@ struct WebDAVClient {
         let request = try authorizedRequest(url: target, method: "GET")
         let (data, response) = try await URLSession.shared.data(for: request)
         try Self.validate(response)
+        // WebDAV 服务器出错时常常也是 200，回的却是一张 HTML 登录页 / 错误页。
+        // 先看开头是不是 JSON，别让解码器只报一句英文的「格式不对」。
+        guard Self.looksLikeJSON(data) else {
+            throw WebDAVError.decoding("云盘上的那个文件不是备份文件（开头不是 JSON），可能是登录页或错误页。")
+        }
         do {
             return try Self.decoder().decode(Payload.self, from: data)
+        } catch let decoding as DecodingError {
+            // DecodingError 的 localizedDescription 是系统英文，用户看不懂，这里自己归类成中文。
+            switch decoding {
+            case .dataCorrupted:
+                throw WebDAVError.decoding("云盘上的备份文件不是有效的备份（可能不是本应用写的，或者文件已损坏）。")
+            case .keyNotFound, .typeMismatch, .valueNotFound:
+                throw WebDAVError.decoding("备份文件格式跟当前版本对不上（缺少或多余的字段）。")
+            default:
+                throw WebDAVError.decoding("备份文件读取失败，格式不对。")
+            }
         } catch {
-            throw WebDAVError.decoding("备份文件解析失败：\(error.localizedDescription)")
+            throw WebDAVError.decoding("备份文件读取失败，格式不对。")
         }
     }
 
@@ -330,5 +344,11 @@ struct WebDAVClient {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         return decoder
+    }
+
+    /// 第一个非空白字节是不是 `{`。空内容、HTML、纯文本都不算。
+    private static func looksLikeJSON(_ data: Data) -> Bool {
+        let whitespace: Set<UInt8> = [0x20, 0x09, 0x0A, 0x0D]
+        return data.first { !whitespace.contains($0) } == 0x7B
     }
 }
