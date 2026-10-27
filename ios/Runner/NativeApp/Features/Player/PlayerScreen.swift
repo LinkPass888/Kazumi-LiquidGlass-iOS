@@ -62,8 +62,6 @@ enum PlayerDetailTab: String, CaseIterable, Identifiable {
 /// 更多菜单里能打开的那几个页面，一次只有一张。
 enum PlayerSheet: String, Identifiable {
     case danmakuSettings
-    /// 横屏全屏时的选集面板（竖屏看画面下面那块，横屏只能从这里进）。
-    case episodes
     case airPlay
     case externalPlay
     case syncPlay
@@ -208,6 +206,8 @@ struct PlayerScreen: View {
     /// 更多菜单里几个「开个页面」的入口。收到一个枚举里，
     /// 一次只可能有一张：几个布尔各自为真时后弹的那张会被系统吞掉。
     @State private var activeSheet: PlayerSheet?
+    /// 横屏选集：从右侧滑进来的玻璃窗口（LP 3637 要的，不再是铺满整屏的面板）。
+    @State private var showsEpisodesPanel = false
     /// 定时关闭：还剩多少秒，nil 就是没定。
     /// 侧滑返回时页面跟着手走多少点。
     /// 这一次拖动是不是从左边边缘起手、按侧滑返回处理。
@@ -246,8 +246,24 @@ struct PlayerScreen: View {
                     .tint(.white)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
+
+            // 横屏选集：右侧滑进来的玻璃窗口（LP 3637）。
+            // 左边压暗一层，点它就收；不铺满整屏，画面还看得见。
+            if showsEpisodesPanel, let controller {
+                Color.black.opacity(0.28)
+                    .ignoresSafeArea()
+                    .transition(.opacity)
+                    .onTapGesture { closeEpisodesPanel() }
+
+                HStack(spacing: 0) {
+                    Spacer(minLength: 0)
+                    episodesPanel(controller)
+                }
+                .transition(.move(edge: .trailing))
+            }
         }
         }
+        .animation(.easeOut(duration: 0.12), value: showsEpisodesPanel)
         .background(Color.black.ignoresSafeArea())
         // 竖屏全屏不做：先真的横过屏，之后用户又转回竖屏，才退出全屏。
         // 只看「现在是不是竖的」会误判——刚点全屏、屏幕还没来得及转的那一帧
@@ -287,6 +303,12 @@ struct PlayerScreen: View {
         .onChange(of: controller?.danmakuMessage) { _, message in
             if let message, !message.isEmpty {
                 surface.toastMessage = message
+            }
+        }
+        // 退出全屏时把选集窗口收掉：它只属于横屏，留着会压在竖屏的选集区上。
+        .onChange(of: isFullscreen) { _, fullscreen in
+            if !fullscreen, showsEpisodesPanel {
+                closeEpisodesPanel()
             }
         }
         .onChange(of: surface.isPlaying) { _, playing in
@@ -413,10 +435,6 @@ struct PlayerScreen: View {
             }
             .environment(settings)
             .environment(environment.router)
-        case .episodes:
-            if let controller {
-                episodesSheet(controller)
-            }
         case .airPlay:
             airPlaySheet
         case .externalPlay:
@@ -685,7 +703,7 @@ struct PlayerScreen: View {
                 .allowsHitTesting(false)
             }
 
-            // 画面左右两侧的快退 / 快进：秒数取设置里「跳过时长」（buttonSkipTime）。
+            // 画面左右两侧的快退 / 快进：秒数取设置里「快进快退时长」（doubleTapSkipTime，默认 15）。
             // 双击两侧的快进已经删掉（LP 3593），快进快退只从这两颗走。
             if controlsShown {
                 HStack {
@@ -708,11 +726,12 @@ struct PlayerScreen: View {
     }
 
 
-    /// 左右两侧那颗：快退 / 快进「跳过时长」那么多秒（设置里可调，默认 80）。
+    /// 左右两侧那颗：快退 / 快进「快进快退时长」那么多秒（LP 3643：用 15 秒那档，
+    /// 不是顶栏长按那颗的 80 秒）。
     /// 规格（Colo 3599）：竖向居中、距左右边 16、44×44，箭头环里写秒数，
     /// 跟控制层一起显隐；点一下闪一次秒数。
     private func sideSkipButton(isForward: Bool) -> some View {
-        let seconds = settings.buttonSkipTime
+        let seconds = settings.doubleTapSkipTime
         return Button {
             if isForward {
                 surface.skipForward(seconds: Double(seconds))
@@ -724,20 +743,47 @@ struct PlayerScreen: View {
             noteInteraction()
             showControlsBriefly()
         } label: {
-            ZStack {
-                Image(systemName: isForward ? "goforward" : "gobackward")
-                    .font(.system(size: 30, weight: .regular))
-                Text("\(seconds)")
-                    .font(.system(size: 9, weight: .semibold))
-                    .monospacedDigit()
-                    .offset(y: -0.5)
-            }
-            .foregroundStyle(.white)
-            .frame(width: 44, height: 44)
-            .contentShape(Rectangle())
+            skipRing(seconds: seconds, isForward: isForward)
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(isForward ? "快进 \(seconds) 秒" : "快退 \(seconds) 秒")
+    }
+
+    /// 箭头环＋秒数。
+    ///
+    /// 不用 `goforward` 那颗符号叠字：符号的圆环并不在字形正中（右边还拖着箭头），
+    /// 字叠在框心就偏到环外去了（LP 3644）。这里自己画环，环心就是框心，
+    /// 秒数必然居中；环的缺口和箭头按半径算位置，换字号也不会跑。
+    private func skipRing(seconds: Int, isForward: Bool) -> some View {
+        let radius: CGFloat = 13
+        // 缺口 43°：环从正上方偏右一点起画，箭头就落在缺口上。
+        let gapDegrees: CGFloat = 43
+        let gap = gapDegrees * .pi / 180
+        return ZStack {
+            Circle()
+                .trim(from: 0.12, to: 1)
+                .stroke(Color.white, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                .frame(width: radius * 2, height: radius * 2)
+                .rotationEffect(.degrees(-90))
+
+            // 箭头尖：贴在缺口那一端，朝顺时针方向。
+            Image(systemName: "arrowtriangle.right.fill")
+                .font(.system(size: 7))
+                .foregroundStyle(.white)
+                .rotationEffect(.degrees(isForward ? gapDegrees : 180 - gapDegrees))
+                .offset(
+                    x: isForward ? radius * sin(gap) : -radius * sin(gap),
+                    y: -radius * cos(gap)
+                )
+
+            Text("\(seconds)")
+                .font(.system(size: 9, weight: .semibold))
+                .monospacedDigit()
+                .foregroundStyle(.white)
+        }
+        .frame(width: 44, height: 44)
     }
 
     /// 画面按压：短按切控制栏 / 播放暂停，长按临时倍速（对应原版
@@ -877,7 +923,6 @@ struct PlayerScreen: View {
         showControls()
         Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(220))
-            NSLog("[menu] 真的设 activeSheet=\(String(describing: sheet))")
             activeSheet = sheet
         }
     }
@@ -1545,7 +1590,12 @@ struct PlayerScreen: View {
 
     private var episodesButton: some View {
         Button {
-            openSheet(.episodes)
+            // 再点一次收起（Colo §7）。
+            if showsEpisodesPanel {
+                closeEpisodesPanel()
+            } else {
+                openEpisodesPanel()
+            }
         } label: {
             Image(systemName: "list.bullet")
                 .font(.system(size: 16, weight: .semibold))
@@ -1557,46 +1607,47 @@ struct PlayerScreen: View {
         .accessibilityLabel("选集")
     }
 
-    /// 横屏选集面板：一列集号，当前那集打勾，点一下换集并收起。
-    /// 竖屏不用它——竖屏的选集就在画面下面那块。
-    private func episodesSheet(_ controller: PlayerController) -> some View {
-        NavigationStack {
-            ScrollView {
-                LazyVStack(spacing: 0) {
-                    // `episodes` 是每一集的标识（集号从 1 数）。
-                    ForEach(Array(controller.episodes.enumerated()), id: \.offset) { index, _ in
-                        let number = index + 1
-                        Button {
-                            activeSheet = nil
-                            Task { await controller.selectEpisode(number) }
-                        } label: {
-                            HStack(spacing: 12) {
-                                Text("第 \(number) 话")
-                                    .foregroundStyle(.primary)
-                                Spacer(minLength: 0)
-                                if number == controller.currentEpisode {
-                                    Image(systemName: "checkmark")
-                                        .foregroundStyle(.tint)
-                                }
-                            }
-                            .padding(.horizontal, 20)
-                            .frame(height: 52)
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        Divider().padding(.leading, 20)
-                    }
-                }
-            }
-            .navigationTitle("选集")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("完成") { activeSheet = nil }
-                }
-            }
+    /// 横屏选集：从右侧滑进来的玻璃窗口（LP 3637）。
+    /// 复用竖屏那块 `episodesPane`，所以 100 集以上的分块跳转、线路菜单、
+    /// 加载失败态都是同一套；打开时把在播那集滚到中间（LP 3640）。
+    private func episodesPanel(_ controller: PlayerController) -> some View {
+        // 宽度照 Colo §7：可用宽的九成封顶，常态取三分之一，手机横屏 844 落地就是 320。
+        let available = max(surfaceWidth, 360)
+        let panelWidth = min(available * 0.9, min(max(available / 3, 320), 420))
+        return episodesPane(controller, centersCurrentEpisode: true)
+            .frame(width: panelWidth)
+            .frame(maxHeight: .infinity)
+            // 玻璃压在视频上，内容一律按深色排：白字、深底格子，
+            // 浅色下那套白底黑字在这儿糊成一团。
+            .environment(\.colorScheme, .dark)
+            .background { GlassBackdrop() }
+            // 只有左边两个角是圆的，右边贴着屏边（Colo §7：32）。
+            .clipShape(
+                UnevenRoundedRectangle(
+                    topLeadingRadius: 32,
+                    bottomLeadingRadius: 32,
+                    bottomTrailingRadius: 0,
+                    topTrailingRadius: 0,
+                    style: .continuous
+                )
+            )
+            .ignoresSafeArea(edges: .vertical)
+    }
+
+    private func openEpisodesPanel() {
+        showControls()
+        // 面板开着的时候控制层不许自己收走，不然底栏先没了、面板还挂着。
+        pinControlsWhileMenuOpen()
+        withAnimation(.easeOut(duration: 0.12)) {
+            showsEpisodesPanel = true
         }
-        .presentationDetents([.medium, .large])
+    }
+
+    private func closeEpisodesPanel() {
+        withAnimation(.easeOut(duration: 0.12)) {
+            showsEpisodesPanel = false
+        }
+        closeMenu()
     }
 
     /// 横屏底栏里的发弹幕：白 38% 底、圆角、13 号、hint 照原版，右边一颗「发送」。
@@ -2041,7 +2092,10 @@ struct PlayerScreen: View {
     }
 
     @ViewBuilder
-    private func episodesPane(_ controller: PlayerController) -> some View {
+    private func episodesPane(
+        _ controller: PlayerController,
+        centersCurrentEpisode: Bool = false
+    ) -> some View {
         let total = controller.episodes.count
         let pageSize = 100
         let pages = max(1, (total + pageSize - 1) / pageSize)
@@ -2051,7 +2105,15 @@ struct PlayerScreen: View {
 
         VStack(spacing: 0) {
             HStack(spacing: 8) {
-                if controller.roads.count > 1 { roadMenu(controller) }
+                // 只有一条线路也把它写出来（LP 3641）：以前整个藏起来，
+                // 用户不知道现在走的是哪条。来源给了名字就照抄，没给才写「线路1」。
+                if controller.roads.count > 1 {
+                    roadMenu(controller)
+                } else {
+                    Text(Self.singleRoadTitle(controller.roads.first))
+                        .font(.subheadline)
+                        .frame(height: 44)
+                }
                 if pages > 1 {
                     SystemMenuButton(
                         items: (0 ..< pages).map { page in
@@ -2082,22 +2144,35 @@ struct PlayerScreen: View {
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                ScrollView {
-                    LazyVGrid(
-                        columns: [GridItem(.adaptive(minimum: 64), spacing: 10)],
-                        spacing: 10
-                    ) {
-                        ForEach(lo ..< hi, id: \.self) { index in
-                            Button {
-                                switchEpisode(to: index + 1, controller: controller)
-                            } label: {
-                                episodeGridCell(controller, index: index)
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVGrid(
+                            columns: [GridItem(.adaptive(minimum: 64), spacing: 10)],
+                            spacing: 10
+                        ) {
+                            ForEach(lo ..< hi, id: \.self) { index in
+                                Button {
+                                    switchEpisode(to: index + 1, controller: controller)
+                                } label: {
+                                    episodeGridCell(controller, index: index)
+                                }
+                                .buttonStyle(.plain)
+                                .id(index)
                             }
-                            .buttonStyle(.plain)
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                    }
+                    .onAppear {
+                        // 右侧面板打开时把在播那集滚到中间（LP 3640）。
+                        // 等一帧再滚：LazyVGrid 那一刻还没把那一格建出来。
+                        guard centersCurrentEpisode, total > 0 else { return }
+                        let target = max(0, min(total - 1, controller.currentEpisode - 1))
+                        Task { @MainActor in
+                            try? await Task.sleep(for: .milliseconds(80))
+                            proxy.scrollTo(target, anchor: .center)
                         }
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
                 }
             }
         }
@@ -2388,6 +2463,13 @@ struct PlayerScreen: View {
         .frame(height: 44)
     }
 
+    /// 只有一条线路时显示的那个名字。
+    private static func singleRoadTitle(_ road: Road?) -> String {
+        guard let road else { return "线路1" }
+        let name = road.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return name.isEmpty ? "线路1" : name
+    }
+
     /// 线路名照抄来源给的；来源没给名字就只写「线路」，不编号。
     private static func roadName(_ road: Road) -> String {
         let name = road.name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -2553,3 +2635,18 @@ private struct SyncPlaySheet: View {
     }
 }
 
+/// 播放器里那块玻璃底（LP 3637：横屏选集窗口要用 UIKit 的玻璃）。
+/// 用 iOS 26 的 `UIGlassEffect`；这块是浮在视频上的，取 `.regular` 那种，
+/// 别用 `.clear`——画面一动，上面的白字就没地方站。
+struct GlassBackdrop: UIViewRepresentable {
+    func makeUIView(context: Context) -> UIVisualEffectView {
+        let effect = UIGlassEffect(style: .regular)
+        effect.isInteractive = true
+        let view = UIVisualEffectView(effect: effect)
+        view.backgroundColor = .clear
+        view.clipsToBounds = true
+        return view
+    }
+
+    func updateUIView(_ uiView: UIVisualEffectView, context: Context) {}
+}

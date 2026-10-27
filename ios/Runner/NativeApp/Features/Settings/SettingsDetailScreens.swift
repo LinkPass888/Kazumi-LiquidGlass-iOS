@@ -88,6 +88,16 @@ struct PlayerSettingsScreen: View {
                         }
                     }
                     row {
+                        // 画面两侧快退/快进那两颗的秒数（LP 3643）。键名沿用原版
+                        // `doubleTapSkipTime`——两边双击早已改成播放/暂停，这档现在
+                        // 就是两侧按钮的时长，改名会让老用户的设置丢掉。
+                        Picker("快进快退时长", selection: doubleTapSkipTimeBinding) {
+                            ForEach(Self.doubleTapSkipOptions, id: \.self) { seconds in
+                                Text("\(seconds) 秒").tag(seconds)
+                            }
+                        }
+                    }
+                    row {
                         Picker("长按倍速", selection: longPressSpeedBinding) {
                             ForEach(PlaybackSpeed.all, id: \.self) { speed in
                                 Text(PlaybackSpeed.label(speed)).tag(speed)
@@ -195,6 +205,16 @@ struct PlayerSettingsScreen: View {
 
     private var playSpeedBinding: Binding<Double> {
         Binding(get: { settings.playSpeed }, set: { settings.playSpeed = $0 })
+    }
+
+    /// 画面两侧快进快退的秒数档位：5 秒到 1 分钟，够用又不至于滑一长串。
+    private static let doubleTapSkipOptions = [5, 10, 15, 20, 30, 45, 60]
+
+    private var doubleTapSkipTimeBinding: Binding<Int> {
+        Binding(
+            get: { settings.doubleTapSkipTime },
+            set: { settings.doubleTapSkipTime = max(1, $0) }
+        )
     }
 
     /// 长按画面时的临时倍速，松手回到原来的倍速。
