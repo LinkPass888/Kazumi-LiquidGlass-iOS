@@ -746,16 +746,18 @@ struct ThemeSettingsScreen: View {
                 // 「OLED优化」中间没有空格，照 main 的写法。
                 Toggle("OLED优化", isOn: oledBinding)
                 Toggle("触感反馈", isOn: hapticBinding)
-                // 这句说明 LP 2285 定的，虽然两头都指空也照留（Camo 2599）。
+                Toggle("上滑时缩小底部标签栏", isOn: tabBarBinding)
+                // LP 3517：这一行挪到本组最后，说明也改准——
+                // 原来写「概览和番剧列表」，可我们的列表根本不显示评分，认这个开关的是时间表。
+                // 这是整页唯一留着说明小字的一行：名字讲不出它管哪些地方。
                 Toggle(isOn: showRatingBinding) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("显示评分")
-                        Text("关闭后隐藏概览和番剧列表中的评分信息")
+                        Text("关闭后隐藏概览和时间表里的评分信息")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
                 }
-                Toggle("上滑时缩小底部标签栏", isOn: tabBarBinding)
             }
             // Camo 2599：段已经叫「启动」，行里不再说一遍启动。
             Section("启动") {
