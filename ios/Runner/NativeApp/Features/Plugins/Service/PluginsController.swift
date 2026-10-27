@@ -106,7 +106,22 @@ final class PluginsController {
             do {
                 let text = try String(contentsOf: fileURL, encoding: .utf8)
                 let decoded = try JSONValue.decode(text)
-                pluginList = (decoded.arrayValue ?? []).map(Plugin.init(json:))
+                var loaded = (decoded.arrayValue ?? []).map(Plugin.init(json:))
+                // 老版本把规则里的数字写成了布尔（page: 1 → page: true），
+                // 读出来时按数字键反推还原一次，修好了就落盘（LP 3446）。
+                var repairedCount = 0
+                for index in loaded.indices where loaded[index].repairMangledQueryNumbers() {
+                    repairedCount += 1
+                }
+                pluginList = loaded
+                if repairedCount > 0 {
+                    KazumiLog.plugin.info("Plugin: repaired mangled numeric query values in \(repairedCount) rule(s)")
+                    do {
+                        try self.persist()
+                    } catch {
+                        self.errorReporter("Plugin: failed to persist repaired rules", error)
+                    }
+                }
                 KazumiLog.plugin.info("Plugin: Current Plugin number: \(self.pluginList.count)")
             } catch {
                 errorReporter("Plugin: failed to read rule file", error)

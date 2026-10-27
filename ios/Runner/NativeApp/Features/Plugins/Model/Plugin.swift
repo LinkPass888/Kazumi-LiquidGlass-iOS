@@ -172,6 +172,40 @@ struct Plugin: Hashable, Sendable, Identifiable {
 
     var usesApiSearch: Bool { searchMode == .api }
 
+    /// 修掉被老版本写坏的 query 数字。
+    ///
+    /// 老版本解析规则时把 JSON 数字当成了布尔（`1` → `true`），而规则被导入后会
+    /// 整张重写落盘，于是本机存下来就是 `"page": true`——解析器修好也救不回来。
+    /// 这里只动**本来就是数字的键**（page、page_size、offset 这些），把它们按
+    /// 反推还原成 1 / 0；别的键（真的布尔开关）一律不碰。
+    /// 返回 true 表示有改动、需要重新落盘。
+    @discardableResult
+    mutating func repairMangledQueryNumbers() -> Bool {
+        var changed = false
+        changed = Self.repairQuery(&searchApiConfig.request.query) || changed
+        changed = Self.repairQuery(&chapterApiConfig.request.query) || changed
+        return changed
+    }
+
+    private static let numericQueryKeys: Set<String> = [
+        "page", "pageindex", "pagenum", "pagenumber", "pagesize", "page_size",
+        "p", "offset", "limit", "size", "count", "index", "id", "num",
+        "number", "start", "skip", "rows", "take", "perpage", "per_page"
+    ]
+
+    private static func repairQuery(_ query: inout [String: JSONValue]) -> Bool {
+        var changed = false
+        for (key, value) in query {
+            guard numericQueryKeys.contains(key.lowercased()) else { continue }
+            // 只认布尔：字符串和数字原样留着。
+            guard case .bool(let flag) = value else { continue }
+            query[key] = .int(flag ? 1 : 0)
+            changed = true
+        }
+        return changed
+    }
+
+
     /// 对应 `int.parse(api) > ApiEndpoints.apiLevel`；api 非数字时视为兼容。
     var requiresNewerClient: Bool {
         guard let level = Int(api.trimmingCharacters(in: .whitespaces)) else { return false }
