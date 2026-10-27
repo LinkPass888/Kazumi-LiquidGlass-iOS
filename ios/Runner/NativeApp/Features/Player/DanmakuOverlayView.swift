@@ -140,6 +140,25 @@ final class DanmakuOverlayView: UIView {
         }
     }
 
+    /// 自己发的弹幕：不排队等时钟，立刻从右边飞出去。
+    ///
+    /// 对应原版 `_sendDanmaku` —— 它也只是把这条塞进画布（`selfSend: true`），
+    /// 不往任何接口发，所以这边同样只在本地显示。
+    func sendLocal(text rawText: String) {
+        let text = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        let now = clockNow()
+        let comment = DanmakuComment(
+            id: Int(Date().timeIntervalSince1970 * 1000),
+            time: now,
+            mode: 1,
+            colorValue: 0xFFFFFF,
+            text: text,
+            source: "self"
+        )
+        spawn(comment, now: now)
+    }
+
     /// 5 秒内内容完全相同的合并成一条（main: mergeDuplicateDanmakus，窗口 5 秒）。
     private static func merged(_ comments: [DanmakuComment]) -> [DanmakuComment] {
         guard !comments.isEmpty else { return comments }

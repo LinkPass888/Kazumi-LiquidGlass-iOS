@@ -37,6 +37,8 @@ final class PlayerSurfaceModel {
     var errorMessage: String?
 
     weak var playerView: PlayerView?
+    /// 弹幕画布：横屏底栏「发弹幕」往这里补一条自己发的。
+    weak var danmakuOverlay: DanmakuOverlayView?
 
     /// 期望的播放速率。AVPlayer 在暂停再播 / 换集后会回到 1.0，
     /// 因此就绪或重新起播时要按这个值再补一次，默认倍速才真正生效。
@@ -372,6 +374,8 @@ struct KSPlayerContainer: UIViewRepresentable {
         context.coordinator.surface = surface
         context.coordinator.overlay = overlay
         surface.playerView = view
+        // 横屏底栏「发弹幕」要直接往这层画布上补一条（原版 selfSend 的同一件事）。
+        surface.danmakuOverlay = overlay
         return view
     }
 

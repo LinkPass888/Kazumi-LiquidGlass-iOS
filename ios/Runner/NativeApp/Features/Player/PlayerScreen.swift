@@ -62,6 +62,8 @@ enum PlayerDetailTab: String, CaseIterable, Identifiable {
 /// 更多菜单里能打开的那几个页面，一次只有一张。
 enum PlayerSheet: String, Identifiable {
     case danmakuSettings
+    /// 横屏全屏时的选集面板（竖屏看画面下面那块，横屏只能从这里进）。
+    case episodes
     case airPlay
     case externalPlay
     case syncPlay
@@ -141,6 +143,9 @@ struct PlayerScreen: View {
     @State private var controller: PlayerController?
     @State private var surface = PlayerSurfaceModel()
     @State private var danmakuEnabled = true
+    /// 横屏底栏那个发弹幕的输入框：草稿、焦点。
+    @State private var danmakuDraft = ""
+    @FocusState private var danmakuFieldFocused: Bool
     @State private var playbackRate: Float = 1.0
     @State private var isScrubbing = false
     @State private var scrubValue: Double = 0
@@ -214,7 +219,12 @@ struct PlayerScreen: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
 
-    var body: some View {
+    /// 画面那一半（body 的前半截）。
+    ///
+    /// 从 body 里拆出来的：整条修饰符链太长，编译器的类型检查会超时
+    /// （`unable to type-check this expression in reasonable time`）。
+    /// 拆成两段后各段单独求解，逻辑一行没改。
+    private var playbackScaffold: some View {
         ZStack {
             Color.black.ignoresSafeArea()
             Group {
@@ -263,28 +273,12 @@ struct PlayerScreen: View {
         .overlay(alignment: .top) { toastView }
         .overlay { skipSecondsDialog }
         .sheet(item: $activeSheet) { sheet in
-            switch sheet {
-            case .danmakuSettings:
-                NavigationStack {
-                    DanmakuSettingsScreen()
-                }
-                .environment(settings)
-                .environment(environment.router)
-            case .airPlay:
-                airPlaySheet
-            case .externalPlay:
-                externalPlaySheet
-            case .syncPlay:
-                SyncPlaySheet(
-                    settings: settings,
-                    showingSyncPlay: Binding(
-                        get: { activeSheet == .syncPlay },
-                        set: { if !$0 { activeSheet = nil } }
-                    ),
-                    surface: surface
-                )
-            }
+            sheetContent(sheet)
         }
+    }
+
+    var body: some View {
+        playbackScaffold
         // 竖屏侧滑返回：导航栏藏了之后系统的手势会失效，这里把它接回来（全屏时不认）。
 
         .animation(.easeOut(duration: 0.2), value: surface.toastMessage)
@@ -382,51 +376,7 @@ struct PlayerScreen: View {
             }
         }
         .task {
-            guard controller == nil else { return }
-            // 先把两个 store 取成局部常量：闭包会长期挂在 surface 上，
-            // 这样试不会把整个 View（含 @Environment 包装器）一起捕获。
-            let settingsStore = settings
-            let library = environment.library
-            danmakuEnabled = settingsStore.danmakuEnabled
-            applyAudioSessionPolicy()
-            playbackRate = Float(settingsStore.playSpeed)
-            // 默认视频比例：设置页选的那一档作为这次播放的起点，
-            // 播放器里再改只影响这一次（与原版一样不写回设置）。
-            aspectRatioMode = settingsStore.defaultAspectRatio
-            let created = PlayerController(
-                bangumiID: bangumiID,
-                episode: episode,
-                source: source,
-                plugins: environment.plugins,
-                library: library
-            )
-            controller = created
-            // 默认倍速：以前只读了一次没交给播放器，现在存进画面模型，
-            // 就绪 / 重新起播时由它补一次（AVPlayer 会回到 1.0）。
-            surface.setPlaybackRate(Float(settingsStore.playSpeed))
-            // 自动连播：正常播完后根据设置决定是否切到下一集。
-            surface.onFinish = { [weak created] surface in
-                guard let created else { return }
-                // 播完先落一次进度：结尾 5 秒内会归零，当作「已看完」的边界。
-                persistWatchProgress(
-                    library: library,
-                    privateMode: settingsStore.privateMode,
-                    controller: created,
-                    position: surface.currentTime,
-                    duration: surface.duration
-                )
-                guard settingsStore.autoPlayNext else { return }
-                guard created.currentEpisode < created.episodes.count else {
-                    // 已是末集：停下来并给一句提示，不静默什么都不做。
-                    surface.toastMessage = "已经是最新一集"
-                    return
-                }
-                let next = created.currentEpisode + 1
-                surface.prepareForNewEpisode()
-                Task { await created.selectEpisode(next) }
-            }
-            resumeIfNeeded(library: library, controller: created)
-            await created.start()
+            await bootstrapPlaybackIfNeeded()
         }
         .task {
             // 播放期间定期落一次进度；退出与播完时还会各写一次。
@@ -452,12 +402,96 @@ struct PlayerScreen: View {
         }
     }
 
+    /// 各种半屏页面的内容。抽成方法是因为原来这段 switch 直接写在 `.sheet` 里，
+    /// 修饰符链一长，编译器的类型检查就超时了。
+    @ViewBuilder
+    private func sheetContent(_ sheet: PlayerSheet) -> some View {
+        switch sheet {
+        case .danmakuSettings:
+            NavigationStack {
+                DanmakuSettingsScreen()
+            }
+            .environment(settings)
+            .environment(environment.router)
+        case .episodes:
+            if let controller {
+                episodesSheet(controller)
+            }
+        case .airPlay:
+            airPlaySheet
+        case .externalPlay:
+            externalPlaySheet
+        case .syncPlay:
+            SyncPlaySheet(
+                settings: settings,
+                showingSyncPlay: Binding(
+                    get: { activeSheet == .syncPlay },
+                    set: { if !$0 { activeSheet = nil } }
+                ),
+                surface: surface
+            )
+        }
+    }
+
+    /// 进页面时把播放器建起来（原来直接写在 `.task` 闭包里）。
+    ///
+    /// 搬出来是因为那个闭包太大了：编译器的类型检查在那里超时（413 行）。
+    /// 逻辑一行没改。
+    private func bootstrapPlaybackIfNeeded() async {
+        guard controller == nil else { return }
+        // 先把两个 store 取成局部常量：闭包会长期挂在 surface 上，
+        // 这样试不会把整个 View（含 @Environment 包装器）一起捕获。
+        let settingsStore = settings
+        let library = environment.library
+        danmakuEnabled = settingsStore.danmakuEnabled
+        applyAudioSessionPolicy()
+        playbackRate = Float(settingsStore.playSpeed)
+        // 默认视频比例：设置页选的那一档作为这次播放的起点，
+        // 播放器里再改只影响这一次（与原版一样不写回设置）。
+        aspectRatioMode = settingsStore.defaultAspectRatio
+        let created = PlayerController(
+            bangumiID: bangumiID,
+            episode: episode,
+            source: source,
+            plugins: environment.plugins,
+            library: library
+        )
+        controller = created
+        // 默认倍速：就绪 / 重新起播时由画面模型再补一次（AVPlayer 会回到 1.0）。
+        let startSpeed = Float(settingsStore.playSpeed)
+        surface.setPlaybackRate(startSpeed)
+        // 自动连播：正常播完后根据设置决定是否切到下一集。
+        surface.onFinish = { [weak created] surface in
+            guard let created else { return }
+            // 播完先落一次进度：结尾 5 秒内会归零，当作「已看完」的边界。
+            persistWatchProgress(
+                library: library,
+                privateMode: settingsStore.privateMode,
+                controller: created,
+                position: surface.currentTime,
+                duration: surface.duration
+            )
+            guard settingsStore.autoPlayNext else { return }
+            guard created.currentEpisode < created.episodes.count else {
+                // 已是末集：停下来并给一句提示，不静默什么都不做。
+                surface.toastMessage = "已经是最新一集"
+                return
+            }
+            let next = created.currentEpisode + 1
+            surface.prepareForNewEpisode()
+            Task { await created.selectEpisode(next) }
+        }
+        resumeIfNeeded(library: library, controller: created)
+        await created.start()
+    }
+
     // MARK: - 播放区
 
     /// 画面：16:9（或 4:3）画面本身，控制层压在它上面。
     /// 竖屏里这条就是页面最上面那一块；横屏全屏时铺满。
     @ViewBuilder
     private func playerArea(_ controller: PlayerController) -> some View {
+        GeometryReader { proxy in
         ZStack {
             interactiveSurface(controller)
 
@@ -465,7 +499,7 @@ struct PlayerScreen: View {
                 errorOverlay(error, controller: controller)
             }
 
-            controlLayer(controller)
+            controlLayer(controller, width: proxy.size.width)
 
             // 画面正中那三朵：亮度 / 音量横条、横滑的秒数、双击的播放暂停。
             // 同一时刻只会有一朵（起手就定死了这一次拖动在调什么）。
@@ -498,6 +532,7 @@ struct PlayerScreen: View {
                 .frame(width: 1, height: 1)
                 .opacity(0.01)
         )
+        }
     }
 
     /// 画面 + 手势（只挂在画面上，下面的选集与评论不接）：
@@ -517,8 +552,8 @@ struct PlayerScreen: View {
                         ExclusiveGesture(SpatialTapGesture(count: 2), SpatialTapGesture(count: 1))
                             .onEnded { value in
                                 switch value {
-                                case .first(let tap):
-                                    handleSurfaceDoubleTap(at: tap.location, width: proxy.size.width)
+                                case .first:
+                                    handleSurfaceDoubleTap()
                                 case .second:
                                     handleSurfaceTap()
                                 }
@@ -619,12 +654,12 @@ struct PlayerScreen: View {
 
     /// 控制层：顶一行、底一行，都浮在画面上；几秒不碰淡出，点一下回来。
     /// 隐藏只降透明度、不动布局，画面不会跳。
-    private func controlLayer(_ controller: PlayerController) -> some View {
+    private func controlLayer(_ controller: PlayerController, width: CGFloat) -> some View {
         ZStack {
             VStack(spacing: 0) {
                 topBar(controller)
                 Spacer(minLength: 0)
-                transportBar(controller)
+                transportBar(controller, width: width)
             }
             .opacity(controlsShown ? 1 : 0)
             .allowsHitTesting(controlsShown)
@@ -644,6 +679,18 @@ struct PlayerScreen: View {
                 .allowsHitTesting(false)
             }
 
+            // 画面左右两侧的快退 / 快进：秒数取设置里「跳过时长」（buttonSkipTime）。
+            // 双击两侧的快进已经删掉（LP 3593），快进快退只从这两颗走。
+            if controlsShown {
+                HStack {
+                    sideSkipButton(isForward: false)
+                    Spacer(minLength: 0)
+                    sideSkipButton(isForward: true)
+                }
+                .padding(.horizontal, 16)
+                .transition(.opacity)
+            }
+
             if !controlsShown {
                 // 控制层收起时，整块画面都是「把控制层叫回来」的命中区。
                 Color.clear
@@ -654,6 +701,38 @@ struct PlayerScreen: View {
         }
     }
 
+
+    /// 左右两侧那颗：快退 / 快进「跳过时长」那么多秒（设置里可调，默认 80）。
+    /// 规格（Colo 3599）：竖向居中、距左右边 16、44×44，箭头环里写秒数，
+    /// 跟控制层一起显隐；点一下闪一次秒数。
+    private func sideSkipButton(isForward: Bool) -> some View {
+        let seconds = settings.buttonSkipTime
+        return Button {
+            if isForward {
+                surface.skipForward(seconds: Double(seconds))
+                flashSeekHUD(seconds)
+            } else {
+                surface.seek(to: max(0, surface.currentTime - Double(seconds)))
+                flashSeekHUD(-seconds)
+            }
+            noteInteraction()
+            showControlsBriefly()
+        } label: {
+            ZStack {
+                Image(systemName: isForward ? "goforward" : "gobackward")
+                    .font(.system(size: 30, weight: .regular))
+                Text("\(seconds)")
+                    .font(.system(size: 9, weight: .semibold))
+                    .monospacedDigit()
+                    .offset(y: -0.5)
+            }
+            .foregroundStyle(.white)
+            .frame(width: 44, height: 44)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(isForward ? "快进 \(seconds) 秒" : "快退 \(seconds) 秒")
+    }
 
     /// 画面按压：短按切控制栏 / 播放暂停，长按临时倍速（对应原版
     /// `player_item.dart` 的 onLongPressStart / onLongPressEnd）。
@@ -724,19 +803,15 @@ struct PlayerScreen: View {
 
     /// 双击：中间三分之二是播放 / 暂停，左右两侧分别是快退与快进（秒数走设置，
     /// 默认 15 秒）。三种都让控制层浮出来 1.2 秒再淡出，是 iOS 自己的节奏。
-    private func handleSurfaceDoubleTap(at location: CGPoint, width: CGFloat) {
-        let edge = width / 3
-        let seconds = Double(settings.doubleTapSkipTime)
-        if location.x < edge {
-            surface.seek(to: max(0, surface.currentTime - seconds))
-            flashSeekHUD(-settings.doubleTapSkipTime)
-        } else if location.x > width - edge {
-            surface.skipForward(seconds: seconds)
-            flashSeekHUD(settings.doubleTapSkipTime)
-        } else {
-            surface.togglePlay()
-            flashPlayPauseHUD()
-        }
+    /// 双击画面：任何位置都是播放 / 暂停。
+    ///
+    /// 以前是左三分之一快退、右三分之一快进、中间播放暂停（照原版
+    /// `player_item.dart` 的 `_handleDoubleTap` 其实也只是播放暂停，
+    /// 两侧快进是我们自己加的）。LP 3593：两侧的快进快退改由画面左右那两颗按钮做，
+    /// 双击就只留播放暂停，点哪儿都一样。
+    private func handleSurfaceDoubleTap() {
+        surface.togglePlay()
+        flashPlayPauseHUD()
         showControlsBriefly()
     }
 
@@ -897,40 +972,17 @@ struct PlayerScreen: View {
             .buttonStyle(.plain)
             .accessibilityLabel("返回")
 
-            // 从历史进入时 `source` 是空值，标题得用控制器里重建出来的那个。
-            VStack(alignment: .leading, spacing: 1) {
-                Text(controller.source?.itemName ?? "播放")
-                    .font(.headline)
-                    .foregroundStyle(.white)
-                    .lineLimit(1)
-                Text(episodeCaption(controller))
-                    .font(.footnote)
-                    .foregroundStyle(.white.opacity(0.75))
-                    .lineLimit(1)
-            }
+            // main 竖屏顶栏不放标题（标题在画面下面那块），这里只留出 40 高，
+            // 免得后面几颗按钮被顶到左边（Colo 3599）。
+            Spacer(minLength: 40)
 
-            Spacer(minLength: 4)
-
-            danmakuButton
+            danmakuButton()
             collectButton
             skipForwardButton
             moreMenu
         }
         .padding(.horizontal, 10)
         .padding(.top, 2)
-    }
-
-    /// 顶栏第二行：这一集 + 一共几集（线路多于一条时补线路名）。
-    private func episodeCaption(_ controller: PlayerController) -> String {
-        let total = controller.episodes.count
-        guard total > 0 else { return "第 \(controller.currentEpisode) 话" }
-        var text = "第 \(controller.currentEpisode) 话 · 共 \(total) 话"
-        if controller.roads.count > 1,
-           controller.roads.indices.contains(controller.selectedRoad),
-           !controller.roads[controller.selectedRoad].name.isEmpty {
-            text += " · \(controller.roads[controller.selectedRoad].name)"
-        }
-        return text
     }
 
     /// 收藏状态：符号就是当前收藏状态（heart.fill / star.fill / hourglass / checkmark /
@@ -1090,7 +1142,8 @@ struct PlayerScreen: View {
     }
 
     /// 弹幕开关：白符号直接压画面，不套底（工具行的第一格）。
-    private var danmakuButton: some View {
+    /// 弹幕开关。顶栏里是 44 见方，横屏那条输入行里矮一点（33），尺寸由外面给。
+    private func danmakuButton(width: CGFloat = 44, height: CGFloat = 44) -> some View {
         Button {
             danmakuEnabled.toggle()
             noteInteraction()
@@ -1098,7 +1151,7 @@ struct PlayerScreen: View {
             Image(systemName: danmakuEnabled ? "text.bubble.fill" : "text.bubble")
                 .font(.system(size: 17, weight: .regular))
                 .foregroundStyle(.white)
-                .frame(width: 44, height: 44)
+                .frame(width: width, height: height)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -1142,6 +1195,21 @@ struct PlayerScreen: View {
                 closeMenu()
                 openSheet(.danmakuSettings)
             },
+            // 倍速从底栏收进这里（LP 3593：底栏单行）。右边小字写当前值。
+            SystemMenuButton.Item(
+                title: "倍速",
+                symbol: "speedometer",
+                subtitle: speedText(Double(playbackRate)),
+                submenu: PlaybackSpeed.all.map { rate in
+                    SystemMenuButton.Item(
+                        title: speedText(rate),
+                        symbol: abs(playbackRate - Float(rate)) < 0.01 ? "checkmark" : ""
+                    ) {
+                        applySpeed(Float(rate))
+                        noteInteraction()
+                    }
+                }
+            ) {},
             SystemMenuButton.Item(title: "视频详情", symbol: "info.circle") {
                 closeMenu()
                 environment.router.push(.bangumiInfo(bangumiID: bangumiID))
@@ -1168,6 +1236,22 @@ struct PlayerScreen: View {
                         symbol: aspectRatioMode == mode ? "checkmark" : ""
                     ) {
                         aspectRatioMode = mode
+                    }
+                }
+            ) {},
+            // 超分辨率从横屏底栏收进这里（横屏那行放不下十颗，Colo 3613）。
+            SystemMenuButton.Item(
+                title: "超分辨率",
+                symbol: "wand.and.stars",
+                subtitle: settings.superResolutionMode.title,
+                submenu: SuperResolutionMode.allCases.map { mode in
+                    SystemMenuButton.Item(
+                        title: mode.title,
+                        symbol: settings.superResolutionMode == mode ? "checkmark" : "",
+                        subtitle: mode.detail
+                    ) {
+                        settings.superResolutionMode = mode
+                        noteInteraction()
                     }
                 }
             ) {},
@@ -1323,49 +1407,242 @@ struct PlayerScreen: View {
 
     /// 播放条：一条，压在画面底部。播放键、进度、时间、倍速、全屏。
     /// 倍速从「更多」里提上来——它是这一轮要的常动作，且 3× 以前根本选不到。
-    private func transportBar(_ controller: PlayerController) -> some View {
+    /// 底栏。竖屏单行（播放/暂停｜进度条｜当前 / 总长｜全屏）；
+    /// 横屏两行（Colo 3613，照 main 非 compact）：时间在上、进度条一行，按钮一行。
+    private func transportBar(_ controller: PlayerController, width: CGFloat) -> some View {
+        Group {
+            if width >= 600 {
+                landscapeTransport(controller)
+            } else {
+                portraitTransport
+            }
+        }
+    }
+
+    private var portraitTransport: some View {
         HStack(spacing: 10) {
-            Button {
-                surface.togglePlay()
-                noteInteraction()
-            } label: {
-                Image(systemName: surface.isPlaying ? "pause.fill" : "play.fill")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(surface.isPlaying ? "暂停" : "播放")
-
-            Text(timeText(isScrubbing ? scrubValue : surface.currentTime))
-                .font(.caption.monospacedDigit())
-                .foregroundStyle(.white.opacity(0.85))
-                .frame(width: 38, alignment: .leading)
-
+            playPauseButton(size: 44)
             scrubber
-
-            Text(timeText(surface.duration))
-                .font(.caption.monospacedDigit())
-                .foregroundStyle(.white.opacity(0.85))
-                .frame(width: 38, alignment: .trailing)
-
-            speedMenu
-
-            Button {
-                toggleFullscreen()
-            } label: {
-                Image(systemName: "arrow.up.left.and.arrow.down.right")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(isFullscreen ? "退出全屏" : "全屏")
+            timeLabel
+            fullscreenButton
         }
         .padding(.horizontal, 8)
         .frame(height: 52)
+    }
+
+    /// 横屏：时间文字在进度条上方（左 10、下 10），进度条左右各 10，
+    /// 再下面一行按钮（左右各 10）。按钮行按 Colo 3613 的精简版：手机横屏放不下十颗。
+    private func landscapeTransport(_ controller: PlayerController) -> some View {
+        VStack(spacing: 0) {
+            timeLabel
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.leading, 10)
+                .padding(.bottom, 10)
+
+            scrubber
+                .padding(.horizontal, 10)
+
+            HStack(spacing: 6) {
+                playPauseButton(size: 40)
+                nextEpisodeButton(controller, size: 40)
+                danmakuButton(width: 40, height: 40)
+                danmakuField
+                    .frame(maxWidth: .infinity)
+                speedButton
+                episodesButton
+                fullscreenButton
+            }
+            .padding(.horizontal, 10)
+            .frame(height: 48)
+        }
+        .padding(.bottom, 6)
+    }
+
+    /// `当前 / 总长`，12 号白色、等宽数字，长短不变不跳（竖屏在进度条右边）。
+    private var timeLabel: some View {
+        Text("\(timeText(isScrubbing ? scrubValue : surface.currentTime)) / \(timeText(surface.duration))")
+            .font(.system(size: 12, weight: .regular).monospacedDigit())
+            .foregroundStyle(.white)
+            .lineLimit(1)
+            .fixedSize()
+    }
+
+    private func playPauseButton(size: CGFloat) -> some View {
+        Button {
+            surface.togglePlay()
+            noteInteraction()
+        } label: {
+            Image(systemName: surface.isPlaying ? "pause.fill" : "play.fill")
+                .font(.system(size: size >= 44 ? 18 : 17, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: size, height: size)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(surface.isPlaying ? "暂停" : "播放")
+    }
+
+    private var fullscreenButton: some View {
+        Button {
+            toggleFullscreen()
+        } label: {
+            Image(systemName: "arrow.up.left.and.arrow.down.right")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(isFullscreen ? "退出全屏" : "全屏")
+    }
+
+    /// 下一集：没有下一集时灰掉。
+    private func nextEpisodeButton(_ controller: PlayerController, size: CGFloat) -> some View {
+        let hasNext = controller.currentEpisode < controller.episodes.count
+        return Button {
+            guard hasNext else { return }
+            noteInteraction()
+            Task { await controller.selectEpisode(controller.currentEpisode + 1) }
+        } label: {
+            Image(systemName: "forward.end.fill")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(.white.opacity(hasNext ? 1 : 0.35))
+                .frame(width: size, height: size)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!hasNext)
+        .accessibilityLabel("下一集")
+    }
+
+    /// 横屏那颗倍速：标签写当前值（竖屏在「更多」菜单里）。
+    private var speedButton: some View {
+        SystemMenuButton(
+            items: PlaybackSpeed.all.map { rate in
+                SystemMenuButton.Item(
+                    title: speedText(rate),
+                    symbol: abs(playbackRate - Float(rate)) < 0.01 ? "checkmark" : ""
+                ) {
+                    applySpeed(Float(rate))
+                    noteInteraction()
+                }
+            },
+            title: speedText(Double(playbackRate)),
+            symbol: "speedometer",
+            accessibilityLabel: "倍速 \(speedText(Double(playbackRate)))",
+            onOpen: { pinControlsWhileMenuOpen() }
+        )
+        .frame(minWidth: 44, minHeight: 40)
+    }
+
+    private var episodesButton: some View {
+        Button {
+            openSheet(.episodes)
+        } label: {
+            Image(systemName: "list.bullet")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 40, height: 40)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("选集")
+    }
+
+    /// 横屏选集面板：一列集号，当前那集打勾，点一下换集并收起。
+    /// 竖屏不用它——竖屏的选集就在画面下面那块。
+    private func episodesSheet(_ controller: PlayerController) -> some View {
+        NavigationStack {
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    // `episodes` 是每一集的标识（集号从 1 数）。
+                    ForEach(Array(controller.episodes.enumerated()), id: \.offset) { index, _ in
+                        let number = index + 1
+                        Button {
+                            activeSheet = nil
+                            Task { await controller.selectEpisode(number) }
+                        } label: {
+                            HStack(spacing: 12) {
+                                Text("第 \(number) 话")
+                                    .foregroundStyle(.primary)
+                                Spacer(minLength: 0)
+                                if number == controller.currentEpisode {
+                                    Image(systemName: "checkmark")
+                                        .foregroundStyle(.tint)
+                                }
+                            }
+                            .padding(.horizontal, 20)
+                            .frame(height: 52)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        Divider().padding(.leading, 20)
+                    }
+                }
+            }
+            .navigationTitle("选集")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("完成") { activeSheet = nil }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+    }
+
+    /// 横屏底栏里的发弹幕：白 38% 底、圆角、13 号、hint 照原版，右边一颗「发送」。
+    /// 弹幕关着时整个框灰掉并挡住输入——发了也看不见，不如先说清楚。
+    private var danmakuField: some View {
+        HStack(spacing: 6) {
+            TextField(
+                "",
+                text: $danmakuDraft,
+                prompt: Text("发个友善的弹幕见证当下")
+                    .foregroundStyle(.white.opacity(0.7))
+            )
+            .font(.system(size: 13))
+            .foregroundStyle(.white)
+            .tint(.white)
+            .focused($danmakuFieldFocused)
+            .submitLabel(.send)
+            .onSubmit { sendDanmaku() }
+            .disabled(!danmakuEnabled)
+
+            Button {
+                sendDanmaku()
+            } label: {
+                Text("发送")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(canSendDanmaku ? .white : .white.opacity(0.45))
+                    .padding(.horizontal, 6)
+                    .frame(height: 33)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(!canSendDanmaku)
+            .accessibilityLabel("发送弹幕")
+        }
+        .padding(.leading, 10)
+        .padding(.trailing, 2)
+        .frame(height: 33)
+        .background(.white.opacity(danmakuEnabled ? 0.38 : 0.18),
+                    in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private var canSendDanmaku: Bool {
+        danmakuEnabled && !danmakuDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// 发出去：只在本地画布上补一条（原版 `_sendDanmaku` 也不调接口），清空、收键盘。
+    private func sendDanmaku() {
+        let text = danmakuDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard danmakuEnabled, !text.isEmpty else { return }
+        surface.danmakuOverlay?.sendLocal(text: text)
+        danmakuDraft = ""
+        danmakuFieldFocused = false
+        noteInteraction()
+        showControlsBriefly()
     }
 
     /// 细线进度：不要拇指白块（LP：取消进度条上的大白块）。2pt 高、圆角 1。
@@ -1401,31 +1678,6 @@ struct PlayerScreen: View {
         }
         .frame(height: 24)
         .accessibilityLabel("播放进度")
-    }
-
-    /// 倍速：菜单标签写当前值（原版把倍速藏在「更多」里，而且上限只到 2×）。
-    private var speedMenu: some View {
-        SystemMenuButton(
-            items: speedMenuItems,
-            title: speedText(Double(playbackRate)),
-            symbol: "speedometer",
-            accessibilityLabel: "倍速 \(speedText(Double(playbackRate)))",
-            onOpen: { pinControlsWhileMenuOpen() }
-        )
-        .frame(minWidth: 46, minHeight: 44)
-    }
-
-    private var speedMenuItems: [SystemMenuButton.Item] {
-        PlaybackSpeed.all.map { rate in
-            SystemMenuButton.Item(
-                title: speedText(rate),
-                symbol: abs(playbackRate - Float(rate)) < 0.01 ? "checkmark" : ""
-            ) {
-                closeMenu()
-                applySpeed(Float(rate))
-                noteInteraction()
-            }
-        }
     }
 
     private func speedText(_ value: Double) -> String { PlaybackSpeed.label(value) }
