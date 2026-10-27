@@ -29,7 +29,12 @@ final class KazumiImageLoader: @unchecked Sendable {
     /// 磁盘缓存保留天数，与原版 cached_network_image 的默认有效期一致。
     private static let maxAge: TimeInterval = 14 * 24 * 60 * 60
     /// 磁盘缓存上限（字节）。
-    private static let maxDiskBytes = 300 * 1024 * 1024
+    ///
+    /// LP 3442：首启就要缓存 200 多 M，原版（main）才一百多。除了这里给的额度，
+    /// 更主要的原因是同一张图被存了两份——我们自己按 URL 落盘一份，URLSession
+    /// 的 URLCache 又按 HTTP 缓存落一份（下面磁盘 256MB 那层）。那一层已经去掉，
+    /// 这里也从 300MB 收到 120MB，比原版略宽。
+    private static let maxDiskBytes = 120 * 1024 * 1024
     /// 没量到尺寸时按这个像素解码（约等于一张列表封面的两倍）。
     private static let defaultPixelSize = 600
 
@@ -53,6 +58,11 @@ final class KazumiImageLoader: @unchecked Sendable {
     private var inFlight: [String: Task<Void, Never>] = [:]
     private let directory: URL
     private let session: URLSession
+    /// 同时在跑的下载上限。一屏几十张图全放出去，连接会被自己挤爆、
+    /// 单张动不动失败，表现就是「总有封面加载不出来」（LP 3446）。
+    private let gate = DownloadGate(limit: 6)
+    /// 写盘计数，够一批就顺手清一次过期文件（原来只在启动时清）。
+    private let pruneCounter = Counter()
 
 
     private init() {
@@ -92,14 +102,12 @@ final class KazumiImageLoader: @unchecked Sendable {
         memory.totalCostLimit = 128 * 1024 * 1024
 
         let configuration = URLSessionConfiguration.default
-        configuration.requestCachePolicy = .returnCacheDataElseLoad
+        // 不再要 URLSession 自己那份缓存：它存的是同一批图片字节，
+        // 磁盘上会跟下面按 URL 落盘的文件重复一遍（LP 3442 说的 200 多 M）。
+        configuration.urlCache = nil
+        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
         configuration.timeoutIntervalForRequest = 20
-        // 除了自己按 URL 落盘，再叠一层 HTTP 缓存。
-        configuration.urlCache = URLCache(
-            memoryCapacity: 32 * 1024 * 1024,
-            diskCapacity: 256 * 1024 * 1024,
-            diskPath: "KazumiHTTPCache"
-        )
+        configuration.httpMaximumConnectionsPerHost = 6
         session = URLSession(configuration: configuration)
 
         // 启动时清一轮过期文件；放后台，不阻塞首屏。
@@ -183,6 +191,11 @@ final class KazumiImageLoader: @unchecked Sendable {
     /// 不会连带取消下载 —— 图还是要落盘，下次滚动回来才能直接命中。
     @discardableResult
     func load(_ url: String, pixelSize: Int = defaultPixelSize) async -> Bool {
+        await load(url, pixelSize: pixelSize, highPriority: true)
+    }
+
+    @discardableResult
+    private func load(_ url: String, pixelSize: Int, highPriority: Bool) async -> Bool {
         let key = Self.cacheKey(for: url)
         guard !key.isEmpty else { return false }
         let bucket = Self.bucket(pixelSize)
@@ -192,7 +205,7 @@ final class KazumiImageLoader: @unchecked Sendable {
             if let existing = inFlight[key] { return existing }
             let created = Task<Void, Never> { [weak self] in
                 guard let self else { return }
-                await self.fetch(key: key, bucket: bucket)
+                await self.fetch(key: key, bucket: bucket, highPriority: highPriority)
             }
             inFlight[key] = created
             return created
@@ -200,11 +213,12 @@ final class KazumiImageLoader: @unchecked Sendable {
         await task.value
         if cachedImage(for: url, pixelSize: pixelSize) != nil { return true }
         // 那个任务按别的档位解的（例如预取用的是 600，这张要 800）：再解一次。
-        await fetch(key: key, bucket: bucket)
+        await fetch(key: key, bucket: bucket, highPriority: true)
         return cachedImage(for: url, pixelSize: pixelSize) != nil
     }
 
     /// 预取：给列表里即将出现的图片预热缓存，不阻塞调用方。
+    /// 走低优先级：屏幕里真正要显示的图先下，预取在后面排队。
     func prefetch(_ urls: [String], pixelSize: Int = defaultPixelSize) {
         for url in urls {
             let key = Self.cacheKey(for: url)
@@ -212,12 +226,12 @@ final class KazumiImageLoader: @unchecked Sendable {
             guard cachedImage(for: url, pixelSize: pixelSize) == nil else { continue }
             Task(priority: .utility) { [weak self] in
                 guard let self else { return }
-                await self.load(url, pixelSize: pixelSize)
+                await self.load(url, pixelSize: pixelSize, highPriority: false)
             }
         }
     }
 
-    private func fetch(key: String, bucket: Int) async {
+    private func fetch(key: String, bucket: Int, highPriority: Bool) async {
         defer {
             lock.withLock { _ = inFlight.removeValue(forKey: key) }
         }
@@ -238,28 +252,45 @@ final class KazumiImageLoader: @unchecked Sendable {
         guard let logical = URL(string: key) else { return }
         let remote = BangumiImageRewriter.rewritten(logical)
 
-        // 取图失败重试一次：列表一屏几十张图同时开连，单张偶发失败很正常。
-        for attempt in 0..<2 {
+        // 屏幕里要显示的多给两次机会并退避；预取的只试一次，把连接让出来。
+        let attempts = highPriority ? 3 : 1
+        for attempt in 0..<attempts {
+            // 下载前先过闸门：同时最多 6 条，屏幕内的先拿。
+            await gate.acquire(high: highPriority)
+            let outcome: (Data?, Bool)
             do {
                 let (data, response) = try await session.data(from: remote)
-                if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
-                    return
-                }
-                guard let image = await Self.decode(data, pixelSize: bucket) else {
-                    return
-                }
+                let ok = (response as? HTTPURLResponse).map { (200...299).contains($0.statusCode) } ?? true
+                outcome = (ok ? data : nil, ok)
+            } catch {
+                outcome = (nil, false)
+            }
+            await gate.release()
+
+            if let data = outcome.0 {
+                guard let image = await Self.decode(data, pixelSize: bucket) else { return }
                 store(image, key: key, bucket: bucket)
                 do {
                     try ensureDirectory()
                     try data.write(to: fileURL, options: .atomic)
+                    schedulePruneIfNeeded()
                 } catch {
                     // 写盘失败不影响这次显示，下次再取。
                 }
                 return
-            } catch {
-                guard attempt == 0 else { return }
-                try? await Task.sleep(for: .milliseconds(400))
             }
+            guard attempt < attempts - 1 else { return }
+            try? await Task.sleep(for: .milliseconds(400 * (attempt + 1)))
+        }
+    }
+
+    /// 每写满一批就顺手清一次过期文件：原来只在启动时清，用起来只涨不降。
+    private func schedulePruneIfNeeded() {
+        let count = pruneCounter.increment()
+        guard count % 40 == 0 else { return }
+        let target = directory
+        Task.detached(priority: .utility) {
+            KazumiImageLoader.prune(directory: target)
         }
     }
 
@@ -375,6 +406,59 @@ final class KazumiImageLoader: @unchecked Sendable {
             guard total > maxDiskBytes else { break }
             try? manager.removeItem(at: entry.url)
             total -= entry.size
+        }
+    }
+
+    // MARK: - 并发闸门
+
+    /// 一个带优先级的上限闸门：高优先（屏幕里要显示的）先拿名额，
+    /// 低优先（预取）在后面排队。名额让出去时直接转交给等待者，
+    /// 因此 active 只在「没人等」时才减一。
+    actor DownloadGate {
+        private let limit: Int
+        private var active = 0
+        private var highWaiters: [CheckedContinuation<Void, Never>] = []
+        private var lowWaiters: [CheckedContinuation<Void, Never>] = []
+
+        init(limit: Int) {
+            self.limit = limit
+        }
+
+        func acquire(high: Bool) async {
+            if active < limit {
+                active += 1
+                return
+            }
+            await withCheckedContinuation { continuation in
+                if high {
+                    highWaiters.append(continuation)
+                } else {
+                    lowWaiters.append(continuation)
+                }
+            }
+        }
+
+        func release() {
+            if !highWaiters.isEmpty {
+                highWaiters.removeFirst().resume()
+            } else if !lowWaiters.isEmpty {
+                lowWaiters.removeFirst().resume()
+            } else {
+                active = max(0, active - 1)
+            }
+        }
+    }
+
+    /// 数写盘次数用的小盒子。
+    final class Counter: @unchecked Sendable {
+        private let lock = NSLock()
+        private var value = 0
+
+        func increment() -> Int {
+            lock.withLock {
+                value += 1
+                return value
+            }
         }
     }
 
