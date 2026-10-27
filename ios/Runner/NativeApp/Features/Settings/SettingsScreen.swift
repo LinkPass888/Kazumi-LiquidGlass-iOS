@@ -259,7 +259,8 @@ struct SettingsScreen: View {
                 .foregroundStyle(.primary)
             Spacer(minLength: 0)
         }
-        // 整行都是点击目标；视觉高度可以随文字走，可点区域不低于 44pt。
-        .hitTarget44(alignment: .leading)
+        // 不再挂 `.hitTarget44()`：List 的行本来就比 44 大（实测 52），
+        // 再撑一次会自己叠一层，把行顶到 74（Colo 3489 说的「别硬加」）。
+        .contentShape(Rectangle())
     }
 }
