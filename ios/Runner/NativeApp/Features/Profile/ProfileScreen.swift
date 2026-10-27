@@ -194,7 +194,9 @@ struct ProfileScreen: View {
         Button {
             router.push(.bangumiInfo(bangumiID: record.bangumiID))
         } label: {
-            HStack(alignment: .top, spacing: 12) {
+            // Colo 3567：文字块上下居中，不顶对齐——封面 98 高、文字块只有 60 上下，
+            // 顶对齐会在这一条下面空出四十多，居中之后上下各留一半。
+            HStack(alignment: .center, spacing: 12) {
                 Color.clear
                     .frame(width: 64, height: 64 / BangumiPosterCard.coverAspectRatio)
                     .overlay {
