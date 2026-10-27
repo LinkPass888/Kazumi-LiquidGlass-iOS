@@ -59,32 +59,39 @@ struct SyncBackupScreen: View {
     var body: some View {
         Form {
             Section {
-                NavigationLink {
-                    BangumiSyncScreen()
-                } label: {
-                    serviceRow(
-                        title: "追番同步",
-                        subtitle: "与 Bangumi 保持相同的追番状态",
-                        status: bangumiStatusText
-                    )
-                }
+                Group {
+                    NavigationLink {
+                        BangumiSyncScreen()
+                    } label: {
+                        serviceRow(
+                            title: "追番同步",
+                            subtitle: "与 Bangumi 保持相同的追番状态",
+                            status: bangumiStatusText
+                        )
+                    }
 
-                // 标题与说明照原版那张卡（webdav_sync_page.dart:92-105）：
-                // 「多设备同步」/「通过自己的云盘，在其他设备接着看。」
-                // 状态按总闸与内容开关分四档，跟原版一致。
-                NavigationLink {
-                    WebDAVScreen()
-                } label: {
-                    serviceRow(
-                        title: "多设备同步",
-                        subtitle: "通过自己的云盘，在其他设备接着看",
-                        status: webDAVStatusText
-                    )
+                    // 标题与说明照原版那张卡（webdav_sync_page.dart:92-105）：
+                    // 「多设备同步」/「通过自己的云盘，在其他设备接着看。」
+                    // 状态按总闸与内容开关分四档，跟原版一致。
+                    NavigationLink {
+                        WebDAVScreen()
+                    } label: {
+                        serviceRow(
+                            title: "多设备同步",
+                            subtitle: "通过自己的云盘，在其他设备接着看",
+                            status: webDAVStatusText
+                        )
+                    }
                 }
+                // Colo 3532：Form 行底色显式取 groupedRow，不依赖系统动态色。
+                .listRowBackground(KazumiPalette.groupedRow(for: colorScheme))
             }
 
             Section {
-                Toggle("不含账号与密码", isOn: $omitCredentials)
+                Group {
+                    Toggle("不含账号与密码", isOn: $omitCredentials)
+                }
+                .listRowBackground(KazumiPalette.groupedRow(for: colorScheme))
             } header: {
                 Text("设置备份")
             } footer: {
@@ -99,19 +106,25 @@ struct SyncBackupScreen: View {
             // LP 定：按介质分组——剪贴板一段、文件一段，段与段的间隔自己分开。
             // 行名只写动作，段标题已经说了是哪条路；读屏报全名。
             Section {
-                actionRow("导出到剪贴板", icon: "arrow.up.doc", accessibility: "导出到剪贴板") { exportBackup() }
-                actionRow("从剪贴板恢复", icon: "square.and.arrow.down", accessibility: "从剪贴板恢复") {
-                    importBackupFromClipboard()
+                Group {
+                    actionRow("导出到剪贴板", icon: "arrow.up.doc", accessibility: "导出到剪贴板") { exportBackup() }
+                    actionRow("从剪贴板恢复", icon: "square.and.arrow.down", accessibility: "从剪贴板恢复") {
+                        importBackupFromClipboard()
+                    }
                 }
+                .listRowBackground(KazumiPalette.groupedRow(for: colorScheme))
             } header: {
                 Text("剪贴板")
             }
 
             Section {
-                actionRow("导出到文件", icon: "folder", accessibility: "导出到文件") { exportBackupToFile() }
-                actionRow("从文件恢复", icon: "doc.badge.plus", accessibility: "从文件恢复") {
-                    pickBackupFile()
+                Group {
+                    actionRow("导出到文件", icon: "folder", accessibility: "导出到文件") { exportBackupToFile() }
+                    actionRow("从文件恢复", icon: "doc.badge.plus", accessibility: "从文件恢复") {
+                        pickBackupFile()
+                    }
                 }
+                .listRowBackground(KazumiPalette.groupedRow(for: colorScheme))
             } header: {
                 Text("文件")
             } footer: {
@@ -130,7 +143,8 @@ struct SyncBackupScreen: View {
         .navigationTitle("同步设置")
         .navigationBarTitleDisplayMode(.inline)
         .scrollContentBackground(.hidden)
-        .background(KazumiPalette.background(for: colorScheme).ignoresSafeArea())
+        // Colo 3532：二级页统一用分组页底。
+        .background(KazumiPalette.groupedBackground(for: colorScheme).ignoresSafeArea())
         // 恢复确认用居中的对话框，跟原版 AlertDialog 一样落在屏幕正中
         //（LP 2517：之前用 confirmationDialog，iOS 26 会从表单某个位置弹出，位置不对）。
         .alert("恢复这些设置？", isPresented: $isShowingRestoreConfirm) {

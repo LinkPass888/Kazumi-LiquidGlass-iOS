@@ -31,7 +31,8 @@ private struct KazumiSettingsDetailStyle: ViewModifier {
             // LP 3524：二级页也要跟首页一个底色。原来铺的是 `background(for:)`
             // （浅色白、深色 #121212），条目本身也是白的，浅色下整页糊成一片白。
             // 这里换成分组页底 #F2F2F7／深色 #121212（OLED 开时纯黑）；
-            // 条目色不另外给——Form 的分组行本来就是白／#1C1C1E，跟规格同值。
+            // 条目色原本不另外给——Form 的分组行本来就是白／#1C1C1E，跟规格同值。
+            // Colo 3532：改为各 Section 显式给 groupedRow，不再依赖系统动态行色。
             .background(KazumiPalette.groupedBackground(for: colorScheme).ignoresSafeArea())
     }
 }
@@ -46,73 +47,91 @@ extension View {
 
 struct PlayerSettingsScreen: View {
     @Environment(SettingsStore.self) private var settings
+    @Environment(\.colorScheme) private var colorScheme
     @State private var isConfirmingRestore = false
     /// 恢复默认后顶上那句提示；两秒后自己收起来。
     @State private var showRestoredToast = false
 
     var body: some View {
         Form {
-            Section("播放行为") {
-                // 顺序照 main 的「播放行为」一段（Ato 2026-10-24：这三颗提到第一批）。
-                Toggle("后台播放", isOn: backgroundPlaybackBinding)
-                Toggle("自动连播", isOn: autoPlayNextBinding)
-                Toggle("自动跳转到上次播放位置", isOn: playResumeBinding)
-                Toggle("竖向滑动调音量和亮度", isOn: brightnessVolumeGestureBinding)
-                Toggle("隐身模式", isOn: privateModeBinding)
+            // `Section("标题") { } footer: { }` 这个重载不存在，带页脚就得改成 header 写法。
+            Section {
+                Group {
+                    // 顺序照 main 的「播放行为」一段（Ato 2026-10-24：这三颗提到第一批）。
+                    Toggle("后台播放", isOn: backgroundPlaybackBinding)
+                    Toggle("自动连播", isOn: autoPlayNextBinding)
+                    Toggle("自动跳转到上次播放位置", isOn: playResumeBinding)
+                    Toggle("竖向滑动调音量和亮度", isOn: brightnessVolumeGestureBinding)
+                    Toggle("隐身模式", isOn: privateModeBinding)
+                }
+                // Colo 3532：灰底页面的行底色显式取 groupedRow，不跟系统动态色走。
+                .listRowBackground(KazumiPalette.groupedRow(for: colorScheme))
+            } header: {
+                Text("播放行为")
+            } footer: {
+                // LP 3530：隐身模式那句加回来，但挂在组的页脚——「隐身模式」四个字
+                // 本身讲不出它管的是观看记录，写上名字才知道说的是哪一行。
+                Text("开启隐身模式后不保留观看记录")
             }
             Section("播放参数") {
-                Picker("默认倍速", selection: playSpeedBinding) {
-                    // 与原版播放器菜单同一份档位，避免两处再次走偏。
-                    ForEach(PlaybackSpeed.all, id: \.self) { speed in
-                        Text(PlaybackSpeed.label(speed)).tag(speed)
-                    }
-                }
-                row {
-                    // LP 2026-10-25：一次加 1 秒，上限 90 秒（默认 80）。
-                    Stepper(value: buttonSkipTimeBinding, in: 5...90, step: 1) {
-                        LabeledContent("跳过时长", value: "\(settings.buttonSkipTime) 秒")
-                    }
-                }
-                row {
-                    Picker("双击快进时长", selection: doubleTapSkipTimeBinding) {
-                        ForEach(Self.doubleTapSkipOptions, id: \.self) { seconds in
-                            Text("\(seconds) 秒").tag(seconds)
-                        }
-                    }
-                }
-                row {
-                    Picker("长按倍速", selection: longPressSpeedBinding) {
+                Group {
+                    Picker("默认倍速", selection: playSpeedBinding) {
+                        // 与原版播放器菜单同一份档位，避免两处再次走偏。
                         ForEach(PlaybackSpeed.all, id: \.self) { speed in
                             Text(PlaybackSpeed.label(speed)).tag(speed)
                         }
                     }
-                }
-                row {
-                    HStack {
-                        Text("控制栏消失时间")
-                        Spacer(minLength: 8)
-                        Text(controlBarHideLabel)
-                            .foregroundStyle(.secondary)
+                    row {
+                        // LP 2026-10-25：一次加 1 秒，上限 90 秒（默认 80）。
+                        Stepper(value: buttonSkipTimeBinding, in: 5...90, step: 1) {
+                            LabeledContent("跳过时长", value: "\(settings.buttonSkipTime) 秒")
+                        }
                     }
-                    // 原版滑杆范围 1–10 秒、0.5 秒一档（divisions 18），默认 4 秒。
-                    Slider(value: controlBarHideBinding, in: 1...10, step: 0.5)
-                }
-                row {
-                    Picker("默认视频比例", selection: aspectRatioBinding) {
-                        ForEach(PlayerAspectRatioMode.allCases) { mode in
-                            Text(mode.label).tag(mode)
+                    row {
+                        Picker("双击快进时长", selection: doubleTapSkipTimeBinding) {
+                            ForEach(Self.doubleTapSkipOptions, id: \.self) { seconds in
+                                Text("\(seconds) 秒").tag(seconds)
+                            }
+                        }
+                    }
+                    row {
+                        Picker("长按倍速", selection: longPressSpeedBinding) {
+                            ForEach(PlaybackSpeed.all, id: \.self) { speed in
+                                Text(PlaybackSpeed.label(speed)).tag(speed)
+                            }
+                        }
+                    }
+                    row {
+                        HStack {
+                            Text("控制栏消失时间")
+                            Spacer(minLength: 8)
+                            Text(controlBarHideLabel)
+                                .foregroundStyle(.secondary)
+                        }
+                        // 原版滑杆范围 1–10 秒、0.5 秒一档（divisions 18），默认 4 秒。
+                        Slider(value: controlBarHideBinding, in: 1...10, step: 0.5)
+                    }
+                    row {
+                        Picker("默认视频比例", selection: aspectRatioBinding) {
+                            ForEach(PlayerAspectRatioMode.allCases) { mode in
+                                Text(mode.label).tag(mode)
+                            }
                         }
                     }
                 }
+                .listRowBackground(KazumiPalette.groupedRow(for: colorScheme))
             }
             Section {
-                // 不带 role: .destructive——恢复默认本来就不删用户数据，
-                // 染成红色会读成「要丢东西」（main 那颗也是普通按钮）。
-                Button {
-                    isConfirmingRestore = true
-                } label: {
-                    Text("恢复默认设置")
+                Group {
+                    // 不带 role: .destructive——恢复默认本来就不删用户数据，
+                    // 染成红色会读成「要丢东西」（main 那颗也是普通按钮）。
+                    Button {
+                        isConfirmingRestore = true
+                    } label: {
+                        Text("恢复默认设置")
+                    }
                 }
+                .listRowBackground(KazumiPalette.groupedRow(for: colorScheme))
             }
             // 页脚那句「将相关设置恢复为默认值」删了（Camo 3510）：点下去弹的确认框里就是这句，
             // 行里再说一遍是重复。
@@ -242,6 +261,7 @@ struct PlayerSettingsScreen: View {
 struct DanmakuSettingsScreen: View {
     @Environment(SettingsStore.self) private var settings
     @Environment(AppRouter.self) private var router
+    @Environment(\.colorScheme) private var colorScheme
     @State private var isConfirmingRestore = false
     /// 恢复默认后顶上那句提示；两秒后自己收起来。
     @State private var showRestoredToast = false
@@ -254,93 +274,108 @@ struct DanmakuSettingsScreen: View {
             // 账号、凭据这些字）。DanDanPlay 返回的每条弹幕自带来路标记，
             // 这三颗就是按标记筛——关掉的那一路不画。
             Section("弹幕来源") {
-                Toggle(isOn: biliBiliSourceBinding) {
-                    Label("BiliBili", systemImage: "tv")
+                Group {
+                    Toggle(isOn: biliBiliSourceBinding) {
+                        Label("BiliBili", systemImage: "tv")
+                    }
+                    Toggle(isOn: gamerSourceBinding) {
+                        Label("Gamer", systemImage: "gamecontroller")
+                    }
+                    Toggle(isOn: danDanSourceBinding) {
+                        Label("弹弹play", systemImage: "bubble.left.and.bubble.right")
+                    }
                 }
-                Toggle(isOn: gamerSourceBinding) {
-                    Label("Gamer", systemImage: "gamecontroller")
-                }
-                Toggle(isOn: danDanSourceBinding) {
-                    Label("弹弹play", systemImage: "bubble.left.and.bubble.right")
-                }
+                .listRowBackground(KazumiPalette.groupedRow(for: colorScheme))
             }
             Section {
-                Button {
-                    router.push(.danmakuShield)
-                } label: {
-                    Label("关键词屏蔽", systemImage: "eye.slash")
+                Group {
+                    Button {
+                        router.push(.danmakuShield)
+                    } label: {
+                        Label("关键词屏蔽", systemImage: "eye.slash")
+                    }
                 }
+                .listRowBackground(KazumiPalette.groupedRow(for: colorScheme))
             } footer: {
                 Text("按关键词过滤掉不想看的弹幕，规则可同步到 WebDAV。")
             }
             Section("弹幕显示") {
-                Toggle("显示弹幕", isOn: enabledBinding)
-                sliderRow(
-                    title: "弹幕区域",
-                    value: "\(Int((settings.danmakuArea * 100).rounded()))%",
-                    binding: areaBinding,
-                    range: 0...1,
-                    step: 0.125
-                )
-                sliderRow(
-                    title: "弹幕持续时间",
-                    value: "\(Int(settings.danmakuDuration.rounded())) 秒",
-                    binding: durationBinding,
-                    range: 2...16,
-                    step: 1
-                )
-                sliderRow(
-                    title: "弹幕行高",
-                    value: String(format: "%.1f", settings.danmakuLineHeight),
-                    binding: lineHeightBinding,
-                    range: 0...3,
-                    step: 0.1
-                )
-                Toggle("弹幕跟随视频倍速", isOn: followSpeedBinding)
-                Toggle("顶部弹幕", isOn: topBinding)
-                Toggle("底部弹幕", isOn: bottomBinding)
-                Toggle("滚动弹幕", isOn: scrollBinding)
-                Toggle("弹幕叠加绘制", isOn: massiveBinding)
-                Toggle("弹幕去重", isOn: dedupBinding)
+                Group {
+                    Toggle("显示弹幕", isOn: enabledBinding)
+                    sliderRow(
+                        title: "弹幕区域",
+                        value: "\(Int((settings.danmakuArea * 100).rounded()))%",
+                        binding: areaBinding,
+                        range: 0...1,
+                        step: 0.125
+                    )
+                    sliderRow(
+                        title: "弹幕持续时间",
+                        value: "\(Int(settings.danmakuDuration.rounded())) 秒",
+                        binding: durationBinding,
+                        range: 2...16,
+                        step: 1
+                    )
+                    sliderRow(
+                        title: "弹幕行高",
+                        value: String(format: "%.1f", settings.danmakuLineHeight),
+                        binding: lineHeightBinding,
+                        range: 0...3,
+                        step: 0.1
+                    )
+                    Toggle("弹幕跟随视频倍速", isOn: followSpeedBinding)
+                    Toggle("顶部弹幕", isOn: topBinding)
+                    Toggle("底部弹幕", isOn: bottomBinding)
+                    Toggle("滚动弹幕", isOn: scrollBinding)
+                    Toggle("弹幕叠加绘制", isOn: massiveBinding)
+                    Toggle("弹幕去重", isOn: dedupBinding)
+                }
+                .listRowBackground(KazumiPalette.groupedRow(for: colorScheme))
             }
             Section("弹幕样式") {
-                Toggle("弹幕描边", isOn: borderBinding)
-                sliderRow(
-                    title: "弹幕描边粗细",
-                    value: String(format: "%.1f", settings.danmakuBorderSize),
-                    binding: borderSizeBinding,
-                    range: 0.1...3,
-                    step: 0.1
-                )
-                Toggle("弹幕颜色", isOn: colorBinding)
-                sliderRow(
-                    title: "字体大小",
-                    value: "\(Int(settings.danmakuFontSize.rounded()))",
-                    binding: fontSizeBinding,
-                    range: 10...48,
-                    step: 1
-                )
-                sliderRow(
-                    title: "字体字重",
-                    value: "\(settings.danmakuFontWeight)",
-                    binding: fontWeightBinding,
-                    range: 1...9,
-                    step: 1
-                )
-                sliderRow(
-                    title: "弹幕不透明度",
-                    value: "\(Int((settings.danmakuOpacity * 100).rounded()))%",
-                    binding: opacityBinding,
-                    range: 0.1...1,
-                    step: 0.05
-                )
+                Group {
+                    Toggle("弹幕描边", isOn: borderBinding)
+                    sliderRow(
+                        title: "弹幕描边粗细",
+                        value: String(format: "%.1f", settings.danmakuBorderSize),
+                        binding: borderSizeBinding,
+                        range: 0.1...3,
+                        step: 0.1
+                    )
+                    Toggle("弹幕颜色", isOn: colorBinding)
+                    sliderRow(
+                        title: "字体大小",
+                        value: "\(Int(settings.danmakuFontSize.rounded()))",
+                        binding: fontSizeBinding,
+                        range: 10...48,
+                        step: 1
+                    )
+                    sliderRow(
+                        title: "字体字重",
+                        value: "\(settings.danmakuFontWeight)",
+                        binding: fontWeightBinding,
+                        range: 1...9,
+                        step: 1
+                    )
+                    sliderRow(
+                        title: "弹幕不透明度",
+                        value: "\(Int((settings.danmakuOpacity * 100).rounded()))%",
+                        binding: opacityBinding,
+                        range: 0.1...1,
+                        step: 0.05
+                    )
+                }
+                .listRowBackground(KazumiPalette.groupedRow(for: colorScheme))
             }
             Section {
-                Button {
-                    isConfirmingRestore = true
-                } label: {
-                    Text("恢复默认设置")
+                Group {
+                    Button {
+                        isConfirmingRestore = true
+                    } label: {
+                        Text("恢复默认设置")
+                    }
                 }
+                .listRowBackground(KazumiPalette.groupedRow(for: colorScheme))
             }
             // 页脚那句「将相关设置恢复为默认值」删了（Camo 3510）：点下去弹的确认框里就是这句，
             // 行里再说一遍是重复。
@@ -437,39 +472,46 @@ struct DanmakuSettingsScreen: View {
 struct DownloadSettingsScreen: View {
     @Environment(AppRouter.self) private var router
     @Environment(DownloadDirectoryStore.self) private var downloadDirectory
+    @Environment(\.colorScheme) private var colorScheme
     @State private var message: String?
 
     var body: some View {
         Form {
             Section {
-                Button {
-                    router.push(.download)
-                } label: {
-                    Label("下载管理", systemImage: "arrow.down.circle")
+                Group {
+                    Button {
+                        router.push(.download)
+                    } label: {
+                        Label("下载管理", systemImage: "arrow.down.circle")
+                    }
                 }
+                .listRowBackground(KazumiPalette.groupedRow(for: colorScheme))
             } footer: {
                 Text("下载管理里可以查看已下载的剧集。")
             }
             Section {
-                Button {
-                    chooseDirectory()
-                } label: {
-                    HStack {
-                        Text("下载位置")
-                            .foregroundStyle(.primary)
-                        Spacer(minLength: 8)
-                        Text(downloadDirectory.displayName)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
+                Group {
+                    Button {
+                        chooseDirectory()
+                    } label: {
+                        HStack {
+                            Text("下载位置")
+                                .foregroundStyle(.primary)
+                            Spacer(minLength: 8)
+                            Text(downloadDirectory.displayName)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        }
+                    }
+                    if downloadDirectory.hasCustomSelection {
+                        Button("改回应用内") {
+                            downloadDirectory.reset()
+                            message = nil
+                        }
                     }
                 }
-                if downloadDirectory.hasCustomSelection {
-                    Button("改回应用内") {
-                        downloadDirectory.reset()
-                        message = nil
-                    }
-                }
+                .listRowBackground(KazumiPalette.groupedRow(for: colorScheme))
             } footer: {
                 if let message {
                     Text(message)
@@ -503,6 +545,7 @@ struct DownloadSettingsScreen: View {
 struct NotificationSettingsScreen: View {
     @Environment(SettingsStore.self) private var settings
     @Environment(AppEnvironment.self) private var environment
+    @Environment(\.colorScheme) private var colorScheme
     /// 系统通知权限（进页面时查一次，申请/跳设置回来再查）。
     @State private var permission: UNAuthorizationStatus = .notDetermined
     @State private var isBusy = false
@@ -513,18 +556,21 @@ struct NotificationSettingsScreen: View {
     var body: some View {
         Form {
             Section {
-                Button {
-                    Task { await handlePermissionTap() }
-                } label: {
-                    HStack {
-                        Text("通知权限")
-                            .foregroundStyle(.primary)
-                        Spacer(minLength: 8)
-                        Text(permissionLabel)
-                            .foregroundStyle(permission == .authorized ? Color.secondary : Color.orange)
+                Group {
+                    Button {
+                        Task { await handlePermissionTap() }
+                    } label: {
+                        HStack {
+                            Text("通知权限")
+                                .foregroundStyle(.primary)
+                            Spacer(minLength: 8)
+                            Text(permissionLabel)
+                                .foregroundStyle(permission == .authorized ? Color.secondary : Color.orange)
+                        }
                     }
+                    .disabled(isBusy)
                 }
-                .disabled(isBusy)
+                .listRowBackground(KazumiPalette.groupedRow(for: colorScheme))
             } header: {
                 Text("通知权限")
             } footer: {
@@ -533,31 +579,37 @@ struct NotificationSettingsScreen: View {
 
             // 一行一个菜单（LP 2532）：左边写「提醒范围」，右边的值点开选，跟深色模式那行一致。
             Section {
-                Picker("提醒范围", selection: scopeBinding) {
-                    Text("关闭").tag(false)
-                    Text("我在追的动画").tag(true)
+                Group {
+                    Picker("提醒范围", selection: scopeBinding) {
+                        Text("关闭").tag(false)
+                        Text("我在追的动画").tag(true)
+                    }
+                    .pickerStyle(.menu)
+                    .disabled(isBusy)
                 }
-                .pickerStyle(.menu)
-                .disabled(isBusy)
+                .listRowBackground(KazumiPalette.groupedRow(for: colorScheme))
             } footer: {
                 Text("「我在追的动画」包含所有标记「在看」的番剧。")
             }
 
             Section {
-                Button {
-                    Task { await showSchedule() }
-                } label: {
-                    HStack {
-                        Text("查看排程")
-                            .foregroundStyle(.primary)
-                        Spacer(minLength: 8)
-                        Text(scheduledSummary)
-                            .foregroundStyle(.secondary)
-                        Image(systemName: "chevron.right")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.tertiary)
+                Group {
+                    Button {
+                        Task { await showSchedule() }
+                    } label: {
+                        HStack {
+                            Text("查看排程")
+                                .foregroundStyle(.primary)
+                            Spacer(minLength: 8)
+                            Text(scheduledSummary)
+                                .foregroundStyle(.secondary)
+                            Image(systemName: "chevron.right")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.tertiary)
+                        }
                     }
                 }
+                .listRowBackground(KazumiPalette.groupedRow(for: colorScheme))
             } header: {
                 Text("通知排程")
             } footer: {
@@ -708,6 +760,7 @@ private struct UpdateScheduleSheet: View {
 
 struct ThemeSettingsScreen: View {
     @Environment(SettingsStore.self) private var settings
+    @Environment(\.colorScheme) private var colorScheme
     @State private var isShowingThemeColorSheet = false
 
     /// 与原版 interface_settings.dart 的 defaultPageMap 一致。
@@ -721,55 +774,64 @@ struct ThemeSettingsScreen: View {
     var body: some View {
         Form {
             Section("主题") {
-                row {
-                    // LP 3513／Colo 3514：叫「应用主题」更准——这一行本来就是跟随系统／浅色／深色三档。
-                    Picker("应用主题", selection: themeBinding) {
-                        ForEach(KazumiThemeMode.allCases) { mode in
-                            Text(mode.title).tag(mode)
+                Group {
+                    row {
+                        // LP 3513／Colo 3514：叫「应用主题」更准——这一行本来就是跟随系统／浅色／深色三档。
+                        Picker("应用主题", selection: themeBinding) {
+                            ForEach(KazumiThemeMode.allCases) { mode in
+                                Text(mode.title).tag(mode)
+                            }
                         }
                     }
-                }
-                row {
-                    Button {
-                        isShowingThemeColorSheet = true
-                    } label: {
-                        HStack {
-                            // LP 3513：配色改名「强调色」。
-                            Label("强调色", systemImage: "paintpalette")
-                            Spacer()
-                            Text(settings.themeColor.title)
-                                .foregroundStyle(.secondary)
-                            KazumiThemeColorSwatch(color: settings.themeColor, size: 18)
+                    row {
+                        Button {
+                            isShowingThemeColorSheet = true
+                        } label: {
+                            HStack {
+                                // LP 3513：配色改名「强调色」。
+                                Label("强调色", systemImage: "paintpalette")
+                                Spacer()
+                                Text(settings.themeColor.title)
+                                    .foregroundStyle(.secondary)
+                                KazumiThemeColorSwatch(color: settings.themeColor, size: 18)
+                            }
                         }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
                 }
+                .listRowBackground(KazumiPalette.groupedRow(for: colorScheme))
             }
             // Colo 2595：显示效果一段装「屏幕上多显示点什么」的那几项。
             Section("显示效果") {
-                // 「OLED优化」中间没有空格，照 main 的写法。
-                Toggle("OLED优化", isOn: oledBinding)
-                Toggle("触感反馈", isOn: hapticBinding)
-                Toggle("上滑时缩小底部标签栏", isOn: tabBarBinding)
-                // LP 3517：这一行挪到本组最后，说明也改准——
-                // 原来写「概览和番剧列表」，可我们的列表根本不显示评分，认这个开关的是时间表。
-                // 这是整页唯一留着说明小字的一行：名字讲不出它管哪些地方。
-                Toggle(isOn: showRatingBinding) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("显示评分")
-                        Text("关闭后隐藏概览和时间表里的评分信息")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                Group {
+                    // 「OLED优化」中间没有空格，照 main 的写法。
+                    Toggle("OLED优化", isOn: oledBinding)
+                    Toggle("触感反馈", isOn: hapticBinding)
+                    Toggle("上滑时缩小底部标签栏", isOn: tabBarBinding)
+                    // LP 3517：这一行挪到本组最后，说明也改准——
+                    // 原来写「概览和番剧列表」，可我们的列表根本不显示评分，认这个开关的是时间表。
+                    // 这是整页唯一留着说明小字的一行：名字讲不出它管哪些地方。
+                    Toggle(isOn: showRatingBinding) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("显示评分")
+                            Text("关闭后隐藏概览和时间表里的评分信息")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                     }
                 }
+                .listRowBackground(KazumiPalette.groupedRow(for: colorScheme))
             }
             // Camo 2599：段已经叫「启动」，行里不再说一遍启动。
             Section("启动") {
-                Picker("打开时进入", selection: startupBinding) {
-                    ForEach(Self.startupPages, id: \.value) { page in
-                        Text(page.title).tag(page.value)
+                Group {
+                    Picker("打开时进入", selection: startupBinding) {
+                        ForEach(Self.startupPages, id: \.value) { page in
+                            Text(page.title).tag(page.value)
+                        }
                     }
                 }
+                .listRowBackground(KazumiPalette.groupedRow(for: colorScheme))
             }
         }
         .kazumiSettingsDetail("外观与界面")
@@ -830,25 +892,29 @@ struct ThemeSettingsScreen: View {
 
 struct NetworkSettingsScreen: View {
     @Environment(SettingsStore.self) private var settings
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         Form {
             // 一段三行照原版 NetworkMirrorSettings：番剧条目、规则仓库、图片。
             // 代理那两行 LP 2559 让删了（iOS 上开 VPN 就够），连说明一起不留。
             Section("访问加速") {
-                Picker("番剧条目加速", selection: bangumiAccelerationBinding) {
-                    Text("直连").tag(false)
-                    Text("镜像").tag(true)
-                }
-                .pickerStyle(.menu)
+                Group {
+                    Picker("番剧条目加速", selection: bangumiAccelerationBinding) {
+                        Text("直连").tag(false)
+                        Text("镜像").tag(true)
+                    }
+                    .pickerStyle(.menu)
 
-                Toggle("规则仓库镜像", isOn: gitProxyBinding)
+                    Toggle("规则仓库镜像", isOn: gitProxyBinding)
 
-                Picker("图片加速", selection: imageAccelerationBinding) {
-                    Text("直连").tag(ImageAcceleration.direct.rawValue)
-                    Text("镜像").tag(ImageAcceleration.mirror.rawValue)
+                    Picker("图片加速", selection: imageAccelerationBinding) {
+                        Text("直连").tag(ImageAcceleration.direct.rawValue)
+                        Text("镜像").tag(ImageAcceleration.mirror.rawValue)
+                    }
+                    .pickerStyle(.menu)
                 }
-                .pickerStyle(.menu)
+                .listRowBackground(KazumiPalette.groupedRow(for: colorScheme))
             }
         }
         .kazumiSettingsDetail("网络设置")
@@ -877,20 +943,27 @@ struct NetworkSettingsScreen: View {
 
 struct UpdateSettingsScreen: View {
     @Environment(SettingsStore.self) private var settings
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         Form {
             Section {
-                Toggle("应用更新", isOn: autoUpdateBinding)
-                Toggle("规则更新", isOn: pluginUpdateBinding)
+                Group {
+                    Toggle("应用更新", isOn: autoUpdateBinding)
+                    Toggle("规则更新", isOn: pluginUpdateBinding)
+                }
+                .listRowBackground(KazumiPalette.groupedRow(for: colorScheme))
             } header: {
                 Text("启动时检查更新")
             } footer: {
                 Text("应用更新会在启动时比对最新版本并提示更新日志；规则更新会检查已安装规则的版本。")
             }
             Section("应用") {
-                LabeledContent("当前版本", value: KazumiAppInfo.fullVersion)
-                LabeledContent("规则 API 级别", value: "\(KazumiAppInfo.ruleAPILevel)")
+                Group {
+                    LabeledContent("当前版本", value: KazumiAppInfo.fullVersion)
+                    LabeledContent("规则 API 级别", value: "\(KazumiAppInfo.ruleAPILevel)")
+                }
+                .listRowBackground(KazumiPalette.groupedRow(for: colorScheme))
             }
         }
         .kazumiSettingsDetail("更新设置")

@@ -45,7 +45,8 @@ struct LogScreen: View {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(entry.timestamp, format: .dateTime.hour().minute().second())
                                     .font(.caption2.monospaced())
-                                    .foregroundStyle(.tertiary)
+                                    // Colo 3532：说明/辅助文字用 secondary，tertiary 只留给装饰。
+                                    .foregroundStyle(.secondary)
                                 Text(entry.message)
                                     .font(.caption.monospaced())
                                     .foregroundStyle(.primary)
@@ -54,7 +55,8 @@ struct LogScreen: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(10)
                             .background(
-                                KazumiPalette.cardShape(cornerRadius: 10, scheme: colorScheme)
+                                // Colo 3532：灰底页面的日志卡只留 groupedRow 实面，不描边。
+                                KazumiPalette.cardShape(cornerRadius: 10, scheme: colorScheme, bordered: false)
                             )
                         }
                     }
@@ -66,7 +68,8 @@ struct LogScreen: View {
                 .scrollEdgeEffectStyle(.soft, for: .top)
             }
         }
-        .background(KazumiPalette.background(for: colorScheme).ignoresSafeArea())
+        // Colo 3532：二级页统一用分组页底。
+        .background(KazumiPalette.groupedBackground(for: colorScheme).ignoresSafeArea())
         .navigationTitle("运行日志")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {

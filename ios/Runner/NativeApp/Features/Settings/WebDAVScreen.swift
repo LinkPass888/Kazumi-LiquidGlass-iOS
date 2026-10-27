@@ -50,7 +50,8 @@ struct WebDAVScreen: View {
         .navigationTitle("多设备同步")
         .navigationBarTitleDisplayMode(.inline)
         .scrollContentBackground(.hidden)
-        .background(KazumiPalette.background(for: colorScheme).ignoresSafeArea())
+        // Colo 3532：二级页统一用分组页底。
+        .background(KazumiPalette.groupedBackground(for: colorScheme).ignoresSafeArea())
         .onAppear {
             // 地址空着就没有可折的东西：直接摊开，第一次用的人少点一下。
             if settings.webDAVURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -63,33 +64,37 @@ struct WebDAVScreen: View {
 
     private var connectionSection: some View {
         Section {
-            credentialsRow
+            Group {
+                credentialsRow
 
-            Button {
-                Task { await saveAndTest() }
-            } label: {
-                Text("保存并测试")
-                    .frame(maxWidth: .infinity)
-            }
-            .disabled(isBusy || !hasCredentials)
-
-            // 结果行常显、位置固定：按完就在原处换字，整段不会跳一下。
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                if isBusy {
-                    ProgressView()
-                        .controlSize(.small)
+                Button {
+                    Task { await saveAndTest() }
+                } label: {
+                    Text("保存并测试")
+                        .frame(maxWidth: .infinity)
                 }
-                Text(statusMessage ?? "尚未连接")
-                    .font(.footnote)
-                    .foregroundStyle(statusIsError ? Color.orange : Color.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 0)
-            }
-            .accessibilityElement(children: .combine)
+                .disabled(isBusy || !hasCredentials)
 
-            // 总开关在账密下面（LP 2026-10-25）。
-            Toggle("启用 WebDAV", isOn: enableBinding)
-                .disabled(!hasCredentials)
+                // 结果行常显、位置固定：按完就在原处换字，整段不会跳一下。
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    if isBusy {
+                        ProgressView()
+                            .controlSize(.small)
+                    }
+                    Text(statusMessage ?? "尚未连接")
+                        .font(.footnote)
+                        .foregroundStyle(statusIsError ? Color.orange : Color.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                }
+                .accessibilityElement(children: .combine)
+
+                // 总开关在账密下面（LP 2026-10-25）。
+                Toggle("启用 WebDAV", isOn: enableBinding)
+                    .disabled(!hasCredentials)
+            }
+            // Colo 3532：Form 行底色显式取 groupedRow，不依赖系统动态色。
+            .listRowBackground(KazumiPalette.groupedRow(for: colorScheme))
         } header: {
             Text("连接你的云盘")
         } footer: {
@@ -186,6 +191,7 @@ struct WebDAVScreen: View {
             .disabled(!canSync)
             .opacity(canSync ? 1 : 0.45)
             .accessibilityValue(canSync ? "" : "需要先连接")
+            .listRowBackground(KazumiPalette.groupedRow(for: colorScheme))
         } header: {
             Text("要同步什么")
         } footer: {
@@ -226,6 +232,7 @@ struct WebDAVScreen: View {
             .disabled(!canSync)
             .opacity(canSync ? 1 : 0.45)
             .accessibilityValue(canSync ? "" : "需要先连接")
+            .listRowBackground(KazumiPalette.groupedRow(for: colorScheme))
         } header: {
             Text("立即同步")
         }
@@ -235,20 +242,23 @@ struct WebDAVScreen: View {
 
     private var resultSection: some View {
         Section {
-            Text(lastSyncLine)
-                .frame(minHeight: 24, alignment: .leading)
+            Group {
+                Text(lastSyncLine)
+                    .frame(minHeight: 24, alignment: .leading)
 
-            if !lastSyncError.isEmpty {
-                Text(lastSyncError)
-                    .font(.footnote)
-                    .foregroundStyle(Color.orange)
-                    .fixedSize(horizontal: false, vertical: true)
-            } else if !lastSyncSummary.isEmpty {
-                Text(lastSyncSummary)
-                    .font(.footnote)
-                    .foregroundStyle(Color.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                if !lastSyncError.isEmpty {
+                    Text(lastSyncError)
+                        .font(.footnote)
+                        .foregroundStyle(Color.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else if !lastSyncSummary.isEmpty {
+                    Text(lastSyncSummary)
+                        .font(.footnote)
+                        .foregroundStyle(Color.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
+            .listRowBackground(KazumiPalette.groupedRow(for: colorScheme))
         } header: {
             Text("同步结果")
         } footer: {

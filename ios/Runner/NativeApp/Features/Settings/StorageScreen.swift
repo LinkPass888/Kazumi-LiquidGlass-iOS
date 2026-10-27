@@ -26,18 +26,21 @@ struct StorageScreen: View {
     var body: some View {
         Form {
             Section {
-                Button {
-                    isConfirmingClear = true
-                } label: {
-                    HStack(spacing: 12) {
-                        Label("清除图片缓存", systemImage: "photo.on.rectangle.angled")
-                        Spacer()
-                        Text(cacheDescription)
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
+                Group {
+                    Button {
+                        isConfirmingClear = true
+                    } label: {
+                        HStack(spacing: 12) {
+                            Label("清除图片缓存", systemImage: "photo.on.rectangle.angled")
+                            Spacer()
+                            Text(cacheDescription)
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
                     }
+                    .disabled(isClearing)
                 }
-                .disabled(isClearing)
+                .listRowBackground(KazumiPalette.groupedRow(for: colorScheme))
             } header: {
                 Text("图片缓存")
             } footer: {
@@ -45,13 +48,16 @@ struct StorageScreen: View {
             }
 
             Section {
-                HStack {
-                    Label("更新时间缓存", systemImage: "clock.arrow.circlepath")
-                    Spacer()
-                    Text("\(airTimeCache.fileCount) 个季度 / \(airTimeCache.bytes) 字节")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
+                Group {
+                    HStack {
+                        Label("更新时间缓存", systemImage: "clock.arrow.circlepath")
+                        Spacer()
+                        Text("\(airTimeCache.fileCount) 个季度 / \(airTimeCache.bytes) 字节")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
                 }
+                .listRowBackground(KazumiPalette.groupedRow(for: colorScheme))
             } header: {
                 Text("更新时间")
             } footer: {
@@ -59,33 +65,40 @@ struct StorageScreen: View {
             }
 
             Section {
-                Button {
-                    router.push(.logs)
-                } label: {
-                    HStack {
-                        Label("运行日志", systemImage: "doc.text.magnifyingglass")
-                        Spacer()
-                        Image(systemName: "chevron.right")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.tertiary)
+                Group {
+                    Button {
+                        router.push(.logs)
+                    } label: {
+                        HStack {
+                            Label("运行日志", systemImage: "doc.text.magnifyingglass")
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.tertiary)
+                        }
                     }
                 }
+                .listRowBackground(KazumiPalette.groupedRow(for: colorScheme))
             } header: {
                 Text("诊断")
             }
 
             if let message {
                 Section {
-                    Text(message)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
+                    Group {
+                        Text(message)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                    .listRowBackground(KazumiPalette.groupedRow(for: colorScheme))
                 }
             }
         }
         .navigationTitle("存储与日志")
         .navigationBarTitleDisplayMode(.inline)
         .scrollContentBackground(.hidden)
-        .background(KazumiPalette.background(for: colorScheme).ignoresSafeArea())
+        // Colo 3532：二级页统一用分组页底。
+        .background(KazumiPalette.groupedBackground(for: colorScheme).ignoresSafeArea())
         .task { await refreshSize() }
         .confirmationDialog("清除图片缓存？", isPresented: $isConfirmingClear, titleVisibility: .visible) {
             Button("清除图片缓存", role: .destructive) {

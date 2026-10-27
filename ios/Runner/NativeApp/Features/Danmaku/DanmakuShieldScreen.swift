@@ -32,7 +32,8 @@ struct DanmakuShieldScreen: View {
                             .padding(.horizontal, 12)
                             .padding(.vertical, 10)
                             .background(
-                                KazumiPalette.cardShape(cornerRadius: 12, scheme: colorScheme)
+                                // Colo 3532：灰底页面的输入框只留 groupedRow 实面，不描边。
+                                KazumiPalette.cardShape(cornerRadius: 12, scheme: colorScheme, bordered: false)
                             )
 
                         Toggle("正则", isOn: $isRegex)
@@ -64,7 +65,8 @@ struct DanmakuShieldScreen: View {
         }
         // 顶部滚动边缘：渐进模糊（.soft），不另外加材质或底色。
         .scrollEdgeEffectStyle(.soft, for: .top)
-        .background(KazumiPalette.background(for: colorScheme).ignoresSafeArea())
+        // Colo 3532：二级页统一用分组页底。
+        .background(KazumiPalette.groupedBackground(for: colorScheme).ignoresSafeArea())
         .navigationTitle("弹幕屏蔽")
         .navigationBarTitleDisplayMode(.inline)
         .task {
@@ -87,7 +89,7 @@ struct DanmakuShieldScreen: View {
         if rules.isEmpty {
             Text("还没有屏蔽规则")
                 .font(.footnote)
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity)
                 .padding(.top, 40)
         } else {
@@ -114,7 +116,7 @@ struct DanmakuShieldScreen: View {
                     .padding(.horizontal, 14)
                     .padding(.vertical, 11)
                     .background(
-                        KazumiPalette.cardShape(cornerRadius: 12, scheme: colorScheme)
+                        KazumiPalette.cardShape(cornerRadius: 12, scheme: colorScheme, bordered: false)
                     )
                 }
             }

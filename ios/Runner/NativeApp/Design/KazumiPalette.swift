@@ -113,12 +113,23 @@ enum KazumiPalette {
     /// 一张卡片的底：白底＋0.5 点淡描边（Colo 3483）。
     ///
     /// 页面底改白以后，卡片自己也是白的，靠这一个函数统一分边，免得到处写两份形状。
-    static func cardShape(cornerRadius: CGFloat, scheme: ColorScheme) -> some View {
+    ///
+    /// `bordered: false` 是给「灰底页面」用的（Colo 3532）：那批页面的页面底已经是
+    /// `groupedBackground`，卡片只要一块实面就分得出来，再描一圈是多余的；
+    /// 底色同时换成 `groupedRow`（浅白／深 #1C1C1E），跟设置页的名单同一套值。
+    /// 白底白卡那批（追番、时间表、搜索、详情、推荐）保持默认的 `true`。
+    static func cardShape(
+        cornerRadius: CGFloat,
+        scheme: ColorScheme,
+        bordered: Bool = true
+    ) -> some View {
         RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-            .fill(cardSurface(for: scheme))
+            .fill(bordered ? cardSurface(for: scheme) : groupedRow(for: scheme))
             .overlay {
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .strokeBorder(cardStroke(for: scheme), lineWidth: 0.5)
+                if bordered {
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .strokeBorder(cardStroke(for: scheme), lineWidth: 0.5)
+                }
             }
     }
 

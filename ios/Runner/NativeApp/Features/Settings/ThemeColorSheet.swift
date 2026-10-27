@@ -14,6 +14,7 @@ import SwiftUI
 struct ThemeColorSheet: View {
     @Binding var selection: KazumiThemeColor
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
 
     private let columns = [GridItem(.adaptive(minimum: 74), spacing: 16)]
 
@@ -38,6 +39,8 @@ struct ThemeColorSheet: View {
                 }
                 .padding(20)
             }
+            // Colo 3532：sheet 的滚动区也用分组页底，与设置二级页一致。
+            .background(KazumiPalette.groupedBackground(for: colorScheme).ignoresSafeArea())
             .navigationTitle("配色方案")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -71,8 +74,13 @@ private struct KazumiPaletteCard: View {
     var body: some View {
         ZStack {
             // 卡片底。
-            KazumiPalette.cardShape(cornerRadius: KazumiPalette.cardCornerRadius, scheme: colorScheme)
-                .frame(width: 62, height: 62)
+            // Colo 3532：灰底上的卡片只留 groupedRow 实面，不描边。
+            KazumiPalette.cardShape(
+                cornerRadius: KazumiPalette.cardCornerRadius,
+                scheme: colorScheme,
+                bordered: false
+            )
+            .frame(width: 62, height: 62)
 
             // 三块色拼成的圆：上半 / 左下 / 右下。
             VStack(spacing: 0) {

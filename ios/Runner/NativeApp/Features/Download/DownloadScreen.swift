@@ -48,7 +48,8 @@ struct DownloadScreen: View {
                             }
                             .padding(12)
                             .background(
-                                KazumiPalette.cardShape(cornerRadius: 16, scheme: colorScheme)
+                                // Colo 3532：灰底页面的卡片只留 groupedRow 实面，不描边。
+                                KazumiPalette.cardShape(cornerRadius: 16, scheme: colorScheme, bordered: false)
                             )
                         }
                     }
@@ -59,7 +60,8 @@ struct DownloadScreen: View {
                 .scrollEdgeEffectStyle(.soft, for: .top)
             }
         }
-        .background(KazumiPalette.background(for: colorScheme).ignoresSafeArea())
+        // Colo 3532：二级页统一用分组页底。
+        .background(KazumiPalette.groupedBackground(for: colorScheme).ignoresSafeArea())
         .navigationTitle("下载管理")
         .navigationBarTitleDisplayMode(.inline)
         // 位置可能在设置里改过：每次进这一页都按当前的下载目录重读一遍。

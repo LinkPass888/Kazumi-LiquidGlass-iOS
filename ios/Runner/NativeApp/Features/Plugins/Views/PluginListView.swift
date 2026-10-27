@@ -101,36 +101,40 @@ struct PluginListView: View {
             // 两行同一个 Section：只一条 0.5 分隔线，看成一件事的两种做法。
             // 行高按 48 定在行本身——内容高度和 rowInsets 都试过，List 会自己撑到 52。
             Section {
-                Button {
-                    isShowingShop = true
-                } label: {
-                    HStack(spacing: 0) {
-                        // 这两行是页面里的动作入口，字跟图标都用正文色，不跟主题色走。
-                        // 必须写 Color.primary：光写 .primary 是「当前前景色的主档」，
-                        // 而 List 里 Button 的前景就是主题色，等于没改。
-                        Label("规则仓库", systemImage: "shippingbox")
-                            .foregroundStyle(Color.primary)
-                        Spacer(minLength: 8)
-                        Image(systemName: "chevron.right")
-                            .font(.footnote.weight(.semibold))
-                            .foregroundStyle(.tertiary)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
-                }
-                .frame(height: 48)
-                .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
-
-                Menu {
-                    addRuleMenuItems
-                } label: {
-                    Label("添加规则", systemImage: "plus")
-                        .foregroundStyle(Color.primary)
+                Group {
+                    Button {
+                        isShowingShop = true
+                    } label: {
+                        HStack(spacing: 0) {
+                            // 这两行是页面里的动作入口，字跟图标都用正文色，不跟主题色走。
+                            // 必须写 Color.primary：光写 .primary 是「当前前景色的主档」，
+                            // 而 List 里 Button 的前景就是主题色，等于没改。
+                            Label("规则仓库", systemImage: "shippingbox")
+                                .foregroundStyle(Color.primary)
+                            Spacer(minLength: 8)
+                            Image(systemName: "chevron.right")
+                                .font(.footnote.weight(.semibold))
+                                .foregroundStyle(.tertiary)
+                        }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .contentShape(Rectangle())
+                    }
+                    .frame(height: 48)
+                    .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
+
+                    Menu {
+                        addRuleMenuItems
+                    } label: {
+                        Label("添加规则", systemImage: "plus")
+                            .foregroundStyle(Color.primary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(Rectangle())
+                    }
+                    .frame(height: 48)
+                    .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
                 }
-                .frame(height: 48)
-                .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
+                // Colo 3532：hero 底上的 List 行统一用 groupedRow 实面，不靠系统动态色。
+                .listRowBackground(KazumiPalette.groupedRow(for: colorScheme))
             }
 
             // 添加规则下面一排三个胶囊：前两个筛列表，第三个是动作。
@@ -143,7 +147,8 @@ struct PluginListView: View {
                     updateAllCapsule
                 }
                 .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 4, trailing: 16))
-                .listRowBackground(Color.clear)
+                // Colo 3532：原来清成透明让 hero 底透出来，现改为 groupedRow 白面（深色 #1C1C1E）。
+                .listRowBackground(KazumiPalette.groupedRow(for: colorScheme))
                 .listRowSeparator(.hidden)
             }
 
@@ -153,7 +158,7 @@ struct PluginListView: View {
                         "还没有安装规则",
                         systemImage: "puzzlepiece.extension"
                     )
-                    .listRowBackground(Color.clear)
+                    .listRowBackground(KazumiPalette.groupedRow(for: colorScheme))
                     .listRowSeparator(.hidden)
                 }
             } else if visiblePlugins.isEmpty {
@@ -162,11 +167,13 @@ struct PluginListView: View {
                         "没有可更新的规则",
                         systemImage: "checkmark.circle"
                     )
+                    .listRowBackground(KazumiPalette.groupedRow(for: colorScheme))
                 }
             } else {
                 Section {
                     ForEach(visiblePlugins) { plugin in
                         row(plugin)
+                            .listRowBackground(KazumiPalette.groupedRow(for: colorScheme))
                     }
                     .onMove(perform: move)
                 } footer: {

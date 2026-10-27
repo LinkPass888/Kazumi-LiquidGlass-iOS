@@ -56,7 +56,7 @@ struct AboutScreen: View {
                         .foregroundStyle(.secondary)
                     Text("规则 API 级别 \(KazumiAppInfo.ruleAPILevel)")
                         .font(.caption2)
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(.secondary)
                 }
                 .padding(.top, 12)
 
@@ -117,7 +117,7 @@ struct AboutScreen: View {
 
                 Text("本应用与上述数据提供方无隶属关系，番剧信息与评论版权归原作者所有。")
                     .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 24)
             }
@@ -126,7 +126,8 @@ struct AboutScreen: View {
         }
         // 顶部滚动边缘：渐进模糊（.soft）。
         .scrollEdgeEffectStyle(.soft, for: .top)
-        .background(KazumiPalette.background(for: colorScheme).ignoresSafeArea())
+        // Colo 3532：二级页统一用分组页底（显式按 colorScheme 取色）。
+        .background(KazumiPalette.groupedBackground(for: colorScheme).ignoresSafeArea())
         .navigationTitle("关于")
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -165,7 +166,8 @@ struct AboutScreen: View {
             .padding(.vertical, 12)
             .contentShape(Rectangle())
             .background(
-                KazumiPalette.cardShape(cornerRadius: 14, scheme: colorScheme)
+                // Colo 3532：灰底页面上的卡片不再描边，只留一块 groupedRow 实面。
+                KazumiPalette.cardShape(cornerRadius: 14, scheme: colorScheme, bordered: false)
             )
         }
         .buttonStyle(.plain)
@@ -234,7 +236,7 @@ struct AboutScreen: View {
         .padding(.vertical, 12)
         .contentShape(Rectangle())
         .background(
-            KazumiPalette.cardShape(cornerRadius: 14, scheme: colorScheme)
+            KazumiPalette.cardShape(cornerRadius: 14, scheme: colorScheme, bordered: false)
         )
     }
 
@@ -255,7 +257,7 @@ struct AboutScreen: View {
             .padding(.vertical, 12)
             .contentShape(Rectangle())
             .background(
-                KazumiPalette.cardShape(cornerRadius: 14, scheme: colorScheme)
+                KazumiPalette.cardShape(cornerRadius: 14, scheme: colorScheme, bordered: false)
             )
         }
         .buttonStyle(.plain)

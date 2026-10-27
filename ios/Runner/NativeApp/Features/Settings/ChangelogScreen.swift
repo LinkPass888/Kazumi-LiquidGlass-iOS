@@ -44,7 +44,7 @@ struct ChangelogScreen: View {
             .padding(.top, 8)
             .padding(.bottom, 32)
         }
-        .background(KazumiPalette.heroBackground(for: colorScheme).ignoresSafeArea())
+        .background(KazumiPalette.groupedBackground(for: colorScheme).ignoresSafeArea())
         .navigationTitle("更新日志")
         .navigationBarTitleDisplayMode(.inline)
         .task {
@@ -112,8 +112,9 @@ struct ChangelogScreen: View {
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
+            // Colo 3532：分组页底上的卡片用 groupedRow 实面，不描边。
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color(.secondarySystemGroupedBackground))
+                .fill(KazumiPalette.groupedRow(for: colorScheme))
         )
     }
 

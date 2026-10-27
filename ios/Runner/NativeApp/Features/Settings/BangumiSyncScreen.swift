@@ -63,7 +63,8 @@ struct BangumiSyncScreen: View {
         .navigationTitle("追番同步")
         .navigationBarTitleDisplayMode(.inline)
         .scrollContentBackground(.hidden)
-        .background(KazumiPalette.background(for: colorScheme).ignoresSafeArea())
+        // Colo 3532：二级页统一用分组页底。
+        .background(KazumiPalette.groupedBackground(for: colorScheme).ignoresSafeArea())
         .toolbar {
             // 同步进行中不给返回：中途退出去，用户不知道那半截到底写没写进 Bangumi。
             if busy {
@@ -84,90 +85,94 @@ struct BangumiSyncScreen: View {
 
     private var accountSection: some View {
         Section {
-            VStack(alignment: .leading, spacing: 0) {
-                Button {
-                    withAnimation(.snappy(duration: 0.2)) {
-                        isTokenExpanded.toggle()
+            Group {
+                VStack(alignment: .leading, spacing: 0) {
+                    Button {
+                        withAnimation(.snappy(duration: 0.2)) {
+                            isTokenExpanded.toggle()
+                        }
+                    } label: {
+                        HStack(spacing: 8) {
+                            Text("Access Token")
+                                .foregroundStyle(Color.primary)
+                            Spacer(minLength: 8)
+                            Text(tokenSummary)
+                                .foregroundStyle(Color.secondary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                            Image(systemName: "chevron.down")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(Color.secondary)
+                                .rotationEffect(.degrees(isTokenExpanded ? 180 : 0))
+                        }
+                        .frame(minHeight: 44)
+                        .contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
+                    .disabled(busy)
+                    .accessibilityLabel("Access Token")
+                    .accessibilityValue(tokenSummary)
+                    .accessibilityHint(isTokenExpanded ? "收起令牌" : "展开令牌")
+
+                    if isTokenExpanded {
+                        HStack(spacing: 8) {
+                            Group {
+                                if isTokenVisible {
+                                    TextField("Access Token", text: $tokenText)
+                                } else {
+                                    SecureField("Access Token", text: $tokenText)
+                                }
+                            }
+                            .autocorrectionDisabled()
+                            .textInputAutocapitalization(.never)
+                            .disabled(busy)
+                            .onChange(of: tokenText) {
+                                tokenError = nil
+                                tokenStatus = nil
+                            }
+
+                            Button {
+                                isTokenVisible.toggle()
+                            } label: {
+                                Image(systemName: isTokenVisible ? "eye.slash" : "eye")
+                                    .frame(width: 44, height: 44)
+                            }
+                            .buttonStyle(.borderless)
+                            .disabled(busy)
+                            .accessibilityLabel(isTokenVisible ? "隐藏访问令牌" : "显示访问令牌")
+                        }
+                        .frame(minHeight: 44)
+                    }
+                }
+
+                // 折区外面：不展开也能验。
+                Button {
+                    saveToken()
                 } label: {
-                    HStack(spacing: 8) {
-                        Text("Access Token")
+                    Text(action == .verify ? "正在测试…" : "保存并测试")
+                        .frame(maxWidth: .infinity)
+                }
+                .disabled(busy)
+
+                Button {
+                    openTokenPage()
+                } label: {
+                    HStack {
+                        Text("获取授权码")
                             .foregroundStyle(Color.primary)
                         Spacer(minLength: 8)
-                        Text(tokenSummary)
-                            .foregroundStyle(Color.secondary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                        Image(systemName: "chevron.down")
+                        Image(systemName: "arrow.up.right")
                             .font(.system(size: 13, weight: .semibold))
                             .foregroundStyle(Color.secondary)
-                            .rotationEffect(.degrees(isTokenExpanded ? 180 : 0))
                     }
                     .frame(minHeight: 44)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .disabled(busy)
-                .accessibilityLabel("Access Token")
-                .accessibilityValue(tokenSummary)
-                .accessibilityHint(isTokenExpanded ? "收起令牌" : "展开令牌")
-
-                if isTokenExpanded {
-                    HStack(spacing: 8) {
-                        Group {
-                            if isTokenVisible {
-                                TextField("Access Token", text: $tokenText)
-                            } else {
-                                SecureField("Access Token", text: $tokenText)
-                            }
-                        }
-                        .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
-                        .disabled(busy)
-                        .onChange(of: tokenText) {
-                            tokenError = nil
-                            tokenStatus = nil
-                        }
-
-                        Button {
-                            isTokenVisible.toggle()
-                        } label: {
-                            Image(systemName: isTokenVisible ? "eye.slash" : "eye")
-                                .frame(width: 44, height: 44)
-                        }
-                        .buttonStyle(.borderless)
-                        .disabled(busy)
-                        .accessibilityLabel(isTokenVisible ? "隐藏访问令牌" : "显示访问令牌")
-                    }
-                    .frame(minHeight: 44)
-                }
             }
-
-            // 折区外面：不展开也能验。
-            Button {
-                saveToken()
-            } label: {
-                Text(action == .verify ? "正在测试…" : "保存并测试")
-                    .frame(maxWidth: .infinity)
-            }
-            .disabled(busy)
-
-            Button {
-                openTokenPage()
-            } label: {
-                HStack {
-                    Text("获取授权码")
-                        .foregroundStyle(Color.primary)
-                    Spacer(minLength: 8)
-                    Image(systemName: "arrow.up.right")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Color.secondary)
-                }
-                .frame(minHeight: 44)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .disabled(busy)
+            // Colo 3532：Form 行底色显式取 groupedRow，不依赖系统动态色。
+            .listRowBackground(KazumiPalette.groupedRow(for: colorScheme))
         } header: {
             Text("Bangumi 账号")
         } footer: {
@@ -212,6 +217,7 @@ struct BangumiSyncScreen: View {
             .disabled(!configured)
             .opacity(configured ? 1 : 0.45)
             .accessibilityValue(configured ? "" : "需要先连接")
+            .listRowBackground(KazumiPalette.groupedRow(for: colorScheme))
         } header: {
             Text("同步")
         } footer: {
@@ -228,31 +234,34 @@ struct BangumiSyncScreen: View {
 
     private var resultSection: some View {
         Section {
-            Text(lastSyncLine)
-                .frame(minHeight: 24, alignment: .leading)
+            Group {
+                Text(lastSyncLine)
+                    .frame(minHeight: 24, alignment: .leading)
 
-            if action == .sync {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(progressText)
+                if action == .sync {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(progressText)
+                            .font(.footnote)
+                            .foregroundStyle(Color.secondary)
+                        if let progress {
+                            ProgressView(value: progress)
+                                .progressViewStyle(.linear)
+                        }
+                    }
+                    .accessibilityElement(children: .combine)
+                } else if !lastSyncError.isEmpty {
+                    Text(lastSyncError)
+                        .font(.footnote)
+                        .foregroundStyle(Color.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else if !lastSyncSummary.isEmpty {
+                    Text(lastSyncSummary)
                         .font(.footnote)
                         .foregroundStyle(Color.secondary)
-                    if let progress {
-                        ProgressView(value: progress)
-                            .progressViewStyle(.linear)
-                    }
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                .accessibilityElement(children: .combine)
-            } else if !lastSyncError.isEmpty {
-                Text(lastSyncError)
-                    .font(.footnote)
-                    .foregroundStyle(Color.orange)
-                    .fixedSize(horizontal: false, vertical: true)
-            } else if !lastSyncSummary.isEmpty {
-                Text(lastSyncSummary)
-                    .font(.footnote)
-                    .foregroundStyle(Color.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
             }
+            .listRowBackground(KazumiPalette.groupedRow(for: colorScheme))
         } header: {
             Text("同步结果")
         }
@@ -275,28 +284,31 @@ struct BangumiSyncScreen: View {
 
     private var preferenceSection: some View {
         Section {
-            Picker("冲突时以谁为准", selection: Binding(
-                get: { settings.bangumiSyncPriority },
-                set: { settings.bangumiSyncPriority = $0 }
-            )) {
-                ForEach(BangumiSyncPriority.allCases) { option in
-                    Text(option.optionTitle).tag(option.rawValue)
+            Group {
+                Picker("冲突时以谁为准", selection: Binding(
+                    get: { settings.bangumiSyncPriority },
+                    set: { settings.bangumiSyncPriority = $0 }
+                )) {
+                    ForEach(BangumiSyncPriority.allCases) { option in
+                        Text(option.optionTitle).tag(option.rawValue)
+                    }
                 }
+                .pickerStyle(.menu)
+                .disabled(busy)
+
+                Toggle("同步结果提示", isOn: Binding(
+                    get: { settings.bangumiImmediateSyncToastEnable },
+                    set: { settings.bangumiImmediateSyncToastEnable = $0 }
+                ))
+                .disabled(busy)
+
+                Toggle("自动标记看过", isOn: Binding(
+                    get: { settings.bangumiAutoMarkWatched },
+                    set: { settings.bangumiAutoMarkWatched = $0 }
+                ))
+                .disabled(busy)
             }
-            .pickerStyle(.menu)
-            .disabled(busy)
-
-            Toggle("同步结果提示", isOn: Binding(
-                get: { settings.bangumiImmediateSyncToastEnable },
-                set: { settings.bangumiImmediateSyncToastEnable = $0 }
-            ))
-            .disabled(busy)
-
-            Toggle("自动标记看过", isOn: Binding(
-                get: { settings.bangumiAutoMarkWatched },
-                set: { settings.bangumiAutoMarkWatched = $0 }
-            ))
-            .disabled(busy)
+            .listRowBackground(KazumiPalette.groupedRow(for: colorScheme))
         } header: {
             Text("同步偏好")
         } footer: {

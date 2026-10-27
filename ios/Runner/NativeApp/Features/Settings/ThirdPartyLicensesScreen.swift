@@ -89,31 +89,41 @@ struct ThirdPartyLicensesScreen: View {
         List {
             if documents.isEmpty {
                 Section {
-                    Text("这个版本里没有打包许可文本。")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
+                    Group {
+                        Text("这个版本里没有打包许可文本。")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                    .listRowBackground(KazumiPalette.groupedRow(for: colorScheme))
                 }
             }
             ForEach(groups, id: \.title) { group in
                 Section(group.title) {
-                    ForEach(group.documents) { document in
-                        NavigationLink {
-                            LicenseTextScreen(document: document)
-                        } label: {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(document.title)
-                                    .font(.subheadline)
-                                if document.text == nil {
-                                    Text("文件读不出来")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
+                    Group {
+                        ForEach(group.documents) { document in
+                            NavigationLink {
+                                LicenseTextScreen(document: document)
+                            } label: {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(document.title)
+                                        .font(.subheadline)
+                                    if document.text == nil {
+                                        Text("文件读不出来")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
                                 }
                             }
                         }
                     }
+                    // Colo 3532：List 的行底色显式取 groupedRow，不依赖系统动态色。
+                    .listRowBackground(KazumiPalette.groupedRow(for: colorScheme))
                 }
             }
         }
+        // Colo 3532：从系统白底改为与设置首页一致的分组页底。
+        .scrollContentBackground(.hidden)
+        .background(KazumiPalette.groupedBackground(for: colorScheme).ignoresSafeArea())
         .navigationTitle("第三方许可证")
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -122,6 +132,7 @@ struct ThirdPartyLicensesScreen: View {
 /// 单份许可的正文。
 struct LicenseTextScreen: View {
     let document: LicenseDocument
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         ScrollView {
@@ -130,7 +141,10 @@ struct LicenseTextScreen: View {
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(16)
+                // Colo 3532：正文自己也要一块 groupedRow 实面，不靠在系统白底上。
+                .background(KazumiPalette.groupedRow(for: colorScheme))
         }
+        .background(KazumiPalette.groupedBackground(for: colorScheme).ignoresSafeArea())
         .navigationTitle(document.title)
         .navigationBarTitleDisplayMode(.inline)
     }

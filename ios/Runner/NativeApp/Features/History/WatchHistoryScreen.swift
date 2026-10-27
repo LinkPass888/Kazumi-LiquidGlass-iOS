@@ -52,7 +52,8 @@ struct WatchHistoryScreen: View {
                 .scrollEdgeEffectStyle(.soft, for: .top)
             }
         }
-        .background(KazumiPalette.background(for: colorScheme).ignoresSafeArea())
+        // Colo 3532：二级页统一用分组页底。
+        .background(KazumiPalette.groupedBackground(for: colorScheme).ignoresSafeArea())
         .navigationTitle("观看历史")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -104,7 +105,7 @@ struct WatchHistoryScreen: View {
                     HStack(spacing: 6) {
                         Text(whenText(record.updatedAt))
                             .font(.caption2)
-                            .foregroundStyle(.tertiary)
+                            .foregroundStyle(.secondary)
                         Spacer(minLength: 0)
                         Text(statusText(for: record))
                             .font(.caption2.weight(.semibold))
@@ -120,7 +121,8 @@ struct WatchHistoryScreen: View {
             .padding(.vertical, 10)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
-                KazumiPalette.cardShape(cornerRadius: 20, scheme: colorScheme)
+                // Colo 3532：灰底页面的卡片只留 groupedRow 实面，不描边。
+                KazumiPalette.cardShape(cornerRadius: 20, scheme: colorScheme, bordered: false)
             )
         }
         .buttonStyle(.plain)

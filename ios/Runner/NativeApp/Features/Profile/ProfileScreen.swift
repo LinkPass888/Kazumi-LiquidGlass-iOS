@@ -62,36 +62,43 @@ struct ProfileScreen: View {
 
     // MARK: - 观看足迹
 
+    /// Colo 3529：两张等宽白卡就是两个空盒子，合成一张统计条——
+    /// 卡高跟组里一行一样 52，里面左右两块各占一半，一行里「数字 名字」。
     private var watchStats: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 8) {
             Text("观看足迹")
                 .font(.footnote.weight(.semibold))
                 .foregroundStyle(.secondary)
                 .padding(.leading, 4)
 
-            HStack(spacing: 12) {
+            HStack(spacing: 20) {
                 stat(value: "\(library.entries.count)", title: "看过番剧")
                 stat(value: "\(library.history.count)", title: "观看集数")
             }
+            .frame(height: 52)
+            .background(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(KazumiPalette.groupedRow(for: colorScheme))
+            )
         }
     }
 
+    /// 一块：数字 24 semibold 主题色，隔 6 点接名字 13 次要色，整块左对齐、左留 14。
     private func stat(value: String, title: String) -> some View {
-        VStack(spacing: 4) {
+        HStack(spacing: 6) {
             Text(value)
-                .font(.system(size: 26, weight: .bold))
+                .font(.system(size: 24, weight: .semibold))
                 .monospacedDigit()
                 .foregroundStyle(KazumiPalette.accent(for: colorScheme))
             Text(title)
-                .font(.caption)
+                .font(.system(size: 13))
                 .foregroundStyle(.secondary)
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 16)
-        .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(KazumiPalette.groupedRow(for: colorScheme))
-        )
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.leading, 14)
+        // 两块各自念成一件事：「12，看过番剧」。
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text("\(value)，\(title)"))
     }
 
     // MARK: - 内容与偏好
@@ -137,13 +144,13 @@ struct ProfileScreen: View {
     private var emptyHistoryNote: some View {
         HStack {
             Text("暂无观看历史")
-                .font(.footnote)
+                .font(.system(size: 13))
                 .foregroundStyle(.secondary)
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 14)
-        .padding(.bottom, 14)
-        .padding(.top, -4)
+        .padding(.top, 8)
+        .padding(.bottom, 12)
     }
 
     /// 最近看过的三张：按时间倒序取前三个，同一部番只出现一次。
@@ -167,11 +174,18 @@ struct ProfileScreen: View {
                     router.push(.bangumiInfo(bangumiID: record.bangumiID))
                 } label: {
                     Color.clear
-                        .aspectRatio(0.65, contentMode: .fit)
+                        // Colo 3529：跟全 App 的封面同一套比例和圆角，不是 3:4。
+                        .aspectRatio(BangumiPosterCard.coverAspectRatio, contentMode: .fit)
                         .overlay {
                             BangumiRemoteImage(url: record.imageURL)
                         }
-                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        // `BangumiPosterCard.cornerRadius` 是 private，用同一个值（12）的公开常量。
+                        .clipShape(
+                            RoundedRectangle(
+                                cornerRadius: PopularPosterTile.cornerRadius,
+                                style: .continuous
+                            )
+                        )
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(Text(record.bangumiName))
@@ -180,8 +194,10 @@ struct ProfileScreen: View {
             // 三张都顶左排，别让最后一行空着拉伸。
             Spacer(minLength: 0)
         }
+        // 宽 107 × 高 165（402 减左右各 16 外壳、各 14 内边距、两个 10 间距再除 3）。
         .padding(.horizontal, 14)
-        .padding(.vertical, 12)
+        .padding(.top, 8)
+        .padding(.bottom, 12)
     }
 
     /// 分组里的一行：符号 + 文字 + 右箭头，行高对齐系统分组列表（Colo 3489）。
