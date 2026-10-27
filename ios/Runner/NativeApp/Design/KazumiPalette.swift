@@ -68,6 +68,19 @@ enum KazumiPalette {
         return Color(red: 0.98, green: 0.98, blue: 0.99)
     }
 
+    /// 我的页与设置页的页面底色：LP 3478 要 iOS 原生分组色。
+    ///
+    /// 直接取系统语义色：浅色 #F2F2F7、深色 #000000，跟着系统走，不用自己算。
+    /// 只给这两页用，其它页仍是上面那个近白/近黑的 `background`。
+    static var groupedBackground: Color {
+        Color(uiColor: .systemGroupedBackground)
+    }
+
+    /// 分组列表里一条的底色：浅色 #FFFFFF、深色 #1C1C1E（系统语义色）。
+    static var groupedItem: Color {
+        Color(uiColor: .secondarySystemGroupedBackground)
+    }
+
     /// 卡片底色（对应 Material 的 surfaceContainerLow / 时间表卡片）。
     static func cardSurface(for scheme: ColorScheme) -> Color {
         if scheme == .dark {

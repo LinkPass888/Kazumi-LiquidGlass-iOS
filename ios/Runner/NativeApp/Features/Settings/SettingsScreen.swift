@@ -185,7 +185,7 @@ struct SettingsScreen: View {
         .navigationTitle("设置")
         .navigationBarTitleDisplayMode(.inline)
         .scrollContentBackground(.hidden)
-        .background(KazumiPalette.background(for: colorScheme).ignoresSafeArea())
+        .background(KazumiPalette.groupedBackground.ignoresSafeArea())
     }
 
     // MARK: - 分类行
