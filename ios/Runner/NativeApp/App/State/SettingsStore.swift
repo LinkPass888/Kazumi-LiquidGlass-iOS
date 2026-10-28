@@ -37,12 +37,13 @@ enum KazumiThemeMode: String, CaseIterable, Codable, Identifiable, Sendable {
     }
 }
 
-/// 超分辨率档位。数值与 lib/pages/player/controller/player_super_resolution.dart
-/// 的 storageValue 对齐（1=关闭，2=效率档，3=质量档），便于设置备份互通。
+/// 超分辨率档位：关 / 效率 / 质量，三档。
 ///
-/// 原版在 mpv 上加载 Anime4K 的 GLSL 着色器；KSPlayer 走 FFmpeg，无法直接吃
-/// mpv 着色器，这里用等效的 FFmpeg 滤镜链（lanczos 放大 + 锐化）实现同一档位：
-/// 效率档 1.5×，质量档 2×。滤镜只在 KSPlayer 的 FFmpeg 内核下生效。
+/// 数值沿用原版 Anime4K 设置的存储值（1=关闭，2=效率，3=质量），
+/// 这样老用户的设置备份还能直接读回来。
+///
+/// 效果就是给 mpv 挂 Anime4K v4.0.1 的官方 preset：效率档 = Fast 的 Mode A，
+/// 质量档 = HQ 的 Mode A，关闭就不挂任何着色器。
 enum SuperResolutionMode: Int, CaseIterable, Identifiable, Sendable {
     case off = 1
     case efficiency = 2
@@ -58,39 +59,41 @@ enum SuperResolutionMode: Int, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    /// 设置里那一行下面的说明（Camo 3740 定的词）。
+    /// 交给 mpv 的 GLSL 着色器文件路径（Anime4K v4.0.1，官方 preset）。
     ///
-    /// 旧的两句说的是 KSPlayer 时代的 lanczos＋锐化，换 mpv 之后已经不成立。
-    var detail: String {
-        switch self {
-        case .off: "不做处理"
-        case .efficiency: "放大并修线条，省电"
-        case .quality: "线条修得更细，更耗电"
-        }
-    }
-
-    /// 交给 mpv 的 GLSL 着色器文件路径（Anime4K）。
+    /// 两档都取官方 Mode A：效率档用 Fast 那一套（小模型，省电），
+    /// 质量档用 HQ 那一套（VL 模型，线条修得更细、更吃 GPU）。
+    /// 顺序就是官方的顺序，不要打乱：Clamp 先压高光，Restore 修线条，
+    /// Upscale 放大，AutoDownscalePre 在放大后又把超过屏幕的部分缩回去。
     ///
-    /// 着色器文件还没打进包里（待办：把 Anime4K 的 GLSL 放进 Runner 资源），
-    /// 现在返回空数组，等于不做超分——菜单能选，但画面上还没有效果。
+    /// 文件在包里是 folder reference（`shaders/`），所以拼出来的路径是
+    /// `shaders/Anime4K_*.glsl`；真机上找不到就返回空数组，等于不超分，
+    /// 不至于让 mpv 因为路径错而报错。
     var shaderPaths: [String] {
-        []
-    }
-
-    /// 交给 KSOptions.videoFilters 的 FFmpeg 滤镜链。
-    ///
-    /// 放大用 lanczos（质量优于默认 bicubic），锐化用 unsharp 找回线条；
-    /// 关闭时返回空数组，不改变原始管线。
-    var videoFilters: [String] {
-        switch self {
-        case .off:
-            return []
-        case .efficiency:
-            return ["scale=iw*1.5:ih*1.5:flags=lanczos"]
-        case .quality:
-            return ["scale=iw*2:ih*2:flags=lanczos"]
+        guard self != .off else { return [] }
+        let names: [String] = self == .quality
+            ? [
+                "Anime4K_Clamp_Highlights",
+                "Anime4K_Restore_CNN_VL",
+                "Anime4K_Upscale_CNN_x2_VL",
+                "Anime4K_AutoDownscalePre_x2",
+                "Anime4K_AutoDownscalePre_x4",
+                "Anime4K_Upscale_CNN_x2_M"
+            ]
+            : [
+                "Anime4K_Clamp_Highlights",
+                "Anime4K_Restore_CNN_M",
+                "Anime4K_Upscale_CNN_x2_M",
+                "Anime4K_AutoDownscalePre_x2",
+                "Anime4K_AutoDownscalePre_x4",
+                "Anime4K_Upscale_CNN_x2_S"
+            ]
+        return names.compactMap { name in
+            Bundle.main.path(forResource: name, ofType: "glsl", inDirectory: "shaders")
+                ?? Bundle.main.path(forResource: name, ofType: "glsl")
         }
     }
+
 }
 
 /// 播放倍速档位。对应原版 `lib/utils/constants.dart` 的 `defaultPlaySpeedList`：

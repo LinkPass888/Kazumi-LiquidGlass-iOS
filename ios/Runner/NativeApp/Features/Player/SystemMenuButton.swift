@@ -2,21 +2,23 @@
 //  SystemMenuButton.swift
 //  Kazumi
 //
-//  播放器控制栏上的「更多」：点击弹出系统菜单（UIMenu），不是半屏面板。
+//  一颗「点了弹菜单」的按钮。
 //
-//  为什么不用 SwiftUI 的 `Menu`：
-//  播放中画面每秒都在刷新，`Menu` 会跟着整个视图重建；菜单弹出来以后留在屏幕上的
-//  还是旧的那一份，选项点下去不执行（LP 2026-10-25「更多菜单能打开还是无法点击」）。
-//  换成 UIKit 的按钮菜单，菜单和动作由 UIKit 自己持有，视图怎么重建都不受影响。
+//  2026-10-28 换回 SwiftUI 的 `Menu`（LP：播放时可以点了，那就所有菜单都换成
+//  SwiftUI，但不要主题色、跟系统黑白）。以前换 UIKit 的 `UIMenu`，是因为
+//  播放中画面每秒重建、`Menu` 弹出来那份和手上的视图对不上，点了不执行；
+//  现在这颗按钮是纯 SwiftUI，菜单内容直接来自手上的 `items`，不吃那个毛病。
+//
+//  一行菜单的结构：图标 ＋ 名字 ＋ 同一行靠右的当前值（`subtitle`）。
+//  值必须看得见，又不能换行排到名字下面（LP 2026-10-28）。
 //
 
 import SwiftUI
 import UIKit
 
-/// 一颗「点了弹系统菜单」的按钮。样式由外面给，菜单内容由 `items` 给。
-struct SystemMenuButton: UIViewRepresentable {
+struct SystemMenuButton: View {
     struct Item {
-        /// 菜单项的标题，也是重建菜单时比对用的凭据。
+        /// 菜单项的标题。
         var title: String
         var symbol: String
         /// 图标是两颗符号叠出来的时候给这张合成图（比如弹幕设置：
@@ -27,7 +29,7 @@ struct SystemMenuButton: UIViewRepresentable {
         var isDestructive: Bool = false
         /// 二级菜单那一行右边的小字，写当前值。
         var subtitle: String? = nil
-        /// 这一项打勾（系统的勾画在右边，符号仍是状态自己那颗）。
+        /// 这一项打勾。
         var isChecked: Bool = false
         /// 有二级菜单就展开成子菜单，`action` 不生效。
         var submenu: [Item]? = nil
@@ -39,273 +41,104 @@ struct SystemMenuButton: UIViewRepresentable {
     var title: String?
     var symbol: String
     var accessibilityLabel: String
-    /// 按钮和字用什么颜色：播放器里是白的，选集那块要跟页面一样是正文色。
+    /// 按钮用什么颜色：播放器里是白的，选集那块跟页面一样是正文色。
+    /// 菜单内部一律跟系统黑白走，不受它影响（LP 2026-10-28）。
     var tint: Color = .white
     /// 标题右边要不要带一个小三角，表示「点开有菜单」。
     var showsChevron: Bool = false
-    /// 图标钮上符号的字号／字重。控制栏上其它按钮是 20pt regular，
-    /// 这里一直是 17pt semibold，并排放就显得又小又暗（Colo 2026-10-28）。
+    /// 图标钮上符号的字号／字重。
     var symbolSize: CGFloat = 20
     var symbolWeight: Font.Weight = .regular
     /// 菜单被点开时回调：控制栏要靠它知道「先别收」。
     var onOpen: () -> Void = {}
 
-    func makeCoordinator() -> Coordinator {
-        Coordinator()
+    var body: some View {
+        Menu {
+            content(items)
+        } label: {
+            buttonLabel
+        }
+        // 菜单要开的时候先告诉外面「别收控制栏」；用 simultaneous 手势，
+        // 不抢 Menu 自己的点击。
+        .simultaneousGesture(TapGesture().onEnded { onOpen() })
+        .accessibilityLabel(accessibilityLabel)
     }
 
-    func makeUIView(context: Context) -> UIButton {
-        let button = UIButton(type: .system)
-        button.showsMenuAsPrimaryAction = true
-        // 尺寸由外面的 `.frame` 给：在 updateUIView 里写死 frame 会和 SwiftUI 的布局打架，
-        // 结果是屏幕上一个位置、真正的按钮在另一个位置（点了没反应、居中变歪都从这里来）。
-        //
-        // 水平方向必须「抱紧内容」：hugging 低了，HStack 里富余的空间会被按钮吃掉
-        // （Spacer 反而挤没），按钮铺满整行、标题在正中被居中 —— 选集里那颗线路按钮
-        // 就是这样从左边跑到屏幕中间的（LP 3389/3397）。纵向不管：外面都给了高。
-        button.setContentHuggingPriority(.required, for: .horizontal)
-        // 压缩抵抗留低：实在放不下时允许被挤，不至于把旁边的按钮顶出屏。
-        button.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        // 图标钮（收藏 / 更多）不能再被挤：横竖屏切换时 Spacer 一旦把它压到 0 宽，
-        // SwiftUI 给的 frame 和 UIKit 自己算的位置就会对不上，按钮被留在屏幕左上角。
-        if title == nil {
-            button.setContentCompressionResistancePriority(.required, for: .horizontal)
-        }
-        button.tintColor = Self.uiColor(tint)
-        button.addAction(
-            UIAction { [coordinator = context.coordinator] _ in
-                coordinator.onOpen()
-            },
-            for: .menuActionTriggered
+    /// 二级菜单要能再套二级，所以这个函数自己调自己；
+    /// 返回值写成 `AnyView`，不然 Swift 会把 opaque type 推成「自己定义自己」编不过。
+    private func content(_ list: [Item]) -> AnyView {
+        AnyView(
+            ForEach(Array(list.enumerated()), id: \.offset) { _, item in
+                if let submenu = item.submenu {
+                    Menu {
+                        content(submenu)
+                    } label: {
+                        rowLabel(item)
+                    }
+                } else {
+                    Button(role: item.isDestructive ? .destructive : nil) {
+                        item.action()
+                    } label: {
+                        rowLabel(item)
+                    }
+                }
+            }
         )
-        apply(to: button, context: context)
-        return button
     }
 
-    func updateUIView(_ button: UIButton, context: Context) {
-        apply(to: button, context: context)
-        // 旋转后 UIKit 可能还拿着旧 bounds：内容（符号）停在旧位置。
-        // frame 仍由 SwiftUI 给，这里只催它按新 frame 重排。
-        button.setNeedsLayout()
-    }
-
-    /// 尺寸交给 SwiftUI 定。不返回 nil（默认会去问 UIKit 的 intrinsicContentSize，
-    /// 旋转后那份缓存可能还是旧的，按钮就被留在屏幕左上角）。
-    /// 图标钮至少 44×44（点击区），带标题的按内容宽，且都不超过外面给的提案。
-    func sizeThatFits(
-        _ proposal: ProposedViewSize,
-        uiView: UIButton,
-        context: Context
-    ) -> CGSize? {
-        let intrinsic = uiView.intrinsicContentSize
-        // 图标钮给到 44×44（点击区）；带标题的保持原来的内容尺寸，不改大小。
-        let minimum: CGFloat = title == nil ? 44 : 0
-        let hasWidth = intrinsic.width.isFinite && intrinsic.width > 0
-        let hasHeight = intrinsic.height.isFinite && intrinsic.height > 0
-        // 带标题的按钮如果量不出内容尺寸，交给 SwiftUI 默认测量，别把它压成 0。
-        guard hasWidth || minimum > 0, hasHeight || minimum > 0 else { return nil }
-        var width = hasWidth ? max(minimum, intrinsic.width) : minimum
-        var height = hasHeight ? max(minimum, intrinsic.height) : minimum
-        if let proposed = proposal.width, proposed.isFinite, proposed > 0 {
-            width = min(width, proposed)
+    /// 菜单里一行：图标 ＋ 名字 ＋ 靠右的当前值。
+    @ViewBuilder
+    private func rowLabel(_ item: Item) -> some View {
+        HStack(spacing: 8) {
+            icon(item)
+            Text(item.title)
+            if let value = item.subtitle, !value.isEmpty {
+                Spacer(minLength: 8)
+                Text(value)
+            }
+            if item.submenu != nil {
+                Spacer(minLength: 8)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
+            }
         }
-        if let proposed = proposal.height, proposed.isFinite, proposed > 0 {
-            height = min(height, proposed)
-        }
-        return CGSize(width: width, height: height)
     }
 
-    private func apply(to button: UIButton, context: Context) {
-        let coordinator = context.coordinator
-        // 动作从协调器里现取，闭包里不抓 SwiftUI 那一层，视图重建也不会变成旧闭包。
-        coordinator.items = items
-        coordinator.onOpen = onOpen
+    /// 菜单项的图标：合成图优先（弹幕设置那颗是两张符号叠的），
+    /// 其次是打勾（当前项），最后才是普通符号。
+    @ViewBuilder
+    private func icon(_ item: Item) -> some View {
+        if item.isChecked {
+            Image(systemName: "checkmark")
+        } else if let image = item.symbolImage {
+            // 合成图（弹幕设置那颗：气泡 + 齿轮）要走 `Image(uiImage:)`，
+            // 走 `systemImage:` 的话系统只认单颗符号、叠的那层会丢
+            // （LP 2026-10-28「组合的弹幕设置符号没了」，Colo 同条）。
+            // 模板渲染，颜色交给菜单去上，免得浅色底上一张白图看不见。
+            Image(uiImage: image.withRenderingMode(.alwaysTemplate))
+        } else if !item.symbol.isEmpty {
+            Image(systemName: item.symbol)
+                .font(.system(size: item.symbolPointSize ?? 17, weight: .regular))
+        }
+    }
 
-        #if DEBUG
-        Self.auditSymbols(buttonSymbol: title == nil ? symbol : nil, items: items)
-        #endif
-
-        // 内容没变就别再重置 configuration / image：播放中视图每 250ms 重建一次，
-        // 反复重置会让 UIKit 不停作废 intrinsicContentSize，旋转时更容易和 SwiftUI 的
-        // 布局对不上（按钮被留在左上角就是这么来的）。
-        let tintColor = Self.uiColor(tint)
-        // 图标钮（收藏 / 更多）只在内容真的变了才重置；带标题的照旧每次重设，
-        // 免得深浅色切换时 configuration 里的标题颜色不跟着换。
-        let isIcon = title == nil
-        let appearanceChanged = isIcon
-            ? (!coordinator.hasAppliedAppearance
-                || coordinator.appliedSymbol != symbol
-                || coordinator.appliedSymbolSize != symbolSize
-                || button.tintColor != tintColor)
-            : true
-        if appearanceChanged {
-            if let title {
-                // 用 configuration 才能「字 + 右边小三角」，setTitle/setImage 只能二选一。
-                var config = UIButton.Configuration.plain()
-                config.title = title
-                config.baseForegroundColor = tintColor
-                config.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0)
+    @ViewBuilder
+    private var buttonLabel: some View {
+        if let title {
+            HStack(spacing: 6) {
+                Text(title)
+                    .font(.system(size: 15))
+                    .lineLimit(1)
                 if showsChevron {
-                    config.image = UIImage(
-                        systemName: "chevron.up.chevron.down",
-                        withConfiguration: UIImage.SymbolConfiguration(pointSize: 9, weight: .semibold)
-                    )
-                    config.imagePlacement = .trailing
-                    config.imagePadding = 4
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 10, weight: .semibold))
                 }
-                config.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
-                    var out = incoming
-                    out.font = .systemFont(ofSize: 15, weight: .regular)
-                    return out
-                }
-                button.configuration = config
-                button.setTitleColor(tintColor, for: .normal)
-            } else {
-                button.configuration = nil
-                button.setTitle(nil, for: .normal)
-                button.setImage(
-                    UIImage(
-                        systemName: symbol,
-                        withConfiguration: UIImage.SymbolConfiguration(
-                            pointSize: symbolSize,
-                            weight: Self.uiWeight(symbolWeight)
-                        )
-                    ),
-                    for: .normal
-                )
             }
-            coordinator.appliedSymbol = symbol
-            coordinator.appliedSymbolSize = symbolSize
-            coordinator.hasAppliedAppearance = true
+            .foregroundStyle(tint)
+        } else {
+            Image(systemName: symbol)
+                .font(.system(size: symbolSize, weight: symbolWeight))
+                .foregroundStyle(tint)
         }
-        button.tintColor = tintColor
-        button.accessibilityLabel = accessibilityLabel
-        // 旋转后 UIKit 重排内容时始终以按钮中心为锚，别让符号贴着左上角画。
-        button.contentHorizontalAlignment = .center
-        button.contentVerticalAlignment = .center
-
-        // 只在内容真的变了才重建菜单：菜单开着的时候重建，会把手上那一份换成没人认领的空壳。
-        // 二级菜单里的勾（symbol）和右侧小字也算进凭据：只比标题的话，
-        // 换个档位标题没变、勾该挪位置，菜单却不重建，勾就一直停在原来那项
-        // （LP 2026-10-27「点了不会切换，还一直在默认那里✓」）。
-        let signature = items.map { item in
-            let children = item.submenu?.map { "\($0.title)~\($0.symbol)~\($0.subtitle ?? "")" }
-                .joined(separator: ",") ?? ""
-            let composite = item.symbolImage == nil ? "" : "合成图"
-            return "\(item.title)|\(item.symbol)|\(composite)|\(item.isDestructive)|\(item.subtitle ?? "")|\(children)"
-        }.joined(separator: "#")
-        guard signature != coordinator.signature else { return }
-        coordinator.signature = signature
-
-        button.menu = UIMenu(children: coordinator.makeActions(count: items.count))
-    }
-
-    /// 菜单里的图标一律按 17pt 画：系统默认那份会随符号自身的留白看起来有大有小，
-    /// 「一起看」那颗就显小（LP 2026-10-28 / Colo 3986）。
-    /// SwiftUI 的字重换成符号图用的那份（`UIImage.SymbolWeight` 是它自己一套）。
-    static func uiWeight(_ weight: Font.Weight) -> UIImage.SymbolWeight {
-        switch weight {
-        case .ultraLight: return .ultraLight
-        case .thin: return .thin
-        case .light: return .light
-        case .medium: return .medium
-        case .semibold: return .semibold
-        case .bold: return .bold
-        case .heavy: return .heavy
-        case .black: return .black
-        default: return .regular
-        }
-    }
-
-    static func menuImage(_ name: String, pointSize: CGFloat? = nil) -> UIImage? {
-        guard !name.isEmpty else { return nil }
-        return UIImage(
-            systemName: name,
-            withConfiguration: UIImage.SymbolConfiguration(pointSize: pointSize ?? 17, weight: .regular)
-        )
-    }
-
-    #if DEBUG
-    /// 图标名写错时系统不报错，只在屏上留一片空白——这里替它喊一声。
-    /// 每个名字只喊一次，避免每次视图重建都刷日志。
-    private nonisolated(unsafe) static var reportedSymbols: Set<String> = []
-
-    private static func auditSymbols(buttonSymbol: String?, items: [Item]) {
-        var names: [String] = []
-        if let buttonSymbol, !buttonSymbol.isEmpty { names.append(buttonSymbol) }
-        for item in items {
-            if !item.symbol.isEmpty { names.append(item.symbol) }
-            if let submenu = item.submenu { names.append(contentsOf: submenu.map(\.symbol)) }
-        }
-        for name in names where !name.isEmpty && !reportedSymbols.contains(name) {
-            guard UIImage(systemName: name) == nil else { continue }
-            reportedSymbols.insert(name)
-            KazumiLogBuffer.network("图标名不存在：\(name)")
-        }
-    }
-    #endif
-
-    /// 浅底深字、深底浅字：必须用系统的动态色。
-    /// `UIColor(Color.primary)` 会把动态色按当前深浅算成一个死颜色，
-    /// 换主题就还是原来那个（菜单「变黑」就是这里来的，Colo 3344）。
-    private static func uiColor(_ color: Color) -> UIColor {
-        switch color {
-        case .primary: return .label
-        case .secondary: return .secondaryLabel
-        case .white: return .white
-        case .black: return .black
-        default: return UIColor(color)
-        }
-    }
-
-    /// 只在主线程上用；`UIAction` 的闭包签名要求 Sendable，这里显式标注。
-    final class Coordinator: @unchecked Sendable {
-        var items: [Item] = []
-        var flat: [Item] = []
-        var onOpen: () -> Void = {}
-        var signature: String = ""
-        /// 按钮外观（标题 / 符号 / 小三角）上次应用的值：没变就不重置 UIKit 内容。
-        var hasAppliedAppearance = false
-        var appliedSymbol: String?
-        var appliedSymbolSize: CGFloat?
-
-        func makeActions(count: Int) -> [UIMenuElement] {
-            // 一级和二级的点法做成一件事：所有能点的项按顺序进 `flat`，
-            // 回调里只用下标取，闭包形状跟原来一样（不把动作闭包塞进菜单里）。
-            var flat: [Item] = []
-            func leaf(_ item: Item) -> UIAction {
-                flat.append(item)
-                let index = flat.count - 1
-                let action = UIAction(
-                    title: item.title,
-                    image: item.symbolImage
-                        ?? SystemMenuButton.menuImage(item.symbol, pointSize: item.symbolPointSize),
-                    attributes: item.isDestructive ? .destructive : []
-                ) { [weak self] _ in
-                    self?.flat[safe: index]?.action()
-                }
-                action.state = item.isChecked ? UIMenuElement.State.on : UIMenuElement.State.off
-                return action
-            }
-            let elements: [UIMenuElement] = (0..<count).map { index in
-                let item = items[index]
-                guard let submenu = item.submenu else { return leaf(item) }
-                return UIMenu(
-                    title: item.title,
-                    subtitle: item.subtitle ?? "",
-                    image: item.symbolImage
-                        ?? SystemMenuButton.menuImage(item.symbol, pointSize: item.symbolPointSize),
-                    children: submenu.map(leaf)
-                )
-            }
-            self.flat = flat
-            return elements
-        }
-    }
-}
-
-private extension Array {
-    subscript(safe index: Int) -> Element? {
-        indices.contains(index) ? self[index] : nil
     }
 }

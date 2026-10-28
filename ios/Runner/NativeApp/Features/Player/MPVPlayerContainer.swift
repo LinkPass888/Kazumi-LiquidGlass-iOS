@@ -29,6 +29,8 @@ final class PlayerSurfaceModel {
     var bufferedTime: Double = 0
     var isPlaying = false
     var isReady = false
+    /// 这一集的第一帧是不是已经画上屏了。加载符号转到它为 true 为止。
+    var hasFirstFrame = false
     var errorMessage: String?
     /// 视频的像素尺寸；还没拿到时是 .zero，布局回落到整块画面。
     var videoSize: CGSize = .zero
@@ -166,6 +168,7 @@ final class PlayerSurfaceModel {
         duration = 0
         bufferedTime = 0
         isReady = false
+        hasFirstFrame = false
         pendingResumeTime = nil
         errorMessage = nil
         // 换集先清尺寸：新的一集分辨率可能不同，拿到之前回落到整块画面。
@@ -321,6 +324,9 @@ struct MPVPlayerContainer: UIViewRepresentable {
         }
         engine.onLog = { message in
             KazumiLogBuffer.player("mpv: \(message)")
+        }
+        engine.onFirstFrame = { [weak surface] in
+            surface?.hasFirstFrame = true
         }
         engine.start()
 

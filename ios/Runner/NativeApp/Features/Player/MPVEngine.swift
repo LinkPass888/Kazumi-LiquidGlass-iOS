@@ -69,6 +69,11 @@ final class MPVEngine {
     weak var glView: MPVGLView?
 
     var onSnapshot: ((MPVSnapshot) -> Void)?
+    /// 这一集**第一帧真的画上屏了**（不是「拿到 video-params」）。
+    /// 加载符号要靠它才能一直转到画面出来为止（LP 2026-10-28 第 4 条）。
+    var onFirstFrame: (() -> Void)?
+    /// 本次加载是否已经报过首帧。
+    private var reportedFirstFrame = false
     var onLog: ((String) -> Void)?
 
     private var lastSnapshot = MPVSnapshot(
@@ -112,7 +117,11 @@ final class MPVEngine {
         #if targetEnvironment(simulator)
         setOption("hwdec", "no")
         #else
-        setOption("hwdec", "auto-safe")
+        // 用 copy-back 这一档，不走零拷贝互操作：互操作一旦和硬解出来的
+        // 帧格式对不上（10bit、双平面），屏幕上的表现就是花屏、发绿发紫、
+        // 或者只剩红绿两色（LP 2026-10-28 第 1 条）。copy-back 多一次拷贝，
+        // 1080p 这点开销换来画面颜色一定是对的。
+        setOption("hwdec", "videotoolbox-copy")
         #endif
         // 逐帧交给我们的 GL 视图，不走独立窗口。渲染 API 在
         // `mpv_render_context_create` 里指定，不用再设 gpu-api（设了会被拒）。
@@ -199,6 +208,10 @@ final class MPVEngine {
         if let referer, !referer.isEmpty { headers.append("Referer: \(referer)") }
         // init 之后只能用属性接口改，`mpv_set_option_string` 这时候会被拒。
         setOptionForPlayback("http-header-fields", headers.joined(separator: "\n"))
+        // 换集 / 重试都按「接着看」处理：内核里 pause 可能还是上一集留下的 true，
+        // 不显式放开，加载完了就停在那儿黑着（LP 2026-10-28 第 4 条「不会自动播放」）。
+        reportedFirstFrame = false
+        setFlag("pause", false)
         command("loadfile", [url.absoluteString, "replace"])
     }
 
@@ -404,6 +417,11 @@ final class MPVEngine {
         }
         // 告诉 mpv 这一帧确实上屏了：不报的话它按「还没显示」算，帧会被丢。
         mpv_render_context_report_swap(renderContext)
+        if !reportedFirstFrame {
+            reportedFirstFrame = true
+            let callback = onFirstFrame
+            Task { @MainActor in callback?() }
+        }
     }
 
     /// 花屏、错位、色偏时先对这四个数：报给 mpv 的 FBO 尺寸必须等于真实的
