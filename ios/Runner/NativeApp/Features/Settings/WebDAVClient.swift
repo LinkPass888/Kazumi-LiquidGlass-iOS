@@ -84,6 +84,12 @@ struct WebDAVClient {
         case unauthorized
         /// 服务器上还没有备份文件（首次使用）。
         case notFound
+        /// 云盘上有这个文件，但它是 **0 字节**：没有数据可恢复，也不算读失败。
+        ///
+        /// koofr 这类服务上出现过：某次写入只落了元数据，之后 forever 返回
+        /// 200 且 content-length: 0。以前它走到「开头不是 JSON」那条，被上层
+        /// 翻译成「请检查网络」——用户看到的是让他去查网络，可网络是好的。
+        case emptyBackup
         case badStatus(Int)
         case decoding(String)
         /// 写上去了，但按恢复那条路读回来对不上——这次不能算备份成功。
@@ -95,6 +101,7 @@ struct WebDAVClient {
             case .invalidURL(let url): "WebDAV 地址无效：\(url)"
             case .unauthorized: "认证失败，请检查用户名与密码"
             case .notFound: "服务器上还没有备份，先点「立即备份」上传一份"
+            case .emptyBackup: "云盘上的备份文件是空的（0 字节），里面没有数据可恢复。"
             case .badStatus(let status): "服务器出错了（\(status)），请稍后再试。"
             case .decoding(let message): message
             case .notReadableBack:
@@ -109,6 +116,7 @@ struct WebDAVClient {
         var logDescription: String {
             switch self {
             case .badStatus(let status): "服务器返回 HTTP \(status)"
+            case .emptyBackup: "云盘上的备份文件是 0 字节"
             case .decoding(let message): message
             default: errorDescription ?? ""
             }
@@ -127,16 +135,34 @@ struct WebDAVClient {
         let target = folder.appending(path: Self.backupFileName)
         var request = try authorizedRequest(url: target, method: "PUT")
         request.setValue("application/json", forHTTPHeaderField: "content-type")
-        request.httpBody = try Self.encoder().encode(payload)
+        let body = try Self.encoder().encode(payload)
+        request.httpBody = body
         let (_, response) = try await URLSession.shared.data(for: request)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? -1
+        // 云盘上出现过 0 字节的备份文件，靠这两个数分得清是「我们没发出去」
+        // 还是「服务器没存」——不然只能猜。
+        KazumiLogBuffer.shared.append(
+            "WebDAV PUT \(Self.backupFileName) 发出 \(body.count) 字节，HTTP \(status)",
+            category: .network
+        )
         try Self.validate(response)
     }
 
     func download() async throws -> Payload {
         let target = try folderURL().appending(path: Self.backupFileName)
-        let request = try authorizedRequest(url: target, method: "GET")
+        var request = try authorizedRequest(url: target, method: "GET")
+        // 备份文件绝不能吃本地缓存：缓存里可能躺着一份旧的（或空的）。
+        request.cachePolicy = .reloadIgnoringLocalCacheData
         let (data, response) = try await URLSession.shared.data(for: request)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? -1
+        KazumiLogBuffer.shared.append(
+            "WebDAV GET \(Self.backupFileName) 收到 \(data.count) 字节，HTTP \(status)",
+            category: .network
+        )
         try Self.validate(response)
+        // 0 字节是单独一回事：文件在，里面什么都没有。不当成「格式不对」，
+        // 否则上层只能报到「请检查网络」，把一个坏文件说成网络故障。
+        guard !data.isEmpty else { throw WebDAVError.emptyBackup }
         // WebDAV 服务器出错时常常也是 200，回的却是一张 HTML 登录页 / 错误页。
         // 先看开头是不是 JSON，别让解码器只报一句英文的「格式不对」。
         guard Self.looksLikeJSON(data) else {

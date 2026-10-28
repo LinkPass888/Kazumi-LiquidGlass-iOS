@@ -95,6 +95,9 @@ enum WebDAVSync {
         let client = WebDAVClient(settings: settings)
         progress?(ProgressEvent(text: "正在读取云盘…", current: 0, total: 0))
         let remote: WebDAVClient.Payload?
+        /// 云盘上那份是空的（0 字节）：当作还没备份，这次上传会把它覆盖掉。
+        /// 空文件里没有任何数据，覆盖它不会丢掉任何东西。
+        var cloudBackupWasEmpty = false
         do {
             remote = try await client.download()
         } catch WebDAVClient.WebDAVError.notFound, WebDAVClient.WebDAVError.badStatus(404) {
@@ -103,10 +106,14 @@ enum WebDAVSync {
             // 必须接 .notFound：客户端把 404 翻成了这一句（WebDAVClient.validate），
             // 只接 badStatus(404) 会漏掉，「第一次同步」永远报成网络失败。
             remote = nil
+        } catch WebDAVClient.WebDAVError.emptyBackup {
+            // 文件在，但是 0 字节。跟「还没有备份」一样处理：本机有数据就上传一份。
+            cloudBackupWasEmpty = true
+            remote = nil
         } catch {
             return Outcome(
                 ok: false,
-                message: "未能完成，请检查网络或服务器配置后重试。",
+                message: "同步没能完成：\(Self.friendlyText(error))",
                 log: "同步读云盘失败：\(Self.technicalText(error))"
             )
         }
@@ -158,7 +165,7 @@ enum WebDAVSync {
         } catch {
             return Outcome(
                 ok: false,
-                message: "未能完成，请检查网络或服务器配置后重试。",
+                message: "同步没能完成：\(Self.friendlyText(error))",
                 log: "同步写云盘失败：\(Self.technicalText(error))"
             )
         }
@@ -222,11 +229,15 @@ enum WebDAVSync {
                 summary: "\(summary) · 写回旧版格式失败"
             )
         }
-        let message = contents.count == 1 ? contents[0].doneMessage : "同步完成"
+        let base = contents.count == 1 ? contents[0].doneMessage : "同步完成"
+        // 云盘上原来那份是空的：说一句，别让他继续以为云上一直存着一份。
+        let message = cloudBackupWasEmpty
+            ? "\(base)（云盘上原来那份是空的，已用这次的结果覆盖）"
+            : base
         return Outcome(
             ok: true,
             message: message,
-            log: "多设备同步完成（\(counts)\(legacy)）",
+            log: "多设备同步完成（\(counts)\(legacy)\(cloudBackupWasEmpty ? "；云盘原文件为 0 字节，已覆盖" : "")",
             summary: summary
         )
     }
@@ -288,5 +299,19 @@ enum WebDAVSync {
 
     static func technicalText(_ error: Error) -> String {
         (error as? WebDAVClient.WebDAVError)?.logDescription ?? error.localizedDescription
+    }
+
+    /// 屏上那句话：能说清原因的就直说原因，只有真的是网络层出错才让人去查网络。
+    ///
+    /// 以前这两个 catch 都只写「请检查网络或服务器配置」，可最常遇到的两种失败
+    /// 都跟网络无关（云盘上文件是空的、格式对不上），等于把问题直接推给用户。
+    static func friendlyText(_ error: Error) -> String {
+        if let webdav = error as? WebDAVClient.WebDAVError {
+            return webdav.errorDescription ?? "云盘读写失败。"
+        }
+        if error is URLError {
+            return "连不上服务器，请检查网络或服务器地址。"
+        }
+        return error.localizedDescription
     }
 }

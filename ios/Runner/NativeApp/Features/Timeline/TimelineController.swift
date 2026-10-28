@@ -150,6 +150,11 @@ final class TimelineController {
     }
 
     /// 对应 loadSeason。
+    ///
+    /// 首次打开慢的根因在这里：日历 → 季度时刻 → AniList 本来是三步串着等，
+    /// 而且列表要等三步全跑完才上屏（LP 2026-10-28）。现在两处改了：
+    ///   * 季度时刻表跟日历并行拉——两者互不依赖，串着等是白等一个来回；
+    ///   * 日历一到就先铺列表，AniList 那轮实测时刻到了再排一次序。
     func loadSeason(_ date: Date, collectTypes: [Int: CollectType] = [:]) async {
         guard !isLoading else { return }
         isLoading = true
@@ -157,6 +162,9 @@ final class TimelineController {
         selectedDate = date
         bangumiCalendar = []
         defer { isLoading = false }
+
+        // 冷缓存时这一步要够到季度文件，比日历接口贵，必须跟它并行。
+        async let airTime: Void = BangumiAirTimeService.shared.ensureLoaded(forSeasonOf: date)
 
         var calendar: [[BangumiItem]]
         if AnimeSeason.isSameSeason(date, Date()) {
@@ -166,17 +174,23 @@ final class TimelineController {
             calendar = await seasonCalendar(start: range.start, end: range.end)
         }
 
-        // 先取季度时刻表：卡片上的「HH:mm 更新」与「第 N 话」、以及默认顺序的
-        // 排序都依赖它。拉取失败时保持空表，只是少两个胶囊，不影响列表。
-        await BangumiAirTimeService.shared.ensureLoaded(forSeasonOf: date)
-        // 季度表拿到 MAL id 之后，再用 AniList 补一轮实测时刻：只查还没到
-        // 下一集播出时刻的那些番，按 25 部一批，请求量与当季番数无关。
-        await BangumiAirTimeService.shared.ensureAniListLoaded(calendar.flatMap { $0.map(\.id) })
+        await airTime
+        // 这期间用户可能已经点了别的季度，那一轮的结果不能再盖上去。
+        guard selectedDate == date else { return }
 
+        // 先铺列表：AniList 那一步慢的时候要好几秒，等它回来才上屏等于白等。
         baseCalendar = calendar
         let merged = await mergeCustomEntries(into: groupedBaseCalendar(), collectTypes: collectTypes)
         bangumiCalendar = applySort(merged)
         isTimeOut = bangumiCalendar.allSatisfy(\.isEmpty)
+
+        // 季度表拿到 MAL id 之后，再用 AniList 补一轮实测时刻：只查还没到
+        // 下一集播出时刻的那些番，按 25 部一批，请求量与当季番数无关。
+        await BangumiAirTimeService.shared.ensureAniListLoaded(calendar.flatMap { $0.map(\.id) })
+        guard selectedDate == date else { return }
+        // 默认顺序按当天时刻从早到晚，所以时刻到了要重排一次；
+        // 其余排序不依赖时刻，重算一遍结果不变。
+        bangumiCalendar = applySort(merged)
     }
 
     /// 对应 refreshCustomTimelineEntries：详情页改完星期 / 开关展示后立刻生效。

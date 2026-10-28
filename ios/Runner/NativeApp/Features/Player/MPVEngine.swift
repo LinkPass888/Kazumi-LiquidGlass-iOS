@@ -75,6 +75,9 @@ final class MPVEngine {
         time: 0, duration: 0, isPaused: true, isIdle: true, hasVideo: false, ended: false
     )
 
+    /// 上一次记过的画面几何，变了才写日志（每帧写会把日志冲爆）。
+    private var lastGeometry = ""
+
     init() {
         glContext = EAGLContext(api: .openGLES3) ?? EAGLContext(api: .openGLES2)!
     }
@@ -103,10 +106,13 @@ final class MPVEngine {
         setOption("idle", "yes")
         setOption("audio-display", "no")
         // 模拟器没有硬解，强行开 videotoolbox 会黑屏（MPVKit demo 同样的判断）。
+        // 真机用 auto-safe，跟 main 的 `hardwareDecoder` 默认值一致：它是「只在
+        // 确认安全时才开零拷贝互操作」的那一档，比硬写 videotoolbox 稳——
+        // 互操作一旦对不上（10bit、双平面这些），出来的就是花屏和发绿发紫。
         #if targetEnvironment(simulator)
         setOption("hwdec", "no")
         #else
-        setOption("hwdec", "videotoolbox")
+        setOption("hwdec", "auto-safe")
         #endif
         // 逐帧交给我们的 GL 视图，不走独立窗口。渲染 API 在
         // `mpv_render_context_create` 里指定，不用再设 gpu-api（设了会被拒）。
@@ -124,6 +130,10 @@ final class MPVEngine {
             onLog?("mpv_initialize 失败：\(String(cString: mpv_error_string(initStatus)))")
             return
         }
+
+        // 把 mpv 自己的日志接过来：着色器编译失败、色彩空间、帧格式这些
+        // 只有它会说，不订阅就是纯瞎子。
+        mpv_request_log_messages(mpv, "warn")
 
         setupRenderContext(mpv)
         setupEvents(mpv)
@@ -155,6 +165,8 @@ final class MPVEngine {
             onLog?("mpv 渲染上下文建不起来：\(String(cString: mpv_error_string(created)))")
             return
         }
+        onLog?("GL \(glString(GL_RENDERER)) / \(glString(GL_VERSION))")
+        self.renderContext = renderContext
         mpv_render_context_set_update_callback(
             renderContext,
             kazumiMPVRenderUpdate,
@@ -370,6 +382,9 @@ final class MPVEngine {
         glGetIntegerv(GLenum(GL_FRAMEBUFFER_BINDING), &fbo)
         var viewport = [GLint](repeating: 0, count: 4)
         glGetIntegerv(GLenum(GL_VIEWPORT), &viewport)
+        // 0×0 的 FBO 交给 mpv，缩放算出来是 NaN，画面就是一坨。
+        guard viewport[2] > 0, viewport[3] > 0 else { return }
+        logGeometryOnce(view: view, viewport: viewport)
         var data = mpv_opengl_fbo(
             fbo: Int32(fbo),
             w: Int32(viewport[2]),
@@ -391,6 +406,21 @@ final class MPVEngine {
         mpv_render_context_report_swap(renderContext)
     }
 
+    /// 花屏、错位、色偏时先对这四个数：报给 mpv 的 FBO 尺寸必须等于真实的
+    /// 可绘制尺寸。差一半是缩放错，宽高互换就是整块画面被当竖的贴上去，
+    /// 色度跟着错位还会发绿发紫。
+    private func logGeometryOnce(view: GLKView, viewport: [GLint]) {
+        let geometry = "fbo \(viewport[2])×\(viewport[3]) drawable \(view.drawableWidth)×\(view.drawableHeight) bounds \(Int(view.bounds.width))×\(Int(view.bounds.height))@\(view.contentScaleFactor)"
+        guard geometry != lastGeometry else { return }
+        lastGeometry = geometry
+        onLog?("画面尺寸 \(geometry)")
+    }
+
+    private func glString(_ name: Int32) -> String {
+        guard let raw = glGetString(GLenum(name)) else { return "?" }
+        return String(cString: UnsafeRawPointer(raw).assumingMemoryBound(to: CChar.self))
+    }
+
     static func procAddress(_ name: UnsafePointer<CChar>?) -> UnsafeMutableRawPointer? {
         let symbol = CFStringCreateWithCString(
             kCFAllocatorDefault, name, CFStringBuiltInEncodings.ASCII.rawValue
@@ -410,6 +440,8 @@ final class MPVEventPump: @unchecked Sendable {
     private var ticker: DispatchSourceTimer?
     /// 最近一次加载失败的原因；成功起播后清掉。
     private var lastError: String?
+    /// 这一集的格式参数只记一次。
+    private var loggedVideoInfo = false
 
     init(
         mpv: OpaquePointer,
@@ -493,6 +525,12 @@ final class MPVEventPump: @unchecked Sendable {
         }
         var snap = snapshot()
         if snap.hasVideo { lastError = nil }
+        // 第一帧出来的时候把源的真实格式记下来：位深、矩阵、范围这三样
+        // 直接决定颜色对不对，pixelformat 里带 10 就是 10bit 片源。
+        if snap.hasVideo, !loggedVideoInfo {
+            loggedVideoInfo = true
+            onLog("片源 \(videoInfoLine())")
+        }
         snap.loadError = lastError
         MPVEventPump.debugLog("snap t=\(snap.time) d=\(snap.duration) paused=\(snap.isPaused) idle=\(snap.isIdle) video=\(snap.hasVideo) err=\(lastError ?? "-")")
         onSnapshot(snap)
@@ -506,6 +544,15 @@ final class MPVEventPump: @unchecked Sendable {
         Task { @MainActor in
             KazumiLogBuffer.shared.append(message, category: .player)
         }
+    }
+
+    private func videoInfoLine() -> String {
+        func text(_ name: String) -> String {
+            guard let raw = mpv_get_property_string(mpv, name) else { return "?" }
+            defer { mpv_free(raw) }
+            return String(cString: raw)
+        }
+        return "fmt=\(text("video-format")) px=\(text("video-params/pixelformat")) 矩阵=\(text("video-params/colormatrix")) 原色=\(text("video-params/primaries")) 伽马=\(text("video-params/gamma")) 位深=\(text("video-params/plane-depth")) hwdec=\(text("hwdec-current"))"
     }
 
     private func snapshot() -> MPVSnapshot {
