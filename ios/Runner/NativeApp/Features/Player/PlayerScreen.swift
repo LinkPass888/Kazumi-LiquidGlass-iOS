@@ -250,6 +250,16 @@ struct PlayerScreen: View {
     @State private var menuOpenedAt = Date()
     @State private var probeSawMenu = false
     @State private var probeLastSeen = Date()
+    /// 画面锁（LP 2026-10-28 第 4 条）：锁上手势全不响应，只留「点一下把
+    /// 左边缘那颗锁定钮叫出来」。锁定钮在画面左边缘、截图钮在右边缘，
+    /// 跟快退 / 快进那两颗同一行（竖向居中）。
+    @State private var isSurfaceLocked = false
+    /// 锁着时点一下只把解锁那一颗浮出来几秒——这是唯一的解锁入口。
+    @State private var unlockAffordanceShown = false
+    @State private var unlockAffordanceTask: Task<Void, Never>?
+    /// 截图那一下的取景框动画进度（0 → 1 走一遍）。
+    @State private var screenshotFlash: CGFloat = 0
+    @State private var screenshotFlashTask: Task<Void, Never>?
     /// 收藏钮点下去的缩放（Colo 2026-10-28：0.15 秒的 spring 弹一下）。
     /// 切超分档位时在 1/4 那条线上提示一下（Colo 2026-10-28）。
     @State private var superResolutionHUD: String?
@@ -264,11 +274,6 @@ struct PlayerScreen: View {
     @State private var orientationGeneration = 0
     /// 布局看到竖屏时先等它稳住再退全屏，别打断正在进行的转屏。
     @State private var landscapeExitTask: Task<Void, Never>?
-    /// 退全屏的次数和最后一次是谁退的：写进「播放信息」的「方向」那一行。
-    /// 日志在模拟器上读不到（`simulator` 没有日志子命令），所以证据要摆在屏上
-    /// （Colo 2026-10-28 4325 要的三处日志，这里挑能看见的那种做）。
-    @State private var exitFullscreenCount = 0
-    @State private var lastExitReason = "—"
     /// 本次按压是否已经进入长按状态（用来区分「松手时是短按还是长按结束」）。
     /// 全屏：画面占满窗口、横屏、隐藏状态栏，选集与线路区收起。
     /// 对应原版 `fillsWindow = fullscreen || (maxWidth > maxHeight)`。
@@ -402,7 +407,7 @@ struct PlayerScreen: View {
                                 guard !Task.isCancelled, isFullscreen, sawLandscape == false,
                                       containerSize.width <= containerSize.height
                                 else { return }
-                                exitFullscreen("布局看到竖屏")
+                                exitFullscreen()
                             }
                         }
                     }
@@ -573,7 +578,7 @@ struct PlayerScreen: View {
             // 长按手势若被系统取消，松手回调不会来，退出时兜一次恢复。
             endTemporarySpeed()
             // 带着全屏状态离开会把整个 App 锁在横屏，退出时一定回竖屏。
-            exitFullscreen("离开播放器")
+            exitFullscreen()
             if let controller { persistProgress(controller) }
             surface.stop()
             controller?.stop()
@@ -710,6 +715,11 @@ struct PlayerScreen: View {
             // 撑高，竖屏就变成「上下多出一条黑边、比画面本身高」
             // （LP 2026-10-28 第 4 条）。层级不变：画面 → 遮罩 → 控制层。
             interactiveSurface(controller)
+
+            // 截图那一下的取景框（Colo 3667 的规格）：压在画面上、控制层之下。
+            if screenshotFlash > 0 {
+                ScreenshotFlashView(progress: screenshotFlash)
+            }
 
             // 加载符号：转到**第一帧真的画上屏**为止（LP 2026-10-28 第 4 条）。
             // 以前只在还没有 controller 的时候转，一旦内核报「有视频参数」就收掉，
@@ -890,7 +900,7 @@ struct PlayerScreen: View {
                     // 滑动手势关了就不收竖向拖拽（LP 清单「滑动手势」，默认开）。
                     .simultaneousGesture(
                         surfaceDragGesture(width: surfaceSize.width),
-                        including: settings.brightnessVolumeGesture ? .all : .none
+                        including: settings.brightnessVolumeGesture && !isSurfaceLocked ? .all : .none
                     )
                     // 长按倍速：**按住的那段就是倍速**（LP 2026-10-28 第 10 条 / Colo）。
                     // 不再靠系统的长按回调——它要等按满 0.5 秒才通知，手指一动还会取消，
@@ -901,7 +911,8 @@ struct PlayerScreen: View {
                     } onPressingChanged: { pressing in
                         surfacePressTask?.cancel()
                         surfacePressTask = nil
-                        if pressing {
+                        // 锁着时长按也不倍速（LP 2026-10-28 第 4 条）。
+                        if pressing, !isSurfaceLocked {
                             surfacePressTask = Task { @MainActor in
                                 try? await Task.sleep(for: .milliseconds(400))
                                 guard !Task.isCancelled else { return }
@@ -1003,7 +1014,9 @@ struct PlayerScreen: View {
     /// 暂停、播放失败：控制层和左上返回一直在，这时候用户最可能想退出去（Colo 3307）。
     /// 加载中按正常状态处理，跟正在播放一样随控制条自动隐藏、点一下唤回来。
     private var controlsShown: Bool {
-        controlsVisible || pinsControls
+        // 锁着时控制层一律不露面：暂停也不再钉住（LP 2026-10-28 第 4 条）。
+        guard !isSurfaceLocked else { return false }
+        return controlsVisible || pinsControls
     }
 
     private var pinsControls: Bool {
@@ -1015,13 +1028,16 @@ struct PlayerScreen: View {
     /// 隐藏只降透明度、不动布局，画面不会跳。
     private func controlLayer(_ controller: PlayerController, width: CGFloat) -> some View {
         ZStack {
-            VStack(spacing: 0) {
-                topBar(controller)
-                Spacer(minLength: 0)
-                transportBar(controller, width: width)
+            // 锁着时整条控制层都不画：那一档只剩解锁那一颗（见下）。
+            if !isSurfaceLocked {
+                VStack(spacing: 0) {
+                    topBar(controller)
+                    Spacer(minLength: 0)
+                    transportBar(controller, width: width)
+                }
+                // 命中只给控制栏本身：收起时它不该挡着「点画面把控制层叫回来」。
+                .allowsHitTesting(controlsShown)
             }
-            // 命中只给控制栏本身：收起时它不该挡着「点画面把控制层叫回来」。
-            .allowsHitTesting(controlsShown)
 
             // 画面左右两侧的快退 / 快进：秒数取设置里「快进快退时长」（doubleTapSkipTime，默认 15）。
             // 双击两侧的快进已经删掉（LP 3593），快进快退只从这两颗走。
@@ -1036,19 +1052,34 @@ struct PlayerScreen: View {
                             .frame(width: proxy.size.width / 2, alignment: .center)
                     }
                     .frame(width: proxy.size.width, height: proxy.size.height)
+                    // 最边缘那两颗（LP 2026-10-28 第 4 条）：锁定在左、截图在右，
+                    // 距边 16、44×44；overlay 默认竖向居中，就跟快退 / 快进同一行。
+                    .overlay(alignment: .leading) { lockButton.padding(.leading, 16) }
+                    .overlay(alignment: .trailing) { screenshotButton.padding(.trailing, 16) }
                 }
                 .transition(.opacity)
             }
 
+            // 锁住时只剩这一颗：点一下浮出来，几秒没人碰就收回去。
+            if isSurfaceLocked, unlockAffordanceShown {
+                lockButton
+                    .padding(.leading, 16)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                    .transition(.opacity)
+            }
+
             if !controlsShown {
-                // 控制层收起时，整块画面都是「把控制层叫回来」的命中区。
+                // 控制层收起时，整块画面都是「把控制层叫回来」的命中区；
+                // 锁着的时候这一下只唤出解锁钮，不显示控制层（LP 2026-10-28 第 4 条）。
                 Color.clear
                     .contentShape(Rectangle())
-                    .onTapGesture { showControls() }
+                    .onTapGesture {
+                        if isSurfaceLocked { showUnlockAffordance() } else { showControls() }
+                    }
             }
 
         }
-        .opacity(controlsShown ? 1 : 0)
+        .opacity(controlsShown || (isSurfaceLocked && unlockAffordanceShown) ? 1 : 0)
         .animation(.easeOut(duration: 0.2), value: controlsVisible)
         // 全屏时底栏离**窗口**下沿 12，不是离 home 那条安全区 12
         // （横屏底部还有 21 的内缩，不忽略的话底栏会悬在半空，LP 2026-10-27）。
@@ -1113,6 +1144,98 @@ struct PlayerScreen: View {
         )
         .frame(height: fadeHeight)
         .allowsHitTesting(false)
+    }
+
+    /// 左边缘那颗：锁画面（LP 2026-10-28 第 4 条）。
+    /// 规格跟快退 / 快进一样是 44×44、白色符号 20 号，收起时一起隐。
+    private var lockButton: some View {
+        Button {
+            toggleSurfaceLock()
+        } label: {
+            Image(systemName: isSurfaceLocked ? "lock.fill" : "lock")
+                .font(.system(size: 20, weight: .regular))
+                .foregroundStyle(.white)
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(PlayerPressStyle())
+        .accessibilityLabel(isSurfaceLocked ? "解锁画面" : "锁定画面")
+        .shadow(color: .black.opacity(0.35), radius: 6, y: 1)
+    }
+
+    /// 右边缘那颗：抓当前这一帧存进相册（LP 2026-10-28 第 4 条）。
+    /// 抓的是 mpv 自己出的那一帧，超分滤镜在，弹幕和控件不在（Colo 3667）。
+    private var screenshotButton: some View {
+        Button {
+            takeScreenshot()
+        } label: {
+            Image(systemName: "camera")
+                .font(.system(size: 20, weight: .regular))
+                .foregroundStyle(.white)
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(PlayerPressStyle())
+        .accessibilityLabel("截图")
+        .shadow(color: .black.opacity(0.35), radius: 6, y: 1)
+    }
+
+    /// 锁上 / 解开。锁上顺手把控制层收掉：那一档屏幕上不该再有任何可点的东西。
+    private func toggleSurfaceLock() {
+        if isSurfaceLocked {
+            isSurfaceLocked = false
+            unlockAffordanceTask?.cancel()
+            unlockAffordanceTask = nil
+            unlockAffordanceShown = false
+            // 解开就露一下控制层，让人看清刚才锁的是哪里。
+            showControlsBriefly()
+        } else {
+            isSurfaceLocked = true
+            unlockAffordanceTask?.cancel()
+            unlockAffordanceTask = nil
+            unlockAffordanceShown = false
+            hideGeneration &+= 1
+            withAnimation(.easeOut(duration: 0.2)) { controlsVisible = false }
+        }
+    }
+
+    /// 锁着时点一下：只把解锁那一颗浮出来，3 秒后自己收回。
+    private func showUnlockAffordance() {
+        if unlockAffordanceShown { return }
+        withAnimation(.easeOut(duration: 0.2)) { unlockAffordanceShown = true }
+        unlockAffordanceTask?.cancel()
+        unlockAffordanceTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(3))
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeOut(duration: 0.2)) { unlockAffordanceShown = false }
+        }
+    }
+
+    /// 截图：抓帧 → 存相册 → 闪一下取景框；存不进相册才出提示。
+    private func takeScreenshot() {
+        noteInteraction()
+        showControlsBriefly()
+        Task { @MainActor in
+            guard let image = await surface.captureFrame(), let data = image.pngData() else {
+                surface.toastMessage = "截图失败：没抓到画面"
+                return
+            }
+            flashScreenshot()
+            if let failure = await PlayerScreenshot.save(png: data) {
+                surface.toastMessage = failure
+            }
+        }
+    }
+
+    /// 取景框从外往里收、同时淡入淡出，0 → 1 走 0.55 秒（Colo 3667 的数）。
+    private func flashScreenshot() {
+        screenshotFlashTask?.cancel()
+        withAnimation(.linear(duration: 0.55)) { screenshotFlash = 1 }
+        screenshotFlashTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(0.6))
+            guard !Task.isCancelled else { return }
+            screenshotFlash = 0
+        }
     }
 
     /// 左右两侧那颗：快退 / 快进「快进快退时长」那么多秒（LP 3643：用 15 秒那档，
@@ -1197,7 +1320,7 @@ struct PlayerScreen: View {
     /// 免得留下一个「竖着也算全屏」的状态。
     private func toggleFullscreen() {
         if isFullscreen {
-            exitFullscreen("按钮")
+            exitFullscreen()
         } else {
             NSLog("[player] 进全屏")
             isFullscreen = true
@@ -1230,11 +1353,9 @@ struct PlayerScreen: View {
         return scene.interfaceOrientation.isLandscape
     }
 
-    private func exitFullscreen(_ reason: String) {
+    private func exitFullscreen() {
         guard isFullscreen else { return }
-        exitFullscreenCount += 1
-        lastExitReason = reason
-        NSLog("[player] 退全屏（第 \(exitFullscreenCount) 次，来自 \(reason)）")
+        NSLog("[player] 退全屏")
         isFullscreen = false
         sawLandscape = false
         requestOrientation(.portrait)
@@ -1311,8 +1432,6 @@ struct PlayerScreen: View {
             }
             NSLog("[player] 三秒都没转过去：退回竖屏内联")
             if isFullscreen {
-                exitFullscreenCount += 1
-                lastExitReason = "三秒没转过去"
                 isFullscreen = false
                 sawLandscape = false
             }
@@ -1345,6 +1464,8 @@ struct PlayerScreen: View {
     /// 两侧快进是我们自己加的）。LP 3593：两侧的快进快退改由画面左右那两颗按钮做，
     /// 双击就只留播放暂停，点哪儿都一样。
     private func handleSurfaceDoubleTap() {
+        // 锁着时双击也不生效：这把锁就是防误触的（LP 2026-10-28 第 4 条）。
+        guard !isSurfaceLocked else { return }
         surface.togglePlay()
         flashPlayPauseHUD()
         showControlsBriefly()
@@ -1364,6 +1485,11 @@ struct PlayerScreen: View {
 
     /// 点画面只切控制层显示（原版：短按显隐，不暂停）；播放/暂停在播放键上。
     private func handleSurfaceTap() {
+        // 锁着时点画面只唤出解锁那颗：不显控制层、不切换播放（LP 2026-10-28 第 4 条）。
+        if isSurfaceLocked {
+            showUnlockAffordance()
+            return
+        }
         // 长按刚松手时系统会补一次短按，挡掉，别把控制层又切一遍。
         if let longPressAt = lastLongPressAt, Date().timeIntervalSince(longPressAt) < 0.4 {
             lastLongPressAt = nil
@@ -1888,7 +2014,7 @@ struct PlayerScreen: View {
         case .portrait, .portraitUpsideDown: current = "竖"
         default: current = "—"
         }
-        return "支持 \(names.joined(separator: "+")) · 当前 \(current) · 请求 \(orientationGeneration) 次 · 退全屏 \(exitFullscreenCount) 次（\(lastExitReason)） · \(lastOrientationResult)"
+        return "支持 \(names.joined(separator: "+")) · 当前 \(current) · \(lastOrientationResult)"
     }
 
     /// 播放信息里的一条：左标题、右值。

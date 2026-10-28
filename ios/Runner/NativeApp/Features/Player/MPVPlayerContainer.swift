@@ -223,6 +223,8 @@ final class MPVHostView: UIView {
 
     /// 视频尺寸、填充方式与弹幕顶部留白，由容器在 updateUIView 里推进来。
     private var videoSize: CGSize = .zero
+    /// 上一次 layout 时的尺寸：用来认出「画面被撑大了」这件事。
+    private var lastLayoutSize: CGSize = .zero
     private var fillMode: MPVPlayerContainer.MPVFillMode = .fit
     private var danmakuTopInset: CGFloat = 0
 
@@ -265,14 +267,32 @@ final class MPVHostView: UIView {
         fillMode: MPVPlayerContainer.MPVFillMode,
         danmakuTopInset: CGFloat
     ) {
+        // 画面尺寸 / 填充方式变了也要主动讨一帧：暂停时 mpv 不报新帧，
+        // 屏幕上会留着旧尺寸画的那张图（同下面的 layoutSubviews）。
+        let geometryChanged = videoSize != self.videoSize || fillMode != self.fillMode
         self.videoSize = videoSize
         self.fillMode = fillMode
         self.danmakuTopInset = danmakuTopInset
         setNeedsLayout()
+        if geometryChanged {
+            glView.setNeedsDisplay()
+        }
     }
 
     override func layoutSubviews() {
         super.layoutSubviews()
+        // 尺寸一变就主动要一帧（LP 2026-10-28 第 5 条）。
+        //
+        // GL 视图开了 `enableSetNeedsDisplay`，只在 mpv 报新帧时才重画。暂停时
+        // 一帧都不来，进全屏只是把这块视图撑大，屏幕上还是**旧尺寸画的那张图**
+        // 被系统拉大——看着就是「画面被拉伸」（@developer3 2026-10-28 4349 的读法；
+        // Colo 那条 `videoSize` 为零的解释对不上：暂停并不清 `videoSize`，
+        // 清它的是 `prepareForNewEpisode`，所以补 16:9 兜底治不了这一条）。
+        // 尺寸对不上就自己讨一帧：mpv 按新的 FBO 尺寸重画，它自己按 keepaspect 留边。
+        if bounds.size != lastLayoutSize {
+            lastLayoutSize = bounds.size
+            glView.setNeedsDisplay()
+        }
         let rect = fillMode.videoRect(in: bounds, videoSize: videoSize)
         // 顶部让出控制栏（横屏 44pt），底部仍留 20% 给字幕：
         // 弹幕区 = 视频上方 80% 再往上收掉顶部留白。
