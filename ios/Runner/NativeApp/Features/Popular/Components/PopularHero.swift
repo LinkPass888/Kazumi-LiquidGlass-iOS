@@ -83,10 +83,14 @@ struct PopularHero: View {
     @State private var toastMessage: String?
     /// 选源面板的载体：与番剧详情页同一套（LP 2903 / Colo 2907）。
     @State private var sourceController: InfoController?
-    @State private var isShowingSources = false
     /// 刚才是从选源面板点进播放页的：返回时把面板放回来（Colo 3275）。
     @State private var returnToSourcesAfterPlayer = false
     @State private var depthBeforePlayer = 0
+    /// 从空规则的空状态点「去规则仓库添加」：关面板、等关完再推页（LP 2026-10-28）。
+    @State private var goToRuleShopAfterDismiss = false
+    /// 刚从规则仓库回来：把面板重开一次，别再停在空状态（Colo 3974）。
+    @State private var returnFromRuleShop = false
+    @State private var depthBeforeRuleShop = 0
 
     private var navigationDepth: Int {
         router.popularPath.count + router.timelinePath.count
@@ -292,36 +296,33 @@ struct PopularHero: View {
         // 这里不裁：下拉过界时封面放大，底边要真的往下长出来（LP 2942）。
         // 平时图正好 600 高，没有东西溢出去。
 
-        // 选源面板：直接复用详情页那张（`SourceSheet`）和它那一套回调，
-        // 不在推荐页另定一套（LP 2903 / 2904 / Colo 2907）。
-        .sheet(isPresented: $isShowingSources) {
-            if let current = sourceController {
-                // 点结果：先关面板、再往右推进播放页（LP 3273 / Colo 3275）。
-                SourceSheet(controller: current) { pluginName, result in
-                    isShowingSources = false
-                    returnToSourcesAfterPlayer = true
-                    depthBeforePlayer = navigationDepth
-                    router.push(
-                        .player(
-                            bangumiID: current.item.id,
-                            episode: 1,
-                            source: PlaybackSource(
-                                pluginName: pluginName,
-                                itemName: result.name,
-                                // 原样传 src：接口模式要的是 vod_id，拼成网址就查不到剧集。
-                                detailURL: result.src,
-                                directMediaURL: MediaUtility.isMediaURL(result.src) ? result.src : nil
-                            )
-                        )
-                    )
-                }
+        // 选源面板不再挂在这一页上（2026-10-28 计时：点下去到面板开始画 3.6 秒，
+        // 全耗在「弹之前先把这一页重排一遍」）。现在交给根层去弹，
+        // 这一页只负责交出控制器和两个回调。
+        .onChange(of: SourceSheetCoordinator.shared.isPresented) { _, presented in
+            guard !presented else { return }
+            // 面板关完了：该进规则仓库就进（等关闭动画收完，两个动画不抢）。
+            if goToRuleShopAfterDismiss {
+                goToRuleShopAfterDismiss = false
+                returnFromRuleShop = true
+                depthBeforeRuleShop = navigationDepth
+                router.push(.pluginShop)
             }
+            SourceSheetCoordinator.shared.clearIfNeeded()
         }
         // 从播放页返回：把面板放回来。
         .onChange(of: navigationDepth) { _, newDepth in
             guard returnToSourcesAfterPlayer, newDepth <= depthBeforePlayer else { return }
             returnToSourcesAfterPlayer = false
-            isShowingSources = true
+            if let controller = sourceController { presentSources(controller) }
+        }
+        // 从规则仓库回来：规则装上了就把面板重开一次；还是空的就留在原地。
+        .onChange(of: navigationDepth) { _, newDepth in
+            guard returnFromRuleShop, newDepth <= depthBeforeRuleShop else { return }
+            returnFromRuleShop = false
+            guard !environment.plugins.pluginList.isEmpty else { return }
+            guard let controller = sourceController else { return }
+            presentSources(controller)
         }
         // 分页一变就更新「当前是哪部」，落到克隆页则等动画走完再悄悄挪回真页：
         // 两页画的是同一张图，挪过去看不出接缝。
@@ -684,19 +685,68 @@ struct PopularHero: View {
     /// 详情页都有），没有才请求一次。同一部番点第二次直接用已经建好的那份。
     private func openSources(_ poster: PopularPoster) {
         if let controller = sourceController, controller.item.id == poster.id {
-            isShowingSources = true
+            presentSources(controller)
             return
         }
         // 点这颗钮不需要网络，也就不能等网络（LP 3665）：有缓存就用缓存，
         // 没有就先用列表里那份名称把面板打开。面板里的检索本来就要联网，
         // 没网时在那儿失败、在那儿提示，不挡面板弹出来。
         // 详情信息由面板自己按需补（`loadDetailIfNeeded`），补回来会换上。
-        let item = BangumiSubjectCache.shared.item(for: poster.id)
+        // 启动后第一次点这颗钮，白屏的账几乎全在「读盘」上：`item(for:)` 和
+        // `applyCachedEpisodes()` 都会去 Application Support 里读文件，读的时候
+        // 主线程停着，面板就一直是白的（LP 2026-10-28「第一次启动点推荐页的
+        // 开始观看会白几秒」）。所以这一下只碰内存：有就用，没有就拿列表里那份
+        // 名称先把面板弹出来，磁盘里的两份放到面板出来之后补（都是一样的字段，
+        // 补回来面板自己会重画）。
+        SheetTiming.tap = SheetTiming.now
+        SheetTiming.bodyFirst = 0
+        SheetTiming.listFirst = 0
+        SheetTiming.appear = 0
+        SheetTiming.ready = 0
+        let item = BangumiSubjectCache.shared.memoryItem(for: poster.id)
             ?? BangumiItem(id: poster.id, name: poster.name, nameCn: poster.nameCn)
         let controller = InfoController(item: item, plugins: environment.plugins)
-        controller.applyCachedEpisodes()
+        if let cachedEpisodes = BangumiSubjectCache.shared.memoryEpisodes(for: poster.id),
+           controller.episodes.isEmpty {
+            controller.replaceEpisodes(cachedEpisodes)
+        }
         sourceController = controller
-        isShowingSources = true
+        SheetTiming.ready = SheetTiming.now
+        presentSources(controller)
+        // 这里不能顺手读盘：`Task { @MainActor }` 会在这一拍结束时立刻跑，
+        // 读的还是主线程、还是赶在面板上屏之前——量出来「点下去→面板开始画」
+        // 就是这 4 秒（2026-10-28 计时：b4035ms）。剧集和条目由面板自己按需补
+        // （`loadDetailIfNeeded` 和检索结果），这条路上一次磁盘读都不做。
+    }
+
+    /// 把面板交给根层去弹：这里只给控制器和两个回调，不动这一页的布局。
+    private func presentSources(_ controller: InfoController) {
+        SourceSheetCoordinator.shared.present(
+            controller: controller,
+            onPlay: { pluginName, result in
+                SourceSheetCoordinator.shared.dismiss()
+                returnToSourcesAfterPlayer = true
+                depthBeforePlayer = navigationDepth
+                router.push(
+                    .player(
+                        bangumiID: controller.item.id,
+                        episode: 1,
+                        source: PlaybackSource(
+                            pluginName: pluginName,
+                            itemName: result.name,
+                            // 原样传 src：接口模式要的是 vod_id，拼成网址就查不到剧集。
+                            detailURL: result.src,
+                            directMediaURL: MediaUtility.isMediaURL(result.src) ? result.src : nil
+                        )
+                    )
+                )
+            },
+            onOpenRuleShop: {
+                // 面板自己关，这里只记下来，等它关完再推页。
+                goToRuleShopAfterDismiss = true
+                SourceSheetCoordinator.shared.dismiss()
+            }
+        )
     }
 
     /// 收藏圆钮：轻点是「在看 ↔ 未收藏」两态切换。

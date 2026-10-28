@@ -195,7 +195,6 @@ struct PlayerScreen: View {
     @State private var probeSawMenu = false
     @State private var probeLastSeen = Date()
     /// 收藏钮点下去的缩放（Colo 2026-10-28：0.15 秒的 spring 弹一下）。
-    @State private var collectScale: CGFloat = 1
     @State private var isTemporarySpeed = false
     @State private var rateBeforeTemporarySpeed: Float = 1.0
     /// 本次按压是否已经进入长按状态（用来区分「松手时是短按还是长按结束」）。
@@ -946,17 +945,24 @@ struct PlayerScreen: View {
         .accessibilityLabel(isForward ? "快进 \(seconds) 秒" : "快退 \(seconds) 秒")
     }
 
-    /// 两侧跳转钮：SF Symbols 自带数字的圆箭头（`gobackward.15` / `goforward.15`）。
+    /// 两侧跳转钮：快进 / 快退那颗符号，秒数写在符号正中（LP 2026-10-28）。
     ///
-    /// LP 2026-10-27 定：系统这套符号就是新 Apple 风格，不要再自己画环叠数字
-    /// ——自绘的形状永远比系统旧。秒数跟设置里的「快进快退时长」走。
+    /// 以前用系统自带数字的 `goforward.15` 那一套：只有 10/15/30/45/60/75/90 几档，
+    /// 秒数调成 80 这种就没有对应符号，画出来是个没数字的空箭头。
+    /// 现在统一一颗 `goforward` / `gobackward`，20 号白 regular（跟栏里其它钮一样大），
+    /// 数字 12 号白字压在上面——哪一档秒数都画得出来。
     private func skipButton(seconds: Int, isForward: Bool) -> some View {
-        Image(systemName: isForward ? "goforward.\(seconds)" : "gobackward.\(seconds)")
-            .font(.system(size: 28, weight: .regular))
-            .foregroundStyle(.white)
-            .frame(width: 44, height: 44)
-            .contentShape(Rectangle())
-            .shadow(color: .black.opacity(0.35), radius: 6, y: 1)
+        ZStack {
+            Image(systemName: isForward ? "goforward" : "gobackward")
+                .font(.system(size: 20, weight: .regular))
+                .foregroundStyle(.white)
+            Text("\(seconds)")
+                .font(.system(size: 12, weight: .regular).monospacedDigit())
+                .foregroundStyle(.white)
+        }
+        .frame(width: 44, height: 44)
+        .contentShape(Rectangle())
+        .shadow(color: .black.opacity(0.35), radius: 6, y: 1)
     }
 
     /// 画面按压：短按切控制栏 / 播放暂停，长按临时倍速（对应原版
@@ -1235,33 +1241,32 @@ struct PlayerScreen: View {
     /// 未收藏是 `plus`、收藏了是实心 `heart.fill`，一律白色 20pt——播放器里不用主题色，
     /// 靠实心与否区分，不靠颜色。
     ///
-    /// 点一下就在「在看」和「未追」之间切，带一次轻震动和 0.15 秒的 spring 缩放。
-    /// 挑具体状态（想看／搁置／看过／抛弃）的门挪到「更多 → 追番状态」，
-    /// 原来是点这颗弹菜单，改成切换后留个长按菜单会和「点一下」抢手势。
+    /// 点一下只弹菜单，不改状态、不震动：五项状态和「取消追番」都在里面，
+    /// 当前项右边打勾（LP 2026-10-28 / Colo 3984、3990）。
     private var collectButton: some View {
-        Button {
-            PlayerHaptics.tap()
-            bounceCollect()
-            noteInteraction()
-            applyCollectType(currentCollectType == .none ? .watching : .none)
-        } label: {
-            Image(systemName: currentCollectType == .none ? "plus" : "heart.fill")
-                .font(.system(size: 20, weight: .regular))
-                .foregroundStyle(.white)
-                .frame(width: 44, height: 44)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(PlayerPressStyle())
-        .scaleEffect(collectScale)
-        .accessibilityLabel(currentCollectType == .none ? "收藏" : "已追番")
-        .accessibilityValue(currentCollectType.title)
-        .accessibilityHint("轻点切换收藏，更多里可以选追番状态")
+        // 点一下只出菜单，不改状态、不震动（LP 2026-10-28 / Colo 3990）：
+        // 符号＝当前状态，五项状态 + 取消追番都在菜单里，当前项打勾。
+        SystemMenuButton(
+            items: collectStatusItems,
+            title: nil,
+            symbol: collectSymbolName,
+            accessibilityLabel: "追番状态",
+            tint: .white,
+            onOpen: { pinControlsWhileMenuOpen() }
+        )
+        .frame(width: 44, height: 44)
     }
 
-    /// 收藏钮按下去的弹一下：先缩到 0.85，再用 spring 回到 1，前后共 0.15 秒。
-    private func bounceCollect() {
-        withAnimation(.easeInOut(duration: 0.05)) { collectScale = 0.85 }
-        withAnimation(.spring(response: 0.15, dampingFraction: 0.6).delay(0.05)) { collectScale = 1 }
+    /// 顶栏那颗的符号＝当前状态（Colo 3984）。
+    private var collectSymbolName: String {
+        switch currentCollectType {
+        case .none: "plus"
+        case .watching: "heart.fill"
+        case .wish: "star.fill"
+        case .onHold: "hourglass"
+        case .watched: "checkmark"
+        case .dropped: "heart.slash.fill"
+        }
     }
 
     /// 这部番现在的收藏状态（收藏库里没有就是未收藏）。
@@ -1532,19 +1537,31 @@ struct PlayerScreen: View {
     /// 弹幕设置的图标：`captions.bubble` 20pt 打底，右下角叠一颗 12pt 的
     /// `gearshape.fill`，圆心压在气泡外框的右下角上（Colo 2026-10-27）。
     /// 按钮用 SwiftUI 叠，系统菜单里用这张 UIImage——两边同一套尺寸。
-    private nonisolated(unsafe) static var cachedDanmakuSettingsIcon: UIImage?
+    /// 渲好的图按深浅色各存一张：颜色跟着当前外观定，切外观不会用错那张。
+    private nonisolated(unsafe) static var cachedDanmakuSettingsIcons: [String: UIImage] = [:]
 
     private var danmakuSettingsIcon: UIImage {
-        if let cached = Self.cachedDanmakuSettingsIcon { return cached }
-        let rendered = Self.renderDanmakuSettingsIcon()
-        Self.cachedDanmakuSettingsIcon = rendered
+        // 菜单里那条要的是 UIImage，就把同一个 View 渲成图（Colo 2026-10-28）：
+        // 一处写、两处引用，横屏底栏和「更多 → 弹幕设置」不会再走样。
+        let key = colorScheme == .dark ? "dark" : "light"
+        if let cached = Self.cachedDanmakuSettingsIcons[key] { return cached }
+        let rendered = Self.renderDanmakuSettingsIcon(scheme: colorScheme)
+        Self.cachedDanmakuSettingsIcons[key] = rendered
         return rendered
     }
 
-    private static func renderDanmakuSettingsIcon() -> UIImage {
-        // 菜单里那条要的是 UIImage，就把同一个 View 渲成图（Colo 2026-10-28）：
-        // 一处写、两处引用，横屏底栏和「更多 → 弹幕设置」不会再走样。
-        let renderer = ImageRenderer(content: DanmakuSettingsGlyph())
+    private static func renderDanmakuSettingsIcon(scheme: ColorScheme) -> UIImage {
+        // 菜单里那颗跟播放器里是同一个 View，只按深浅色写死两个分支（Colo 2026-10-28）：
+        // 浅色＝气泡空心黑 + 齿轮实心黑；深色＝气泡实心白 + 齿轮实心白。
+        // 不交给系统自动取色——自动取的那份和菜单底色对不上时就看不见了。
+        let dark = scheme == .dark
+        let renderer = ImageRenderer(
+            content: DanmakuSettingsGlyph(
+                color: dark ? .white : .black,
+                bubbleFilled: dark
+            )
+            .environment(\.colorScheme, scheme)
+        )
         renderer.scale = 3
         return renderer.uiImage ?? UIImage()
     }
@@ -1557,7 +1574,7 @@ struct PlayerScreen: View {
         } label: {
             // 跟「更多 → 弹幕设置」那条用同一张图：一份实现画出来，两边不可能再走样
             // （LP 2026-10-28「横屏和竖屏更多菜单的要一起改，不要只改一个」）。
-            DanmakuSettingsGlyph()
+            DanmakuSettingsGlyph(color: .white, bubbleFilled: true)
         }
         .buttonStyle(PlayerPressStyle())
         .accessibilityLabel("弹幕设置")
@@ -1602,28 +1619,43 @@ struct PlayerScreen: View {
                 }
             )
         }
-        return items + [
-            // 倍速从底栏收进这里（LP 3593：底栏单行）。右边小字写当前值。
-            SystemMenuButton.Item(
-                title: "倍速",
-                symbol: "speedometer",
-                subtitle: speedText(Double(playbackRate)),
-                submenu: PlaybackSpeed.all.map { rate in
-                    SystemMenuButton.Item(
-                        title: speedText(rate),
-                        symbol: abs(playbackRate - Float(rate)) < 0.01 ? "checkmark" : ""
-                    ) {
-                        applySpeed(Float(rate))
-                        noteInteraction()
+        // 竖屏没有底栏，倍速和超分辨率都只剩菜单这一个入口（LP 2026-10-28）。
+        if !isFullscreen {
+            items.append(
+                SystemMenuButton.Item(
+                    title: "超分辨率",
+                    symbol: "wand.and.stars",
+                    subtitle: settings.superResolutionMode.title,
+                    submenu: SuperResolutionMode.allCases.map { mode in
+                        SystemMenuButton.Item(
+                            title: mode.title,
+                            symbol: settings.superResolutionMode == mode ? "checkmark" : "",
+                            subtitle: mode.detail
+                        ) {
+                            settings.superResolutionMode = mode
+                            noteInteraction()
+                        }
                     }
-                }
-            ) {},
-            SystemMenuButton.Item(
-                title: "追番状态",
-                symbol: "heart",
-                subtitle: currentCollectType.title,
-                submenu: collectStatusItems
-            ) {},
+                ) {}
+            )
+            items.append(
+                SystemMenuButton.Item(
+                    title: "倍速",
+                    symbol: "speedometer",
+                    subtitle: speedText(Double(playbackRate)),
+                    submenu: PlaybackSpeed.all.map { rate in
+                        SystemMenuButton.Item(
+                            title: speedText(rate),
+                            symbol: abs(playbackRate - Float(rate)) < 0.01 ? "checkmark" : ""
+                        ) {
+                            applySpeed(Float(rate))
+                            noteInteraction()
+                        }
+                    }
+                ) {}
+            )
+        }
+        return items + [
             SystemMenuButton.Item(title: "播放信息", symbol: "info.circle") {
                 closeMenu()
                 openSheet(.videoInfo)
@@ -1636,13 +1668,14 @@ struct PlayerScreen: View {
                 closeMenu()
                 openSheet(.externalPlay)
             },
-            SystemMenuButton.Item(title: "一起看", symbol: "person.2.wave.2") {
+            // 一起看这颗比别的项小一档（LP 2026-10-28：15pt）。
+            SystemMenuButton.Item(title: "一起看", symbol: "person.2.wave.2", symbolPointSize: 15) {
                 closeMenu()
                 openSheet(.syncPlay)
             },
             SystemMenuButton.Item(
                 title: "视频比例",
-                symbol: "rectangle.arrowtriangle.2.outward",
+                symbol: "aspectratio",
                 subtitle: aspectRatioMode.label,
                 submenu: PlayerAspectRatioMode.allCases.map { mode in
                     SystemMenuButton.Item(
@@ -1650,22 +1683,6 @@ struct PlayerScreen: View {
                         symbol: aspectRatioMode == mode ? "checkmark" : ""
                     ) {
                         aspectRatioMode = mode
-                    }
-                }
-            ) {},
-            // 超分辨率从横屏底栏收进这里（横屏那行放不下十颗，Colo 3613）。
-            SystemMenuButton.Item(
-                title: "超分辨率",
-                symbol: "wand.and.stars",
-                subtitle: settings.superResolutionMode.title,
-                submenu: SuperResolutionMode.allCases.map { mode in
-                    SystemMenuButton.Item(
-                        title: mode.title,
-                        symbol: settings.superResolutionMode == mode ? "checkmark" : "",
-                        subtitle: mode.detail
-                    ) {
-                        settings.superResolutionMode = mode
-                        noteInteraction()
                     }
                 }
             ) {},
@@ -1692,7 +1709,8 @@ struct PlayerScreen: View {
         var items = CollectType.enabledCases.map { type in
             SystemMenuButton.Item(
                 title: type.buttonTitle,
-                symbol: currentCollectType == type ? "checkmark" : type.statusSymbol
+                symbol: type.statusSymbol,
+                isChecked: currentCollectType == type
             ) {
                 noteInteraction()
                 applyCollectType(type)
@@ -1889,6 +1907,7 @@ struct PlayerScreen: View {
                 danmakuSettingsButton()
                 danmakuField
                     .frame(maxWidth: .infinity)
+                superResolutionButton
                 speedButton
                 episodesButton
                 fullscreenButton
@@ -1959,7 +1978,28 @@ struct PlayerScreen: View {
         .accessibilityLabel("下一集")
     }
 
-    /// 横屏那颗倍速：标签写当前值（竖屏在「更多」菜单里）。
+    /// 横屏那颗超分辨率：点开就是模式列表，当前项打勾（Colo 2026-10-28）。
+    private var superResolutionButton: some View {
+        SystemMenuButton(
+            items: SuperResolutionMode.allCases.map { mode in
+                SystemMenuButton.Item(
+                    title: mode.title,
+                    symbol: settings.superResolutionMode == mode ? "checkmark" : "",
+                    subtitle: mode.detail
+                ) {
+                    settings.superResolutionMode = mode
+                    noteInteraction()
+                }
+            },
+            title: nil,
+            symbol: "wand.and.stars",
+            accessibilityLabel: "超分辨率 \(settings.superResolutionMode.title)",
+            onOpen: { pinControlsWhileMenuOpen() }
+        )
+        .frame(minWidth: 44, minHeight: 40)
+    }
+
+    /// 横屏那颗倍速：底栏只放符号，当前值点开菜单看（Colo 2026-10-28）。
     private var speedButton: some View {
         SystemMenuButton(
             items: PlaybackSpeed.all.map { rate in
@@ -1971,7 +2011,7 @@ struct PlayerScreen: View {
                     noteInteraction()
                 }
             },
-            title: speedText(Double(playbackRate)),
+            title: nil,
             symbol: "speedometer",
             accessibilityLabel: "倍速 \(speedText(Double(playbackRate)))",
             onOpen: { pinControlsWhileMenuOpen() }
@@ -1989,7 +2029,7 @@ struct PlayerScreen: View {
             }
         } label: {
             Image(systemName: "list.bullet")
-                .font(.system(size: 20, weight: .regular))
+                .font(.system(size: 20, weight: .semibold))
                 .foregroundStyle(.white)
                 .frame(width: 44, height: 44)
                 .contentShape(Rectangle())
@@ -3057,16 +3097,22 @@ private struct SyncPlaySheet: View {
 /// LP 2026-10-28「怎么还出界了」「怎么小了」两回都是裁出来的）。
 /// 横屏底栏直接用这个 View，「更多 → 弹幕设置」把它渲成图，两处同一份。
 struct DanmakuSettingsGlyph: View {
+    /// 颜色和空心/实心都由调用方定，组件里不写死（LP / Colo 2026-10-28）：
+    /// 播放器里两个都白、气泡实心；「更多」菜单里气泡空心黑、齿轮实心黑。
+    var color: Color = .white
+    /// 气泡用实心还是空心。
+    var bubbleFilled: Bool = true
+
     var body: some View {
         ZStack(alignment: .bottomTrailing) {
-            Image(systemName: "captions.bubble")
+            Image(systemName: bubbleFilled ? "captions.bubble.fill" : "captions.bubble")
                 .font(.system(size: 20, weight: .regular))
             Image(systemName: "gearshape.fill")
                 .font(.system(size: 12, weight: .regular))
                 // 圆心压在气泡外框的右下角上；比 6 再往左上 0.6（LP 2026-10-28）。
                 .offset(x: 5.4, y: 5.4)
         }
-        .foregroundStyle(.white)
+        .foregroundStyle(color)
         .frame(width: 44, height: 44)
         .contentShape(Rectangle())
     }

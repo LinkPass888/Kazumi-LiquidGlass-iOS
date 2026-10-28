@@ -52,6 +52,13 @@ final class BangumiSubjectCache {
 
     // MARK: - 读
 
+    /// 只查内存、不碰磁盘。给「手指落下就得立刻出东西」的路径用：
+    /// 轮播那颗「开始观看」启动后第一次点，读盘是几秒白屏的一份账（LP 2026-10-28）。
+    func memoryItem(for bangumiID: Int) -> BangumiItem? { items[bangumiID] }
+
+    /// 同上，剧集。
+    func memoryEpisodes(for bangumiID: Int) -> [BangumiEpisode]? { episodes[bangumiID] }
+
     /// 条目：内存里有就直接用，没有就读盘。不判断新鲜度——调用方拿它先画页面，
     /// 是否要刷新由 [needsInfoRefresh] 决定。
     func item(for bangumiID: Int) -> BangumiItem? {

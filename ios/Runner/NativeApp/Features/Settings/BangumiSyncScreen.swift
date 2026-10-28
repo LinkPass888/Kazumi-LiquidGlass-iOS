@@ -37,6 +37,8 @@ struct BangumiSyncScreen: View {
     @State private var message: String?
     @State private var failed = false
     @State private var progress: Double?
+    /// 同步失败要留在弹窗里说，不能跟着页面滚走。
+    @State private var syncDialogFailure: String?
 
     @AppStorage("bangumiLastSyncAt") private var lastSyncAt: Double = 0
     @AppStorage("bangumiLastSyncSummary") private var lastSyncSummary = ""
@@ -59,6 +61,16 @@ struct BangumiSyncScreen: View {
             syncSection
             resultSection
             preferenceSection
+        }
+        .overlay {
+            if action == .sync || syncDialogFailure != nil {
+                SyncProgressDialog(
+                    stage: progressText,
+                    value: progress,
+                    failure: syncDialogFailure,
+                    onClose: { syncDialogFailure = nil }
+                )
+            }
         }
         .navigationTitle("追番同步")
         .navigationBarTitleDisplayMode(.inline)
@@ -88,9 +100,7 @@ struct BangumiSyncScreen: View {
             Group {
                 VStack(alignment: .leading, spacing: 0) {
                     Button {
-                        withAnimation(.snappy(duration: 0.2)) {
-                            isTokenExpanded.toggle()
-                        }
+                        isTokenExpanded.toggle()
                     } label: {
                         HStack(spacing: 8) {
                             Text("Access Token")
@@ -145,31 +155,36 @@ struct BangumiSyncScreen: View {
                     }
                 }
 
-                // 折区外面：不展开也能验。
-                Button {
-                    saveToken()
-                } label: {
-                    Text(action == .verify ? "正在测试…" : "保存并测试")
-                        .frame(maxWidth: .infinity)
-                }
-                .disabled(busy)
+                // 存过令牌就整组收起，两颗按钮也一起收进去（LP 2026-10-28）：
+                // 平时只留上面那一行摘要，不摆着按钮。
+                if isTokenExpanded {
+                    // 两颗按钮同一行、一样大：左「获取授权码」，右「保存并测试」（LP 2026-10-28）。
+                    HStack(spacing: 12) {
+                        Button {
+                            openTokenPage()
+                        } label: {
+                            HStack(spacing: 4) {
+                                Text("获取授权码")
+                                Image(systemName: "arrow.up.right")
+                                    .font(.system(size: 13, weight: .semibold))
+                            }
+                            .frame(maxWidth: .infinity, minHeight: 36)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.regular)
 
-                Button {
-                    openTokenPage()
-                } label: {
-                    HStack {
-                        Text("获取授权码")
-                            .foregroundStyle(Color.primary)
-                        Spacer(minLength: 8)
-                        Image(systemName: "arrow.up.right")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(Color.secondary)
+                        Button {
+                            saveToken()
+                        } label: {
+                            Text(action == .verify ? "正在测试…" : "保存并测试")
+                                .frame(maxWidth: .infinity, minHeight: 36)
+                        }
+                        .buttonStyle(.borderedProminent)
                     }
-                    .frame(minHeight: 44)
-                    .contentShape(Rectangle())
+                    .disabled(busy)
+                    .frame(minHeight: 36)
                 }
-                .buttonStyle(.plain)
-                .disabled(busy)
             }
             // Colo 3532：Form 行底色显式取 groupedRow，不依赖系统动态色。
             .listRowBackground(KazumiPalette.groupedRow(for: colorScheme))
@@ -238,18 +253,7 @@ struct BangumiSyncScreen: View {
                 Text(lastSyncLine)
                     .frame(minHeight: 24, alignment: .leading)
 
-                if action == .sync {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(progressText)
-                            .font(.footnote)
-                            .foregroundStyle(Color.secondary)
-                        if let progress {
-                            ProgressView(value: progress)
-                                .progressViewStyle(.linear)
-                        }
-                    }
-                    .accessibilityElement(children: .combine)
-                } else if !lastSyncError.isEmpty {
+                if !lastSyncError.isEmpty {
                     Text(lastSyncError)
                         .font(.footnote)
                         .foregroundStyle(Color.orange)
@@ -328,6 +332,7 @@ struct BangumiSyncScreen: View {
         action = .verify
         tokenError = nil
         tokenStatus = nil
+        syncDialogFailure = nil
         Task {
             defer { action = nil }
             do {
@@ -385,6 +390,9 @@ struct BangumiSyncScreen: View {
                 lastSyncError = ""
                 lastSyncSummary = summary
                 message = nil
+                // 成功：进度条拉满，停 0.5 秒再收（Colo 2026-10-28）。
+                progress = 1
+                try? await Task.sleep(nanoseconds: 500_000_000)
                 progress = nil
             } catch {
                 lastSyncAt = Date().timeIntervalSince1970
@@ -393,6 +401,7 @@ struct BangumiSyncScreen: View {
                 message = nil
                 progress = nil
                 failed = true
+                syncDialogFailure = BangumiSyncEngine.describeError(error)
             }
         }
     }

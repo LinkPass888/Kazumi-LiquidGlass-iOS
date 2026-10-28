@@ -23,12 +23,39 @@ struct AliasPickerTarget: Identifiable, Hashable {
     }
 }
 
+/// 选源面板的耗时只写日志，不上屏（Colo 2026-10-28）。
+///
+/// 白屏那次是拿它量的：点下去 → 面板开始画 → 列表画出来。
+/// 现在留着当常态观测：真慢了能从「设置 → 日志」里翻到，界面上不显示。
 @MainActor
+enum SheetTiming {
+    nonisolated(unsafe) static var tap: Double = 0
+    nonisolated(unsafe) static var bodyFirst: Double = 0
+    nonisolated(unsafe) static var listFirst: Double = 0
+    nonisolated(unsafe) static var appear: Double = 0
+    /// 控制器建好、开始弹面板那一刻。
+    nonisolated(unsafe) static var ready: Double = 0
+    static var now: Double { CFAbsoluteTimeGetCurrent() }
+
+    /// 三段都记下来，一次写一行。
+    static func logIfNeeded() {
+        guard tap > 0, listFirst > 0 else { return }
+        func ms(_ t: Double) -> Int { t > 0 ? Int(((t - tap) * 1000).rounded()) : -1 }
+        KazumiLogBuffer.network(
+            "选源面板耗时 准备 \(ms(ready))ms / 开始画 \(ms(bodyFirst))ms / 上屏 \(ms(appear))ms / 列表 \(ms(listFirst))ms"
+        )
+        tap = 0
+    }
+}
+
 struct SourceSheet: View {
     let controller: InfoController
     /// 点了某条结果：关面板、从详情页往右推进播放页（LP 3273 / Colo 3275）。
     /// 返回时详情页再把面板带着原来那批结果放回来。
     var onPlay: (String, SearchItem) -> Void
+    /// 「去规则仓库添加」：面板自己关掉，由弹出它的那一页把人送进规则仓库，
+    /// 回来再把面板重新开一次（LP 2026-10-28 / Colo 3974）。为空就只提示。
+    var onOpenRuleShop: (() -> Void)? = nil
     /// 打不开外部浏览器时的一句话。
     @State private var browserFailure = false
     /// 正在选别名去检索的来源；为空表示没有打开别名选择器。
@@ -43,19 +70,23 @@ struct SourceSheet: View {
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
+        let _ = recordBody()
         NavigationStack {
             Group {
-                if controller.sourceGroups.isEmpty && controller.isSearchingSources {
+                if controller.installedRules.isEmpty && controller.isSearchingSources {
                     ProgressView("正在检索所有规则…")
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else if controller.sourceGroups.isEmpty {
+                } else if controller.installedRules.isEmpty {
                     emptyRuleView
                 } else {
                     list
                 }
             }
             .background(KazumiPalette.background(for: colorScheme).ignoresSafeArea())
-            .navigationTitle("选择播放源")
+            .onAppear {
+                if SheetTiming.appear == 0 { SheetTiming.appear = SheetTiming.now }
+            }
+            .navigationTitle(sheetTitle)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 // 关闭在右上，左上留空。原来右上的「重新检索」（全部刷新）已经删掉：
@@ -95,9 +126,36 @@ struct SourceSheet: View {
         .alert("无法打开浏览器，请稍后重试", isPresented: $browserFailure) {
             Button("好", role: .cancel) {}
         }
+        // 半屏起步，上滑到全屏（LP 2026-10-28「开始观看没必要弹全屏窗口，半屏差不多，
+        // 可以上滑顶部全屏」/ Colo 3969）。挂在面板自己身上，两个入口一起生效。
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
     }
 
+    private func recordBody() {
+        if SheetTiming.bodyFirst == 0 { SheetTiming.bodyFirst = SheetTiming.now }
+    }
+
+    private func recordList() {
+        if SheetTiming.listFirst == 0 {
+            SheetTiming.listFirst = SheetTiming.now
+            SheetTiming.logIfNeeded()
+        }
+    }
+
+    private var sheetTitle: String { "选择播放源" }
+
     // MARK: - 动作
+
+    /// 「去规则仓库添加」：先把这一轮检索收掉，再把意图交给弹出面板的那一页。
+    private func goToRuleShop() {
+        controller.closeSourceSearch()
+        if let onOpenRuleShop {
+            onOpenRuleShop()
+        } else {
+            dismiss()
+        }
+    }
 
     /// 「在浏览器中打开」，网址照 main 的 _openInBrowser 取：
     /// 走接口的规则开 baseUrl，走网页的规则开 searchURL 并把 @keyword 换成这一条的检索词。
@@ -126,10 +184,12 @@ struct SourceSheet: View {
     // MARK: - 列表
 
     private var list: some View {
-        ScrollView {
+        let _ = recordList()
+        return ScrollView {
             LazyVStack(spacing: 10) {
-                ForEach(controller.sourceGroups) { group in
-                    groupCard(group)
+                ForEach(controller.installedRules) { plugin in
+                    // 逐行算：只给看得见的那几行建 SourceGroup（见 InfoController）
+                    groupCard(controller.sourceGroup(named: plugin.name))
                 }
             }
             .padding(.horizontal, 12)
@@ -375,23 +435,32 @@ struct SourceSheet: View {
         .frame(width: 18, height: 18)
     }
 
+    /// 一条规则都没有：一句话加一颗按钮，把人送去规则仓库（Colo 3974）。
+    ///
+    /// 「先关面板再推页」的抢动画问题交给弹出它的那一页：按钮只把意图报上去，
+    /// 那边等关闭动画收完再推（`.sheet(onDismiss:)`），回来时再把面板开一次。
     private var emptyRuleView: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "puzzlepiece.extension")
-                .font(.system(size: 38, weight: .semibold))
-                .foregroundStyle(.tertiary)
-            Text("还没有安装任何规则")
-                .font(.headline)
-            Text("请先到「我的 → 规则管理」安装番剧来源。")
-                .font(.footnote)
+        VStack(spacing: 10) {
+            Image(systemName: "shippingbox")
+                .font(.system(size: 20, weight: .regular))
                 .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-            // 这里原本有一颗「去安装规则」按钮，只调 `dismiss()`：字指了一条路，
-            // 按钮没走那条路，人还在原地——一颗在说谎的按钮比没有按钮更坏。
-            // 原版是有路由的（`lib/pages/info/info_page.dart:305-307` 的
-            // `context.pushNamed('/settings/plugin/')`），我们这边 `AppRouter.pluginList` 也在。
-            // 接法写好了，但「先关 sheet 再推页」会跟关闭动画抢，**没在屏上验过**，
-            // 所以先只留这句指路；验通了再把按钮装回来。
+            Text("还没有可用的播放规则")
+                .font(.system(size: 15))
+                .foregroundStyle(.secondary)
+            Button {
+                goToRuleShop()
+            } label: {
+                Text("去规则仓库添加")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 20)
+                    .frame(height: 40)
+                    .background(
+                        Capsule().fill(KazumiPalette.accent(for: colorScheme))
+                    )
+            }
+            .buttonStyle(.plain)
+            .padding(.top, 6)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(.horizontal, 32)

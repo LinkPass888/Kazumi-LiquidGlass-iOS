@@ -22,9 +22,13 @@ struct SystemMenuButton: UIViewRepresentable {
         /// 图标是两颗符号叠出来的时候给这张合成图（比如弹幕设置：
         /// `captions.bubble` 打底 + 右下角小齿轮）。给了就用它，`symbol` 只当凭据。
         var symbolImage: UIImage? = nil
+        /// 这一项图标单独的字号：默认跟菜单里其它项一样 17，个别项要小一点就自己给。
+        var symbolPointSize: CGFloat? = nil
         var isDestructive: Bool = false
         /// 二级菜单那一行右边的小字，写当前值。
         var subtitle: String? = nil
+        /// 这一项打勾（系统的勾画在右边，符号仍是状态自己那颗）。
+        var isChecked: Bool = false
         /// 有二级菜单就展开成子菜单，`action` 不生效。
         var submenu: [Item]? = nil
         var action: () -> Void
@@ -39,6 +43,10 @@ struct SystemMenuButton: UIViewRepresentable {
     var tint: Color = .white
     /// 标题右边要不要带一个小三角，表示「点开有菜单」。
     var showsChevron: Bool = false
+    /// 图标钮上符号的字号／字重。控制栏上其它按钮是 20pt regular，
+    /// 这里一直是 17pt semibold，并排放就显得又小又暗（Colo 2026-10-28）。
+    var symbolSize: CGFloat = 20
+    var symbolWeight: Font.Weight = .regular
     /// 菜单被点开时回调：控制栏要靠它知道「先别收」。
     var onOpen: () -> Void = {}
 
@@ -127,6 +135,7 @@ struct SystemMenuButton: UIViewRepresentable {
         let appearanceChanged = isIcon
             ? (!coordinator.hasAppliedAppearance
                 || coordinator.appliedSymbol != symbol
+                || coordinator.appliedSymbolSize != symbolSize
                 || button.tintColor != tintColor)
             : true
         if appearanceChanged {
@@ -157,12 +166,16 @@ struct SystemMenuButton: UIViewRepresentable {
                 button.setImage(
                     UIImage(
                         systemName: symbol,
-                        withConfiguration: UIImage.SymbolConfiguration(pointSize: 17, weight: .semibold)
+                        withConfiguration: UIImage.SymbolConfiguration(
+                            pointSize: symbolSize,
+                            weight: Self.uiWeight(symbolWeight)
+                        )
                     ),
                     for: .normal
                 )
             }
             coordinator.appliedSymbol = symbol
+            coordinator.appliedSymbolSize = symbolSize
             coordinator.hasAppliedAppearance = true
         }
         button.tintColor = tintColor
@@ -185,6 +198,31 @@ struct SystemMenuButton: UIViewRepresentable {
         coordinator.signature = signature
 
         button.menu = UIMenu(children: coordinator.makeActions(count: items.count))
+    }
+
+    /// 菜单里的图标一律按 17pt 画：系统默认那份会随符号自身的留白看起来有大有小，
+    /// 「一起看」那颗就显小（LP 2026-10-28 / Colo 3986）。
+    /// SwiftUI 的字重换成符号图用的那份（`UIImage.SymbolWeight` 是它自己一套）。
+    static func uiWeight(_ weight: Font.Weight) -> UIImage.SymbolWeight {
+        switch weight {
+        case .ultraLight: return .ultraLight
+        case .thin: return .thin
+        case .light: return .light
+        case .medium: return .medium
+        case .semibold: return .semibold
+        case .bold: return .bold
+        case .heavy: return .heavy
+        case .black: return .black
+        default: return .regular
+        }
+    }
+
+    static func menuImage(_ name: String, pointSize: CGFloat? = nil) -> UIImage? {
+        guard !name.isEmpty else { return nil }
+        return UIImage(
+            systemName: name,
+            withConfiguration: UIImage.SymbolConfiguration(pointSize: pointSize ?? 17, weight: .regular)
+        )
     }
 
     #if DEBUG
@@ -229,6 +267,7 @@ struct SystemMenuButton: UIViewRepresentable {
         /// 按钮外观（标题 / 符号 / 小三角）上次应用的值：没变就不重置 UIKit 内容。
         var hasAppliedAppearance = false
         var appliedSymbol: String?
+        var appliedSymbolSize: CGFloat?
 
         func makeActions(count: Int) -> [UIMenuElement] {
             // 一级和二级的点法做成一件事：所有能点的项按顺序进 `flat`，
@@ -237,13 +276,16 @@ struct SystemMenuButton: UIViewRepresentable {
             func leaf(_ item: Item) -> UIAction {
                 flat.append(item)
                 let index = flat.count - 1
-                return UIAction(
+                let action = UIAction(
                     title: item.title,
-                    image: item.symbolImage ?? (item.symbol.isEmpty ? nil : UIImage(systemName: item.symbol)),
+                    image: item.symbolImage
+                        ?? SystemMenuButton.menuImage(item.symbol, pointSize: item.symbolPointSize),
                     attributes: item.isDestructive ? .destructive : []
                 ) { [weak self] _ in
                     self?.flat[safe: index]?.action()
                 }
+                action.state = item.isChecked ? UIMenuElement.State.on : UIMenuElement.State.off
+                return action
             }
             let elements: [UIMenuElement] = (0..<count).map { index in
                 let item = items[index]
@@ -251,7 +293,8 @@ struct SystemMenuButton: UIViewRepresentable {
                 return UIMenu(
                     title: item.title,
                     subtitle: item.subtitle ?? "",
-                    image: item.symbolImage ?? (item.symbol.isEmpty ? nil : UIImage(systemName: item.symbol)),
+                    image: item.symbolImage
+                        ?? SystemMenuButton.menuImage(item.symbol, pointSize: item.symbolPointSize),
                     children: submenu.map(leaf)
                 )
             }

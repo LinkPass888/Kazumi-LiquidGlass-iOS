@@ -58,6 +58,9 @@ final class SkipSegmentPillModel {
     /// 弹窗现在有没有内容。
     var isVisible: Bool { kind != nil }
 
+    /// 符号中间要不要写秒数：片尾 3 秒内不倒数（`nextEpisode`），数字位就空着。
+    var showsCountdownNumber: Bool { mode == .countdown }
+
     /// 圆环进度：0..1，1 是满环。
     var countdownFraction: Double {
         countdownRemaining / SkipSegmentPillModel.countdownSeconds
@@ -326,16 +329,21 @@ struct SkipSegmentPillView: View {
     }
 
     /// 圆环，不显示数字（跟 main 的 `_CountdownRing` 一致）。
+    /// 倒数：快进那颗符号，秒数写在符号正中（Colo 2026-10-28）。
+    /// 以前是旁边一颗圆环，跟栏里的符号对不上；现在整颗就是符号本身。
+    /// 片尾 3 秒内不倒数，就把数字位空着。
     private var countdownRing: some View {
         ZStack {
-            Circle()
-                .stroke(Self.foreground.opacity(0.24), lineWidth: 2)
-            Circle()
-                .trim(from: 0, to: model.countdownFraction)
-                .stroke(Self.foreground, style: StrokeStyle(lineWidth: 2, lineCap: .round))
-                .rotationEffect(.degrees(-90))
+            Image(systemName: "goforward")
+                .font(.system(size: 20, weight: .regular))
+                .foregroundStyle(Self.foreground)
+            if model.showsCountdownNumber {
+                Text("\(Int(model.countdownRemaining.rounded(.up)))")
+                    .font(.system(size: 12, weight: .regular).monospacedDigit())
+                    .foregroundStyle(Self.foreground)
+            }
         }
-        .frame(width: 18, height: 18)
+        .frame(width: 26, height: 26)
     }
 
     /// 弹窗上的白：跟原版 `Color(0xF2FFFFFF)` 同值（白 95%）。

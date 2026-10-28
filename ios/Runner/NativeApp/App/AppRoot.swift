@@ -45,6 +45,24 @@ struct AppRoot: View {
                 isShowingAppUpdate = true
             }
         }
+        // 选源面板挂在根层弹（Colo 2026-10-28）：推荐页的轮播那一页太重，
+        // 从它里面弹面板要先重排整页，量出来面板 3.6 秒才出现。
+        .sheet(isPresented: Binding(
+            get: { SourceSheetCoordinator.shared.isPresented },
+            set: { SourceSheetCoordinator.shared.isPresented = $0 }
+        )) {
+            if let controller = SourceSheetCoordinator.shared.controller {
+                SourceSheet(
+                    controller: controller,
+                    onPlay: { name, item in
+                        SourceSheetCoordinator.shared.onPlay?(name, item)
+                    },
+                    onOpenRuleShop: {
+                        SourceSheetCoordinator.shared.onOpenRuleShop?()
+                    }
+                )
+            }
+        }
         .alert(
             "发现新版本 \(environment.updates.appUpdate?.version ?? "")",
             isPresented: $isShowingAppUpdate

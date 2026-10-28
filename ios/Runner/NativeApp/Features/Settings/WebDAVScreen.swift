@@ -22,12 +22,14 @@ struct WebDAVScreen: View {
     @Environment(LibraryStore.self) private var library
     @Environment(\.colorScheme) private var colorScheme
 
-    /// 结果行上那句话：常显，空态是「尚未连接」。
+    /// 测试结果那句话：只有按过测试才显示，平时不占地方（LP 2026-10-28）。
     @State private var statusMessage: String?
     @State private var statusIsError = false
     @State private var isBusy = false
     @State private var isSyncing = false
     @State private var progress: SyncProgress?
+    /// 同步失败留在弹窗里说。
+    @State private var syncDialogFailure: String?
     @State private var isCredentialsExpanded = false
 
     @AppStorage("webDavLastSyncAt") private var lastSyncAt: Double = 0
@@ -43,9 +45,20 @@ struct WebDAVScreen: View {
     var body: some View {
         Form {
             connectionSection
+            enableSection
             contentSection
             runSection
             resultSection
+        }
+        .overlay {
+            if isSyncing || syncDialogFailure != nil {
+                SyncProgressDialog(
+                    stage: progress?.text ?? "正在连接云盘…",
+                    value: progress?.value,
+                    failure: syncDialogFailure,
+                    onClose: { syncDialogFailure = nil }
+                )
+            }
         }
         .navigationTitle("多设备同步")
         .navigationBarTitleDisplayMode(.inline)
@@ -57,6 +70,7 @@ struct WebDAVScreen: View {
             if settings.webDAVURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 isCredentialsExpanded = true
             }
+            statusMessage = nil
         }
     }
 
@@ -64,73 +78,11 @@ struct WebDAVScreen: View {
 
     private var connectionSection: some View {
         Section {
-            Group {
-                credentialsRow
+            // 每一行都单独成行：字段挤在一个 VStack 里当一行，Form 的分隔线只画到
+            // 那一行的内容宽，右边就少一截（LP 2026-10-28「灰色细线少一截」）。
+            credentialsRow
 
-                Button {
-                    Task { await saveAndTest() }
-                } label: {
-                    Text("保存并测试")
-                        .frame(maxWidth: .infinity)
-                }
-                .disabled(isBusy || !hasCredentials)
-
-                // 结果行常显、位置固定：按完就在原处换字，整段不会跳一下。
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    if isBusy {
-                        ProgressView()
-                            .controlSize(.small)
-                    }
-                    Text(statusMessage ?? "尚未连接")
-                        .font(.footnote)
-                        .foregroundStyle(statusIsError ? Color.orange : Color.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Spacer(minLength: 0)
-                }
-                .accessibilityElement(children: .combine)
-
-                // 总开关在账密下面（LP 2026-10-25）。
-                Toggle("启用 WebDAV", isOn: enableBinding)
-                    .disabled(!hasCredentials)
-            }
-            // Colo 3532：Form 行底色显式取 groupedRow，不依赖系统动态色。
-            .listRowBackground(KazumiPalette.groupedRow(for: colorScheme))
-        } header: {
-            Text("连接你的云盘")
-        } footer: {
-            Text("地址、账号和密码只存在这台设备上，同步时直连你自己的云盘。")
-        }
-    }
-
-    /// 折叠行本身：左边「服务器」，右边主机名，一颗会转的箭头。
-    private var credentialsRow: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Button {
-                withAnimation(.snappy(duration: 0.2)) {
-                    isCredentialsExpanded.toggle()
-                }
-            } label: {
-                HStack(spacing: 8) {
-                    Text("服务器")
-                        .foregroundStyle(Color.primary)
-                    Spacer(minLength: 8)
-                    Text(serverSummary)
-                        .foregroundStyle(Color.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Color.secondary)
-                        .rotationEffect(.degrees(isCredentialsExpanded ? 180 : 0))
-                }
-                .frame(minHeight: 44)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("服务器")
-            .accessibilityValue(serverSummary)
-            .accessibilityHint(isCredentialsExpanded ? "收起地址与账号" : "展开地址与账号")
-
+            // 存过了就整组收起来：账密、输入框、按钮全在折区里（LP 2026-10-28）。
             if isCredentialsExpanded {
                 TextField("地址", text: webDAVURLBinding)
                     .textInputAutocapitalization(.never)
@@ -164,19 +116,95 @@ struct WebDAVScreen: View {
                     .accessibilityLabel(isPasswordVisible ? "隐藏密码" : "显示密码")
                 }
                 .frame(minHeight: 44)
+
+                // 按钮样式跟 Bangumi 那颗一模一样（LP 2026-10-28）：高 36、胶囊、15 号。
+                Button {
+                    Task { await saveAndTest() }
+                } label: {
+                    Text("保存并测试")
+                        .font(.system(size: 15))
+                        .frame(maxWidth: .infinity, minHeight: 36)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(isBusy || !hasCredentials)
+
+                // 只有按过测试才出现这一行，平时不占地方（LP 2026-10-28）。
+                if let statusMessage {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        if isBusy {
+                            ProgressView()
+                                .controlSize(.small)
+                        }
+                        Text(statusMessage)
+                            .font(.footnote)
+                            .foregroundStyle(statusIsError ? Color.orange : Color.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: 0)
+                    }
+                    .accessibilityElement(children: .combine)
+                }
             }
+        } header: {
+            Text("连接你的云盘")
+        } footer: {
+            Text("地址、账号和密码只存在这台设备上，同步时直连你自己的云盘。")
+        }
+        // 折起来、摊开只换高度，别给高度加隐式动画——那一行位置没动，抖是动画抖的。
+        .animation(nil, value: isCredentialsExpanded)
+    }
+
+    /// 总开关自己一段：不跟账密挤在一组（LP 2026-10-28）。
+    private var enableSection: some View {
+        Section {
+            Toggle("启用 WebDAV", isOn: enableBinding)
+                .disabled(!hasCredentials)
+                .listRowBackground(KazumiPalette.groupedRow(for: colorScheme))
+        } footer: {
+            Text("关掉之后不再自动同步，手动同步也停用。")
+        }
+    }
+
+    /// 折叠行本身：左边「服务器」，右边主机名，一颗会转的箭头。
+    private var credentialsRow: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Button {
+                isCredentialsExpanded.toggle()
+            } label: {
+                HStack(spacing: 8) {
+                    Text("WebDAV")
+                        .foregroundStyle(Color.primary)
+                    Spacer(minLength: 8)
+                    Text(serverSummary)
+                        .foregroundStyle(Color.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Color.secondary)
+                        .rotationEffect(.degrees(isCredentialsExpanded ? 180 : 0))
+                }
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("WebDAV")
+            .accessibilityValue(serverSummary)
+            .accessibilityHint(isCredentialsExpanded ? "收起地址与账号" : "展开地址与账号")
+
         }
     }
 
     @State private var isPasswordVisible = false
 
-    /// 折起来的那一行：填过就写主机名，没填过写「未填写」。
+    /// 折起来的那一行：账号 @ 主机名，没填过写「未填写」。
     private var serverSummary: String {
         let raw = settings.webDAVURL.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !raw.isEmpty else { return "未填写" }
         let withScheme = raw.contains("://") ? raw : "https://" + raw
-        if let host = URL(string: withScheme)?.host, !host.isEmpty { return host }
-        return raw
+        let host = URL(string: withScheme)?.host ?? raw
+        let user = settings.webDAVUser.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !user.isEmpty else { return host }
+        return "\(user)@\(host)"
     }
 
     // MARK: - 段二 要同步什么
@@ -216,18 +244,6 @@ struct WebDAVScreen: View {
                 }
                 .disabled(!canSync || isBusy || WebDAVSync.enabledContents(settings).isEmpty)
 
-                if isSyncing, let progress {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(progress.text)
-                            .font(.footnote)
-                            .foregroundStyle(Color.secondary)
-                        if let value = progress.value {
-                            ProgressView(value: value)
-                                .progressViewStyle(.linear)
-                        }
-                    }
-                    .accessibilityElement(children: .combine)
-                }
             }
             .disabled(!canSync)
             .opacity(canSync ? 1 : 0.45)
@@ -344,6 +360,7 @@ struct WebDAVScreen: View {
         isBusy = true
         isSyncing = true
         progress = nil
+        syncDialogFailure = nil
         statusIsError = false
         defer {
             isBusy = false
@@ -367,12 +384,16 @@ struct WebDAVScreen: View {
         if outcome.ok {
             lastSyncError = ""
             lastSyncSummary = outcome.summary
+            // 进度条拉满，停 0.5 秒再收（Colo 2026-10-28）。
+            progress = SyncProgress(text: outcome.summary, value: 1)
+            try? await Task.sleep(nanoseconds: 500_000_000)
             // 同步成了一次，那行「尚未连接」就该换成实话：连得上是刚验过的。
             statusMessage = "连接正常"
             statusIsError = false
         } else {
             lastSyncError = outcome.message
             lastSyncSummary = ""
+            syncDialogFailure = outcome.message
         }
         KazumiLogBuffer.network(outcome.log)
     }

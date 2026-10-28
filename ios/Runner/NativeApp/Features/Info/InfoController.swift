@@ -36,6 +36,18 @@ final class InfoController {
     }
     private(set) var isSearchingSources = false
 
+    /// 单条来源的那份数据。面板逐行用它：规则几百条，整表一次 map 出来
+    /// 每帧都要建几百个对象，面板第一次弹出来就卡在那儿（LP 2026-10-28
+    ///「加载个规则列表为什么白屏等待」）。逐行算，只算看得见的那几行。
+    func sourceGroup(named name: String) -> SourceGroup {
+        SourceGroup(
+            name: name,
+            status: searchService.status(for: name) ?? .pending,
+            results: searchService.responses(for: name),
+            keyword: sourceKeywords[name] ?? defaultKeyword
+        )
+    }
+
     /// 面板里哪些来源是展开着的。放在控制器上，是为了返回播放页再弹回面板时还在。
     var sourceExpanded: Set<String> = []
 
@@ -49,6 +61,9 @@ final class InfoController {
 
     let searchService: PluginSearchService
     private let plugins: PluginsController
+
+    /// 已安装的规则，按安装顺序。面板逐行渲染用它（不整表 map，见 sourceGroup）。
+    var installedRules: [Plugin] { plugins.pluginList }
     /// 每个来源各自的检索词。对应原版 _SourceSearchGroup.keyword：
     /// 默认是番剧名，改过检索词或用别名检索后，这个来源就用自己的词。
     private var sourceKeywords: [String: String] = [:]
@@ -96,6 +111,20 @@ final class InfoController {
               let cached = BangumiSubjectCache.shared.episodes(for: item.id)
         else { return }
         episodes = cached
+    }
+
+    /// 内存里已有剧集时直接铺上（不读盘）。
+    func replaceEpisodes(_ newEpisodes: [BangumiEpisode]) {
+        episodes = newEpisodes
+    }
+
+    /// 磁盘里的那份条目：面板已经画出来之后再补，不压在点按那一下。
+    /// 手上这份是列表里带来的（没简介），换成有简介的那份。
+    func applyCachedItemIfNeeded() {
+        guard item.summary.isEmpty,
+              let cached = BangumiSubjectCache.shared.item(for: item.id)
+        else { return }
+        item = cached
     }
 
     func loadDetailIfNeeded() async {
