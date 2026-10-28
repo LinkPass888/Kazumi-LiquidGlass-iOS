@@ -41,10 +41,39 @@ struct WebDAVClient {
         /// 主题里带空格、以 `/` 包起来写正则的规则原样进出，不用二次解析。
         var danmakuRules: String = ""
 
-        init(entries: [LibraryEntry], history: [WatchRecord], danmakuRules: String = "") {
+        /// 收藏：这份备份是「把云盘上原版那份旧格式收藏并进来」的哪一刻（LP 2026-10-28）。
+        ///
+        /// 旧版把收藏存在 `kazumiSync/collectibles.tmp` 里——Hive 二进制箱体，
+        /// 和本端备份里的格式完全不同，所以只有收藏需要这枚记号。
+        /// 观看记录与屏蔽词两边都是 JSON、同一套格式，每次同步读写就行，不靠记号。
+        ///
+        /// 下次同步拿它跟云盘上那份箱体的修改时间比：
+        ///   * 字段不写（`nil`）：没并过，或者云盘上根本没有旧格式收藏 —— 这两种不必区分，
+        ///     去云盘看一眼就知道；云盘上没有旧文件时故意不写，否则以后翻存档的人
+        ///     会以为「有过旧数据却没并」；
+        ///   * 有值且箱体比它新：旧版那边又改过收藏，再并一轮；
+        ///   * 有值且箱体没比它新：并过了，不再读。
+        var legacyCollectMergedAt: Date?
+
+        /// 本端取消过的收藏：番剧 ID + 取消时刻。
+        ///
+        /// 没有这份记录，取消掉的收藏会被云盘上还在的那一条「复活」。
+        /// 合并时按时间比：取消比收藏晚就删。上传后这份会跟着备份走，
+        /// 别的设备也能看到这次取消。
+        var removedEntries: [RemovedEntry] = []
+
+        init(
+            entries: [LibraryEntry],
+            history: [WatchRecord],
+            danmakuRules: String = "",
+            legacyCollectMergedAt: Date? = nil,
+            removedEntries: [RemovedEntry] = []
+        ) {
             self.entries = entries
             self.history = history
             self.danmakuRules = danmakuRules
+            self.legacyCollectMergedAt = legacyCollectMergedAt
+            self.removedEntries = removedEntries
         }
 
         /// 旧备份（只有 entries / history）也要能读：缺的字段当空。
@@ -55,6 +84,8 @@ struct WebDAVClient {
             entries = try container.decodeIfPresent([LibraryEntry].self, forKey: .entries) ?? []
             history = try container.decodeIfPresent([WatchRecord].self, forKey: .history) ?? []
             danmakuRules = try container.decodeIfPresent(String.self, forKey: .danmakuRules) ?? ""
+            legacyCollectMergedAt = try container.decodeIfPresent(Date.self, forKey: .legacyCollectMergedAt)
+            removedEntries = try container.decodeIfPresent([RemovedEntry].self, forKey: .removedEntries) ?? []
         }
 
         /// 服务器上读回来的那份，跟刚写上去的那份是不是同一份。
@@ -63,10 +94,24 @@ struct WebDAVClient {
         /// 记录的更新时间。时间按秒比——`.iso8601` 编码会把小数秒截掉，
         /// 直接比 `Date` 相等会永远不成立。
         func matches(_ other: Payload) -> Bool {
+            // 时刻本身也要对得上：写上去的是「并到这一秒」，读回来变成没写，
+            // 下次同步就会重新读一遍旧文件，白花一轮。
+            switch (legacyCollectMergedAt, other.legacyCollectMergedAt) {
+            case (nil, nil):
+                break
+            case let (mine?, theirs?):
+                guard abs(mine.timeIntervalSince(theirs)) < 1 else { return false }
+            default:
+                return false
+            }
             guard danmakuRules == other.danmakuRules else { return false }
             guard entries.count == other.entries.count,
                   history.count == other.history.count else { return false }
             guard entries.map(\.id).sorted() == other.entries.map(\.id).sorted() else { return false }
+            // 取消记录也得一样：少了它，取消过的收藏会凭空回来。
+            guard removedEntries.map(\.id).sorted() == other.removedEntries.map(\.id).sorted(),
+                  Self.sameInstants(removedEntries.map(\.removedAt), other.removedEntries.map(\.removedAt))
+            else { return false }
             guard history.map(\.bangumiID).sorted() == other.history.map(\.bangumiID).sorted() else { return false }
             guard Self.sameInstants(entries.map(\.updatedAt), other.entries.map(\.updatedAt)) else { return false }
             return Self.sameInstants(history.map(\.updatedAt), other.history.map(\.updatedAt))
@@ -238,6 +283,104 @@ struct WebDAVClient {
         try Self.validate(response)
         return Self.hrefs(in: data).filter { !$0.hasSuffix("/") }
     }
+
+    /// 一个目录下每个文件的修改时间（PROPFIND Depth 1 里的 getlastmodified）。
+    ///
+    /// 只用来回答一个问题：云盘上那份原版旧格式文件，比上次并进备份的那一刻新吗。
+    /// 目录不存在时返回空数组。
+    func modifiedFiles(path: String) async throws -> [(name: String, modified: Date)] {
+        let base = try folderURL()
+        var target = base
+        for part in path.split(separator: "/") {
+            target.append(path: String(part), directoryHint: .isDirectory)
+        }
+        var request = try authorizedRequest(url: target, method: "PROPFIND")
+        request.setValue("1", forHTTPHeaderField: "depth")
+        request.setValue("application/xml", forHTTPHeaderField: "content-type")
+        let (data, response) = try await URLSession.shared.data(for: request)
+        if let http = response as? HTTPURLResponse, http.statusCode == 404 { return [] }
+        try Self.validate(response)
+        return Self.fileEntries(in: data)
+    }
+
+    /// 云盘上那几份能读的旧格式文件里最新的一次修改；一份都没有时返回 nil。
+    ///
+    /// 看的是原版实际会写的两处：`history/` 下的快照、`danmakuShield/` 下各设备的文件。
+    /// 收藏那两份（`collectibles.tmp` / `collectchanges.tmp`）是 Hive 二进制箱，
+    /// 本端读不了，也不写，所以既不算进来也不碰。
+    func newestLegacyModified() async throws -> Date? {
+        var newest: Date?
+        for folder in [WebDAVLegacy.historyFolder, WebDAVLegacy.shieldFolder] {
+            for entry in try await modifiedFiles(path: folder) where entry.name.hasSuffix(".json") {
+                if newest == nil || entry.modified > newest! { newest = entry.modified }
+            }
+        }
+        return newest
+    }
+
+    /// 从 PROPFIND 的回包里读出「文件名 + 修改时间」（命名空间前缀各家不同，按后缀匹配）。
+    private static func fileEntries(in xml: Data) -> [(name: String, modified: Date)] {
+        guard let text = String(data: xml, encoding: .utf8) else { return [] }
+        var results: [(name: String, modified: Date)] = []
+        var name: String?
+        var modified: Date?
+        for token in text.components(separatedBy: "<") {
+            guard let end = token.firstIndex(of: ">") else { continue }
+            let tag = token[..<end]
+            let value = String(token[token.index(after: end)...])
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if tag.hasPrefix("/") {
+                // 收尾标签：一块 response 读完了，登记这一条。
+                if tag.hasSuffix(":response"), let entryName = name, let entryDate = modified {
+                    results.append((entryName, entryDate))
+                }
+                if tag.hasSuffix(":response") {
+                    name = nil
+                    modified = nil
+                }
+                continue
+            }
+            if tag.hasSuffix(":href") {
+                let decoded = value.removingPercentEncoding ?? value
+                name = decoded.split(separator: "/").last.map(String.init)
+            } else if tag.hasSuffix(":getlastmodified") {
+                modified = Self.httpDate(value)
+            }
+        }
+        return results
+    }
+
+    /// HTTP 头里那种时间：`Wed, 28 Oct 2026 03:49:00 GMT`。读不出来就是 nil。
+    private static func httpDate(_ text: String) -> Date? {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss zzz"
+        if let date = formatter.date(from: text) { return date }
+        formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss z"
+        return formatter.date(from: text)
+    }
+
+        /// 云盘上那两处旧文件的修改时间（PROPFIND 里的 getlastmodified）。
+        ///
+        /// 只给 `WebDAVSync` 判「旧版又写过东西没有」用：比上次记下的时间新才重新读一遍。
+        /// 文件不存在时返回 nil（不是错误）。
+        func modifiedDate(path: String) async throws -> Date? {
+            let base = try folderURL()
+            var target = base
+            let parts = path.split(separator: "/")
+            for (index, part) in parts.enumerated() {
+                let last = index == parts.count - 1
+                target.append(path: String(part), directoryHint: last ? .notDirectory : .isDirectory)
+            }
+            var request = try authorizedRequest(url: target, method: "PROPFIND")
+            request.setValue("0", forHTTPHeaderField: "depth")
+            request.setValue("application/xml", forHTTPHeaderField: "content-type")
+            let (data, response) = try await URLSession.shared.data(for: request)
+            if let http = response as? HTTPURLResponse, http.statusCode == 404 { return nil }
+            try Self.validate(response)
+            return Self.fileEntries(in: data).first?.modified
+        }
 
     /// 从 PROPFIND 的回包里挑出条目名（各家的命名空间前缀不一样，按后缀匹配）。
     private static func hrefs(in xml: Data) -> [String] {

@@ -133,6 +133,15 @@ struct WatchRecord: Identifiable, Codable, Hashable, Sendable {
 }
 
 /// 追番列表与历史的可观察快照。
+/// 本端取消过的收藏：番剧 ID + 取消时刻。
+///
+/// 合并时按时间比：取消比收藏晚就删掉，云盘上还留着的那条不会把收藏「复活」。
+/// 跟着 WebDAV 备份一起走，别的设备也能看到这次取消。
+struct RemovedEntry: Codable, Hashable, Sendable {
+    var id: Int
+    var removedAt: Date
+}
+
 ///
 /// 持久化对应原版的 Hive box（`collect` / `history`）：这里换成
 /// Application Support/Kazumi/library.json 这一个文件，字段与
@@ -146,6 +155,7 @@ final class LibraryStore {
         var savedAt: Date = Date()
         var entries: [LibraryEntry]
         var history: [WatchRecord]
+        var removedEntries: [RemovedEntry]?
     }
 
     /// 追番 / 观看历史的存储文件：Application Support/Kazumi/library.json。
@@ -155,6 +165,8 @@ final class LibraryStore {
 
     private(set) var entries: [LibraryEntry] = []
     private(set) var history: [WatchRecord] = []
+    /// 取消过的收藏（ID + 时刻）。旧版没有这份记录，取消会被云盘「复活」，所以要自己记。
+    private(set) var removedEntries: [RemovedEntry] = []
 
     private let fileURL: URL
 
@@ -198,6 +210,7 @@ final class LibraryStore {
             // 展示层拿到的必须是一份干净的、ID 唯一的数据。
             entries = Self.deduplicated(snapshot.entries)
             history = Self.deduplicated(snapshot.history)
+            removedEntries = snapshot.removedEntries ?? []
             KazumiLog.storage.info(
                 "Library: 载入 \(self.entries.count, privacy: .public) 条追番 / \(self.history.count, privacy: .public) 条历史"
             )
@@ -217,7 +230,7 @@ final class LibraryStore {
         do {
             let directory = fileURL.deletingLastPathComponent()
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            let snapshot = Snapshot(entries: entries, history: history)
+            let snapshot = Snapshot(entries: entries, history: history, removedEntries: removedEntries)
             try Self.encoder().encode(snapshot).write(to: fileURL, options: .atomic)
         } catch {
             KazumiLog.storage.error(
@@ -234,7 +247,18 @@ final class LibraryStore {
         save()
     }
 
+    /// 同步把合并后的取消记录写回本机。收藏重新加回来的那些不再需要记着。
+    func replaceRemovals(_ removals: [RemovedEntry]) {
+        let collected = Set(entries.map(\.id))
+        removedEntries = removals.filter { !collected.contains($0.id) }
+        save()
+    }
+
     func upsert(_ entry: LibraryEntry) {
+        // 重新收藏回来了：之前那条取消记录作废。
+        if removedEntries.contains(where: { $0.id == entry.id }) {
+            removedEntries.removeAll { $0.id == entry.id }
+        }
         if let index = entries.firstIndex(where: { $0.id == entry.id }) {
             entries[index] = entry
             // 同一部番如果因为合并 / 恢复被写进多份，这里顺手并掉多余的几份：
@@ -248,6 +272,9 @@ final class LibraryStore {
 
     func remove(bangumiID: Int) {
         entries.removeAll { $0.id == bangumiID }
+        // 记下取消的时刻：不带这一条，下次同步就会从云盘把它加回来。
+        removedEntries.removeAll { $0.id == bangumiID }
+        removedEntries.append(RemovedEntry(id: bangumiID, removedAt: Date()))
         save()
     }
 

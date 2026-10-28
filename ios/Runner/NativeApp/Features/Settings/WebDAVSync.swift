@@ -125,6 +125,9 @@ enum WebDAVSync {
 
         // 云盘上还留着原版 Flutter 写的那几份（LP 2026-10-25：换过来以后老数据得合进来）。
         // 它们不是本端的包，只能按各自格式读一遍；读不出来的当没有，不挡这次同步。
+        //
+        // 观看记录与屏蔽词：两边都是 JSON、同一套数据，每次同步读一遍并进去就行，
+        // 不需要「并过没有」的记号（LP 2026-10-28）。
         var legacyHistoryCount = 0
         var legacyRules: [String] = []
         // 云盘上那份原版快照读到了没有：没读到就不许写回，
@@ -133,7 +136,7 @@ enum WebDAVSync {
         var legacySnapshot: Data?
         if contents.contains(.history) {
             if let legacy = try? await WebDAVLegacy.history(client: client) {
-                legacyHistoryRead = true
+                legacyHistoryRead = legacy.raw != nil
                 legacySnapshot = legacy.raw
                 legacyHistoryCount = legacy.records.count
                 history = mergeHistory(local: library.history, remote: history + legacy.records)
@@ -143,11 +146,54 @@ enum WebDAVSync {
         } else {
             history = remote?.history ?? library.history
         }
+
+        // 收藏：只有它换格式（旧版是 Hive 二进制箱体），所以只有它带记号，而且带时间。
+        //
+        // 记号记的是「上一次并的是箱体哪一刻的版本」，不是「并过没有」：
+        // 旧版要是在别的设备上又改过收藏，云盘上那份箱体的修改时间会比记号新，就该再并一轮。
+        var legacyCollectCount = 0
+        var legacyCollectRemovals: [Int: Date] = [:]
+        var legacyCollectMergedAt = remote?.legacyCollectMergedAt
+        var mergedRemovals: [RemovedEntry] = remote?.removedEntries ?? []
         if contents.contains(.collect) {
-            entries = mergeEntries(local: library.entries, remote: entries)
+            var legacyEntries: [LibraryEntry] = []
+            let boxModified = await Self.modifiedDate(of: WebDAVLegacy.collectiblesPath, client: client)
+            let stored = remote?.legacyCollectMergedAt
+            if let boxModified, stored == nil || boxModified > stored! {
+                if let legacy = try? await WebDAVLegacy.collectibles(client: client) {
+                    legacyEntries = legacy.entries
+                    legacyCollectRemovals = legacy.removals
+                    legacyCollectCount = legacy.entries.count
+                    // 云盘上确实有这份箱体，才写这个字段（LP 3886：本来就没有旧格式就不写）。
+                    legacyCollectMergedAt = boxModified
+                }
+            }
+            entries = mergeEntries(local: library.entries, remote: entries + legacyEntries)
+
+            // 取消收藏：本机记的、云盘备份里记的、旧版变更队列里记的三处并起来，按时间判先后。
+            var removals: [Int: Date] = [:]
+            func noteRemoval(_ id: Int, _ date: Date) {
+                if let existing = removals[id], existing >= date { return }
+                removals[id] = date
+            }
+            for item in remote?.removedEntries ?? [] { noteRemoval(item.id, item.removedAt) }
+            for item in library.removedEntries { noteRemoval(item.id, item.removedAt) }
+            for (id, date) in legacyCollectRemovals { noteRemoval(id, date) }
+            // 取消比收藏晚，才真的删；取消得早说明后来重新收藏了，留着。
+            entries.removeAll { entry in
+                guard let removedAt = removals[entry.id] else { return false }
+                return removedAt > entry.updatedAt
+            }
+            // 还收藏着的不用再记着取消过。
+            let collectedIDs = Set(entries.map(\.id))
+            removals = removals.filter { !collectedIDs.contains($0.key) }
+            mergedRemovals = removals
+                .map { RemovedEntry(id: $0.key, removedAt: $0.value) }
+                .sorted { $0.id < $1.id }
         } else {
             entries = remote?.entries ?? library.entries
         }
+
         if contents.contains(.shield) {
             legacyRules = (try? await WebDAVLegacy.shieldRules(client: client)) ?? []
             let cloudRules = legacyRules.isEmpty
@@ -159,7 +205,13 @@ enum WebDAVSync {
         }
 
         progress?(ProgressEvent(text: "正在上传合并结果…", current: 0, total: 0))
-        let payload = WebDAVClient.Payload(entries: entries, history: history, danmakuRules: rules)
+        let payload = WebDAVClient.Payload(
+            entries: entries,
+            history: history,
+            danmakuRules: rules,
+            legacyCollectMergedAt: legacyCollectMergedAt,
+            removedEntries: mergedRemovals
+        )
         do {
             try await client.uploadAndVerify(payload)
         } catch {
@@ -174,6 +226,9 @@ enum WebDAVSync {
         let localEntries = contents.contains(.collect) ? entries : library.entries
         let localHistory = contents.contains(.history) ? history : library.history
         library.replace(entries: localEntries, history: localHistory)
+        if contents.contains(.collect) {
+            library.replaceRemovals(mergedRemovals)
+        }
         if contents.contains(.shield) {
             settings.danmakuFilterRulesText = rules
         }
@@ -218,9 +273,11 @@ enum WebDAVSync {
         let summary = summaryParts.joined(separator: " · ")
 
         let counts = "观看记录 \(library.history.count) 条 / 收藏 \(library.entries.count) 部 / 屏蔽词 \(Self.ruleCount(rules)) 条"
-        let legacy = legacyHistoryCount > 0 || !legacyRules.isEmpty
-            ? "；原版旧数据：历史 \(legacyHistoryCount) 条、屏蔽词 \(legacyRules.count) 条"
-            : ""
+        var legacyParts: [String] = []
+        if legacyHistoryCount > 0 { legacyParts.append("历史 \(legacyHistoryCount) 条") }
+        if !legacyRules.isEmpty { legacyParts.append("屏蔽词 \(legacyRules.count) 条") }
+        if legacyCollectCount > 0 { legacyParts.append("收藏 \(legacyCollectCount) 部") }
+        let legacy = legacyParts.isEmpty ? "" : "；原版旧数据：\(legacyParts.joined(separator: "、"))"
         if let writeBackError {
             return Outcome(
                 ok: false,
@@ -242,6 +299,11 @@ enum WebDAVSync {
         )
     }
 
+    /// 云盘上某个文件的修改时间；文件不在、或服务器没给这个头，就当没有（不挡同步）。
+    private static func modifiedDate(of path: String, client: WebDAVClient) async -> Date? {
+        (try? await client.modifiedDate(path: path)) ?? nil
+    }
+
     // MARK: - 合并
 
     private static func mergeHistory(local: [WatchRecord], remote: [WatchRecord]) -> [WatchRecord] {
@@ -255,22 +317,18 @@ enum WebDAVSync {
     }
 
     /// 收藏：本机的顺序留着（用户摆过的分类顺序），云盘上多出来的接在后面。
+    /// 收藏：按番剧 ID 合起来，**本机为准**（LP 2026-10-28）。
+    ///
+    /// 原来比 `updatedAt`、谁新谁赢，会让一份老数据把本机这条顶掉。
+    /// 收藏看的是「收没收这一部」，同一部两边都有时本机那套字段（分类、时间）
+    /// 才是用户现在用的那份，所以留着本机的；云盘上多出来的补进来。
+    /// 取消走的不是这里，是 `removedEntries`（见 sync 里的那段）。
     private static func mergeEntries(local: [LibraryEntry], remote: [LibraryEntry]) -> [LibraryEntry] {
-        var remoteByID: [Int: LibraryEntry] = [:]
-        for entry in remote { remoteByID[entry.id] = entry }
-
-        var merged: [LibraryEntry] = []
-        var seen = Set<Int>()
-        for entry in local {
-            seen.insert(entry.id)
-            if let other = remoteByID[entry.id], other.updatedAt > entry.updatedAt {
-                merged.append(other)
-            } else {
-                merged.append(entry)
-            }
-        }
+        var merged = local
+        var seen = Set(local.map(\.id))
         for entry in remote where !seen.contains(entry.id) {
             merged.append(entry)
+            seen.insert(entry.id)
         }
         return merged
     }

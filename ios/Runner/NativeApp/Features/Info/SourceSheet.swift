@@ -36,6 +36,9 @@ struct SourceSheet: View {
     /// 正在修改检索词的来源；为空表示没有弹出输入框。
     @State private var keywordTarget: String?
     @State private var keywordDraft = ""
+    /// 这一轮检索是不是已经起跑了：起跑点挪到「列表真的画出来之后」，
+    /// 见下面 `list` 上的 `.task`。
+    @State private var searchStarted = false
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
 
@@ -64,31 +67,6 @@ struct SourceSheet: View {
                         dismiss()
                     }
                 }
-            }
-        }
-        .task {
-            // 第一个回来的源就地展开，不等所有规则跑完
-            // （LP 2026-10-27：原来要等最后一轮检索结束才展开，慢的源拖着整屏）。
-            let search = Task { await controller.searchAllSources() }
-            // 轮询要一直跑到检索真的结束，不能看 `isSearchingSources` 一开始是 false
-            // 就 break —— 那一帧检索还没起跑，于是永远不展开（LP 2026-10-27
-            //「播放源有检索结果却不展开」）。
-            let expander = Task { @MainActor in
-                while !Task.isCancelled {
-                    if let first = controller.sourceGroups.first(where: \.hasResults) {
-                        controller.sourceExpanded.insert(first.name)
-                        return
-                    }
-                    try? await Task.sleep(for: .milliseconds(100))
-                }
-            }
-            await search.value
-            expander.cancel()
-            // 最后一批结果可能是和检索结束同一帧到的，补一次；
-            // 用户自己收起过就不再替他展开。
-            if controller.sourceExpanded.isEmpty,
-               let first = controller.sourceGroups.first(where: \.hasResults) {
-                controller.sourceExpanded.insert(first.name)
             }
         }
         .sheet(item: $aliasPickerTarget) { target in
@@ -158,6 +136,38 @@ struct SourceSheet: View {
             .padding(.vertical, 12)
         }
         .scrollIndicators(.hidden)
+        // 检索从这里起跑，不从面板出现就起跑（LP 2026-10-28「点开始观看白屏很久」）：
+        // 第一条规则开跑时要把规则脚本现编一遍，那几秒是同步占着主线程的。
+        // 起跑点放在列表上，就保证了「五行规则 + 检索中」已经画出来之后再占线程；
+        // 放在面板上，第一次开面板时它抢在首帧之前，整块面板就白着等它跑完。
+        .task {
+            await startSearchIfNeeded()
+        }
+    }
+
+    /// 起一轮检索：先让列表画出来，再起检索；第一个回来的源就地展开，
+    /// 最后一批结果可能和检索结束同一帧到，补一次（用户自己收起过就不再替他展开）。
+    private func startSearchIfNeeded() async {
+        guard !searchStarted else { return }
+        searchStarted = true
+        // 让出这一帧：列表已经排好、真的上屏了，再开始占主线程。
+        await Task.yield()
+        let search = Task { await controller.searchAllSources() }
+        let expander = Task { @MainActor in
+            while !Task.isCancelled {
+                if let first = controller.sourceGroups.first(where: \.hasResults) {
+                    controller.sourceExpanded.insert(first.name)
+                    return
+                }
+                try? await Task.sleep(for: .milliseconds(100))
+            }
+        }
+        await search.value
+        expander.cancel()
+        if controller.sourceExpanded.isEmpty,
+           let first = controller.sourceGroups.first(where: \.hasResults) {
+            controller.sourceExpanded.insert(first.name)
+        }
     }
 
     private func groupCard(_ group: InfoController.SourceGroup) -> some View {

@@ -19,6 +19,7 @@ import Foundation
 @MainActor
 enum WebDAVLegacy {
     /// 原版固定目录名（lib/services/sync/webdav.dart:16-20）。
+    static let historyFolder = "history"
     static let historySnapshotPath = "history/snapshot.json"
     static let shieldFolder = "danmakuShield"
 
@@ -119,6 +120,92 @@ enum WebDAVLegacy {
             }
         }
         return rules
+    }
+
+    // MARK: - 收藏
+
+    /// 原版把收藏存在两个 Hive 箱体里（`_updateBox()` 直接把本机箱子拷上去）：
+    /// `collectibles.tmp` 是全部收藏，`collectchanges.tmp` 是还没传到别的设备上的变更队列。
+    static let collectiblesPath = "collectibles.tmp"
+    static let collectChangesPath = "collectchanges.tmp"
+
+    /// 从旧格式收藏里读出来的两样东西。
+    struct LegacyCollect: Sendable {
+        var entries: [LibraryEntry] = []
+        /// 旧版那边取消过的：番剧 ID → 取消时刻（同一部取最新一条）。
+        var removals: [Int: Date] = [:]
+    }
+
+    /// 读原版的收藏箱体（二进制，格式见 `HiveBox`）。
+    ///
+    /// 收藏这条只有它能读：本端备份里的收藏是新格式，旧版不认；
+    /// 旧版这份是 Hive 箱体，本端要自己解。
+    /// 云盘上没有这个文件时返回空的。
+    static func collectibles(client: WebDAVClient) async throws -> LegacyCollect {
+        var result = LegacyCollect()
+        if let data = try await client.rawDownload(path: collectiblesPath) {
+            for item in try HiveBox.read(data) {
+                guard let fields = item.value.objectFields,
+                      let bangumi = fields[0]?.objectFields
+                else { continue }
+                let id = bangumi[0]?.intValue ?? item.key
+                let time = fields[1]?.numberValue.map { Date(timeIntervalSince1970: $0 / 1000) } ?? Date()
+                let collectType = fields[2]?.intValue ?? 1
+                let images = bangumi[8]
+                let imageURL = ["large", "common", "medium", "small", "grid"]
+                    .lazy
+                    .compactMap { images?.mapValue($0)?.stringValue }
+                    .first { !$0.isEmpty } ?? ""
+                let tags = (bangumi[9]?.listValue ?? []).compactMap { tag -> String? in
+                    guard let name = tag.objectFields?[0]?.stringValue,
+                          !name.isEmpty
+                    else { return nil }
+                    return name
+                }
+                let entry = LibraryEntry(
+                    id: id,
+                    type: collectType,
+                    name: bangumi[2]?.stringValue ?? "",
+                    nameCn: bangumi[3]?.stringValue ?? "",
+                    summary: bangumi[4]?.stringValue ?? "",
+                    airDate: bangumi[5]?.stringValue ?? "",
+                    imageURL: imageURL,
+                    rating: bangumi[11]?.numberValue ?? 0,
+                    rank: bangumi[7]?.intValue ?? 0,
+                    tags: tags,
+                    totalEpisodes: 0,
+                    currentEpisode: 0,
+                    addedAt: time,
+                    updatedAt: time
+                )
+                // 箱体里偶尔有同一个 key 存了两帧（实测 id 549654 就是这样，
+                // 一帧「在看」一帧「看过」）。Hive 的语义是后写的覆盖前面的，
+                // 所以同一个番剧 id 只留最后一帧，顺序按第一次出现的位置。
+                if let index = result.entries.firstIndex(where: { $0.id == entry.id }) {
+                    result.entries[index] = entry
+                } else {
+                    result.entries.append(entry)
+                }
+            }
+        }
+
+        // 变更队列：取消收藏（action 3）要从这里来，不然旧设备上取消的会被当没发生过。
+        if let data = try? await client.rawDownload(path: collectChangesPath) {
+            for item in (try? HiveBox.read(data)) ?? [] {
+                guard let fields = item.value.objectFields,
+                      let bangumiID = fields[1]?.intValue,
+                      fields[2]?.intValue == 3
+                else { continue }
+                // 这个队列的时间是**秒**（原版 CollectedBangumiChange.timestamp，
+                // 注释就写着 timestamp in seconds，因为要拿来当 Hive 的键）。
+                // 箱体里收藏时间是 DateTime（毫秒），两边单位不一样，别混。
+                let stamp = fields[4]?.numberValue
+                    .map { Date(timeIntervalSince1970: $0) } ?? Date()
+                if let existing = result.removals[bangumiID], existing > stamp { continue }
+                result.removals[bangumiID] = stamp
+            }
+        }
+        return result
     }
 
     // MARK: - 写回原版格式

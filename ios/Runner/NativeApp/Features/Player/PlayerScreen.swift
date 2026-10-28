@@ -194,6 +194,8 @@ struct PlayerScreen: View {
     @State private var menuOpenedAt = Date()
     @State private var probeSawMenu = false
     @State private var probeLastSeen = Date()
+    /// 收藏钮点下去的缩放（Colo 2026-10-28：0.15 秒的 spring 弹一下）。
+    @State private var collectScale: CGFloat = 1
     @State private var isTemporarySpeed = false
     @State private var rateBeforeTemporarySpeed: Float = 1.0
     /// 本次按压是否已经进入长按状态（用来区分「松手时是短按还是长按结束」）。
@@ -280,6 +282,11 @@ struct PlayerScreen: View {
                     .tint(.white)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
+
+            // 上下两条压暗：整屏画，跟控制层同一个透明度一起淡出。
+            screenMasks
+                .opacity(controlsShown ? 1 : 0)
+                .animation(.easeOut(duration: 0.2), value: controlsVisible)
 
             // 横屏选集：右侧滑进来的玻璃窗口（LP 3637）。
             // 左边压暗一层，点它就收；不铺满整屏，画面还看得见。
@@ -840,11 +847,6 @@ struct PlayerScreen: View {
             // 命中只给控制栏本身：收起时它不该挡着「点画面把控制层叫回来」。
             .allowsHitTesting(controlsShown)
 
-            // 遮罩跟着控制层一起淡出，压在它上面（写在外层 `.opacity` 里头，
-            // 不然它是透明度之外的一层，控制层走了它不走，画面永远盖着一块灰）。
-            controlBarMasks
-                .allowsHitTesting(false)
-
             // 画面左右两侧的快退 / 快进：秒数取设置里「快进快退时长」（doubleTapSkipTime，默认 15）。
             // 双击两侧的快进已经删掉（LP 3593），快进快退只从这两颗走。
             if controlsShown {
@@ -881,22 +883,27 @@ struct PlayerScreen: View {
     /// 控制栏的压暗：不是一整块从顶到尾的渐变，而是上下各一条、各自从屏幕边
     /// 往里渐隐，过了控制栏就没了——中间那块画面完全不压暗（LP 2026-10-27）。
     ///
-    /// 高度按「盖住这一行」定死：上 120（顶栏 44＋12），下 160（两行底栏）。
-    /// 两条都**左右延伸到屏幕边缘**：控制层自己留在安全区里（750），
-    /// 遮罩不受它收窄的影响，所以这里单独忽略左右安全区。
-    private var controlBarMasks: some View {
-        ZStack {
+    /// **这两条挂在页面根层、按整屏画**（Colo 2026-10-28）：早先把它放在控制层里，
+    /// 控制层本身缩在安全区里，里面再写 ignoresSafeArea 也没用——遮罩始终从安全区
+    /// 下沿起画，顶上一直空着 59（LP 两次都说「没到顶」）。现在按窗口画，
+    /// 高度是「顶栏 120＋顶部安全区」「底栏 160＋底部安全区」，渐变消失点仍在控制栏下面。
+    /// 控制层照旧留在安全区里排，不受影响。
+    private var screenMasks: some View {
+        VStack(spacing: 0) {
             LinearGradient(
                 stops: [
                     .init(color: .black.opacity(0.55), location: 0),
-                    .init(color: .black.opacity(0.25), location: 0.5),
+                    .init(color: .black.opacity(0.3), location: 0.5),
                     .init(color: .clear, location: 1)
                 ],
                 startPoint: .top,
                 endPoint: .bottom
             )
-            .frame(height: 120)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            // 高度＝顶部安全区＋64（Colo 2026-10-28）：顶栏 44＋下边距 12＋留 8，
+            // 过了控制栏就化干净，别一路压到画面中间（LP「往下遮太多了」）。
+            .frame(height: containerInsets.top + 64)
+
+            Spacer(minLength: 0)
 
             LinearGradient(
                 stops: [
@@ -907,10 +914,11 @@ struct PlayerScreen: View {
                 startPoint: .top,
                 endPoint: .bottom
             )
-            .frame(height: 160)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+            .frame(height: containerInsets.bottom + 160)
         }
-        .ignoresSafeArea(.container, edges: [.leading, .trailing])
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .ignoresSafeArea()
+        .allowsHitTesting(false)
     }
 
     /// 左右两侧那颗：快退 / 快进「快进快退时长」那么多秒（LP 3643：用 15 秒那档，
@@ -1223,38 +1231,37 @@ struct PlayerScreen: View {
         .padding(.top, 12)
     }
 
-    /// 收藏状态：符号就是当前收藏状态（heart.fill / star.fill / hourglass / checkmark /
-    /// heart.slash.fill，未收藏是空心 heart），点开换成别的状态。
+    /// 收藏钮（LP 2026-10-28「顶栏收藏按钮改加号，收藏了才是实心」／Colo 3926、3929）：
+    /// 未收藏是 `plus`、收藏了是实心 `heart.fill`，一律白色 20pt——播放器里不用主题色，
+    /// 靠实心与否区分，不靠颜色。
+    ///
+    /// 点一下就在「在看」和「未追」之间切，带一次轻震动和 0.15 秒的 spring 缩放。
+    /// 挑具体状态（想看／搁置／看过／抛弃）的门挪到「更多 → 追番状态」，
+    /// 原来是点这颗弹菜单，改成切换后留个长按菜单会和「点一下」抢手势。
     private var collectButton: some View {
-        SystemMenuButton(
-            items: collectMenuItems,
-            title: nil,
-            symbol: currentCollectType.statusSymbol,
-            accessibilityLabel: "追番状态：\(currentCollectType.title)",
-            onOpen: { pinControlsWhileMenuOpen() }
-        )
-        .frame(width: 44, height: 44)
+        Button {
+            PlayerHaptics.tap()
+            bounceCollect()
+            noteInteraction()
+            applyCollectType(currentCollectType == .none ? .watching : .none)
+        } label: {
+            Image(systemName: currentCollectType == .none ? "plus" : "heart.fill")
+                .font(.system(size: 20, weight: .regular))
+                .foregroundStyle(.white)
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(PlayerPressStyle())
+        .scaleEffect(collectScale)
+        .accessibilityLabel(currentCollectType == .none ? "收藏" : "已追番")
+        .accessibilityValue(currentCollectType.title)
+        .accessibilityHint("轻点切换收藏，更多里可以选追番状态")
     }
 
-    private var collectMenuItems: [SystemMenuButton.Item] {
-        var items = CollectType.enabledCases.map { type in
-            SystemMenuButton.Item(
-                title: type.title,
-                symbol: currentCollectType == type ? "checkmark" : type.statusSymbol
-            ) {
-                closeMenu()
-                applyCollectType(type)
-            }
-        }
-        if currentCollectType != .none {
-            items.append(
-                SystemMenuButton.Item(title: "取消追番", symbol: "heart.slash", isDestructive: true) {
-                    closeMenu()
-                    applyCollectType(.none)
-                }
-            )
-        }
-        return items
+    /// 收藏钮按下去的弹一下：先缩到 0.85，再用 spring 回到 1，前后共 0.15 秒。
+    private func bounceCollect() {
+        withAnimation(.easeInOut(duration: 0.05)) { collectScale = 0.85 }
+        withAnimation(.spring(response: 0.15, dampingFraction: 0.6).delay(0.05)) { collectScale = 1 }
     }
 
     /// 这部番现在的收藏状态（收藏库里没有就是未收藏）。
@@ -1535,29 +1542,11 @@ struct PlayerScreen: View {
     }
 
     private static func renderDanmakuSettingsIcon() -> UIImage {
-        let base = UIImage(
-            systemName: "captions.bubble",
-            withConfiguration: UIImage.SymbolConfiguration(pointSize: 20, weight: .regular)
-        ) ?? UIImage()
-        let gear = UIImage(
-            systemName: "gearshape.fill",
-            withConfiguration: UIImage.SymbolConfiguration(pointSize: 12, weight: .regular)
-        )
-        guard let gear else { return base }
-        // 画布比符号位大一圈：齿轮的圆心压在气泡外框的右下角上，
-        // 整颗坐到角的外侧，不再跟气泡的实线重叠（Colo 2026-10-27）。
-        let size = CGSize(width: base.size.width + 6, height: base.size.height + 6)
-        return UIGraphicsImageRenderer(size: size).image { _ in
-            base.draw(in: CGRect(origin: .zero, size: base.size))
-            gear.draw(
-                in: CGRect(
-                    x: base.size.width - gear.size.width / 2,
-                    y: base.size.height - gear.size.height / 2,
-                    width: gear.size.width,
-                    height: gear.size.height
-                )
-            )
-        }
+        // 菜单里那条要的是 UIImage，就把同一个 View 渲成图（Colo 2026-10-28）：
+        // 一处写、两处引用，横屏底栏和「更多 → 弹幕设置」不会再走样。
+        let renderer = ImageRenderer(content: DanmakuSettingsGlyph())
+        renderer.scale = 3
+        return renderer.uiImage ?? UIImage()
     }
 
     /// 弹幕设置：同一颗 `captions.bubble` 打底，右下角叠一颗小齿轮——
@@ -1566,19 +1555,9 @@ struct PlayerScreen: View {
         Button {
             openSheet(.danmakuSettings)
         } label: {
-            Image(systemName: "captions.bubble")
-                .font(.system(size: 20, weight: .regular))
-                .foregroundStyle(.white)
-                .overlay(alignment: .bottomTrailing) {
-                    // 齿轮 12pt，圆心压在符号外框的右下角上：整颗坐到角的外侧，
-                    // 不再跟气泡那条实线重叠，洞也露得出来（Colo 2026-10-27）。
-                    Image(systemName: "gearshape.fill")
-                        .font(.system(size: 12, weight: .regular))
-                        .foregroundStyle(.white)
-                        .offset(x: 6, y: 6)
-                }
-                .frame(width: 44, height: 44)
-                .contentShape(Rectangle())
+            // 跟「更多 → 弹幕设置」那条用同一张图：一份实现画出来，两边不可能再走样
+            // （LP 2026-10-28「横屏和竖屏更多菜单的要一起改，不要只改一个」）。
+            DanmakuSettingsGlyph()
         }
         .buttonStyle(PlayerPressStyle())
         .accessibilityLabel("弹幕设置")
@@ -1638,6 +1617,12 @@ struct PlayerScreen: View {
                         noteInteraction()
                     }
                 }
+            ) {},
+            SystemMenuButton.Item(
+                title: "追番状态",
+                symbol: "heart",
+                subtitle: currentCollectType.title,
+                submenu: collectStatusItems
             ) {},
             SystemMenuButton.Item(title: "播放信息", symbol: "info.circle") {
                 closeMenu()
@@ -1700,6 +1685,28 @@ struct PlayerScreen: View {
                 }
             ) {},
         ]
+    }
+
+    /// 「更多 → 追番状态」的子菜单：五项状态 + 取消追番，勾在现在这一项上。
+    private var collectStatusItems: [SystemMenuButton.Item] {
+        var items = CollectType.enabledCases.map { type in
+            SystemMenuButton.Item(
+                title: type.buttonTitle,
+                symbol: currentCollectType == type ? "checkmark" : type.statusSymbol
+            ) {
+                noteInteraction()
+                applyCollectType(type)
+            }
+        }
+        if currentCollectType != .none {
+            items.append(
+                SystemMenuButton.Item(title: "取消追番", symbol: "heart.slash", isDestructive: true) {
+                    noteInteraction()
+                    applyCollectType(.none)
+                }
+            )
+        }
+        return items
     }
 
     /// 菜单弹出来了：控制栏先别收。
@@ -3045,6 +3052,26 @@ private struct SyncPlaySheet: View {
 /// 别用 `.clear`——画面一动，上面的白字就没地方站。
 /// 播放页按钮的按压反馈：按下缩到 0.92、松开弹回，100ms easeOut。
 /// 不加底色、不变色、不动投影，也不震——iOS 原生按钮本来就不震。
+/// 弹幕设置的图标：`captions.bubble` 20pt 打底、右下角压一颗 12pt 的 `gearshape.fill`，
+/// 白色、`.regular`，44×44 只是命中区，**不裁**（一裁齿轮就断、气泡就变小——
+/// LP 2026-10-28「怎么还出界了」「怎么小了」两回都是裁出来的）。
+/// 横屏底栏直接用这个 View，「更多 → 弹幕设置」把它渲成图，两处同一份。
+struct DanmakuSettingsGlyph: View {
+    var body: some View {
+        ZStack(alignment: .bottomTrailing) {
+            Image(systemName: "captions.bubble")
+                .font(.system(size: 20, weight: .regular))
+            Image(systemName: "gearshape.fill")
+                .font(.system(size: 12, weight: .regular))
+                // 圆心压在气泡外框的右下角上；比 6 再往左上 0.6（LP 2026-10-28）。
+                .offset(x: 5.4, y: 5.4)
+        }
+        .foregroundStyle(.white)
+        .frame(width: 44, height: 44)
+        .contentShape(Rectangle())
+    }
+}
+
 struct PlayerPressStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
