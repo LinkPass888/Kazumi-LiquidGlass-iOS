@@ -264,6 +264,11 @@ struct PlayerScreen: View {
     @State private var orientationGeneration = 0
     /// 布局看到竖屏时先等它稳住再退全屏，别打断正在进行的转屏。
     @State private var landscapeExitTask: Task<Void, Never>?
+    /// 退全屏的次数和最后一次是谁退的：写进「播放信息」的「方向」那一行。
+    /// 日志在模拟器上读不到（`simulator` 没有日志子命令），所以证据要摆在屏上
+    /// （Colo 2026-10-28 4325 要的三处日志，这里挑能看见的那种做）。
+    @State private var exitFullscreenCount = 0
+    @State private var lastExitReason = "—"
     /// 本次按压是否已经进入长按状态（用来区分「松手时是短按还是长按结束」）。
     /// 全屏：画面占满窗口、横屏、隐藏状态栏，选集与线路区收起。
     /// 对应原版 `fillsWindow = fullscreen || (maxWidth > maxHeight)`。
@@ -397,7 +402,7 @@ struct PlayerScreen: View {
                                 guard !Task.isCancelled, isFullscreen, sawLandscape == false,
                                       containerSize.width <= containerSize.height
                                 else { return }
-                                exitFullscreen()
+                                exitFullscreen("布局看到竖屏")
                             }
                         }
                     }
@@ -568,7 +573,7 @@ struct PlayerScreen: View {
             // 长按手势若被系统取消，松手回调不会来，退出时兜一次恢复。
             endTemporarySpeed()
             // 带着全屏状态离开会把整个 App 锁在横屏，退出时一定回竖屏。
-            exitFullscreen()
+            exitFullscreen("离开播放器")
             if let controller { persistProgress(controller) }
             surface.stop()
             controller?.stop()
@@ -1192,7 +1197,7 @@ struct PlayerScreen: View {
     /// 免得留下一个「竖着也算全屏」的状态。
     private func toggleFullscreen() {
         if isFullscreen {
-            exitFullscreen()
+            exitFullscreen("按钮")
         } else {
             NSLog("[player] 进全屏")
             isFullscreen = true
@@ -1225,9 +1230,11 @@ struct PlayerScreen: View {
         return scene.interfaceOrientation.isLandscape
     }
 
-    private func exitFullscreen() {
+    private func exitFullscreen(_ reason: String) {
         guard isFullscreen else { return }
-        NSLog("[player] 退全屏")
+        exitFullscreenCount += 1
+        lastExitReason = reason
+        NSLog("[player] 退全屏（第 \(exitFullscreenCount) 次，来自 \(reason)）")
         isFullscreen = false
         sawLandscape = false
         requestOrientation(.portrait)
@@ -1304,6 +1311,8 @@ struct PlayerScreen: View {
             }
             NSLog("[player] 三秒都没转过去：退回竖屏内联")
             if isFullscreen {
+                exitFullscreenCount += 1
+                lastExitReason = "三秒没转过去"
                 isFullscreen = false
                 sawLandscape = false
             }
@@ -1879,7 +1888,7 @@ struct PlayerScreen: View {
         case .portrait, .portraitUpsideDown: current = "竖"
         default: current = "—"
         }
-        return "支持 \(names.joined(separator: "+")) · 当前 \(current) · \(lastOrientationResult)"
+        return "支持 \(names.joined(separator: "+")) · 当前 \(current) · 请求 \(orientationGeneration) 次 · 退全屏 \(exitFullscreenCount) 次（\(lastExitReason)） · \(lastOrientationResult)"
     }
 
     /// 播放信息里的一条：左标题、右值。
