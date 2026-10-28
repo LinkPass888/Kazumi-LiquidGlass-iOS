@@ -46,6 +46,10 @@ struct SystemMenuButton: View {
     var tint: Color = .white
     /// 标题右边要不要带一个小三角，表示「点开有菜单」。
     var showsChevron: Bool = false
+    /// 菜单**里面**用什么颜色。默认 `.primary`：播放器的菜单一律跟系统黑白，
+    /// 不受 AppRoot 那句全局 `.tint(accentColor)` 影响（LP 2026-10-28）。
+    /// 剧集 / 评论区那几颗菜单是例外，传 `.accentColor`。
+    var menuTint: Color = .primary
     /// 图标钮上符号的字号／字重。
     var symbolSize: CGFloat = 20
     var symbolWeight: Font.Weight = .regular
@@ -58,6 +62,9 @@ struct SystemMenuButton: View {
         } label: {
             buttonLabel
         }
+        // 菜单内部的打勾 / 高亮跟着这颗走：不给就压回系统黑白，
+        // 免得 AppRoot 的全局主题色把播放器菜单也染了（LP 2026-10-28 第 3 条）。
+        .tint(menuTint)
         // 菜单要开的时候先告诉外面「别收控制栏」；用 simultaneous 手势，
         // 不抢 Menu 自己的点击。
         .simultaneousGesture(TapGesture().onEnded { onOpen() })
@@ -89,6 +96,9 @@ struct SystemMenuButton: View {
     /// 菜单里一行：图标 ＋ 名字 ＋ 靠右的当前值。
     @ViewBuilder
     private func rowLabel(_ item: Item) -> some View {
+        // 菜单里的字和图标是我们自己画的，必须自己上色：不写就继承环境里的
+        // tint（AppRoot 的全局主题色），播放器菜单就跟着变主题色了
+        // （LP 2026-10-28 三遍：更多 / 收藏 / 线路这些还是主题色）。
         HStack(spacing: 8) {
             icon(item)
             Text(item.title)
@@ -102,6 +112,10 @@ struct SystemMenuButton: View {
                     .font(.system(size: 12, weight: .semibold))
             }
         }
+        // 整行（符号 + 文字 + 打勾）都显式上色：菜单这一层拿不到 `Menu` 上的
+        // `.tint`，不写就会继承环境里的全局主题色，播放器菜单的符号就变成主题色
+        // （LP 2026-10-28：主题色的是符号）。
+        .foregroundStyle(menuTint)
     }
 
     /// 菜单项的图标：合成图优先（弹幕设置那颗是两张符号叠的），

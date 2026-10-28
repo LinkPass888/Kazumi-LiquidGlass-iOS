@@ -116,6 +116,11 @@ final class PlayerSurfaceModel {
         engine?.playbackInfo()
     }
 
+    /// mpv 现在真正挂着的着色器个数（0 就是没挂上）。
+    func appliedShaderCount() -> Int {
+        engine?.appliedShaderCount() ?? 0
+    }
+
     /// 关闭播放器：先停内核再断引用。
     func stop() {
         engine?.stop()
@@ -407,7 +412,14 @@ struct MPVPlayerContainer: UIViewRepresentable {
             // 换档位时画面要重新出，但不用重新起播：mpv 换着色器当场生效。
             if shaders != lastShaders {
                 lastShaders = shaders
-                engine.setShaders(shaders)
+                // 换着色器要现编 GLSL，质量档那几颗 VL 模型在手机上能卡几百毫秒。
+                // 这一步原来跟着 SwiftUI 的更新走、在主线程上做，点完菜单整段卡住，
+                // 点击就被吃掉、要点很多下（LP 2026-10-28）。mpv 的命令接口本身线程安全，
+                // 挪到后台队列去挂，主线程只管关菜单。
+                let paths = shaders
+                DispatchQueue.global(qos: .userInitiated).async {
+                    engine.setShaders(paths)
+                }
             }
             if fill != lastFill {
                 lastFill = fill

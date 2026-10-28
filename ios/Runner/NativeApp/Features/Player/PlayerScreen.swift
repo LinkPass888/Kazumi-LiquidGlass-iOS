@@ -224,6 +224,9 @@ struct PlayerScreen: View {
     @State private var containerSize: CGSize = .zero
     /// 播放页四周的安全区内缩（全屏时画面要绕过刘海，按它算窗口尺寸）。
     @State private var containerInsets = EdgeInsets()
+    /// 上一次转屏请求的结果，显示在「播放信息」里（Colo 2026-10-28）：
+    /// 分得清是系统没给（被拒＋原因），还是我们没请求（一直「未请求」）。
+    @State private var lastOrientationResult = "未请求"
     @State private var danmakuDraft = ""
     @FocusState private var danmakuFieldFocused: Bool
     @State private var playbackRate: Float = 1.0
@@ -255,6 +258,17 @@ struct PlayerScreen: View {
     @State private var rateBeforeTemporarySpeed: Float = 1.0
     /// 按住画面那一下的计时：手指一落下就开始数，到点就倍速。
     @State private var surfacePressTask: Task<Void, Never>?
+    /// 转屏只留一条请求链：新请求先把旧的取消，旧的每一步先核对自己的代号
+    /// 还是不是最新的（LP 2026-10-28「横屏切回竖屏后再也横不了」的正解）。
+    @State private var orientationRequestTask: Task<Void, Never>?
+    @State private var orientationGeneration = 0
+    /// 布局看到竖屏时先等它稳住再退全屏，别打断正在进行的转屏。
+    @State private var landscapeExitTask: Task<Void, Never>?
+    /// 退全屏的次数和最后一次是谁退的：写进「播放信息」的「方向」那一行。
+    /// 日志在模拟器上读不到（`simulator` 没有日志子命令），所以证据要摆在屏上
+    /// （Colo 2026-10-28 4325 要的三处日志，这里挑能看见的那种做）。
+    @State private var exitFullscreenCount = 0
+    @State private var lastExitReason = "—"
     /// 本次按压是否已经进入长按状态（用来区分「松手时是短按还是长按结束」）。
     /// 全屏：画面占满窗口、横屏、隐藏状态栏，选集与线路区收起。
     /// 对应原版 `fillsWindow = fullscreen || (maxWidth > maxHeight)`。
@@ -376,9 +390,20 @@ struct PlayerScreen: View {
                         containerInsets = proxy.safeAreaInsets
                         if size.width > size.height {
                             sawLandscape = true
+                            landscapeExitTask?.cancel()
+                            landscapeExitTask = nil
                         } else if isFullscreen, sawLandscape {
                             sawLandscape = false
-                            exitFullscreen()
+                            // 等竖屏稳住再退：转屏途中会报几帧中间尺寸，见一帧竖的
+                            // 就退全屏会把正在进行的转屏打断（@developer3 4308 的第四条）。
+                            landscapeExitTask?.cancel()
+                            landscapeExitTask = Task { @MainActor in
+                                try? await Task.sleep(for: .milliseconds(400))
+                                guard !Task.isCancelled, isFullscreen, sawLandscape == false,
+                                      containerSize.width <= containerSize.height
+                                else { return }
+                                exitFullscreen("布局看到竖屏")
+                            }
                         }
                     }
             }
@@ -388,6 +413,11 @@ struct PlayerScreen: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .navigationBar)
         .toolbar(.hidden, for: .tabBar)
+        // 播放器页面范围内把 tint 压回系统黑白：AppRoot 那句全局 .tint(accentColor)
+        // 会顺着 tint 环境传到菜单行上，菜单的符号就变主题色
+        // （LP 2026-10-28；Colo 4282 / @developer3）。选集、评论那几颗菜单
+        // 在行上显式写了自己那份主题色，不受这句影响。
+        .tint(.primary)
         .overlay(alignment: .top) { toastView }
         .overlay { skipSecondsDialog }
         .sheet(item: $activeSheet) { sheet in
@@ -543,7 +573,7 @@ struct PlayerScreen: View {
             // 长按手势若被系统取消，松手回调不会来，退出时兜一次恢复。
             endTemporarySpeed()
             // 带着全屏状态离开会把整个 App 锁在横屏，退出时一定回竖屏。
-            exitFullscreen()
+            exitFullscreen("离开播放器")
             if let controller { persistProgress(controller) }
             surface.stop()
             controller?.stop()
@@ -680,11 +710,6 @@ struct PlayerScreen: View {
             // 撑高，竖屏就变成「上下多出一条黑边、比画面本身高」
             // （LP 2026-10-28 第 4 条）。层级不变：画面 → 遮罩 → 控制层。
             interactiveSurface(controller)
-                .overlay {
-                    screenMasks
-                        .opacity(controlsShown ? 1 : 0)
-                        .animation(.easeOut(duration: 0.2), value: controlsVisible)
-                }
 
             // 加载符号：转到**第一帧真的画上屏**为止（LP 2026-10-28 第 4 条）。
             // 以前只在还没有 controller 的时候转，一旦内核报「有视频参数」就收掉，
@@ -715,14 +740,47 @@ struct PlayerScreen: View {
                     in: CGRect(origin: .zero, size: proxy.size),
                     videoSize: videoSize
                 )
+                // 两条压暗的长度按画面高算（Colo 2026-10-28 4295 的公式）。
+                let maskFades = Self.maskFadeLengths(
+                    videoHeight: proxy.size.height,
+                    isFullscreen: isFullscreen
+                )
+                // 控制层只有安全区那么大（横屏 750×382，窗口 874×402）：纵向靠
+                // 过冲吃掉了，横向得自己铺到窗口宽，不然左右两条窄边没压到
+                // （LP 2026-10-28「上下都到顶了，但是左右两侧没有」）。
+                let maskWidth: CGFloat? = isFullscreen
+                    ? fullscreenVideoSize.width + Self.maskTopOvershoot * 2
+                    : nil
                 // 控制层铺满整块播放区，不再框进 videoRect：横屏全屏时这块就是
                 // 874x402 的窗口，顶栏底栏进度条才贴得到窗口边（Colo 2026-10-27，
                 // LP「横屏播放器一圈都不沾边」）。竖屏内联时播放区本身就是那块
                 // 16:9 画面，所以一条规则两边都对。videoRect 只留给弹幕层。
                 controlLayer(controller, width: proxy.size.width)
                     .frame(width: proxy.size.width, height: proxy.size.height)
+                    // 两条压暗挂在**控制层**身上：它跟画面同尺寸同位置，而且
+                    // 按钮本来就压在画面上（控制层在上），所以挂这里一定看得见、
+                    // 也一定从这块几何的上/下沿起画（@developer3 2026-10-28）。
+                    // 顶条只往上多画 `maskTopOvershoot`：画在屏幕外，专门吃
+                    // 「跟窗口顶差几个点」那种缝（LP 2026-10-28 反复报的）。
+                    .background(alignment: .top) {
+                        topMask(fadeHeight: maskFades.top)
+                            .frame(width: maskWidth)
+                            .offset(y: -Self.maskTopOvershoot)
+                            .opacity(controlsShown ? 1 : 0)
+                            .animation(.easeOut(duration: 0.2), value: controlsVisible)
+                    }
+                    .background(alignment: .bottom) {
+                        bottomMask(fadeHeight: maskFades.bottom)
+                            .frame(width: maskWidth)
+                            .opacity(controlsShown ? 1 : 0)
+                            .animation(.easeOut(duration: 0.2), value: controlsVisible)
+                    }
                     .position(x: proxy.size.width / 2, y: proxy.size.height / 2)
             }
+            // 这一层几何本身要铺到窗口边：控制层（和它的遮罩）原来排在安全区里，
+            // 遮罩就从安全区下沿起画、离窗口顶差那一点（LP 2026-10-28 反复报的）。
+            // 顶栏自己有 padding(.top, containerInsets.top)，按钮不会顶到刘海下面。
+            .ignoresSafeArea(.container, edges: isFullscreen ? [.top, .bottom] : [])
 
             // HUD 一律放在画面从上往下 1/4 处、水平居中（LP 2026-10-28 第 11 条 / Colo）：
             // 亮度 / 音量横条、横滑的秒数、长按倍速的胶囊都在这一条线上，
@@ -766,10 +824,11 @@ struct PlayerScreen: View {
         }
         .modifier(PlayerBoxModifier(fillsWindow: isFullscreen,
                                     aspectRatio: boxAspectRatio))
-        // 横屏画面铺满整个窗口（874×402）：底部那 21 的 home 安全区也忽略掉，
-        // 不忽略画面就矮一截、底下露一条黑缝（LP 2026-10-27）。
+        // 横屏画面铺满整个窗口（874×402）：上下安全区都忽略掉。
+        // 底部那 21 的 home 区不忽略画面就矮一截、底下露一条黑缝（LP 2026-10-27）；
+        // 顶部不忽略，顶部遮罩就从安全区下沿起画、离窗口顶差一点（LP 2026-10-28）。
         // 控制层自己另外忽略底边，留在安全区里排，不受这里影响。
-        .ignoresSafeArea(.container, edges: isFullscreen ? .bottom : [])
+        .ignoresSafeArea(.container, edges: isFullscreen ? [.top, .bottom] : [])
         .background(Color.black)
         // MPVolumeView 得在视图树里，才拿得到它内部的音量滑杆。
         .background(
@@ -884,6 +943,19 @@ struct PlayerScreen: View {
                         dragValueStart = PlayerVolumeControl.shared.current
                     }
                 }
+                // 手指已经在拖了：按住的倍速计时作废，拖动不该被当成「长按倍速」
+                // （LP 2026-10-28「上下滑动手势不要触发长按倍速」；
+                //  @developer3 定位：长按那套是自己数的 400 毫秒计时，压根不看手指
+                //  有没有动，而竖向拖动是 simultaneousGesture，不会取消长按的 pressing）。
+                if dragAxis != nil, dragAxis != .ignored {
+                    surfacePressTask?.cancel()
+                    surfacePressTask = nil
+                    // 倍速已经起来了、手指又拖出长按自己的容差（24pt，跟 longPress 的
+                    // maximumDistance 一致）：这一次是拖动，不是按住。
+                    if abs(value.translation.height) > 24 || abs(value.translation.width) > 24 {
+                        endTemporarySpeed()
+                    }
+                }
                 switch dragAxis {
                 case .seek:
                     guard let start = seekDragStart else { return }
@@ -984,44 +1056,62 @@ struct PlayerScreen: View {
     }
 
 
-    /// 控制栏的压暗：不是一整块从顶到尾的渐变，而是上下各一条、各自从屏幕边
-    /// 往里渐隐，过了控制栏就没了——中间那块画面完全不压暗（LP 2026-10-27）。
-    ///
-    /// **这两条挂在页面根层、按整屏画**（Colo 2026-10-28）：早先把它放在控制层里，
-    /// 控制层本身缩在安全区里，里面再写 ignoresSafeArea 也没用——遮罩始终从安全区
-    /// 下沿起画，顶上一直空着 59（LP 两次都说「没到顶」）。现在按窗口画，
-    /// 高度是「顶栏 120＋顶部安全区」「底栏 160＋底部安全区」，渐变消失点仍在控制栏下面。
-    /// 控制层照旧留在安全区里排，不受影响。
-    private var screenMasks: some View {
-        VStack(spacing: 0) {
-            LinearGradient(
-                stops: [
-                    .init(color: .black.opacity(0.55), location: 0),
-                    .init(color: .black.opacity(0.3), location: 0.5),
-                    .init(color: .clear, location: 1)
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            // 高度＝顶部安全区＋64（Colo 2026-10-28）：顶栏 44＋下边距 12＋留 8，
-            // 过了控制栏就化干净，别一路压到画面中间（LP「往下遮太多了」）。
-            .frame(height: containerInsets.top + 64)
+    /// 顶条只往上多画这么多点：画在屏幕外，专门吃「跟窗口顶之间那几个点」的缝。
+    private static let maskTopOvershoot: CGFloat = 16
 
-            Spacer(minLength: 0)
-
-            LinearGradient(
-                stops: [
-                    .init(color: .clear, location: 0),
-                    .init(color: .black.opacity(0.3), location: 0.5),
-                    .init(color: .black.opacity(0.65), location: 1)
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .frame(height: containerInsets.bottom + 160)
+    /// 两条压暗的长度（Colo 2026-10-28 4295）：顶 min(96, 画面高×0.25)、
+    /// 底 min(200, 画面高×0.45)，再夹一句——顶栏＋顶渐隐＋底渐隐＋底栏 ≤ 画面高，
+    /// 超了就等比缩。中间一定要留出一段全透明的画面：竖屏那组写死的数
+    /// （64＋160＝224）比画面本身（215）还高，两条就这么糊满了（@developer3 量到的）。
+    private static func maskFadeLengths(
+        videoHeight: CGFloat,
+        isFullscreen: Bool
+    ) -> (top: CGFloat, bottom: CGFloat) {
+        guard videoHeight > 0 else { return (0, 0) }
+        // 栏高按代码里的实际值（@developer3 2026-10-28 4300）：顶栏 56（44 的钮
+        // ＋12）；底栏横屏约 115（时间行＋进度条＋48 的钮行＋12），竖屏 64（52＋12）。
+        let topBar: CGFloat = 56
+        let bottomBar: CGFloat = isFullscreen ? 115 : 64
+        var top = min(96, videoHeight * 0.25)
+        var bottom = min(200, videoHeight * 0.45)
+        let available = videoHeight - topBar - bottomBar
+        if available > 0, top + bottom > available {
+            let scale = available / (top + bottom)
+            top *= scale
+            bottom *= scale
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .ignoresSafeArea()
+        return (top, bottom)
+    }
+
+    /// 顶部压暗：最黑那一档贴在这块几何的顶边（横屏就是窗口顶），往下渐隐到全透明。
+    /// 顶栏自己那条底不加：0.8 起头已经压得住栏里的字（@developer3 2026-10-28 4297）；
+    /// 真要改成 y=0 就透明，才需要给顶栏补一条底（Colo 4295）。
+    private func topMask(fadeHeight: CGFloat) -> some View {
+        LinearGradient(
+            stops: [
+                .init(color: .black.opacity(0.8), location: 0),
+                .init(color: .black.opacity(0.4), location: 0.5),
+                .init(color: .clear, location: 1)
+            ],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+        .frame(height: fadeHeight)
+        .allowsHitTesting(false)
+    }
+
+    /// 底部压暗：最黑那一档压在底边（底栏本来就有底），往上渐隐到全透明。
+    private func bottomMask(fadeHeight: CGFloat) -> some View {
+        LinearGradient(
+            stops: [
+                .init(color: .clear, location: 0),
+                .init(color: .black.opacity(0.4), location: 0.5),
+                .init(color: .black.opacity(0.8), location: 1)
+            ],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+        .frame(height: fadeHeight)
         .allowsHitTesting(false)
     }
 
@@ -1050,29 +1140,46 @@ struct PlayerScreen: View {
         .accessibilityLabel(isForward ? "快进 \(seconds) 秒" : "快退 \(seconds) 秒")
     }
 
-    /// 两侧跳转钮：快进 / 快退那颗符号，秒数写在符号正中（LP 2026-10-28）。
+    /// 两侧跳转钮：快进 / 快退那颗符号，数字由**系统符号自带**（LP 2026-10-28）。
     ///
-    /// 以前用系统自带数字的 `goforward.15` 那一套：只有 10/15/30/45/60/75/90 几档，
-    /// 秒数调成 80 这种就没有对应符号，画出来是个没数字的空箭头。
-    /// 现在统一一颗 `goforward` / `gobackward`，20 号白 regular（跟栏里其它钮一样大），
-    /// 数字 12 号白字压在上面——哪一档秒数都画得出来。
+    /// 秒数在系统有对应符号的那几档（10/15/30/45/60/75/90，`goforward.15` 这种）时
+    /// 直接用自带数字的符号——设置里那几档就是按这个圈的，所以正常路径永远走这条。
+    /// 只有秒数落在档位外（老数据、别的入口）才回退成「箭头＋自己叠的数字」，
+    /// 免得画出一个没数字的空箭头。
     private func skipButton(seconds: Int, isForward: Bool) -> some View {
         ZStack {
-            Image(systemName: isForward ? "goforward" : "gobackward")
+            Image(systemName: Self.skipSymbolName(seconds: seconds, isForward: isForward))
                 .font(.system(size: 20, weight: .regular))
                 .foregroundStyle(.white)
+            // 系统符号自带数字时不再叠一层，叠上去会重影。
+            if !SettingsStore.skipSecondTiers.contains(seconds) {
             Text("\(seconds)")
-                // 11 号（LP 2026-10-28「快进快退和跳过80的数字都小一号」/ Colo）：
-                // 快进快退两颗和跳过那颗用同一个字号，符号 20 不动。
-                .font(.system(size: 11, weight: .regular).monospacedDigit())
+                // 10 号（LP 2026-10-28：先「快进快退和跳过 80 的数字都小一号」→ 11，
+                // 再「跳过时长 80 的数字再小一号」→ 10）。符号 20 不动；
+                // 叠数字这条只有 80 这种不在档位里的秒数才走得到，快进快退那两颗
+                // 用的是系统自带数字的符号，不受这里影响。
+                .font(.system(size: 10, weight: .regular).monospacedDigit())
                 .foregroundStyle(.white)
                 // 数字压在符号正中偏下（LP 2026-10-28 第 8 条，两次各 0.5，累计 1.0）：
                 // 符号那圈弧下半截更宽，正中对齐看着偏上。只动数字，符号不动。
                 .offset(y: 1.0)
+            }
         }
         .frame(width: 44, height: 44)
         .contentShape(Rectangle())
         .shadow(color: .black.opacity(0.35), radius: 6, y: 1)
+    }
+
+    /// 快进 / 快退那颗符号的名字：系统有自带数字的那几档就用带数字的
+    /// （`goforward.15`），否则用空箭头、数字自己叠。
+    private static func skipSymbolName(seconds: Int, isForward: Bool) -> String {
+        let base = isForward ? "goforward" : "gobackward"
+        let tiers = SettingsStore.skipSecondTiers
+        // 只有 10…90 那几档系统才有 `goforward.10` 这样的符号。
+        if tiers.contains(seconds), seconds >= 10, seconds <= 90 {
+            return "\(base).\(seconds)"
+        }
+        return base
     }
 
     /// 画面按压：短按切控制栏 / 播放暂停，长按临时倍速（对应原版
@@ -1090,7 +1197,7 @@ struct PlayerScreen: View {
     /// 免得留下一个「竖着也算全屏」的状态。
     private func toggleFullscreen() {
         if isFullscreen {
-            exitFullscreen()
+            exitFullscreen("按钮")
         } else {
             NSLog("[player] 进全屏")
             isFullscreen = true
@@ -1109,25 +1216,9 @@ struct PlayerScreen: View {
     /// 现在改成：发请求，然后每 100 毫秒看一眼，最多等 3 秒；中途还没转就再请求一次
     /// （有些机型第二次请求才认）；3 秒还没转，才算系统真的拒绝，退回竖屏。
     private func enterLandscape() {
+        // 只发一次请求，重试和收尾都在 requestOrientation 那一条链里
+        // （原来这里自己又数 30 次、第 10 次再发一遍，是最早那批并发来源之一）。
         requestOrientation(.landscapeRight)
-        Task {
-            for attempt in 0..<30 {
-                try? await Task.sleep(for: .milliseconds(100))
-                guard isFullscreen else { return }
-                if sawLandscape || isWindowLandscape {
-                    NSLog("[player] 横屏已生效（第 \(attempt) 次检查）")
-                    return
-                }
-                // 等了一秒还没转，重新请求一次，不是干等。
-                if attempt == 10 {
-                    NSLog("[player] 一秒还没横过来，再请求一次")
-                    requestOrientation(.landscapeRight)
-                }
-            }
-            guard isFullscreen else { return }
-            NSLog("[player] 三秒都没横过来，退回竖屏")
-            exitFullscreen()
-        }
     }
 
     /// 窗口现在是不是横的：直接问 UIKit，不依赖 SwiftUI 的尺寸回调有没有送到。
@@ -1139,9 +1230,11 @@ struct PlayerScreen: View {
         return scene.interfaceOrientation.isLandscape
     }
 
-    private func exitFullscreen() {
+    private func exitFullscreen(_ reason: String) {
         guard isFullscreen else { return }
-        NSLog("[player] 退全屏")
+        exitFullscreenCount += 1
+        lastExitReason = reason
+        NSLog("[player] 退全屏（第 \(exitFullscreenCount) 次，来自 \(reason)）")
         isFullscreen = false
         sawLandscape = false
         requestOrientation(.portrait)
@@ -1169,28 +1262,61 @@ struct PlayerScreen: View {
         else { return }
         // 让 `supportedInterfaceOrientations` 跟着变，否则请求会被忽略。
         OrientationLock.mask = mask
-        // 之前只通知了 `scene.keyWindow` 的根控制器：全屏播过一轮之后
-        // keyWindow 有时取不到，于是 mask 变了但系统不知道，请求被丢掉，
-        // 「横屏切竖屏后再也回不到横屏」（LP 2026-10-28 第 2 条）。
-        // 改成把场景里每个窗口的整条控制器链都通知一遍。
         notifyOrientationChange(in: scene)
-        Task { @MainActor in
-            // 同一拍里立刻请求，系统有时还拿着旧的 mask 判一遍就丢掉了——隔一拍再发。
-            await Task.yield()
-            notifyOrientationChange(in: scene)
-            scene.requestGeometryUpdate(.iOS(interfaceOrientations: mask)) { error in
-                NSLog("[player] 转屏被拒：\(error)")
-            }
-            // 兜底：半秒后还没转过去就再发一次，并把原因写进日志。
-            try? await Task.sleep(for: .milliseconds(500))
-            guard !Task.isCancelled else { return }
-            let landscape = mask.contains(.landscape)
-            if scene.interfaceOrientation.isLandscape != landscape {
-                notifyOrientationChange(in: scene)
-                scene.requestGeometryUpdate(.iOS(interfaceOrientations: mask)) { error in
-                    NSLog("[player] 转屏第二次被拒：\(error)")
+        // **整条转屏只留一条链**：新请求先把旧链取消，旧链里的每一步都先核对自己的
+        // 代号还是不是最新的。以前是「requestOrientation 内部发两次 + 半秒兜底再发一次
+        // + enterLandscape 自己数着再发一次 + 布局看到竖屏又退全屏发一次」，
+        // 四条一起转、互相打断，表现出来就是「横屏切回竖屏后再也横不了」
+        // （LP 2026-10-28；@developer3 4308 定位到的并发来源）。
+        orientationRequestTask?.cancel()
+        orientationGeneration += 1
+        let generation = orientationGeneration
+        let wantsLandscape = mask.contains(.landscape)
+        orientationRequestTask = Task { @MainActor in
+            for attempt in 0..<12 {          // 12 × 250ms = 3 秒
+                await Task.yield()
+                guard !Task.isCancelled, generation == orientationGeneration else { return }
+                // 只在最初和大约 1 秒时各发一次：每 250 毫秒都重发会让转场发抖
+                // （@developer3 4320）。其余时间只轮询系统转没转过去。
+                if attempt == 0 || attempt == 4 {
+                    notifyOrientationChange(in: scene)
+                    scene.requestGeometryUpdate(.iOS(interfaceOrientations: mask)) { error in
+                        // 系统的原话要落到「播放信息」里，不然只有「等满 3 秒」这一句
+                        // （Colo 2026-10-28 §14.10 第 5 条 / @developer3 4311）。
+                        NSLog("[player] 转屏被拒：\(error)")
+                        Task { @MainActor in
+                            guard generation == orientationGeneration else { return }
+                            lastOrientationResult = "系统拒绝：\(error.localizedDescription)"
+                        }
+                    }
                 }
+                // 已经到了就收工，别再多发。
+                if scene.interfaceOrientation.isLandscape == wantsLandscape {
+                    if attempt > 0 {
+                        NSLog("[player] 转屏已生效（第 \(attempt) 次检查）")
+                    }
+                    lastOrientationResult = "已转过去"
+                    return
+                }
+                try? await Task.sleep(for: .milliseconds(250))
             }
+            guard !Task.isCancelled, generation == orientationGeneration else { return }
+            // 等满了才算系统真的不给转：这时候把界面退回竖屏内联，
+            // 别留着「界面按全屏排、窗口还是竖的」这种两边不一致的状态
+            // （Colo 2026-10-28 §14.10 / @developer3 4311 第三条）。
+            // 退的是**界面状态**；用户再点全屏会重新发一条请求、重设方向锁，
+            // 所以不会像以前那样「退过一次就再也转不动」。
+            if !lastOrientationResult.hasPrefix("系统拒绝") {
+                lastOrientationResult = "请求了但系统没转（等满 3 秒）"
+            }
+            NSLog("[player] 三秒都没转过去：退回竖屏内联")
+            if isFullscreen {
+                exitFullscreenCount += 1
+                lastExitReason = "三秒没转过去"
+                isFullscreen = false
+                sawLandscape = false
+            }
+            OrientationLock.mask = .portrait
         }
     }
 
@@ -1698,6 +1824,10 @@ struct PlayerScreen: View {
             ("声道", info?.audioChannels ?? "—"),
             ("采样率", info?.sampleRate ?? "—"),
             ("容器", info?.container ?? "—"),
+            ("方向", orientationSummary),
+            // 超分到底有没有喂进 mpv：这里显示真正找到的着色器文件数
+            // （Colo 2026-10-28：是 0 就是没挂上，是 6 但画面没变才是着色器本身的问题）。
+            ("超分辨率", "\(settings.superResolutionMode.title) · \(surface.appliedShaderCount()) 颗着色器（已挂）"),
         ]
         return VStack(spacing: 0) {
             ZStack {
@@ -1738,6 +1868,27 @@ struct PlayerScreen: View {
             mediaURLCopied = false
         }
         .presentationDetents([.medium, .large])
+    }
+
+    /// 「方向」那一行的值：支持哪些、现在是哪个、上次请求什么结果。
+    /// 横屏切不回横屏时，一眼就能分出是系统没给还是我们没请求（Colo 2026-10-28）。
+    private var orientationSummary: String {
+        let supported = OrientationLock.mask
+        var names: [String] = []
+        if supported.contains(.portrait) { names.append("竖") }
+        if supported.contains(.landscapeLeft) { names.append("横左") }
+        if supported.contains(.landscapeRight) { names.append("横右") }
+        let scene = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive }
+        let current: String
+        switch scene?.interfaceOrientation {
+        case .landscapeLeft: current = "横左"
+        case .landscapeRight: current = "横右"
+        case .portrait, .portraitUpsideDown: current = "竖"
+        default: current = "—"
+        }
+        return "支持 \(names.joined(separator: "+")) · 当前 \(current) · 请求 \(orientationGeneration) 次 · 退全屏 \(exitFullscreenCount) 次（\(lastExitReason)） · \(lastOrientationResult)"
     }
 
     /// 播放信息里的一条：左标题、右值。
@@ -1995,23 +2146,12 @@ struct PlayerScreen: View {
                 ) {}
             )
         }
-        return items + [
-            SystemMenuButton.Item(title: "播放信息", symbol: "info.circle") {
-                closeMenu()
-                openSheet(.videoInfo)
-            },
+        // 横屏顶栏已经有远程投屏和视频比例（左上角那两颗），
+        // 「更多」里就不再重复一份（LP 2026-10-28：仅限横屏）。
+        let redundantInLandscape: [SystemMenuButton.Item] = isFullscreen ? [] : [
             SystemMenuButton.Item(title: "远程投屏", symbol: "airplayvideo") {
                 closeMenu()
                 openSheet(.airPlay)
-            },
-            SystemMenuButton.Item(title: "外部播放", symbol: "arrow.up.forward.app") {
-                closeMenu()
-                openSheet(.externalPlay)
-            },
-            // 一起看这颗比别的项小一档（LP 2026-10-28：15pt）。
-            SystemMenuButton.Item(title: "一起看", symbol: "person.2.wave.2", symbolPointSize: 15) {
-                closeMenu()
-                openSheet(.syncPlay)
             },
             SystemMenuButton.Item(
                 title: "视频比例",
@@ -2025,7 +2165,23 @@ struct PlayerScreen: View {
                         aspectRatioMode = mode
                     }
                 }
-            ) {},
+            ) {}
+        ]
+        return items + [
+            SystemMenuButton.Item(title: "播放信息", symbol: "info.circle") {
+                closeMenu()
+                openSheet(.videoInfo)
+            },
+        ] + redundantInLandscape + [
+            SystemMenuButton.Item(title: "外部播放", symbol: "arrow.up.forward.app") {
+                closeMenu()
+                openSheet(.externalPlay)
+            },
+            // 一起看这颗比别的项小一档（LP 2026-10-28：15pt）。
+            SystemMenuButton.Item(title: "一起看", symbol: "person.2.wave.2", symbolPointSize: 15) {
+                closeMenu()
+                openSheet(.syncPlay)
+            },
             SystemMenuButton.Item(
                 title: "定时关闭",
                 symbol: "moon.zzz",
@@ -2363,6 +2519,9 @@ struct PlayerScreen: View {
         return episodesPane(controller, centersCurrentEpisode: true)
             .frame(width: panelWidth)
             .frame(maxHeight: .infinity)
+            // 右缘别贴到安全区边上：留 16，加上这一侧的安全区就是离屏幕边的最小距离
+            // （Colo：贴边时右上、右下那两格会被屏幕圆角切掉）。
+            .padding(.trailing, 16)
             // 玻璃压在视频上，内容一律按深色排：白字、深底格子，
             // 浅色下那套白底黑字在这儿糊成一团。
             .environment(\.colorScheme, .dark)
@@ -2614,25 +2773,26 @@ struct PlayerScreen: View {
     }
 
     /// 亮度 / 音量的竖滑指示（Colo 2026-10-28）：两者同一个组件、同一位置、同一尺寸，
-    /// 只有符号不同——竖向圆头轨道宽 8、高 120，填充白色、其余 30%，
-    /// 符号在上面，当前值 13 号白字贴在轨道下方。
+    /// 只有符号不同——横向圆头轨道宽 120、高 8，填充白色、其余 30%，
+    /// 符号与当前值 13 号白字在同一行横排。
     private func gestureOverlay(_ hud: GestureHUDValue) -> some View {
         let value = max(0, min(1, hud.value))
-        return VStack(spacing: 8) {
+        return HStack(spacing: 8) {
             Image(systemName: hud.symbol)
                 .font(.system(size: 15, weight: .medium))
                 .foregroundStyle(.white)
                 .contentTransition(.symbolEffect(.replace))
 
-            // 轨道：底是 30% 白，填充是纯白，从下往上长。
-            ZStack(alignment: .bottom) {
+            // 轨道：底是 30% 白，填充是纯白，从左往右长。
+            ZStack(alignment: .leading) {
                 Capsule()
                     .fill(.white.opacity(0.3))
                 Capsule()
                     .fill(.white)
-                    .frame(height: max(6, 120 * value))
+                    .frame(width: max(6, 120 * value))
             }
-            .frame(width: 8, height: 120)
+            // 横向胶囊：宽 120、高 8。
+            .frame(width: 120, height: 8)
 
             Text("\(Int((value * 100).rounded()))")
                 .font(.system(size: 13, weight: .semibold).monospacedDigit())
@@ -2907,8 +3067,11 @@ struct PlayerScreen: View {
                             title: "\(lo + 1)–\(hi) 话",
                             symbol: "",
                             accessibilityLabel: "快速跳转，现在显示第 \(lo + 1) 到 \(hi) 话",
-                            tint: .primary,
-                            showsChevron: true
+                            // 剧集/评论区不算播放器菜单，字和选中态跟主题色
+                            // （LP 2026-10-28；Colo 划的界）。
+                            tint: .accentColor,
+                            showsChevron: true,
+                            menuTint: .accentColor
                         )
                         .frame(height: 44)
                     }
@@ -2929,8 +3092,8 @@ struct PlayerScreen: View {
                 ScrollViewReader { proxy in
                     ScrollView {
                         LazyVGrid(
-                            columns: [GridItem(.adaptive(minimum: 64), spacing: 10)],
-                            spacing: 10
+                            columns: [GridItem(.adaptive(minimum: 64), spacing: 8)],
+                            spacing: 8
                         ) {
                             ForEach(lo ..< hi, id: \.self) { index in
                                 Button {
@@ -2942,7 +3105,10 @@ struct PlayerScreen: View {
                                 .id(index)
                             }
                         }
-                        .padding(.horizontal, 16)
+                        // 右边多留 4（Colo）：横屏这个窗口贴着屏幕右缘，
+                        // 屏幕圆角和刘海那侧会吃掉最后一列，右边 20、左边 16。
+                        .padding(.leading, 16)
+                        .padding(.trailing, 20)
                         .padding(.vertical, 10)
                     }
                     .onAppear {
@@ -3002,8 +3168,10 @@ struct PlayerScreen: View {
                     title: commentEpisode.map { "第 \($0) 话" } ?? "第 — 话",
                     symbol: "",
                     accessibilityLabel: commentEpisode.map { "当前查看第 \($0) 话评论" } ?? "当前查看集数评论",
-                    tint: .primary,
-                    showsChevron: true
+                    // 评论区那颗，跟选集数 / 排序一样回主题色（LP 2026-10-28）。
+                    tint: .accentColor,
+                    showsChevron: true,
+                    menuTint: .accentColor
                 )
                 .frame(height: 44)
                 Spacer(minLength: 8)
@@ -3035,8 +3203,10 @@ struct PlayerScreen: View {
                     title: isCommentsAscending ? "最早优先" : "最新优先",
                     symbol: "",
                     accessibilityLabel: "评论排序",
-                    tint: .primary,
-                    showsChevron: true
+                    // 同选集数那颗：剧集/评论区的菜单钮用主题色。
+                    tint: .accentColor,
+                    showsChevron: true,
+                    menuTint: .accentColor
                 )
                 .frame(height: 44)
                 Button {
@@ -3239,8 +3409,11 @@ struct PlayerScreen: View {
                 : "线路",
             symbol: "",
             accessibilityLabel: "选择线路",
-            tint: .primary,
-            showsChevron: true
+            // 线路在选集区，跟选集数 / 排序 / 评论集一样算剧集那块，用主题色
+            // （LP 2026-10-28；Colo 指的位置）。
+            tint: .accentColor,
+            showsChevron: true,
+            menuTint: .accentColor
         )
         .frame(height: 44)
     }

@@ -83,6 +83,7 @@ struct PlayerSettingsScreen: View {
                     }
                     row {
                         // LP 2026-10-25：一次加 1 秒，上限 90 秒（默认 80）。
+                        // 跳过时长跟符号无关（那颗长按还能自己填秒数），保持一次加 1 秒。
                         Stepper(value: buttonSkipTimeBinding, in: 5...90, step: 1) {
                             LabeledContent("跳过时长", value: "\(settings.buttonSkipTime) 秒")
                         }
@@ -234,13 +235,14 @@ struct PlayerSettingsScreen: View {
         Binding(get: { settings.playSpeed }, set: { settings.playSpeed = $0 })
     }
 
-    /// 画面两侧快进快退的秒数档位：5 秒到 1 分钟，够用又不至于滑一长串。
-    private static let doubleTapSkipOptions = [5, 10, 15, 20, 30, 45, 60]
+    /// 快进快退的秒数档位：只给系统符号自带数字的那七档
+    /// （`goforward.15` 这种），按钮上的数字不用自己画（LP 2026-10-28）。
+    private static let doubleTapSkipOptions = SettingsStore.skipSecondTiers
 
     private var doubleTapSkipTimeBinding: Binding<Int> {
         Binding(
-            get: { settings.doubleTapSkipTime },
-            set: { settings.doubleTapSkipTime = max(1, $0) }
+            get: { SettingsStore.nearestSkipSecond(settings.doubleTapSkipTime) },
+            set: { settings.doubleTapSkipTime = SettingsStore.nearestSkipSecond($0) }
         )
     }
 

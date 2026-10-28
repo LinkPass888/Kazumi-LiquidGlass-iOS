@@ -455,6 +455,18 @@ final class SettingsStore {
         didSet { persist(buttonSkipTime, SettingsKey.buttonSkipTime) }
     }
 
+    /// 快进快退的秒数只给系统符号自带数字的那几档：
+    /// 10 / 15 / 30 / 45 / 60 / 75 / 90（`goforward.15` 这种）。
+    /// 选到别的数就没符号可用，按钮只能自己叠数字，位置和字号都得另管
+    /// （LP 2026-10-28 / Colo）。
+    static let skipSecondTiers = [10, 15, 30, 45, 60, 75, 90]
+
+    /// 老用户存过 5 秒、20 秒这种没有符号的档，读的时候落到最近的一档
+    /// （5→10、20→15），别让按钮空着（Colo）。
+    static func nearestSkipSecond(_ seconds: Int) -> Int {
+        skipSecondTiers.min { abs($0 - seconds) < abs($1 - seconds) } ?? 15
+    }
+
     /// 画面两侧双击的快进 / 快退秒数（默认 15 秒）。
     var doubleTapSkipTime: Int {
         didSet { persist(doubleTapSkipTime, SettingsKey.doubleTapSkipTime) }
@@ -745,7 +757,11 @@ final class SettingsStore {
         privateMode = Self.read(defaults, SettingsKey.privateMode, false)
         // 秒数必须为正：备份或旧数据里若写进了 0 / 负数，快进按钮会变成空操作。
         buttonSkipTime = max(1, Self.read(defaults, SettingsKey.buttonSkipTime, 80))
-        doubleTapSkipTime = max(1, Self.read(defaults, SettingsKey.doubleTapSkipTime, 15))
+        // 老数据里存过 5 / 20 这种没有对应符号的档，读出来就落到最近的一档
+        // （5→10、20→15），不然按钮画不出数字（Colo 2026-10-28）。
+        doubleTapSkipTime = Self.nearestSkipSecond(
+            max(1, Self.read(defaults, SettingsKey.doubleTapSkipTime, 15))
+        )
         // 长按倍速固定归到菜单里那几档，存进来的怪值不至于让播放器跑飞。
         longPressSpeed = PlaybackSpeed.nearest(Self.read(defaults, SettingsKey.longPressSpeed, 2.0))
         // 与原版滑杆的上下限一致（1–10 秒）；越界值夹回范围内，避免控制栏永不隐藏或瞬间消失。

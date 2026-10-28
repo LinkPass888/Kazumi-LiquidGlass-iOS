@@ -266,6 +266,13 @@ final class MPVEngine {
         return info
     }
 
+    /// mpv 现在真正挂着的着色器个数（读 `glsl-shaders` 属性本身，不是我们打算挂几个）。
+    /// 「播放信息」里那一行用它，才能分清「没挂上」和「挂了但看不出」。
+    func appliedShaderCount() -> Int {
+        guard let text = stringProperty("glsl-shaders") else { return 0 }
+        return text.split(separator: ",").filter { !$0.isEmpty }.count
+    }
+
     /// 读一个字符串属性。mpv 分配的那块内存必须还回去，否则每开一次信息页漏一点。
     private func stringProperty(_ name: String) -> String? {
         var raw: UnsafeMutablePointer<CChar>?
