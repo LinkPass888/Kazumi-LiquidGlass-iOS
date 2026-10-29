@@ -74,7 +74,14 @@ final class PlayerSurfaceModel {
     }
 
     /// 后台播放时把画面通道关掉，回前台再打开（原因见 `MPVEngine.setVideoTrackEnabled`）。
+    ///
+    /// 状态没变就什么都不做。回前台那条每次都会调 `true`，如果无脑转给 mpv，
+    /// 等于每次回来都让 mpv 重新选一遍视频轨——回来那一下会顿（LP：返回 app 时会暂停一会）。
+    private var isVideoTrackEnabled = true
+
     func setVideoTrackEnabled(_ enabled: Bool) {
+        guard enabled != isVideoTrackEnabled else { return }
+        isVideoTrackEnabled = enabled
         engine?.setVideoTrackEnabled(enabled)
     }
 
