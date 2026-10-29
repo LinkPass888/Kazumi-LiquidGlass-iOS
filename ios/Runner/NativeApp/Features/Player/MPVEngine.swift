@@ -368,7 +368,11 @@ final class MPVEngine {
     // MARK: - 截图
 
     /// 抓当前这一帧（视频画面，不含 OSD）。mpv 自己出 PNG，写临时文件再读回来。
-    func captureFrame() async -> UIImage? {
+    ///
+    /// 返回 `(图, 给用户看的那句话)`：拿到图时那句是成功细节，没拿到时那句就是失败原因，
+    /// 直接进 toast——真机上点一次就能看出是 mpv 没出文件，还是出了但下一步崩了。
+    /// （原来这些只进日志，得去「设置 → 存储与日志」里翻，真机上不好定位。）
+    func captureFrame() async -> (image: UIImage?, note: String) {
         let started = Date()
         // 两条路都试，等到能读出整张图为上：
         //  1) "video"：只要画面那一块，比例就是这一集的，不带黑边、不带字幕。
@@ -377,7 +381,7 @@ final class MPVEngine {
         //
         // 原来只等 480 毫秒——真机上 mpv 要从最近的关键帧重新解一遍这一帧，
         // 1080p 的流经常比这慢，文件还没落盘我们就走了，表现就是「抓不到图片」。
-        // 现在等到 4 秒，并逐次把结果写进「播放」日志，真机上能直接看出卡在哪一步。
+        // 现在每条路等 2 秒（两条加起来 4 秒）。
         let flags: [[String?]] = [["video"], []]
         for (index, flag) in flags.enumerated() {
             let path = FileManager.default.temporaryDirectory
@@ -391,15 +395,17 @@ final class MPVEngine {
                 try? await Task.sleep(for: .milliseconds(50))
                 if let data = try? Data(contentsOf: path), let image = UIImage(data: data) {
                     try? FileManager.default.removeItem(at: path)
-                    onLog?("截图成功：第 \(index + 1) 种方式，\(Int(Date().timeIntervalSince(started) * 1000)) 毫秒，\(Int(image.size.width))×\(Int(image.size.height))")
-                    return image
+                    let note = "截图成功：第 \(index + 1) 种方式，\(Int(Date().timeIntervalSince(started) * 1000)) 毫秒，\(Int(image.size.width))×\(Int(image.size.height))"
+                    onLog?(note)
+                    return (image, note)
                 }
             }
             try? FileManager.default.removeItem(at: path)
             onLog?("截图第 \(index + 1) 种方式没等到文件")
         }
-        onLog?("截图失败：两条方式都没出图，共 \(Int(Date().timeIntervalSince(started) * 1000)) 毫秒")
-        return nil
+        let note = "截图失败：两条方式都没出图，共 \(Int(Date().timeIntervalSince(started) * 1000)) 毫秒"
+        onLog?(note)
+        return (nil, note)
     }
 
     // MARK: - 收尾

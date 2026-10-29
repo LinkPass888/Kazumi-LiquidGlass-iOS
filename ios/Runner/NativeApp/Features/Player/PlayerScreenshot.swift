@@ -26,11 +26,23 @@ enum PlayerScreenshot {
         // 文件名照 main：时间戳毫秒 + .png。
         let name = "\(Int(Date().timeIntervalSince1970 * 1000)).png"
         do {
-            try await PHPhotoLibrary.shared().performChanges {
-                let request = PHAssetCreationRequest.forAsset()
-                let options = PHAssetResourceCreationOptions()
-                options.originalFilename = name
-                request.addResource(with: .photo, data: data, options: options)
+            // 用带 completionHandler 的版本，不走那个闭包。
+            // 原因：PhotoKit 是在它自己的队列（com.apple.PHPhotoLibrary.transaction.high）
+            // 上回调的；闭包会被 @MainActor 的上下文染成主线程隔离，进去就撞主线程断言、
+            // 直接 trap——真机上每点一次截图就崩一次（LP 4664，栈就在这里）。
+            // 这里整段在 continuation 的 @Sendable 闭包里，嵌套的闭包默认就是 nonisolated。
+            try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
+                PHPhotoLibrary.shared().performChanges(
+                    {
+                        let request = PHAssetCreationRequest.forAsset()
+                        let options = PHAssetResourceCreationOptions()
+                        options.originalFilename = name
+                        request.addResource(with: .photo, data: data, options: options)
+                    },
+                    completionHandler: { _, error in
+                        if let error { cont.resume(throwing: error) } else { cont.resume() }
+                    }
+                )
             }
             return nil
         } catch {

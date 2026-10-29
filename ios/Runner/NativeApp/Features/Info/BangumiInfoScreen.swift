@@ -938,9 +938,18 @@ extension BangumiInfoScreen {
         Task { @MainActor in
             do {
                 let (data, _) = try await URLSession.shared.data(from: url)
-                try await PHPhotoLibrary.shared().performChanges {
-                    // iOS 26 SDK 起 addResource 必须显式传 options（无默认值的重载已被移除）。
-                    PHAssetCreationRequest.forAsset().addResource(with: .photo, data: data, options: nil)
+                // 同 PlayerScreenshot：PhotoKit 在自己队列上回调，闭包不能被主线程隔离，
+                // 否则进去就撞断言直接崩。这里在 continuation 的 @Sendable 闭包里，嵌套闭包默认 nonisolated。
+                try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
+                    PHPhotoLibrary.shared().performChanges(
+                        {
+                            // iOS 26 SDK 起 addResource 必须显式传 options（无默认值的重载已被移除）。
+                            PHAssetCreationRequest.forAsset().addResource(with: .photo, data: data, options: nil)
+                        },
+                        completionHandler: { _, error in
+                            if let error { cont.resume(throwing: error) } else { cont.resume() }
+                        }
+                    )
                 }
                 toastMessage = "已保存到相册"
             } catch {

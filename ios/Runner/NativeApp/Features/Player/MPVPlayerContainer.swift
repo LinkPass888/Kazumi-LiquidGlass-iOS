@@ -118,11 +118,14 @@ final class PlayerSurfaceModel {
     /// 带黑边、是屏幕的比例，所以按同一套 `videoRect` 裁成画面本身（LP 要的是
     /// 画面比例，不是屏幕比例）。分辨率是屏幕的，比 mpv 原生出图低，但
     /// 「有一张、比例对」比「没有」重要得多。
-    func captureFrame() async -> UIImage? {
-        if let image = await engine?.captureFrame() { return image }
-        guard let image = hostView?.snapshotOfVideo() else { return nil }
-        KazumiLogBuffer.player("截图：mpv 没出图，改用屏幕那一帧 \(Int(image.size.width))×\(Int(image.size.height))")
-        return image
+    func captureFrame() async -> (image: UIImage?, note: String) {
+        if let image = await engine?.captureFrame().image { return (image, "") }
+        guard let image = hostView?.snapshotOfVideo() else {
+            return (nil, "截图失败：没抓到画面")
+        }
+        let note = "截图：mpv 没出图，改用屏幕那一帧 \(Int(image.size.width))×\(Int(image.size.height))"
+        KazumiLogBuffer.player(note)
+        return (image, note)
     }
 
     func togglePlay() {

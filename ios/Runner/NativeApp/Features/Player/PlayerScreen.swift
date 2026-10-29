@@ -1371,8 +1371,11 @@ struct PlayerScreen: View {
         noteInteraction()
         showControlsBriefly()
         Task { @MainActor in
-            guard let image = await surface.captureFrame(), let data = image.pngData() else {
-                surface.toastMessage = "截图失败：没抓到画面"
+            let captured = await surface.captureFrame()
+            guard let image = captured.image, let data = image.pngData() else {
+                // 抓帧自己会给一句能直接给用户看的话（哪条方式、等了多少毫秒），
+                // 拿不到图就拿它当 toast，别再只说「没抓到画面」。
+                surface.toastMessage = captured.note.isEmpty ? "截图失败：没抓到画面" : captured.note
                 return
             }
             flashScreenshot()
