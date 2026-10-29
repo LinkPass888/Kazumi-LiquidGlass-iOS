@@ -366,6 +366,9 @@ struct MPVPlayerContainer: UIViewRepresentable {
         host.glView.engine = engine
         host.glView.enableSetNeedsDisplay = true
         host.glView.isOpaque = true
+        // blit 到 CVPixelBuffer 纹理要求两边格式兼容；显式固定成 RGBA8，
+        // 不依赖 GLKView 的默认值。
+        host.glView.drawableColorFormat = .RGBA8888
         host.glView.context = engine.glContext
 
         engine.onSnapshot = { [weak surface] snapshot in

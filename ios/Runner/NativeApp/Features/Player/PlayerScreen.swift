@@ -244,6 +244,8 @@ struct PlayerScreen: View {
     /// 这一集是「因为切到后台才停下的」吗——只有这种暂停才在回前台时自动接上，
     /// 用户自己按的暂停不算（LP 2026-10-29「回到前台自动播放」）。
     @State private var pausedByBackground = false
+    /// 后台自动画中画。设置关着时一直是 nil：不建图层、不建控制器、不碰软件渲染。
+    @State private var pictureInPicture: PictureInPictureController?
     /// 「更多」/ 倍速面板：自己握开关，好让控制层知道菜单还开着。
     ///
     /// 系统菜单不把开合告诉代码，所以另挂了一个 `SystemMenuProbe` 看它在不在，
@@ -517,19 +519,33 @@ struct PlayerScreen: View {
             updateIdleTimer()
             switch phase {
             case .background:
-                if !settings.backgroundPlayback, surface.isPlaying {
-                    pausedByBackground = true
-                    surface.pause()
-                }
-                // 开着后台播放：声音继续，但画面在后台本来就不会重绘，
-                // 留在那只会让回来时音画对不上。先只留声音。
-                if settings.backgroundPlayback, surface.isPlaying {
-                    surface.setVideoTrackEnabled(false)
+                // 真机上「卡片为什么不出」只能靠这一行判：切后台那一刻把音频会话的
+                // 真实类别/选项和卡片字段数写进「播放」日志（设置 → 日志 → 播放）。
+                // 混音的会话不会被 iOS 当成正在播放，日志里有 mixWithOthers 就是它。
+                PlayerAudioSession.shared.logSnapshot("切到后台")
+                // 画中画优先：设置开着且正在播，就让画面在系统小窗里继续。
+                // 这时**不能**再按 `backgroundPlayback` 把视频轨关掉——PiP 要的
+                // 正是解码后的帧，关了就只剩声音。
+                let pipStarted = settings.backgroundAutoPiP && surface.isPlaying
+                    ? startPictureInPicture()
+                    : false
+                if !pipStarted {
+                    if !settings.backgroundPlayback, surface.isPlaying {
+                        pausedByBackground = true
+                        surface.pause()
+                    }
+                    // 开着后台播放：声音继续，但画面在后台本来就不会重绘，
+                    // 留在那只会让回来时音画对不上。先只留声音。
+                    if settings.backgroundPlayback, surface.isPlaying {
+                        surface.setVideoTrackEnabled(false)
+                    }
                 }
                 if let controller {
                     persistProgress(controller)
                 }
             case .active:
+                // 回前台先收回画中画：内联 GL 在同一时间点接管，不 seek、不重启。
+                pictureInPicture?.stop()
                 // 后台只跑了声音：回前台把画面接回来，mpv 按当前音频位置重新选轨，
                 // 画面直接对上声音（不 seek，所以不会有一声破音）。
                 if settings.backgroundPlayback {
@@ -542,6 +558,15 @@ struct PlayerScreen: View {
                 }
             default:
                 break
+            }
+        }
+        // 设置被关掉：画中画立刻收掉（连同窗口里那块图层），内联画面恢复。
+        .onChange(of: settings.backgroundAutoPiP) { _, enabled in
+            if enabled {
+                makePictureInPictureController(settingsStore: settings)
+            } else {
+                pictureInPicture?.teardown()
+                pictureInPicture = nil
             }
         }
         .onChange(of: isEditingSkipSeconds) { _, editing in
@@ -626,6 +651,10 @@ struct PlayerScreen: View {
             // 带着全屏状态离开会把整个 App 锁在横屏，退出时一定回竖屏。
             exitFullscreen()
             if let controller { persistProgress(controller) }
+            // 画中画先拆：它的取帧钩子挂在引擎上，
+            // 必须赶在 `surface.stop()` 之前摘掉，否则会拿着已销毁的 GL 上下文做 blit。
+            pictureInPicture?.teardown()
+            pictureInPicture = nil
             surface.stop()
             controller?.stop()
             // 退出播放器时把观看记录并进云盘（原版 player_item.dart:375 也是这个时机）。
@@ -732,7 +761,55 @@ struct PlayerScreen: View {
             Task { await created.selectEpisode(next) }
         }
         resumeIfNeeded(library: library, controller: created)
+        // 后台自动画中画：设置开着才把控制器建出来，并提前把图层挂进窗口。
+        // 系统的「自动画中画」要求内联图层在切后台**之前**就存在；等退后台
+        // 那一刻再建，`isPictureInPicturePossible` 往往一直是 false。
+        if settingsStore.backgroundAutoPiP {
+            makePictureInPictureController(settingsStore: settingsStore)
+        }
         await created.start()
+    }
+
+    /// 建（或复用）画中画控制器。只有设置开着时才会被调用。
+    private func makePictureInPictureController(settingsStore: SettingsStore) {
+        if let pictureInPicture {
+            pictureInPicture.prepare(engine: surface.engine, surface: surface)
+            return
+        }
+        let pip = PictureInPictureController()
+        pip.onLog = { message in KazumiLogBuffer.player("画中画: \(message)") }
+        pip.onFailed = { [weak surface] in
+            // 画中画没起来：退回原来的后台策略。默认「后台播放」是关的，
+            // 这时把这一集停下，别让设置看起来生效了、实际黑着屏一直耗电。
+            guard let surface else { return }
+            if settingsStore.backgroundPlayback {
+                // 进后台时因为「PiP 起来了」而没有关视频轨，现在 PiP 失败，
+                // 必须补做原来的「只留声音」，否则后台没人出帧、音画会越跑越偏。
+                surface.setVideoTrackEnabled(false)
+            } else if surface.isPlaying {
+                surface.pause()
+            }
+        }
+        pip.onStoppedInBackground = { [weak surface] in
+            // 用户从画中画窗口关掉画面、App 还在后台：没开后台音频就停声，
+            // 不开则继续当音频播放器用；开了后台音频也要回到只走声音的老策略。
+            guard let surface else { return }
+            if settingsStore.backgroundPlayback {
+                surface.setVideoTrackEnabled(false)
+            } else if surface.isPlaying {
+                surface.pause()
+            }
+        }
+        pictureInPicture = pip
+        pip.prepare(engine: surface.engine, surface: surface)
+    }
+
+    /// 切后台时真正拉起画中画。返回 false 表示这次走不了，页面要退回原策略。
+    private func startPictureInPicture() -> Bool {
+        guard settings.backgroundAutoPiP else { return false }
+        makePictureInPictureController(settingsStore: settings)
+        guard let pictureInPicture else { return false }
+        return pictureInPicture.start(engine: surface.engine, surface: surface)
     }
 
     // MARK: - 播放区
@@ -2932,7 +3009,9 @@ struct PlayerScreen: View {
     private func syncNowPlaying() {
         guard let controller else { return }
         // 起播后再校一次音频会话：mpv 的音频输出会自己重设类别，
-        // 一旦它盖成混音，系统就不会把我们当「正在播放」。只查不写，便宜。
+        // 一旦它盖成混音，系统就不会把我们当「正在播放」。
+        // 注意这里**会写**：被盖成混音时要改类别，改不动就退一次会话再上，
+        // 只在真的被盖掉时才发生，不是每次都写。
         PlayerAudioSession.shared.reapplyIfNeeded()
         // 还没拿到片源（时长 0）且没在播时不写：控制中心不该挂一张 00:00 的空卡片。
         guard surface.duration > 0 || surface.isPlaying else { return }

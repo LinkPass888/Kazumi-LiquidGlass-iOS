@@ -100,6 +100,7 @@ targets:
         CADisableMinimumFrameDurationOnPhone: true
         UIBackgroundModes:
           - audio
+          - picture-in-picture
         LSApplicationQueriesSchemes:
           - vlc-x-callback
         NSAppTransportSecurity:

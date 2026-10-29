@@ -76,6 +76,10 @@ final class MPVEngine {
     private var reportedFirstFrame = false
     var onLog: ((String) -> Void)?
 
+    /// 内联画面刚画完时同步回调（主线程、GL 上下文 current）。
+    /// 画中画拿这一帧去 `glBlitFramebuffer` 到 CVPixelBuffer，不需要第二个 mpv 上下文。
+    var onFrameRendered: (@MainActor (GLint, Int, Int) -> Void)?
+
     private var lastSnapshot = MPVSnapshot(
         time: 0, duration: 0, isPaused: true, isIdle: true, hasVideo: false, ended: false
     )
@@ -239,6 +243,27 @@ final class MPVEngine {
         if enabled {
             glView?.setNeedsDisplay()
         }
+    }
+
+    /// 让 GLKView 立刻重画当前帧（回前台接回内联画面时用）。
+    func requestRender() {
+        glView?.setNeedsDisplay()
+    }
+
+    /// 画中画需要自己驱动出帧时调（后台 UIKit 不会自动给 GLKView 发 draw）。
+    /// 直接绑 GLKView 的 drawable 走正常渲染 + 首帧钩子；不 present，
+    /// 因为这一帧的消费者是 PiP 的 sample buffer，不是屏幕。
+    func renderFrameForPictureInPicture() {
+        guard let glView, renderContext != nil else { return }
+        let width = glView.drawableWidth
+        let height = glView.drawableHeight
+        guard width > 0, height > 0 else { return }
+        EAGLContext.setCurrent(glContext)
+        glView.bindDrawable()
+        glViewport(0, 0, GLsizei(width), GLsizei(height))
+        glClearColor(0, 0, 0, 1)
+        glClear(GLbitfield(GL_COLOR_BUFFER_BIT))
+        render(in: glView)
     }
 
     func setSpeed(_ rate: Float) {
@@ -427,7 +452,9 @@ final class MPVEngine {
             fbo: Int32(fbo),
             w: Int32(viewport[2]),
             h: Int32(viewport[3]),
-            internal_format: 0
+            // 这里要的是 internal format 常量，不是 sized enum。
+            // 传错会让 mpv 按错误格式写 FBO，画中画 blit 也会跟着错。
+            internal_format: GLint(GL_RGBA)
         )
         var flip: CInt = 1
         withUnsafeMutablePointer(to: &flip) { flipPtr in
@@ -442,6 +469,8 @@ final class MPVEngine {
         }
         // 告诉 mpv 这一帧确实上屏了：不报的话它按「还没显示」算，帧会被丢。
         mpv_render_context_report_swap(renderContext)
+        // 画面还在当前 FBO 里，趁没被下一帧覆盖交给画中画拷走。
+        onFrameRendered?(fbo, Int(viewport[2]), Int(viewport[3]))
         if !reportedFirstFrame {
             reportedFirstFrame = true
             let callback = onFirstFrame

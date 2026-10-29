@@ -15,6 +15,7 @@
 //
 
 import AVFoundation
+import MediaPlayer
 
 @MainActor
 final class PlayerAudioSession {
@@ -48,26 +49,110 @@ final class PlayerAudioSession {
     /// * 用 `.longFormVideo` 路由策略，锁屏和控制中心按视频来画，而不是当成音乐。
     /// mpv 的音频输出会在开始出声时自己重设一次类别（会盖掉这里的设置），
     /// 所以起播后要再调一次 `reapplyIfNeeded()`。
+    ///
+    /// `.allowAirPlay` / `.allowBluetoothA2DP` 必须跟着写：`setCategory` 的 options
+    /// 是整体替换，不写就等于把启动时那份投屏能力抹掉——播放中点投屏就选不到设备了。
     func applyPlaybackCategory() {
         let session = AVAudioSession.sharedInstance()
-        try? session.setCategory(.playback, mode: .moviePlayback, policy: .longFormVideo, options: [])
-        try? session.setActive(true)
-    }
-
-    /// 起播后再配一次：mpv 的 audiounit 输出初始化时可能已经把类别重设过。
-    func reapplyIfNeeded() {
-        let session = AVAudioSession.sharedInstance()
-        let mixing = session.categoryOptions.contains(.mixWithOthers)
-        if mixing || session.category != .playback {
-            onLog?("音频会话被重置（mixing=\(mixing)），重新配置")
-            applyPlaybackCategory()
+        do {
+            try session.setCategory(
+                .playback,
+                mode: .moviePlayback,
+                policy: .longFormVideo,
+                options: [.allowAirPlay, .allowBluetoothA2DP]
+            )
+            try session.setActive(true)
+        } catch {
+            // 以前这里用 `try?` 把错误吞掉了。会话正在出声的时候改类别是会失败的，
+            // 吞掉就等于「以为改回来了，其实还是 mpv 设的混音」——而混音的会话
+            // 不会被 iOS 当成正在播放，控制中心/锁屏那张卡就永远不出来。
+            KazumiLogBuffer.player("音频会话配置失败：\(error.localizedDescription)")
         }
     }
 
-    /// 离开播放器时调用：退回默认类别，别让整个 App 一直占着播放位。
+    /// 把当前会话的真实状态写进「播放」日志，真机上能直接看出系统看到的是什么。
+    ///
+    /// 只读，不改任何东西：这是 `mixWithOthers` 那条推断的证据来源——
+    /// 推断靠读回，不靠猜。
+    func logSnapshot(_ tag: String) {
+        let session = AVAudioSession.sharedInstance()
+        let options = session.categoryOptions
+        var flags: [String] = []
+        if options.contains(.mixWithOthers) { flags.append("mixWithOthers") }
+        if options.contains(.duckOthers) { flags.append("duckOthers") }
+        if options.contains(.interruptSpokenAudioAndMixWithOthers) { flags.append("mixSpoken") }
+        if options.contains(.allowBluetooth) { flags.append("hfp") }
+        if options.contains(.allowBluetoothA2DP) { flags.append("a2dp") }
+        if options.contains(.allowAirPlay) { flags.append("airplay") }
+        let info = MPNowPlayingInfoCenter.default().nowPlayingInfo
+        KazumiLogBuffer.player(
+            "[会话] \(tag) 类别=\(session.category.rawValue) 模式=\(session.mode.rawValue)"
+            + " 选项=[\(flags.joined(separator: ","))]"
+            + " 卡片字段=\(info?.count ?? 0)"
+            + " 状态=\(MPNowPlayingInfoCenter.default().playbackState.rawValue)"
+        )
+    }
+
+    /// 起播后再配一次：mpv 的 audiounit 输出初始化时可能已经把类别重设过。
+    ///
+    /// 只查不写是错的：会话在出声时改类别可能被系统拒绝，那就得退一次再上。
+    /// 所以这里先就地改，读回还是混音就把会话退掉重配一次，并把结果写进日志——
+    /// 成没成都要留证据。
+    func reapplyIfNeeded() {
+        let session = AVAudioSession.sharedInstance()
+        guard session.categoryOptions.contains(.mixWithOthers) || session.category != .playback else {
+            return
+        }
+        let before = describe(session)
+        applyPlaybackCategory()
+        if session.categoryOptions.contains(.mixWithOthers) || session.category != .playback {
+            // 就地改被拒了：退一次再上。只在真的被盖成混音时才走，不是每 2 秒一次。
+            try? session.setActive(false, options: .notifyOthersOnDeactivation)
+            applyPlaybackCategory()
+        }
+        let after = describe(session)
+        logSessionChange("音频会话被重设：\(before) → \(after)", state: after)
+    }
+
+    private func describe(_ session: AVAudioSession) -> String {
+        let mixing = session.categoryOptions.contains(.mixWithOthers) ? "混音" : "独占"
+        return "\(session.category.rawValue)/\(mixing)"
+    }
+
+    /// 上一次写进日志的会话描述：同样的状态不重复写，
+    /// 不然每 2 秒一条，200 条的缓冲两下就被自己刷满。
+    private var lastLoggedSessionState: String?
+
+    private func logSessionChange(_ message: String, state: String) {
+        guard lastLoggedSessionState != state else { return }
+        lastLoggedSessionState = state
+        KazumiLogBuffer.player(message)
+    }
+
+    /// 离开播放器时调用：退回启动那套类别并放开会话，别让整个 App 一直占着播放位。
+    ///
+    /// 这里不能用 `.soloAmbient`：它会连投屏一起关掉（启动时 AppDelegate 配了
+    /// `.allowAirPlay`），退出播放器后再进就选不到投屏设备了。
+    ///
+    /// `setActive(false)` 是注释本来就说要做的事，之前没写：离开播放器后会话一直挂着
+    /// `.playback`，等于对系统宣称「这个 App 还在占播放位」。通知开着
+    /// `.notifyOthersOnDeactivation`，让被打断的别的 app 自己能接回去。
     func restore() {
         let session = AVAudioSession.sharedInstance()
-        try? session.setCategory(.soloAmbient, mode: .default, options: [])
+        do {
+            try session.setActive(false, options: .notifyOthersOnDeactivation)
+        } catch {
+            // 会话本来就没激活时会报错，这里不是问题，不写日志免得误导。
+        }
+        do {
+            try session.setCategory(
+                .playback,
+                mode: .moviePlayback,
+                options: [.allowAirPlay, .allowBluetoothA2DP]
+            )
+        } catch {
+            KazumiLogBuffer.player("退出播放器后回落会话类别失败：\(error.localizedDescription)")
+        }
         removeObservers()
         wasPlayingBeforeInterruption = false
     }
