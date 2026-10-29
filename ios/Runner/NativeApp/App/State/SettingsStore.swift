@@ -887,11 +887,6 @@ final class SettingsStore {
 
     // MARK: - 原始快照（设置备份用）
 
-    /// 弹幕屏蔽词的原文（一条一行）。
-    ///
-    /// 这个键不在本类建模的属性里：屏蔽词页（DanmakuShieldScreen）自己按同一个
-    /// 键名读写，WebDAV 同步也需要整串带出去，所以在这里开一个读写口，
-    /// 让两处用同一份键名，避免再出现「写得进、读不出」的偏差。
     /// 「自动标记看过」的待补队列（原版 `bangumiProgressQueue`，一份 JSON 数组）。
     ///
     /// 键名与格式跟原版一致，方便两边互相读懂；这个键不进设置备份
@@ -901,6 +896,11 @@ final class SettingsStore {
         set { defaults.set(newValue, forKey: SettingsKey.keyPrefix + SettingsKey.bangumiProgressQueue) }
     }
 
+    /// 弹幕屏蔽词的原文（一条一行）。
+    ///
+    /// 这个键不在本类建模的属性里：屏蔽词页（DanmakuShieldScreen）自己按同一个
+    /// 键名读写，WebDAV 同步也需要整串带出去，所以在这里开一个读写口，
+    /// 让两处用同一份键名，避免再出现「写得进、读不出」的偏差。
     var danmakuFilterRulesText: String {
         get { defaults.string(forKey: SettingsKey.keyPrefix + SettingsKey.danmakuFilterRules) ?? "" }
         set { defaults.set(newValue, forKey: SettingsKey.keyPrefix + SettingsKey.danmakuFilterRules)

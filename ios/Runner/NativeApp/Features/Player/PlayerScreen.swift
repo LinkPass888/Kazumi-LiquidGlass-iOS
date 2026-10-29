@@ -451,7 +451,8 @@ struct PlayerScreen: View {
         // 「这集本来就没弹幕」是正常情况，安静地不显示）。
         .onChange(of: controller?.danmakuMessage) { _, message in
             if let message, !message.isEmpty {
-                surface.toastMessage = message
+                // 放画面 1/4 那条线上（LP 4773），跟倍速/收藏/定时关闭同一个位置。
+                surface.hudToastMessage = message
             }
         }
         // 退出全屏时把选集窗口收掉：它只属于横屏，留着会压在竖屏的选集区上。
