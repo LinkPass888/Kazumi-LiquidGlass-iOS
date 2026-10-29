@@ -464,6 +464,9 @@ struct PlayerScreen: View {
             // 用户亲手按的暂停不归「回前台自动播放」管。
             if playing {
                 pausedByBackground = false
+                // 起播那一刻立即写一次：不然要等到下一个 2 秒节拍，
+                // 万一这期间出事，控制中心一次都没写出去过。
+                syncNowPlaying()
             }
         }
         .onChange(of: isScrubbing) { _, scrubbing in
@@ -2915,11 +2918,8 @@ struct PlayerScreen: View {
     private func syncNowPlaying() {
         guard let controller else { return }
         // 还没拿到片源（时长 0）且没在播时不写：控制中心不该挂一张 00:00 的空卡片。
-        // 排查记录：起播前写空卡片是模拟器 SIGTRAP 的强相关触发点（已复现多次）。
         guard surface.duration > 0 || surface.isPlaying else { return }
         let meta = nowPlayingMeta(controller)
-        // 注意：`controller.episodes` 是每集的**播放地址**，不是标题（Colo 4444）。
-        // 原生这边拿不到集标题，第二行就只写「第 N 话」。
         NowPlayingCenter.shared.update(
             title: meta.title,
             episode: controller.currentEpisode,

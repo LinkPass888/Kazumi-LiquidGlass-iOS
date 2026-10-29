@@ -23,13 +23,43 @@ import UIKit
 final class NowPlayingCenter {
     static let shared = NowPlayingCenter()
 
-    /// 控制中心那三颗按钮按下去要做什么，由播放页面接上。
+    /// 控制中心那几颗按钮按下去要做什么，由播放页面接上。
     /// 没接就是空实现——显示出来点不动比不显示更难看，所以一进来就接好。
-    var onPlay: (() -> Void)?
-    var onPause: (() -> Void)?
-    var onNext: (() -> Void)?
-    var onPrevious: (() -> Void)?
-    var onSeek: ((Double) -> Void)?
+    /// 真正的存放处在 commands 盒子里：注册给系统的闭包只读盒子，不碰主线程状态。
+    var onPlay: (() -> Void)? {
+        get { commands.onPlay }
+        set { commands.onPlay = newValue }
+    }
+    var onPause: (() -> Void)? {
+        get { commands.onPause }
+        set { commands.onPause = newValue }
+    }
+    var onNext: (() -> Void)? {
+        get { commands.onNext }
+        set { commands.onNext = newValue }
+    }
+    var onPrevious: (() -> Void)? {
+        get { commands.onPrevious }
+        set { commands.onPrevious = newValue }
+    }
+    var onSeek: ((Double) -> Void)? {
+        get { commands.onSeek }
+        set { commands.onSeek = newValue }
+    }
+
+    /// 遥控键的转接盒：回调与「是否在播」都在这里，不带主线程隔离。
+    /// 系统在哪个队列回调都不会撞断言；真正动作回主线程做。
+    private final class CommandBox: @unchecked Sendable {
+        var onPlay: (() -> Void)?
+        var onPause: (() -> Void)?
+        var onNext: (() -> Void)?
+        var onPrevious: (() -> Void)?
+        var onSeek: ((Double) -> Void)?
+        /// toggle 那颗键据此决定叫停还是叫播。
+        var isPlaying = false
+    }
+
+    private let commands = CommandBox()
 
     /// 当前这一集的信息，用来判断要不要真的写一次 nowPlayingInfo。
     private struct Info: Equatable {
@@ -59,54 +89,62 @@ final class NowPlayingCenter {
         commandsConfigured = true
 
         let center = MPRemoteCommandCenter.shared()
-
         center.playCommand.isEnabled = true
-        center.playCommand.addTarget { [weak self] _ in
-            guard let self, self.onPlay != nil else { return .commandFailed }
-            Task { @MainActor in self.onPlay?() }
-            return .success
-        }
-
         center.pauseCommand.isEnabled = true
-        center.pauseCommand.addTarget { [weak self] _ in
-            guard let self, self.onPause != nil else { return .commandFailed }
-            Task { @MainActor in self.onPause?() }
+        center.togglePlayPauseCommand.isEnabled = true
+        center.nextTrackCommand.isEnabled = true
+        center.previousTrackCommand.isEnabled = true
+        center.changePlaybackPositionCommand.isEnabled = true
+
+        Self.registerCommandHandlers(commands)
+    }
+
+    /// 故意 nonisolated：闭包在这个上下文里形成，才不继承主线程隔离。
+    /// 系统在自己的队列上回调它们，哪怕闭包体自己再跳回主线程也没用——
+    /// 隔离检查就压在闭包入口那一帧（真机报告里就是这么死的）。
+    private nonisolated static func registerCommandHandlers(_ box: CommandBox) {
+        let center = MPRemoteCommandCenter.shared()
+
+        center.playCommand.addTarget { _ in
+            guard box.onPlay != nil else { return .commandFailed }
+            Task { @MainActor in box.onPlay?() }
             return .success
         }
 
-        center.togglePlayPauseCommand.isEnabled = true
-        center.togglePlayPauseCommand.addTarget { [weak self] _ in
-            guard let self else { return .commandFailed }
+        center.pauseCommand.addTarget { _ in
+            guard box.onPause != nil else { return .commandFailed }
+            Task { @MainActor in box.onPause?() }
+            return .success
+        }
+
+        center.togglePlayPauseCommand.addTarget { _ in
+            guard box.onPlay != nil || box.onPause != nil else { return .commandFailed }
             Task { @MainActor in
-                if self.lastRate > 0 { self.onPause?() } else { self.onPlay?() }
+                if box.isPlaying { box.onPause?() } else { box.onPlay?() }
             }
             return .success
         }
 
         // 上一集 / 下一集：控制中心那两颗箭头。
-        center.nextTrackCommand.isEnabled = true
-        center.nextTrackCommand.addTarget { [weak self] _ in
-            guard let self, self.onNext != nil else { return .commandFailed }
-            Task { @MainActor in self.onNext?() }
+        center.nextTrackCommand.addTarget { _ in
+            guard box.onNext != nil else { return .commandFailed }
+            Task { @MainActor in box.onNext?() }
             return .success
         }
 
-        center.previousTrackCommand.isEnabled = true
-        center.previousTrackCommand.addTarget { [weak self] _ in
-            guard let self, self.onPrevious != nil else { return .commandFailed }
-            Task { @MainActor in self.onPrevious?() }
+        center.previousTrackCommand.addTarget { _ in
+            guard box.onPrevious != nil else { return .commandFailed }
+            Task { @MainActor in box.onPrevious?() }
             return .success
         }
 
         // 锁屏那条进度条可以拖。
-        center.changePlaybackPositionCommand.isEnabled = true
-        center.changePlaybackPositionCommand.addTarget { [weak self] event in
-            guard let self,
-                  let event = event as? MPChangePlaybackPositionCommandEvent,
-                  self.onSeek != nil
+        center.changePlaybackPositionCommand.addTarget { event in
+            guard let event = event as? MPChangePlaybackPositionCommandEvent,
+                  box.onSeek != nil
             else { return .commandFailed }
             let target = event.positionTime
-            Task { @MainActor in self.onSeek?(target) }
+            Task { @MainActor in box.onSeek?(target) }
             return .success
         }
     }
@@ -142,6 +180,7 @@ final class NowPlayingCenter {
         info = next
         lastRate = isPlaying ? 1 : 0
         lastElapsed = elapsed
+        commands.isPlaying = isPlaying
 
         // 换集（或换剧）才重建整套信息；只是进度变了走轻量的那条——
         // 每两秒把整个字典重建再赋回去没必要，系统也多收一份重复更新。
@@ -211,12 +250,29 @@ final class NowPlayingCenter {
             guard let image = loader.cachedImage(for: url, pixelSize: 900) else { return }
             await MainActor.run {
                 guard let self else { return }
-                let artwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+                // 这颗闭包是系统在**后台队列**上调用的（它拿去编 JPEG）。
+                // 在 MainActor 上下文里直接写闭包，闭包会继承主线程隔离，
+                // 一被后台调用就撞隔离断言 → SIGTRAP（真机、模拟器都会）。
+                // 所以交非隔离的静态方法去造，闭包才不带主线程隔离。
+                let artwork = Self.makeArtwork(image: image)
                 self.artworkCache[url] = artwork
                 // 图回来了，如果还是这一集，就把封面补进去（这一下才整套重建）。
                 guard let current = self.info, current.artworkURL == url else { return }
                 self.publish(current, elapsed: self.lastElapsed, isPlaying: self.lastRate > 0, full: true)
             }
         }
+    }
+
+    /// 包一层：UIImage 没标记可跨线程传递，交给系统闭包持有得由我们担保。
+    private final class ArtworkImageBox: @unchecked Sendable {
+        let image: UIImage
+        init(_ image: UIImage) { self.image = image }
+    }
+
+    /// 故意 nonisolated：在这个上下文里形成的闭包不继承主线程隔离，
+    /// 系统在哪个队列调它都不会撞断言。
+    private nonisolated static func makeArtwork(image: UIImage) -> MPMediaItemArtwork {
+        let box = ArtworkImageBox(image)
+        return MPMediaItemArtwork(boundsSize: box.image.size) { _ in box.image }
     }
 }
