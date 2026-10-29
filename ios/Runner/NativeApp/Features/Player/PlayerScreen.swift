@@ -279,6 +279,8 @@ struct PlayerScreen: View {
     /// 还是不是最新的（LP 2026-10-28「横屏切回竖屏后再也横不了」的正解）。
     @State private var orientationRequestTask: Task<Void, Never>?
     @State private var orientationGeneration = 0
+    /// 系统拒绝转屏时的那句原话（回调在后台队列上到，见 `OrientationFailure`）。
+    @State private var orientationFailure = OrientationFailure()
     /// 布局看到竖屏时先等它稳住再退全屏，别打断正在进行的转屏。
     @State private var landscapeExitTask: Task<Void, Never>?
     /// 本次按压是否已经进入长按状态（用来区分「松手时是短按还是长按结束」）。
@@ -1585,15 +1587,20 @@ struct PlayerScreen: View {
                 // （@developer3 4320）。其余时间只轮询系统转没转过去。
                 if attempt == 0 || attempt == 4 {
                     notifyOrientationChange(in: scene)
-                    scene.requestGeometryUpdate(.iOS(interfaceOrientations: mask)) { error in
-                        // 系统的原话要落到「播放信息」里，不然只有「等满 3 秒」这一句
-                        // （Colo 2026-10-28 §14.10 第 5 条 / @developer3 4311）。
-                        NSLog("[player] 转屏被拒：\(error)")
-                        Task { @MainActor in
-                            guard generation == orientationGeneration else { return }
-                            lastOrientationResult = "系统拒绝：\(error.localizedDescription)"
-                        }
+                    // 系统的原话要落到「播放信息」里，不然只有「等满 3 秒」这一句
+                    // （Colo 2026-10-28 §14.10 第 5 条 / @developer3 4311）。
+                    // 这个回调**必须**是 nonisolated：UIKit 在自己的队列上调它，
+                    // 闭包只要继承主线程隔离，一进去就撞断言闪退（LP 4753）。
+                    let failure = orientationFailure
+                    scene.requestGeometryUpdate(.iOS(interfaceOrientations: mask)) { @Sendable error in
+                        let message = "系统拒绝：\(error.localizedDescription)"
+                        NSLog("[player] 转屏被拒：\(message)")
+                        failure.record(generation: generation, message: message)
                     }
+                }
+                // 回调什么时候到不由我们定，每轮都取一次；取到就记进「播放信息」。
+                if let failure = orientationFailure.take(generation: generation) {
+                    lastOrientationResult = failure
                 }
                 // 已经到了就收工，别再多发。
                 if scene.interfaceOrientation.isLandscape == wantsLandscape {
@@ -2528,6 +2535,24 @@ struct PlayerScreen: View {
                 })
             ) {}
         ]
+        let sleepTimerItem = SystemMenuButton.Item(
+            title: "定时关闭",
+            symbol: sleepTimerRemaining == nil ? "moon.zzz" : "moon.zzz.fill",
+            subtitle: sleepTimerValue,
+            selection: .init(options: [SystemMenuButton.Selection.Option(
+                title: "不开启",
+                isSelected: sleepTimerMinutes == nil
+            ) {
+                cancelSleepTimer()
+            }] + [15, 30, 60, 90].map { minutes in
+                SystemMenuButton.Selection.Option(
+                    title: sleepTimerItemTitle(minutes),
+                    isSelected: sleepTimerMinutes == minutes
+                ) {
+                    startSleepTimer(minutes: minutes)
+                }
+            })
+        ) {}
         return items + [
             SystemMenuButton.Item(title: "播放信息", symbol: "info.circle") {
                 closeMenu()
@@ -2543,25 +2568,9 @@ struct PlayerScreen: View {
                 closeMenu()
                 openSheet(.syncPlay)
             },
-            SystemMenuButton.Item(
-                title: "定时关闭",
-                symbol: sleepTimerRemaining == nil ? "moon.zzz" : "moon.zzz.fill",
-                subtitle: sleepTimerValue,
-                selection: .init(options: [SystemMenuButton.Selection.Option(
-                    title: "不开启",
-                    isSelected: sleepTimerMinutes == nil
-                ) {
-                    cancelSleepTimer()
-                }] + [15, 30, 60, 90].map { minutes in
-                    SystemMenuButton.Selection.Option(
-                        title: sleepTimerItemTitle(minutes),
-                        isSelected: sleepTimerMinutes == minutes
-                    ) {
-                        startSleepTimer(minutes: minutes)
-                    }
-                })
-            ) {},
-        ]
+            // 横屏顶栏也有一颗定时关闭（LP 2026-10-28 第 7 条），
+            // 「更多」里就不再重复一份（LP 4749）。
+        ] + (isFullscreen ? [] : [sleepTimerItem])
     }
 
     /// 「更多 → 追番状态」的子菜单：五项状态 + 取消追番，勾在现在这一项上。
@@ -4121,4 +4130,36 @@ struct GlassBackdrop: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: UIVisualEffectView, context: Context) {}
+}
+
+/// 转屏被拒时系统给的那句话，从后台队列交回主线程的盒子。
+///
+/// UIKit 在自己的队列（崩溃报告里是 `com.apple.root.default-qos`）上回调
+/// `requestGeometryUpdate` 的 errorHandler。闭包字面量写在 `@MainActor` 的
+/// `Task` 里会继承主线程隔离，UIKit 在后台队列上一叫就撞
+/// `_swift_task_checkIsolatedSwift` 断言、整页闪退——平时看不出来，只有系统
+/// **拒绝**这次转屏（回调真的被调）才死（LP 4753 的崩溃报告，真机一进全屏被拒）。
+///
+/// 所以回调里一个字都不碰主线程状态，只往这个带锁的盒子里放一句话，
+/// 主线程那边轮询时再取出来。
+private final class OrientationFailure: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: (generation: Int, message: String)?
+
+    func record(generation: Int, message: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        // 旧请求迟到的回调不许盖掉新请求的结论。
+        if let stored, stored.generation > generation { return }
+        stored = (generation, message)
+    }
+
+    /// 取走属于这一代请求的那句话；不是这一代的就当没发生过。
+    func take(generation: Int) -> String? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let stored, stored.generation == generation else { return nil }
+        self.stored = nil
+        return stored.message
+    }
 }

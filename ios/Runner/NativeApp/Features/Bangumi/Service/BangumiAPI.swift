@@ -615,6 +615,15 @@ enum BangumiAPI {
         try await send(url, method: "POST", query: [], body: body, requiresAuth: requiresAuth)
     }
 
+    /// 对应 BangumiClient.put（原版「单集进度」那条专用）。
+    private static func put(
+        _ url: String,
+        body: JSONValue,
+        requiresAuth: Bool = false
+    ) async throws -> JSONValue {
+        try await send(url, method: "PUT", query: [], body: body, requiresAuth: requiresAuth)
+    }
+
     private static func send(
         _ url: String,
         method: String,
@@ -869,7 +878,10 @@ enum BangumiAPI {
             [episodeID]
         )
         do {
-            _ = try await post(url, body: .object(["type": .int(2)]), requiresAuth: true)
+            // **必须 PUT**：这条接口只认 PUT，POST 回 404（"This is default response…"）。
+            // 之前写的是 post，于是每次都被当成「这一集不存在」丢掉，
+            // 自动标记看过从来没成功过一次（LP 4744）。
+            _ = try await put(url, body: .object(["type": .int(2)]), requiresAuth: true)
             return .ok
         } catch let error as NetworkError {
             if case let .badResponse(status, _, _) = error {

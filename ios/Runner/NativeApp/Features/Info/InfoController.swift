@@ -286,6 +286,14 @@ final class InfoController {
 struct BangumiEpisode: Identifiable, Hashable, Sendable {
     var id: Int
     var sort: Double
+    /// 当季话数（Bangumi 的 `ep`）。
+    ///
+    /// 第二季之后的 `sort` 会接着上一季往下数（第三季第 1 集 sort = 49），
+    /// 而播放器里的集号是「这一季的第几集」。所以认集必须先用 `ep`，
+    /// 拿不到再用绝对话数 —— 原版 `bangumi_episode_matcher.dart` 就是这条规矩。
+    var ep: Double
+    /// 单集类型：0 = 本篇，1 = 特别篇，2 = OP，3 = ED 等。
+    var type: Int
     var name: String
     var nameCn: String
     var airdate: String
@@ -301,7 +309,9 @@ struct BangumiEpisode: Identifiable, Hashable, Sendable {
     static func fromJSON(_ json: JSONValue) -> BangumiEpisode {
         BangumiEpisode(
             id: json["id"].intValue ?? 0,
-            sort: json["sort"].doubleValue ?? json["ep"].doubleValue ?? 0,
+            sort: json["sort"].doubleValue ?? 0,
+            ep: json["ep"].doubleValue ?? 0,
+            type: json["type"].intValue ?? 0,
             name: json["name"].stringValue ?? "",
             nameCn: json["name_cn"].stringValue ?? "",
             airdate: json["airdate"].stringValue ?? ""

@@ -232,6 +232,8 @@ enum SettingsKey {
     static let bangumiSyncPriority = "bangumiSyncPriority"
     static let bangumiImmediateSyncToastEnable = "bangumiImmediateSyncToastEnable"
     static let bangumiAutoMarkWatched = "bangumiAutoMarkWatched"
+    /// 「自动标记看过」的待补队列（原版 bangumiProgressQueue）。
+    static let bangumiProgressQueue = "bangumiProgressQueue"
     static let webDavEnable = "webDavEnable"
     static let webDavEnableHistory = "webDavEnableHistory"
     static let webDavEnableCollect = "webDavEnableCollect"
@@ -789,6 +791,7 @@ final class SettingsStore {
             SettingsKey.bangumiImmediateSyncToastEnable,
             true
         )
+        // 默认关：LP 4744 明确要求保持关，别自己改成默认开。
         bangumiAutoMarkWatched = Self.read(defaults, SettingsKey.bangumiAutoMarkWatched, false)
         bangumiAccessToken = Self.read(defaults, SettingsKey.bangumiAccessToken, "")
         bangumiUsername = Self.read(defaults, SettingsKey.bangumiUsername, "")
@@ -889,6 +892,15 @@ final class SettingsStore {
     /// 这个键不在本类建模的属性里：屏蔽词页（DanmakuShieldScreen）自己按同一个
     /// 键名读写，WebDAV 同步也需要整串带出去，所以在这里开一个读写口，
     /// 让两处用同一份键名，避免再出现「写得进、读不出」的偏差。
+    /// 「自动标记看过」的待补队列（原版 `bangumiProgressQueue`，一份 JSON 数组）。
+    ///
+    /// 键名与格式跟原版一致，方便两边互相读懂；这个键不进设置备份
+    /// （`excludedKeys` 里已经写明：队列是这台设备的待办，不该搬到另一台）。
+    var bangumiProgressQueue: String {
+        get { defaults.string(forKey: SettingsKey.keyPrefix + SettingsKey.bangumiProgressQueue) ?? "" }
+        set { defaults.set(newValue, forKey: SettingsKey.keyPrefix + SettingsKey.bangumiProgressQueue) }
+    }
+
     var danmakuFilterRulesText: String {
         get { defaults.string(forKey: SettingsKey.keyPrefix + SettingsKey.danmakuFilterRules) ?? "" }
         set { defaults.set(newValue, forKey: SettingsKey.keyPrefix + SettingsKey.danmakuFilterRules)
