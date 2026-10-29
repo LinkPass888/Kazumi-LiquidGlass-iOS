@@ -267,6 +267,8 @@ struct PlayerScreen: View {
     /// 这一集是「因为切到后台才停下的」吗——只有这种暂停才在回前台时自动接上，
     /// 用户自己按的暂停不算（LP 2026-10-29「回到前台自动播放」）。
     @State private var pausedByBackground = false
+    /// 这一集在后台把视频轨关掉了（`vid=no`）。回前台要按这个记号接回来。
+    @State private var videoTrackOffInBackground = false
     /// 后台自动画中画。设置关着时一直是 nil：不建图层、不建控制器、不碰软件渲染。
     @State private var pictureInPicture: PictureInPictureController?
     /// 「更多」/ 倍速面板：自己握开关，好让控制层知道菜单还开着。
@@ -465,6 +467,14 @@ struct PlayerScreen: View {
     }
 
     var body: some View {
+        screenLifecycleObservers
+    }
+
+    /// 第一段修饰符：提示气泡、全屏、播放状态、进度条。
+    ///
+    /// 这一串拆成几段，是因为整条链放在一个表达式里，编译器的类型检查会超时
+    /// （「unable to type-check this expression in reasonable time」）。
+    private var contentObservers: some View {
         playbackScaffold
         // 竖屏侧滑返回：导航栏藏了之后系统的手势会失效，这里把它接回来（全屏时不认）。
 
@@ -502,7 +512,10 @@ struct PlayerScreen: View {
             pictureInPicture?.allowsAutoStart = playing
             // 用户亲手按的暂停不归「回前台自动播放」管。
             if playing {
-                pausedByBackground = false
+                // 切后台那一拍我们刚 pause()，内核还会有一两个快照报「还在走」，
+                // 那不是用户的意思：只有在前台真的播起来，才算「用户亲手按的暂停」
+                // 作废。不然这一拍会把 pausedByBackground 洗掉，回前台就不续播了。
+                if scenePhase == .active { pausedByBackground = false }
                 // 起播那一刻立即写一次：不然要等到下一个 2 秒节拍，
                 // 万一这期间出事，控制中心一次都没写出去过。
                 syncNowPlaying()
@@ -515,6 +528,11 @@ struct PlayerScreen: View {
                 scheduleControlsHide()
             }
         }
+    }
+
+    /// 第二段修饰符：250ms 节拍、切前后台、画中画设置、快进秒数输入。
+    private var playbackObservers: some View {
+        contentObservers
         // 片头片尾弹窗：跟播放内核同一个 250ms 节拍（快照泵就是这条节拍），
         // 位置 / 时长喂进去、seek 和切集请求接出来。时间轴只查一次，
         // 用户把 AniSkip 关了就把手上这份清掉。
@@ -551,6 +569,8 @@ struct PlayerScreen: View {
         }
         // 后台播放关着就退到后台即暂停；开着则让音频会话保持可播，
         // 熄屏 / 切出去继续出声（LP 清单「后台播放」，默认关）。
+        // 具体做什么拆到下面两个方法里：这个闭包自己已经很长，再往里塞
+        // 编译器的类型检查会超时（「unable to type-check in reasonable time」）。
         .onChange(of: scenePhase) { _, phase in
             // 进后台 / 锁屏一律放弃常亮；回前台且还在播就接回来。
             updateIdleTimer()
@@ -560,42 +580,9 @@ struct PlayerScreen: View {
                 // 真实类别/选项和卡片字段数写进「播放」日志（设置 → 日志 → 播放）。
                 // 混音的会话不会被 iOS 当成正在播放，日志里有 mixWithOthers 就是它。
                 PlayerAudioSession.shared.logSnapshot("切到后台")
-                // 画中画优先：设置开着且正在播，就让画面在系统小窗里继续。
-                // 这时**不能**再按 `backgroundPlayback` 把视频轨关掉——PiP 要的
-                // 正是解码后的帧，关了就只剩声音。
-                let pipStarted = settings.backgroundAutoPiP && surface.isPlaying
-                    ? startPictureInPicture()
-                    : false
-                // 小窗这次连尝试都没法尝试（没在播、句柄没建好），就按设置收尾。
-                // 标成「因为切后台停的」，回前台那条会按设置接回来，不再出现
-                // 「回来发现停着、也没接着播」。
-                if !pipStarted {
-                    if !settings.backgroundPlayback, surface.isPlaying {
-                        pausedByBackground = true
-                        surface.pause()
-                    }
-                    // 开着后台播放：声音继续，但画面在后台本来就不会重绘，
-                    // 留在那只会让回来时音画对不上。先只留声音。
-                    if settings.backgroundPlayback, surface.isPlaying {
-                        surface.setVideoTrackEnabled(false)
-                    }
-                }
-                if let controller {
-                    persistProgress(controller)
-                }
+                handleBackground()
             case .active:
-                // 回前台先收回画中画：内联 GL 在同一时间点接管，不 seek、不重启。
-                pictureInPicture?.stop()
-                // 后台只跑了声音：回前台把画面接回来，mpv 按当前音频位置重新选轨，
-                // 画面直接对上声音（不 seek，所以不会有一声破音）。
-                if settings.backgroundPlayback {
-                    surface.setVideoTrackEnabled(true)
-                }
-                // 「回到前台自动播放」：只接回因切后台停下的那一集。
-                if settings.resumeOnForeground, pausedByBackground {
-                    pausedByBackground = false
-                    if !surface.isPlaying { surface.play() }
-                }
+                handleForeground()
             default:
                 break
             }
@@ -616,6 +603,11 @@ struct PlayerScreen: View {
                 scheduleControlsHide()
             }
         }
+    }
+
+    /// 第三段修饰符：控制栏自动隐藏、启动、定期落进度、离开页面。
+    private var screenLifecycleObservers: some View {
+        playbackObservers
         // 自动隐藏：用 `.task(id:)` 而不是自建 Task，离开页面时系统会自己取消。
         .task {
             // 看菜单还在不在：在就不收控制栏，收了就恢复自动隐藏。
@@ -783,6 +775,20 @@ struct PlayerScreen: View {
         let startSpeed = Float(settingsStore.playSpeed)
         surface.setPlaybackRate(startSpeed)
         // 自动连播：正常播完后根据设置决定是否切到下一集。
+        // 起播稳定后把嗅探用的 WebView 放掉（LP 4938 Step 2）：媒体地址已经解析到、
+        // mpv 已经在放，那个隐藏页面就没有存在的必要了。WKWebView 只要还活着，它的
+        // WebContent 子进程就还在，跟 mpv、画中画控制器一起向系统认领媒体路由——
+        // 切后台那一秒三方抢路由，灵动岛 / 锁屏点击就失效。
+        // 回调由 `PlayerSurfaceModel` 在「首帧之后又过了 0.15 秒」那一刻发一次
+        // （见 `onPlaybackStarted`）；不写在 SwiftUI 的 `.onChange` 里，那串 modifier
+        // 已经长到编译器的类型检查会超时。
+        //
+        // 必须挂在这里、不能挂在上面 `applyAudioSessionPolicy()` 里：那一步跑在
+        // `controller = created` **之前**，闭包弱引用抓到的是当时还是 nil 的那个值，
+        // 回调等于永远是空的（2026-10-30 模拟器上就是这么一次都没释放）。
+        surface.onPlaybackStarted = { [weak created] in
+            created?.releaseSourceWebView()
+        }
         surface.onFinish = { [weak created] surface in
             guard let created else { return }
             // 播完先落一次进度：结尾 5 秒内会归零，当作「已看完」的边界。
@@ -820,7 +826,6 @@ struct PlayerScreen: View {
             return
         }
         let pip = PictureInPictureController()
-        pip.onLog = { message in KazumiLogBuffer.player("画中画: \(message)") }
         let backgroundPaused = $pausedByBackground
         pip.onFailed = { [weak surface] in
             // 小窗没起来，按「后台播放」这个设置收尾，别让设置关着却在后台一直出声。
@@ -860,6 +865,59 @@ struct PlayerScreen: View {
         makePictureInPictureController(settingsStore: settings)
         guard let pictureInPicture else { return false }
         return pictureInPicture.start(engine: surface.engine, surface: surface)
+    }
+
+    /// 切到后台这一刻要做的：先试画中画，起不来就收尾，收尾时一定关掉视频轨。
+    private func handleBackground() {
+        // 画中画优先：设置开着且正在播，就让画面在系统小窗里继续。
+        // 走成了就什么都不用做——PiP 要的正是解码后的帧，这时**不能**关视频轨。
+        let pipStarted = settings.backgroundAutoPiP && surface.isPlaying
+            ? startPictureInPicture()
+            : false
+        if let controller {
+            persistProgress(controller)
+        }
+        guard !pipStarted else { return }
+
+        // 小窗没起来：后台就不能再解视频。iOS 在后台不给 GPU / VideoToolbox，
+        // 硬解会话当场失效（真机日志：`h264: Failed to decode frame
+        // (invalid session, -12903)` → `vt decoder cb: output image buffer is
+        // null: -12909`），重则把播放打成 `paused=true idle=true`，回前台还得
+        // 用户手点一下才接着播（LP 4938 第 2 条）。
+        //
+        // 判据是「这次有没有走成画中画」，跟 `backgroundPlayback` 那个设置无关：
+        // 那个设置管的是「要不要继续出声」，这条管的是「后台本来就不该解码」。
+        // 以前只在开着后台播放时才关视频轨，没开的那条路只 `pause()`、视频轨
+        // 还留着，正是真机上那次崩溃的来路。
+        surface.setVideoTrackEnabled(false)
+        videoTrackOffInBackground = true
+        // 没开后台播放：连声音一起停。标成「因为切后台停的」，
+        // 回前台那条会按设置接回来，不再出现「回来发现停着、也没接着播」。
+        if !settings.backgroundPlayback, surface.isPlaying {
+            pausedByBackground = true
+            surface.pause()
+        }
+    }
+
+    /// 回前台：收回画中画、把后台关掉的视频轨接回来、按设置自动续播。
+    private func handleForeground() {
+        // 先收回画中画：内联 GL 在同一时间点接管，不 seek、不重启。
+        pictureInPicture?.stop()
+        // 后台把视频轨关了：接回来。放在 `play()` 之前，这样自动续播的那一下
+        // 画面已经在了，不会出现「先出声、画面晚一拍」。
+        if videoTrackOffInBackground {
+            videoTrackOffInBackground = false
+            surface.setVideoTrackEnabled(true)
+        }
+        // 「回到前台自动播放」：只接回因切后台停下的那一集。
+        let shouldResume = settings.resumeOnForeground && pausedByBackground
+        if shouldResume {
+            pausedByBackground = false
+            if !surface.isPlaying { surface.play() }
+        }
+        // 这行留着：真机上「回来停着不接着播」时，先看这条——
+        // 续播=否 就是「本来就不该续」（设置关了 / 用户自己暂停的），不是丢了。
+        KazumiLogBuffer.player("回前台：视频轨接回，续播=\(shouldResume ? "是" : "否")")
     }
 
     // MARK: - 播放区

@@ -65,6 +65,8 @@ final class PlayerController {
     /// 上次走的线路（历史里记的），以及这次进播放器是不是「接着看」。
     private var resumeRoad: Int?
     private var resumeFromHistory: Bool
+    /// 这一集的 WebView 是不是已经放掉了（起播后）。换集会清零，下一集再放一次。
+    private var didReleaseWebView = false
     /// 从历史卡片进来时带的那条规则名：重建播放源和取续播位置都按它取。
     let resumeRule: String?
 
@@ -96,6 +98,8 @@ final class PlayerController {
 
     /// 播放该集：先抓章节（只做一次），再解析媒体地址。
     func start() async {
+        // 新的一次加载：WebView 可能要再用（换集 / 重试），放开「已释放」这个记号。
+        didReleaseWebView = false
         // 从观看历史进入时路由只带 bangumiID / 集数，没有播放源；
         // 先按历史里的规则名把播放源重建出来，再走正常的起播流程。
         if source == nil {
@@ -250,6 +254,18 @@ final class PlayerController {
     func stop() {
         cancelToken.cancel()
         webView.dispose()
+    }
+
+    /// 起播稳定后把嗅探用的 WebView 放掉（LP 4938 Step 2）。
+    ///
+    /// 地址已经解析到、mpv 已经在放，那个隐藏页面就没有存在的必要了：WKWebView 只要
+    /// 还活着，WebContent 子进程就还在，它跟 mpv、画中画控制器同时向系统认领媒体路由。
+    /// 拆掉不影响嗅探——下次要解析（换集 / 重试）时 `load()` 会自己重建一个。
+    func releaseSourceWebView() {
+        guard !didReleaseWebView else { return }
+        didReleaseWebView = true
+        KazumiLogBuffer.player("WebView 已释放（起播稳定后）")
+        webView.releaseMedia()
     }
 
     // MARK: - 内部

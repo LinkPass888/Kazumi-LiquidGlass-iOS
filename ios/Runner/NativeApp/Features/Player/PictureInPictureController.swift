@@ -52,8 +52,12 @@ final class PictureInPictureController: NSObject {
     /// 系统已经确认画中画窗口起来了。
     private(set) var isActive = false
 
-    /// 出问题时给播放页的日志行。
-    var onLog: ((String) -> Void)?
+    /// 出问题时的日志钩子。
+    ///
+    /// 以前这里接的是「再写一遍同一条日志」，而 `log()` 自己已经写了一遍，
+    /// 于是每条画中画日志都进缓冲两次（真机日志里「取到第一帧」「画中画启动失败」
+    /// 「画中画已启动」各两行，看着像绑了两个控制器，其实控制器和图层从头到尾
+    /// 只有一份）。现在只留一条出路，这个钩子没人接也照样记。
 
     /// 「刚要起小窗」那几秒要的续命牌。
     ///
@@ -342,7 +346,6 @@ final class PictureInPictureController: NSObject {
     }
 
     private func log(_ message: String) {
-        onLog?(message)
         KazumiLogBuffer.player("画中画: \(message)")
     }
 }

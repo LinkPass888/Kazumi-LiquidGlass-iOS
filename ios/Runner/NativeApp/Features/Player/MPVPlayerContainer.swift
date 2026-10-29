@@ -43,6 +43,14 @@ final class PlayerSurfaceModel {
     var isReady = false
     /// 这一集的第一帧是不是已经画上屏了。
     var hasFirstFrame = false
+    /// 「起播稳定」（首帧之后又过了 0.15 秒）那一刻的回调，每次加载只发一次。
+    ///
+    /// 播放页拿它做「起播后把嗅探用的 WebView 放掉」（LP 4938 Step 2）。挂在这里而不是
+    /// SwiftUI 的 `.onChange` 上，是因为播放页那串 modifier 已经长到编译器的类型检查
+    /// 会超时（「unable to type-check in reasonable time」），往里再塞一个闭包就编不过。
+    var onPlaybackStarted: (() -> Void)?
+    /// 这一集是不是已经报过「起播稳定」了；换集 / 重新加载时清掉，下一集再报一次。
+    private var didReportPlaybackStarted = false
     /// 时间轴真的走起来了（第一帧之后又过了 0.15 秒）。
     ///
     /// 加载符号收到这里为止，不是收到 `hasFirstFrame`（LP 4810）：第一帧画上屏之后
@@ -246,15 +254,22 @@ final class PlayerSurfaceModel {
         corePaused = snapshot.isPaused
         isSeeking = snapshot.isSeeking
         if snapshot.loadPhase != loadPhase {
+            // 这行留着：加载圈不转 / 一直转、起播该做的事没做，先看相位走到哪一步了。
+            KazumiLogBuffer.player("相位 \(loadPhase) → \(snapshot.loadPhase) t=\(snapshot.time)")
             // 新的一次加载开始（换集 / 重新加载 / 换源）：首帧那套状态清掉，
             // 圈重新转。seek 不经过这里（相位还是 playing），所以不会误触发
             // 首帧逻辑（LP 4818 第 7 条）。
             if snapshot.loadPhase == .opening {
                 hasFirstFrame = false
                 hasStartedPlayback = false
+                didReportPlaybackStarted = false
             }
             loadPhase = snapshot.loadPhase
         }
+        // 首帧判据以内核相位为准，别依赖引擎那条一次性回调：回调没轮到
+        // 就永远不算首帧（实测就是这样，画面明明在跑却触发不了）。
+        // 相位推进本身就要求「帧画过了」或「time-pos 真的在走」（LP 4820）。
+        if !hasFirstFrame, snapshot.loadPhase == .playing { hasFirstFrame = true }
         // 网速平滑一下：mpv 报的是瞬时值，直接显示就是每 250ms 乱跳的数字。
         // 掉到 0 时直接归零，别让「已经不下载了」还挂着上一个速度。
         if snapshot.downloadSpeed > 0 {
@@ -266,6 +281,16 @@ final class PlayerSurfaceModel {
         }
         if hasFirstFrame, snapshot.time > 0.15 {
             hasStartedPlayback = true
+            // 只报一次：这条回调是「该做一件事了」的信号，不是每帧的状态。
+            if !didReportPlaybackStarted {
+                didReportPlaybackStarted = true
+                // 这行留着：真机上「起播后该做的事没做」时，先看它有没有出来，
+                // 再看括号里回调在不在（挂载点写错时这里是「没有」）。
+                KazumiLogBuffer.player(
+                    "起播稳定 t=\(snapshot.time) 回调=\(onPlaybackStarted == nil ? "没有" : "在")"
+                )
+                onPlaybackStarted?()
+            }
         }
         let coreRunning = !snapshot.isPaused && !snapshot.isIdle
         if coreRunning {

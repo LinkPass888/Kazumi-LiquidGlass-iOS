@@ -769,7 +769,6 @@ final class MPVEventPump: @unchecked Sendable {
 
     fileprivate func signal() {
         guard running else { return }
-        MPVEventPump.debugLog("wakeup")
         queue.async { [weak self] in
             self?.drain()
         }
@@ -850,18 +849,7 @@ final class MPVEventPump: @unchecked Sendable {
         }
         snap.loadError = lastError
         snap.loadPhase = loadPhase
-        MPVEventPump.debugLog("snap t=\(snap.time) d=\(snap.duration) paused=\(snap.isPaused) idle=\(snap.isIdle) video=\(snap.hasVideo) err=\(lastError ?? "-")")
         onSnapshot(snap)
-    }
-
-    /// 临时排查用：把快照值写进运行日志。
-    nonisolated(unsafe) private static var debugCount = 0
-    private static func debugLog(_ message: String) {
-        debugCount += 1
-        guard debugCount % 20 == 1 else { return }
-        Task { @MainActor in
-            KazumiLogBuffer.shared.append(message, category: .player)
-        }
     }
 
     private func videoInfoLine() -> String {

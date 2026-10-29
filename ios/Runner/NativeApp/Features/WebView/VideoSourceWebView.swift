@@ -117,6 +117,23 @@ final class VideoSourceWebView: NSObject {
         webView.load(URLRequest(url: blank))
     }
 
+    /// 起播后把页面里的媒体全停掉，再把 WebView 拆了（LP 4938 Step 2）。
+    ///
+    /// 只跳一次 `about:blank` 不够：WKWebView 只要还活着，WebContent 子进程就还在，
+    /// 它可以继续认领系统的 NowPlaying / 音频路由。所以停媒体、关演示、跳空白页、
+    /// 拆视图一起做。
+    func releaseMedia() {
+        guard let webView else { return }
+        if #available(iOS 15.0, *) {
+            webView.pauseAllMediaPlayback()
+            webView.closeAllMediaPresentations(completionHandler: nil)
+        }
+        Task { @MainActor in
+            await self.unloadPage()
+            self.dispose()
+        }
+    }
+
     func dispose() {
         if let webView {
             webView.stopLoading()

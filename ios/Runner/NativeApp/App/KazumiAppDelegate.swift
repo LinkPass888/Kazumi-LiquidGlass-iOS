@@ -3,13 +3,19 @@
 //  Kazumi
 //
 //  仅保留 UIKit 侧必须的能力：
-//   1. 后台音频会话（画中画 / 锁屏播放，对应原 Info.plist 的 UIBackgroundModes: audio）；
+//   1. 忽略 SIGPIPE，免得对端关连接时把整个进程带走；
 //   2. 静音网络下的启动检查入口（对应 MeteredNetworkService.refresh）；
 //   3. 应用进入前台时刷新设置（对应 app_widget.dart 的 didChangeAppLifecycleState）。
 //  其余窗口生命周期交给 SwiftUI。
 //
+//  **启动时一概不碰 AVAudioSession**（LP 4938）：这里以前会 `setCategory(.playback)`
+//  再 `setActive(true)`，App 一冷启动就向系统申请独占的播放会话，首页还没点播放，
+//  后台正在放歌的其它 App 就被掐断了。音频会话只由 `PlayerAudioSession` 管：
+//  进播放器才配 `.playback` 并激活，退出时 `restore()` 退回去。
+//  Info.plist 里的 `UIBackgroundModes: audio` 不受影响——它声明的是「允许」，
+//  要不要出声由会话决定。
+//
 
-import AVFAudio
 import UIKit
 
 final class KazumiAppDelegate: NSObject, UIApplicationDelegate {
@@ -21,9 +27,18 @@ final class KazumiAppDelegate: NSObject, UIApplicationDelegate {
         // （日志里的 `terminated (exit 141)` 就是 128 + 13）。流媒体解析、换集、
         // 取消加载时连接被对端关掉是常事，不该因此把 App 杀掉。
         signal(SIGPIPE, SIG_IGN)
-        configureAudioSession()
         UITabBar.appearance().isHidden = false
         UITableView.appearance().backgroundColor = .clear
+        // 锁屏 / 灵动岛那张卡要认到「是这个 App 在放」，得显式声明一句
+        // 「我要收远程控制事件」（LP 4738）。没有这一句，系统只当我们放了一段
+        // 普通音频流：卡能出来，但点它不回这个 App，退到后台时也不按我们的
+        // 进程收（LP 4715：别的 App 点一下进 App、长按才展开，我们反过来）。
+        // 现代 iOS 真正的按钮回调走 MPRemoteCommandCenter（NowPlayingCenter），
+        // 这行是老接口，但它就是那个「显式声明」，两样都要有。
+        //
+        // 这行跟音频会话无关，不抢播放位，所以留在启动路径上；`AVAudioSession`
+        // 那一整套配置按 LP 4938 已经挪走（见文件头）。
+        UIApplication.shared.beginReceivingRemoteControlEvents()
         return true
     }
 
@@ -38,30 +53,6 @@ final class KazumiAppDelegate: NSObject, UIApplicationDelegate {
     ) {
         // WebDAV / 下载任务使用的后台 URLSession：尽快回调，避免系统终止任务。
         completionHandler()
-    }
-
-    /// 播放器需要在锁屏与 PiP 下继续出声，因此使用 playback 类别。
-    private func configureAudioSession() {
-        let session = AVAudioSession.sharedInstance()
-        do {
-            // options 必须是空数组（LP 4931）：`.allowAirPlay` 按苹果的规定只属于
-            // `.playAndRecord`，在 `.playback`（尤其叠了 `.moviePlayback`）上强行传会
-            // 被 CoreAudio 以 `OSStatus error -50` 直接拒掉——`setCategory` 抛错就等于
-            // 会话根本没切成 `.playback`，系统不认这个 App 在放媒体，灵动岛/锁屏卡片
-            // 就都不会认它。`.playback` 本身自带蓝牙耳机和 AirPlay，不用写。
-            try session.setCategory(.playback, mode: .moviePlayback, options: [])
-            try session.setActive(true)
-        } catch {
-            KazumiLog.app.error("音频会话初始化失败：\(error.localizedDescription, privacy: .public)")
-        }
-
-        // 锁屏 / 灵动岛那张卡要认到「是这个 App 在放」，得显式声明一句
-        // 「我要收远程控制事件」（LP 4738）。没有这一句，系统只当我们放了一段
-        // 普通音频流：卡能出来，但点它不回这个 App，退到后台时也不按我们的
-        // 进程收（LP 4715：别的 App 点一下进 App、长按才展开，我们反过来）。
-        // 现代 iOS 真正的按钮回调走 MPRemoteCommandCenter（NowPlayingCenter），
-        // 这行是老接口，但它就是那个「显式声明」，两样都要有。
-        UIApplication.shared.beginReceivingRemoteControlEvents()
     }
 }
 
