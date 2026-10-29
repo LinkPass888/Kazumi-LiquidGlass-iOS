@@ -1970,33 +1970,20 @@ struct PlayerScreen: View {
     /// 靠实心与否区分，不靠颜色。
     ///
     /// 点一下只弹菜单，不改状态、不震动：五项状态和「取消追番」都在里面。
-    /// 行尾不放勾（LP 4721）：菜单行只有一个图标槽，多塞的那颗系统不画。
+    ///
+    /// 菜单本体用详情页那一份（`CollectStatusMenu`，LP 4730）：里面是系统 Picker，
+    /// 当前那一档的勾由系统画在**行首**，跟番剧详情页一模一样。
+    /// 自己用 `Button` + `Label` 拼的时候勾放行尾画不出来，放行首又占掉唯一的图标槽，
+    /// 所以两份合成一份是唯一能对齐的写法。
     private var collectButton: some View {
-        // 点一下只出菜单，不改状态、不震动（LP 2026-10-28 / Colo 3990）：
-        // 符号＝当前状态，五项状态 + 取消追番都在菜单里。
-        Menu {
-            ForEach(CollectType.enabledCases) { type in
-                Button {
-                    noteInteraction()
-                    applyCollectType(type)
-                } label: {
-                    // 只留 Label 自己的前导图标。行尾那颗勾加不进去：菜单每行只给一个
-                    // 图标槽，HStack 里再塞 Spacer + Image 会被系统整行吃掉（LP 4721
-                    // 真机上就是「后面没有打勾」）。既然显示不出来，就不放它了——
-                    // 当前是哪个状态由钮上那颗符号自己体现。
-                    Label(type.buttonTitle, systemImage: type.statusSymbol)
-                }
+        CollectStatusMenu(
+            current: currentCollectType,
+            // 没追的番没有可取消的，这一项不出现（跟详情页同一条规则）。
+            showsCancelItem: currentCollectType != .none,
+            onChange: { type in
+                applyCollectType(type)
             }
-            if currentCollectType != .none {
-                Divider()
-                Button(role: .destructive) {
-                    noteInteraction()
-                    applyCollectType(.none)
-                } label: {
-                    Label("取消追番", systemImage: "trash")
-                }
-            }
-        } label: {
+        ) {
             Image(systemName: collectSymbolName)
                 .font(.system(size: 20, weight: .regular))
                 .foregroundStyle(.white)
