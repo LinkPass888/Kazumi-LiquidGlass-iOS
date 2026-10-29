@@ -17,6 +17,17 @@ import SwiftUI
 import UIKit
 
 struct SystemMenuButton: View {
+    /// 一组「选一项」的选项（倍速、比例、线路……）：勾由系统 Picker 画在行首
+    /// （LP 4733 / 4734），不再自己塞 `checkmark` 符号。
+    struct Selection {
+        struct Option {
+            var title: String
+            var isSelected: Bool
+            var action: () -> Void
+        }
+        var options: [Option]
+    }
+
     struct Item {
         /// 菜单项的标题。
         var title: String
@@ -33,10 +44,16 @@ struct SystemMenuButton: View {
         var isChecked: Bool = false
         /// 有二级菜单就展开成子菜单，`action` 不生效。
         var submenu: [Item]? = nil
+        /// 一组「选一项」的选项：给了就展开成二级菜单，里面是系统 Picker，
+        /// 当前项的那颗勾由系统画（LP 4734「要统一」）。
+        var selection: Selection? = nil
         var action: () -> Void
     }
 
-    var items: [Item]
+    var items: [Item] = []
+    /// 整张菜单就是一组「选一项」（顶栏那颗比例 / 底栏那颗倍速）：给了就不看 `items`，
+    /// 菜单里直接排开这几项，当前项系统打勾。
+    var selection: Selection? = nil
     /// 按钮上画什么：给了 `title` 就写字，否则画 `symbol` 那个符号。
     var title: String?
     var symbol: String
@@ -58,7 +75,11 @@ struct SystemMenuButton: View {
 
     var body: some View {
         Menu {
-            content(items)
+            if let selection {
+                SystemSelectionPicker(selection: selection)
+            } else {
+                content(items)
+            }
         } label: {
             buttonLabel
         }
@@ -76,7 +97,14 @@ struct SystemMenuButton: View {
     private func content(_ list: [Item]) -> AnyView {
         AnyView(
             ForEach(Array(list.enumerated()), id: \.offset) { _, item in
-                if let submenu = item.submenu {
+                if let selection = item.selection {
+                    // 二级菜单里的「选一项」：内容是一张系统 Picker，勾在行首。
+                    Menu {
+                        SystemSelectionPicker(selection: selection)
+                    } label: {
+                        rowLabel(item)
+                    }
+                } else if let submenu = item.submenu {
                     Menu {
                         content(submenu)
                     } label: {

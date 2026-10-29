@@ -1916,17 +1916,14 @@ struct PlayerScreen: View {
         .accessibilityLabel("远程投屏")
     }
 
-    /// 横屏顶栏的视频比例（LP 2026-10-28 第 5 条）：点开直接选，当前项打勾。
+    /// 横屏顶栏的视频比例（LP 2026-10-28 第 5 条）：点开直接选，当前项系统打勾。
     private var aspectRatioButton: some View {
         SystemMenuButton(
-            items: PlayerAspectRatioMode.allCases.map { mode in
-                SystemMenuButton.Item(
-                    title: mode.label,
-                    symbol: aspectRatioMode == mode ? "checkmark" : ""
-                ) {
+            selection: .init(options: PlayerAspectRatioMode.allCases.map { mode in
+                .init(title: mode.label, isSelected: aspectRatioMode == mode) {
                     aspectRatioMode = mode
                 }
-            },
+            }),
             title: nil,
             symbol: "aspectratio",
             accessibilityLabel: "视频比例",
@@ -1943,19 +1940,19 @@ struct PlayerScreen: View {
     /// 剩余每秒都在变，用后者的话一开始倒数勾就没了，等于看不出选了哪个。
     private var sleepTimerButton: some View {
         SystemMenuButton(
-            items: [SystemMenuButton.Item(
+            selection: .init(options: [SystemMenuButton.Selection.Option(
                 title: "不开启",
-                symbol: sleepTimerMinutes == nil ? "checkmark" : ""
+                isSelected: sleepTimerMinutes == nil
             ) {
                 cancelSleepTimer()
             }] + [15, 30, 60, 90].map { minutes in
-                SystemMenuButton.Item(
+                SystemMenuButton.Selection.Option(
                     title: sleepTimerItemTitle(minutes),
-                    symbol: sleepTimerMinutes == minutes ? "checkmark" : ""
+                    isSelected: sleepTimerMinutes == minutes
                 ) {
                     startSleepTimer(minutes: minutes)
                 }
-            },
+            }),
             title: nil,
             symbol: sleepTimerRemaining == nil ? "moon.zzz" : "moon.zzz.fill",
             accessibilityLabel: "定时关闭",
@@ -2377,7 +2374,12 @@ struct PlayerScreen: View {
         // （Colo 同条：菜单项里放自定义 Button，label 写 HStack，值靠右）。
         Menu {
             ForEach(Array(moreMenuItems.enumerated()), id: \.offset) { _, item in
-                if let submenu = item.submenu {
+                if let selection = item.selection {
+                    // 二级菜单里的「选一项」：内容是一张系统 Picker，勾在行首（LP 4734）。
+                    Menu {
+                        SystemSelectionPicker(selection: selection)
+                    } label: { menuRowLabel(item) }
+                } else if let submenu = item.submenu {
                     Menu {
                         ForEach(Array(submenu.enumerated()), id: \.offset) { _, child in
                             Button { child.action() } label: { menuRowLabel(child) }
@@ -2443,14 +2445,14 @@ struct PlayerScreen: View {
                     title: "超分辨率",
                     symbol: "wand.and.stars",
                     subtitle: settings.superResolutionMode.title,
-                    submenu: SuperResolutionMode.allCases.map { mode in
-                        SystemMenuButton.Item(
+                    selection: .init(options: SuperResolutionMode.allCases.map { mode in
+                        .init(
                             title: mode.title,
-                            symbol: settings.superResolutionMode == mode ? "checkmark" : ""
+                            isSelected: settings.superResolutionMode == mode
                         ) {
                             applySuperResolution(mode)
                         }
-                    }
+                    })
                 ) {}
             )
             items.append(
@@ -2458,15 +2460,15 @@ struct PlayerScreen: View {
                     title: "倍速",
                     symbol: "speedometer",
                     subtitle: speedText(Double(playbackRate)),
-                    submenu: PlaybackSpeed.all.map { rate in
-                        SystemMenuButton.Item(
+                    selection: .init(options: PlaybackSpeed.all.map { rate in
+                        .init(
                             title: speedText(rate),
-                            symbol: abs(playbackRate - Float(rate)) < 0.01 ? "checkmark" : ""
+                            isSelected: abs(playbackRate - Float(rate)) < 0.01
                         ) {
                             applySpeed(Float(rate))
                             noteInteraction()
                         }
-                    }
+                    })
                 ) {}
             )
         }
@@ -2481,14 +2483,11 @@ struct PlayerScreen: View {
                 title: "视频比例",
                 symbol: "aspectratio",
                 subtitle: aspectRatioMode.label,
-                submenu: PlayerAspectRatioMode.allCases.map { mode in
-                    SystemMenuButton.Item(
-                        title: mode.label,
-                        symbol: aspectRatioMode == mode ? "checkmark" : ""
-                    ) {
+                selection: .init(options: PlayerAspectRatioMode.allCases.map { mode in
+                    .init(title: mode.label, isSelected: aspectRatioMode == mode) {
                         aspectRatioMode = mode
                     }
-                }
+                })
             ) {}
         ]
         return items + [
@@ -2510,16 +2509,19 @@ struct PlayerScreen: View {
                 title: "定时关闭",
                 symbol: sleepTimerRemaining == nil ? "moon.zzz" : "moon.zzz.fill",
                 subtitle: sleepTimerValue,
-                submenu: [SystemMenuButton.Item(title: "不开启", symbol: sleepTimerMinutes == nil ? "checkmark" : "") {
+                selection: .init(options: [SystemMenuButton.Selection.Option(
+                    title: "不开启",
+                    isSelected: sleepTimerMinutes == nil
+                ) {
                     cancelSleepTimer()
                 }] + [15, 30, 60, 90].map { minutes in
-                    SystemMenuButton.Item(
+                    SystemMenuButton.Selection.Option(
                         title: sleepTimerItemTitle(minutes),
-                        symbol: sleepTimerMinutes == minutes ? "checkmark" : ""
+                        isSelected: sleepTimerMinutes == minutes
                     ) {
                         startSleepTimer(minutes: minutes)
                     }
-                }
+                })
             ) {},
         ]
     }
@@ -2778,17 +2780,14 @@ struct PlayerScreen: View {
         .accessibilityLabel("下一集")
     }
 
-    /// 横屏那颗超分辨率：点开就是模式列表，当前项打勾（Colo 2026-10-28）。
+    /// 横屏那颗超分辨率：点开就是模式列表，当前项系统打勾（Colo 2026-10-28）。
     private var superResolutionButton: some View {
         SystemMenuButton(
-            items: SuperResolutionMode.allCases.map { mode in
-                SystemMenuButton.Item(
-                    title: mode.title,
-                    symbol: settings.superResolutionMode == mode ? "checkmark" : ""
-                ) {
+            selection: .init(options: SuperResolutionMode.allCases.map { mode in
+                .init(title: mode.title, isSelected: settings.superResolutionMode == mode) {
                     applySuperResolution(mode)
                 }
-            },
+            }),
             title: nil,
             symbol: "wand.and.stars",
             accessibilityLabel: "超分辨率 \(settings.superResolutionMode.title)",
@@ -2800,15 +2799,15 @@ struct PlayerScreen: View {
     /// 横屏那颗倍速：底栏只放符号，当前值点开菜单看（Colo 2026-10-28）。
     private var speedButton: some View {
         SystemMenuButton(
-            items: PlaybackSpeed.all.map { rate in
-                SystemMenuButton.Item(
+            selection: .init(options: PlaybackSpeed.all.map { rate in
+                .init(
                     title: speedText(rate),
-                    symbol: abs(playbackRate - Float(rate)) < 0.01 ? "checkmark" : ""
+                    isSelected: abs(playbackRate - Float(rate)) < 0.01
                 ) {
                     applySpeed(Float(rate))
                     noteInteraction()
                 }
-            },
+            }),
             title: nil,
             symbol: "speedometer",
             accessibilityLabel: "倍速 \(speedText(Double(playbackRate)))",
@@ -3481,13 +3480,16 @@ struct PlayerScreen: View {
                     }
                     if pages > 1 {
                         SystemMenuButton(
-                            items: (0 ..< pages).map { page in
+                            selection: .init(options: (0 ..< pages).map { page in
                                 let a = page * pageSize + 1
                                 let b = min(total, (page + 1) * pageSize)
-                                return SystemMenuButton.Item(title: "\(a)–\(b) 话", symbol: "") {
+                                return SystemMenuButton.Selection.Option(
+                                    title: "\(a)–\(b) 话",
+                                    isSelected: episodeGridPage == page
+                                ) {
                                     episodeGridPage = page
                                 }
-                            },
+                            }),
                             title: "\(lo + 1)–\(hi) 话",
                             symbol: "",
                             accessibilityLabel: "快速跳转，现在显示第 \(lo + 1) 到 \(hi) 话",
@@ -3588,7 +3590,7 @@ struct PlayerScreen: View {
                 // 也用 UIKit 菜单：播放中视图每秒重建，SwiftUI 的 Menu 弹出来的是旧的那份、
                 // 点了不执行（LP 3321「剧集和评论下边的都换了吗」）。
                 SystemMenuButton(
-                    items: commentEpisodeItems(),
+                    selection: commentEpisodeSelection(),
                     title: commentEpisode.map { "第 \($0) 话" } ?? "第 — 话",
                     symbol: "",
                     accessibilityLabel: commentEpisode.map { "当前查看第 \($0) 话评论" } ?? "当前查看集数评论",
@@ -3608,22 +3610,22 @@ struct PlayerScreen: View {
                 Spacer(minLength: 8)
                 // 右：排序（按钮上直接写当前排序方式） + 刷新
                 SystemMenuButton(
-                    items: [
-                        SystemMenuButton.Item(
+                    selection: .init(options: [
+                        SystemMenuButton.Selection.Option(
                             title: "最新优先",
-                            symbol: isCommentsAscending ? "" : "checkmark"
+                            isSelected: !isCommentsAscending
                         ) {
                             if isCommentsAscending { isCommentsAscending = false }
                             applyCommentsSort()
                         },
-                        SystemMenuButton.Item(
+                        SystemMenuButton.Selection.Option(
                             title: "最早优先",
-                            symbol: isCommentsAscending ? "checkmark" : ""
+                            isSelected: isCommentsAscending
                         ) {
                             if !isCommentsAscending { isCommentsAscending = true }
                             applyCommentsSort()
-                        }
-                    ],
+                        },
+                    ]),
                     title: isCommentsAscending ? "最早优先" : "最新优先",
                     symbol: "",
                     accessibilityLabel: "评论排序",
@@ -3720,20 +3722,15 @@ struct PlayerScreen: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    /// 换集菜单里的集数列表。
-    @ViewBuilder
-    /// 评论页左上那颗菜单的条目：每一集一条，当前这集打勾。
-    private func commentEpisodeItems() -> [SystemMenuButton.Item] {
+    /// 评论页左上那颗菜单的选项：每一集一条，当前这集由系统打勾。
+    private func commentEpisodeSelection() -> SystemMenuButton.Selection {
         let total = controller?.episodes.count ?? 0
-        guard total > 0 else { return [] }
-        return (1 ... total).map { ep in
-            SystemMenuButton.Item(
-                title: "第 \(ep) 话",
-                symbol: commentEpisode == ep ? "checkmark" : ""
-            ) {
+        guard total > 0 else { return .init(options: []) }
+        return .init(options: (1 ... total).map { ep in
+            .init(title: "第 \(ep) 话", isSelected: commentEpisode == ep) {
                 switchCommentEpisode(ep)
             }
-        }
+        })
     }
 
     /// 进评论页才拉，拉过就不重复拉；切集或刷新时也走 load。
@@ -3814,10 +3811,10 @@ struct PlayerScreen: View {
         // 用 UIKit 的菜单按钮，不用 SwiftUI 的 `Menu`：播放中视图每秒重建，
         // `Menu` 弹出来的是旧的那一份，点了不执行（播放器里那两颗也是这么修的）。
         SystemMenuButton(
-            items: controller.roads.enumerated().map { index, road in
-                SystemMenuButton.Item(
+            selection: .init(options: controller.roads.enumerated().map { index, road in
+                .init(
                     title: Self.roadItemTitle(road),
-                    symbol: index == controller.selectedRoad ? "checkmark" : ""
+                    isSelected: index == controller.selectedRoad
                 ) {
                     guard index != controller.selectedRoad else { return }
                     // 换线路 = 重新解析这一集，进度按原版先落一次。
@@ -3825,7 +3822,7 @@ struct PlayerScreen: View {
                     surface.prepareForNewEpisode()
                     Task { await controller.selectRoad(index) }
                 }
-            },
+            }),
             // 不预设「线路 1」：来源给什么名字就显示什么名字（cht／chs 这种照抄），
             // 也不自己编号（LP 3370 / Colo 3371）。
             title: controller.roads.indices.contains(controller.selectedRoad)
