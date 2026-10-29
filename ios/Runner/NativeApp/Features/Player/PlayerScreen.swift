@@ -421,11 +421,9 @@ struct PlayerScreen: View {
             }
         }
         .statusBarHidden(isFullscreen)
-        // 这里原来还有 `.persistentSystemOverlays(isFullscreen ? .hidden : .automatic)`。
-        // 它连 home 指示条一起藏了，而指示条一藏，iOS 就把「上滑回主屏」改成两步：
-        // 第一下只把指示条叫出来，第二下才退 app——这就是 LP 2026-10-29 说的
-        // 「退出 app 要上滑两次」，而第一下又同时喂给了音量手势，看着像两个一起执行。
-        // 状态条该藏照藏（上一行），指示条交给系统：全屏播放器留着它是正常的。
+        // 全屏连 home 指示条一起藏：LP 2026-10-29 定这里保持原样（不动这一行）。
+        // 「上滑退 app 要两下」改在手势那侧：画面最底下那条起手让给系统。
+        .persistentSystemOverlays(isFullscreen ? .hidden : .automatic)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .navigationBar)
         .toolbar(.hidden, for: .tabBar)
@@ -1079,13 +1077,6 @@ struct PlayerScreen: View {
         DragGesture(minimumDistance: 10, coordinateSpace: .local)
             .onChanged { value in
                 if dragAxis == nil {
-                    // 从最底下那条起手：那是 home 指示条的地盘，交给系统退 app，
-                    // 不能顺手再调一次音量（LP 2026-10-29「上滑控制音量和退出 app 同步执行」）。
-                    // 横屏全屏时这块一直铺到窗口底沿（那层 ignoresSafeArea 是 10-27 要的）。
-                    if isFullscreen, value.startLocation.y > height - Self.bottomSystemStrip {
-                        dragAxis = .ignored
-                        return
-                    }
                     if abs(value.translation.width) > abs(value.translation.height) {
                         // 贴左边缘往右起手是返回，交给外层的侧滑手势，不调进度。
                         if value.startLocation.x < 28, value.translation.width > 0 {
@@ -1095,6 +1086,13 @@ struct PlayerScreen: View {
                         dragAxis = .seek
                         seekDragStart = surface.currentTime
                         seekDragTarget = surface.currentTime
+                    } else if isFullscreen, value.startLocation.y > height - Self.bottomSystemStrip {
+                        // 竖向从最底下那条起手：那是 home 指示条的地盘，让给系统退 app，
+                        // 不在这里再调一次亮度/音量（LP 2026-10-29「上滑控制音量和退出 app 同步执行」）。
+                        // 只限竖向：横向拖进度不碰系统手势，照旧可用。
+                        // 横屏全屏时这块一直铺到窗口底沿（那层 ignoresSafeArea 是 10-27 要的）。
+                        dragAxis = .ignored
+                        return
                     } else if value.startLocation.x < width / 2 {
                         dragAxis = .brightness
                         dragValueStart = Double(UIScreen.main.brightness)
