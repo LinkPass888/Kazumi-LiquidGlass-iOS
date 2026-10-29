@@ -91,8 +91,9 @@ final class MPVEngine {
     /// 已下发、还没回执的异步命令。
     private var pendingCommands: [UInt64: CommandRequest] = [:]
     private var nextCommandID: UInt64 = 1
-    /// 截图回执的超时。mpv 要从关键帧重解，网络流上慢，但超过这个数就没必要再等了。
-    private static let screenshotTimeoutSeconds: Double = 20
+    /// 截图回执的超时。mpv 要从关键帧重解，网络流上慢；但这是单条命令、
+    /// 回执到了才算，不用像原来那样两条路各等一轮，也不用给到几十秒。
+    private static let screenshotTimeoutSeconds: Double = 10
 
     init() {
         glContext = EAGLContext(api: .openGLES3) ?? EAGLContext(api: .openGLES2)!
@@ -387,23 +388,20 @@ final class MPVEngine {
     ///     「每 50 毫秒看一眼文件在不在、最多 2 秒」那种固定延时去猜（LP 4695 第 4 条）。
     ///  2) 主线程只发命令、只等回执，mpv 重解码那几秒不在主线程上卡着（Fuck 4696）。
     ///  3) `video` 标志：只要视频画面，不含字幕、不含 OSD，分辨率是片源的原始分辨率。
-    ///     万一这条被拒（个别 vo / 硬解路径不认），退回不带标志的那条——它仍然是
-    ///     视频帧本身（不是屏幕截图），比例还是画面的。
+    ///     失败就报错，不退回不带标志那条（见下面那段注释）。
     func captureFrameToFile() async -> (url: URL?, note: String) {
         let started = Date()
         let path = FileManager.default.temporaryDirectory
             .appendingPathComponent("kazumi-shot-\(UUID().uuidString).png")
 
-        var result = await runAsyncCommand("screenshot-to-file", [path.path, "video"])
-        var way = "video 标志"
-        if result < 0 {
-            // 退回不带标志的那条。video 标志在 mpv 里要求能下载到原始帧，
-            // 个别硬解路径会拒；不带标志它仍然出的是视频帧。
-            result = await runAsyncCommand("screenshot-to-file", [path.path])
-            way = "无标志"
-        }
+        // `video` 标志：只要视频画面，不含字幕、不含 OSD，分辨率是片源的原始分辨率。
+        //
+        // 失败后**不**退回不带标志那条：不带标志时 mpv 默认把字幕烧进图里，而这个引擎
+        // 从头到尾没设过 `sid`，流里只要有内嵌字幕轨它就会自动选中——那正是第 1 条
+        // 明令不要的（Fuck 4704）。所以失败就报错，让人看见，不偷偷出一张带字幕的图。
+        let result = await runAsyncCommand("screenshot-to-file", [path.path, "video"])
         guard result >= 0 else {
-            let note = "截图失败：mpv 命令没成（\(way)，错误码 \(result)），共 \(Int(Date().timeIntervalSince(started) * 1000)) 毫秒"
+            let note = "截图失败：mpv 出图没成（video 标志，错误码 \(result)），共 \(Int(Date().timeIntervalSince(started) * 1000)) 毫秒"
             onLog?(note)
             return (nil, note)
         }
@@ -415,7 +413,7 @@ final class MPVEngine {
         }
         let size = Self.pixelSize(of: path)
         let sizeText = size.map { "\(Int($0.width))×\(Int($0.height))" } ?? "尺寸读不到"
-        let note = "截图成功：\(way)，\(sizeText)，\(Int(Date().timeIntervalSince(started) * 1000)) 毫秒"
+        let note = "截图成功：\(sizeText)，\(Int(Date().timeIntervalSince(started) * 1000)) 毫秒"
         onLog?(note)
         return (path, note)
     }

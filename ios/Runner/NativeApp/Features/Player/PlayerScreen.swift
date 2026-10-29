@@ -1382,9 +1382,14 @@ struct PlayerScreen: View {
     ///
     /// 抓帧走 mpv 的 `screenshot-to-file`（原始分辨率、不含字幕和 OSD，LP 4695），
     /// 出的是临时文件；这里再把文件交给相册那条路，存完删掉。
+    ///
+    /// 取景框**按下去就播**，不等抓帧：mpv 要回最近的关键帧重新解码，网络流上
+    /// 这一下是秒级的（回执到了才算成），不先给个反应的话，从按下到有结果之间
+    /// 屏幕几十秒没动静，就是 LP 说的「没任何提示」。失败了照样出错误提示。
     private func takeScreenshot() {
         noteInteraction()
         showControlsBriefly()
+        flashScreenshot()
         Task { @MainActor in
             let captured = await surface.captureFrame()
             guard let url = captured.url else {
@@ -1393,7 +1398,6 @@ struct PlayerScreen: View {
                 surface.toastMessage = captured.note.isEmpty ? "截图失败：没抓到画面" : captured.note
                 return
             }
-            flashScreenshot()
             let failure = await PlayerScreenshot.save(pngAt: url)
             // 临时文件不再需要；存成功也是它自己那份了。
             try? FileManager.default.removeItem(at: url)
