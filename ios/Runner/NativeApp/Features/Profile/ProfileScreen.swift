@@ -255,12 +255,11 @@ struct ProfileScreen: View {
         .accessibilityAddTraits(.isButton)
     }
 
-    /// 底部状态，照观看历史页那四个词写，别换说法（Camo 3553）。
+    /// 底部状态，跟观看历史页同一份写法：看完的写「已看完」，否则写具体看到哪儿了
+    /// （LP 4892：不要百分比），一集都没看下去就说「继续观看」。
     private func statusText(for record: WatchRecord) -> String {
         if record.isFinished { return "已看完" }
-        guard record.durationSeconds > 0 else { return "继续观看" }
-        let percent = Int((record.fraction * 100).rounded())
-        return percent <= 1 ? "刚开始" : "看了 \(percent)%"
+        return record.positionText ?? "继续观看"
     }
 
     /// 「第 1 集」或「第 1 集 · 标题」，跟观看历史页同一份写法。

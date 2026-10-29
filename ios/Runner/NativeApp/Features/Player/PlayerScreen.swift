@@ -904,7 +904,7 @@ struct PlayerScreen: View {
             if showsLoadingHUD,
                surface.errorMessage == nil,
                controller.playbackURL != nil {
-                hudAtQuarter {
+                loadingAtCenterLine {
                     PlayerLoadingHUD(bytesPerSecond: surface.downloadSpeed)
                 }
                 .transition(.opacity)
@@ -2713,14 +2713,13 @@ struct PlayerScreen: View {
     }
 
     private func statusOverlay(_ controller: PlayerController) -> some View {
+        // 圈跟加载信息、集数一起从正中那条线往下排（LP 4913）。
+        loadingAtCenterLine {
         VStack(spacing: 10) {
             switch controller.phase {
             case .idle, .searchingSource, .resolvingChapters, .parsingMedia:
                 // 解析阶段还没有 mpv，拿不到网速，所以只转圈（`bytesPerSecond` 默认 0）。
-                PlayerLoadingHUD()
-                Text(phaseTitle(controller.phase))
-                    .font(.subheadline)
-                    .foregroundStyle(.white.opacity(0.85))
+                PlayerLoadingHUD(info: phaseTitle(controller.phase), reservesSpeedLine: false)
                 // 切集时先亮一下目标集数，代替原版的「正在加载${集标题}」
                 // （原生这边只有 URL，没有集标题）。
                 if showsEpisodeLoadingLine(controller.phase) {
@@ -2738,7 +2737,7 @@ struct PlayerScreen: View {
                 EmptyView()
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
     }
 
     private func phaseTitle(_ phase: PlayerController.Phase) -> String {
@@ -3204,7 +3203,10 @@ struct PlayerScreen: View {
             artworkURL: meta.artwork,
             duration: surface.duration,
             elapsed: surface.currentTime,
-            isPlaying: surface.isPlaying
+            isPlaying: surface.isPlaying,
+            // 真实倍速（含长按的临时倍速）：系统按这个速率自己往前推进度，
+            // 写 1.0 的话 2 倍速下偏差每秒涨 1 秒，纠偏写入会从每 2 秒变成每 1.5 秒。
+            rate: Double(surface.desiredRate)
         )
     }
 
@@ -3284,6 +3286,24 @@ struct PlayerScreen: View {
         // 缓冲 / 拖进度：短暂提示，跟首帧那套逻辑分开（LP 4818 第 7 条）。
         if surface.isSeeking || surface.isStalled { return true }
         return surface.isLoadingFirstFrame
+    }
+
+    /// 加载符号的**圆心**钉在画面正中那条线上——跟两侧快进快退同一水平，
+    /// 加载信息与网速顺着往下排（LP 4913）。
+    ///
+    /// 钉的是圆心不是整块的中心：下面多一行 / 少一行字时，圈本身一动不动
+    /// （LP 4870 说的「跳了一下」）。
+    private func loadingAtCenterLine<Content: View>(
+        @ViewBuilder _ content: () -> Content
+    ) -> some View {
+        let resolved = content()
+        return GeometryReader { proxy in
+            resolved
+                .frame(maxWidth: .infinity)
+                .padding(.top, proxy.size.height / 2 - PlayerLoadingHUD.circleHeight / 2)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        }
+        .allowsHitTesting(false)
     }
 
     private func hudAtQuarter<Content: View>(

@@ -22,14 +22,6 @@ struct WatchHistoryScreen: View {
             .sorted { $0.updatedAt > $1.updatedAt }
     }
 
-    /// 同一部番有好几份记录（不同规则各记一份）时才在卡片上写规则名，
-    /// 只有一份的时候写出来是噪声。
-    private func showRuleName(for record: WatchRecord) -> Bool {
-        records.contains {
-            $0.bangumiID == record.bangumiID && $0.id != record.id
-        }
-    }
-
     var body: some View {
         Group {
             if records.isEmpty {
@@ -109,37 +101,38 @@ struct WatchHistoryScreen: View {
                         .lineLimit(2)
                         .multilineTextAlignment(.leading)
 
-                    // 同一部番在别的规则下还有一份记录时，写上规则名，
-                    // 不然两行一模一样的卡片分不清哪个是哪个源。
-                    if showRuleName(for: record), !record.sourceRuleName.isEmpty {
-                        Text(record.sourceRuleName)
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
-
                     Text(episodeLine(for: record))
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
 
+                    // 「看到 12:34」单独一行，在集数正下方（Colo 4895，照 main 的
+                    // history_record_tile.dart）：12 号半粗、主题色、等宽数字，
+                    // 一小时以上写 1:02:03。没有进度就整行不出现。
+                    if let position = record.positionText {
+                        Text(position)
+                            .font(.system(size: 12, weight: .semibold).monospacedDigit())
+                            .foregroundStyle(KazumiPalette.accent(for: colorScheme))
+                            .lineLimit(1)
+                            .padding(.top, 4)
+                    }
+
                     Spacer(minLength: 0)
 
+                    // 进度条原样留着（LP 4902「进度条不要删」）。
                     KazumiGlassProgressBar(
                         progress: record.fraction,
                         tint: KazumiPalette.accent(for: colorScheme)
                     )
 
-                    HStack(spacing: 6) {
-                        Text(whenText(record.updatedAt))
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                        Spacer(minLength: 0)
-                        Text(statusText(for: record))
-                            .font(.caption2.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                            .contentTransition(.numericText())
-                    }
+                    // 底部照 main 合成一条：规则名 · 时间。百分比和「已看完」不再出现
+                    // ——进度用上面那行具体时长说（LP 4892、Colo 4895）。main 还有
+                    // 「在线/缓存」一段，我们只存在线播放的记录，永远同一个值，先不做
+                    // （Camo 4897、Colo 4899）。
+                    Text(metaLine(for: record))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 // 右边这一列撑满封面高度，进度条与时间落在卡片底部对齐。
@@ -201,21 +194,17 @@ struct WatchHistoryScreen: View {
         return title.isEmpty || title == number || title == legacy ? number : "\(number) · \(title)"
     }
 
-    /// 底部状态：看完的写「已看完」，没看完的写百分比，刚看了一点的说「刚开始」。
-    private func statusText(for record: WatchRecord) -> String {
-        if record.isFinished { return "已看完" }
-        guard record.durationSeconds > 0 else { return "继续观看" }
-        let percent = Int((record.fraction * 100).rounded())
-        return percent <= 1 ? "刚开始" : "看了 \(percent)%"
+    /// 底部那条：规则名 · 时间（Colo 4895）。规则名为空就只写时间。
+    private func metaLine(for record: WatchRecord) -> String {
+        let time = whenText(record.updatedAt)
+        let rule = record.sourceRuleName.trimmingCharacters(in: .whitespacesAndNewlines)
+        return rule.isEmpty ? time : "\(rule) · \(time)"
     }
 
     /// 时间用相对说法：今天 / 昨天 / 具体日期，扫一眼就知道新旧。
+    /// 语言固定中文（Camo 4914：跟着手机语言走，英文手机上会漏出「6:00 PM」）。
     private func whenText(_ date: Date) -> String {
-        let calendar = Calendar.current
-        let time = date.formatted(date: .omitted, time: .shortened)
-        if calendar.isDateInToday(date) { return "今天 \(time)" }
-        if calendar.isDateInYesterday(date) { return "昨天 \(time)" }
-        return date.formatted(.dateTime.month(.defaultDigits).day())
+        KazumiTimeText.relative(date)
     }
 }
 

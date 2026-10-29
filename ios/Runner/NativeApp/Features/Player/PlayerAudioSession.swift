@@ -50,8 +50,11 @@ final class PlayerAudioSession {
     /// mpv 的音频输出会在开始出声时自己重设一次类别（会盖掉这里的设置），
     /// 所以起播后要再调一次 `reapplyIfNeeded()`。
     ///
-    /// `.allowAirPlay` / `.allowBluetoothA2DP` 必须跟着写：`setCategory` 的 options
-    /// 是整体替换，不写就等于把启动时那份投屏能力抹掉——播放中点投屏就选不到设备了。
+    /// options 必须是空数组（LP 4931）：`.allowAirPlay` 只属于 `.playAndRecord`，
+    /// 在 `.playback` 上传 `.allowAirPlay` / `.allowBluetoothA2DP` 会被 CoreAudio
+    /// 以 `OSStatus error -50` 拒掉（mpv 的 AudioUnit 已经占住声道时更容易触发）。
+    /// 抛错就等于这次 `setCategory` 没成功、会话还是启动时那一套——系统不认这个 App
+    /// 在放媒体，灵动岛和锁屏卡片都不会认它。`.playback` 天生支持蓝牙耳机与 AirPlay。
     func applyPlaybackCategory() {
         let session = AVAudioSession.sharedInstance()
         do {
@@ -59,7 +62,7 @@ final class PlayerAudioSession {
                 .playback,
                 mode: .moviePlayback,
                 policy: .longFormVideo,
-                options: [.allowAirPlay, .allowBluetoothA2DP]
+                options: []
             )
             try session.setActive(true)
         } catch {
@@ -131,8 +134,8 @@ final class PlayerAudioSession {
 
     /// 离开播放器时调用：退回启动那套类别并放开会话，别让整个 App 一直占着播放位。
     ///
-    /// 这里不能用 `.soloAmbient`：它会连投屏一起关掉（启动时 AppDelegate 配了
-    /// `.allowAirPlay`），退出播放器后再进就选不到投屏设备了。
+    /// 这里保持 `.playback` 不换成 `.soloAmbient`：退出后下次进来要快，
+    /// 会话已经就位，不用再走一次起播时那套「激活 + 补速率」。
     ///
     /// `setActive(false)` 是注释本来就说要做的事，之前没写：离开播放器后会话一直挂着
     /// `.playback`，等于对系统宣称「这个 App 还在占播放位」。通知开着
@@ -148,7 +151,7 @@ final class PlayerAudioSession {
             try session.setCategory(
                 .playback,
                 mode: .moviePlayback,
-                options: [.allowAirPlay, .allowBluetoothA2DP]
+                options: []
             )
         } catch {
             KazumiLogBuffer.player("退出播放器后回落会话类别失败：\(error.localizedDescription)")

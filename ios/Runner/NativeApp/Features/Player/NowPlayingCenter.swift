@@ -10,13 +10,15 @@
 //     （左封面、右声谱）——所以 LP 4431 想要的那个效果，主要靠这一层。
 //
 //  几个必须知道的点：
-//   * `elapsed + rate` 只在状态变化时写一次，系统自己按速率往前推时间；
-//     每 0.25 秒回写一次反而会让进度条一抖一抖。
+//   * 只在「状态/元数据变了」或「系统自己推算的进度跟真实进度差到 1.5 秒以上」时
+//     写一次（LP 4925 Step 1）：原来每 2 秒无条件赋一次值，那是实打实的一次
+//     跨进程全量覆盖写；系统自己会按我们给的速率往前推，不用我们一直喂。
 //   * 封面图片是异步取的，取不到就先不带封面，取到了立刻补一次更新。
 //   * 退出播放器、播完、出错都要 `clear()`，否则上一集留在控制中心卡片上。
 //
 
 import MediaPlayer
+import QuartzCore
 import UIKit
 
 @MainActor
@@ -78,6 +80,30 @@ final class NowPlayingCenter {
     private var lastRate: Double = 0
     private var lastElapsed: Double = 0
     private var lastState: MPNowPlayingPlaybackState = .stopped
+
+    /// 上一次**真的写进系统**时的样子（LP 4925 Step 1）。
+    /// 拿它跟这一次比：状态没变就看系统自己推算到哪儿了，偏得不多就什么都不做。
+    private struct SyncSnapshot {
+        var title: String
+        var artist: String
+        var duration: Double
+        var elapsedTime: Double
+        /// 播放中为实际倍速，暂停 / 缓冲中为 0——系统就是按这个速率往前推的。
+        var effectiveRate: Double
+        var isPlaying: Bool
+        /// 封面地址；封面是异步到的，到了要算一次变化（那时它才有得写）。
+        var artworkKey: String
+        /// 写入时的单调时钟，用来算系统侧自己走到了哪儿。
+        var timestamp: CFTimeInterval
+    }
+
+    private var lastSyncSnapshot: SyncSnapshot?
+
+    /// 写了几次 / 跳过了几次轮询。mpv 的 `wakeup` 日志一秒几十条、日志缓冲只留 200 条，
+    /// 逐次写会被冲掉，所以每 8 次跳过记一条、停止时再记一条总的——
+    /// 在「运行日志 → 播放」里能直接看到「每 2 秒一次全量写」是不是真没了（LP 4925）。
+    private var writeCount = 0
+    private var skipCount = 0
 
     private init() {}
 
@@ -155,6 +181,9 @@ final class NowPlayingCenter {
     /// - Parameters:
     ///   - isPlaying: 当前是否在播；直接决定速率，也决定控制中心那颗按钮画成什么。
     ///   - elapsed: 当前进度（秒）。
+    ///   - rate: 实际倍速（播放中）。写进系统的就是它——系统按这个速率自己往前推进度，
+    ///     暂停 / 缓冲时给 0。必须给真实值：给 1 的话，2 倍速时系统推得比真实慢一倍，
+    ///     偏差每秒涨 1 秒，纠偏写入会从每 2 秒变成每 1.5 秒。
     func update(
         title: String,
         episode: Int,
@@ -162,7 +191,8 @@ final class NowPlayingCenter {
         artworkURL: String?,
         duration: Double,
         elapsed: Double,
-        isPlaying: Bool
+        isPlaying: Bool,
+        rate: Double = 1
     ) {
         configureRemoteCommands()
 
@@ -178,17 +208,18 @@ final class NowPlayingCenter {
 
         let isNewItem = info != next
         info = next
-        lastRate = isPlaying ? 1 : 0
+        let effectiveRate = isPlaying ? max(rate, 0) : 0
+        lastRate = effectiveRate
         lastElapsed = elapsed
         commands.isPlaying = isPlaying
 
         // 换集（或换剧）才重建整套信息；只是进度变了走轻量的那条——
         // 每两秒把整个字典重建再赋回去没必要，系统也多收一份重复更新。
         if isNewItem {
-            publish(next, elapsed: elapsed, isPlaying: isPlaying, full: true)
+            publish(next, elapsed: elapsed, isPlaying: isPlaying, rate: effectiveRate, full: true)
             loadArtwork(for: next)
         } else {
-            publish(next, elapsed: elapsed, isPlaying: isPlaying, full: false)
+            publish(next, elapsed: elapsed, isPlaying: isPlaying, rate: effectiveRate, full: false)
         }
     }
 
@@ -198,6 +229,13 @@ final class NowPlayingCenter {
         lastRate = 0
         lastElapsed = 0
         lastState = .stopped
+        // 一次都没轮询过就不记（开了播放页立刻退出的情况，没必要留一行 0/0）。
+        if writeCount > 0 || skipCount > 0 { logSyncSummary() }
+        writeCount = 0
+        skipCount = 0
+        // 快照一起清掉（LP 4925 Step 1）：不清的话，下一集第一次写入会跟上一集的
+        // 快照比，可能被判成「没变化」而跳过——那一次跳过就是真的没写出去。
+        lastSyncSnapshot = nil
         // 遥控键的盒子一起放掉（Fuck 4881）：那几个闭包强持有 surface，而这里是
         // 单例——不放掉，上一轮的 surface 一直被攥着（engine 早停了，但对象还在），
         // 退出播放器后系统再送遥控事件还会打到已经停掉的 surface 上。
@@ -213,7 +251,67 @@ final class NowPlayingCenter {
 
     // MARK: - 内部
 
-    private func publish(_ info: Info, elapsed: Double, isPlaying: Bool, full: Bool) {
+    private func publish(_ info: Info, elapsed: Double, isPlaying: Bool, rate: Double, full: Bool) {
+        let now = CACurrentMediaTime()
+        let snapshot = SyncSnapshot(
+            title: info.title,
+            artist: info.artist,
+            duration: info.duration,
+            elapsedTime: elapsed,
+            effectiveRate: rate,
+            isPlaying: isPlaying,
+            artworkKey: artworkCache[info.artworkURL] != nil ? info.artworkURL : "",
+            timestamp: now
+        )
+
+        guard let last = lastSyncSnapshot else {
+            lastSyncSnapshot = snapshot
+            recordWrite()
+            write(info, elapsed: elapsed, isPlaying: isPlaying, rate: rate, full: full)
+            return
+        }
+
+        // 状态 / 元数据变了：立刻写。
+        if last.title != snapshot.title
+            || last.artist != snapshot.artist
+            || last.artworkKey != snapshot.artworkKey
+            || last.isPlaying != snapshot.isPlaying
+            || last.effectiveRate != snapshot.effectiveRate
+            || abs(last.duration - snapshot.duration) > 0.5
+        {
+            lastSyncSnapshot = snapshot
+            recordWrite()
+            write(info, elapsed: elapsed, isPlaying: isPlaying, rate: rate, full: full)
+            return
+        }
+
+        // 都没变：系统自己按上次的速率往前推。推算值跟真实进度差不到 1.5 秒就
+        // 不打扰它——差到了才写（拖了进度、+80 跳过、缓冲卡完恢复都算）。
+        let expectedElapsed = last.elapsedTime + (now - last.timestamp) * last.effectiveRate
+        guard abs(elapsed - expectedElapsed) >= 1.5 else {
+            skipCount += 1
+            if skipCount.isMultiple(of: 8) { logSyncSummary() }
+            return
+        }
+
+        lastSyncSnapshot = snapshot
+        recordWrite()
+        write(info, elapsed: elapsed, isPlaying: isPlaying, rate: rate, full: full)
+    }
+
+    private func recordWrite() {
+        writeCount += 1
+    }
+
+    private func logSyncSummary() {
+        KazumiLogBuffer.shared.append(
+            "正在播放：已写入 \(writeCount) 次，跳过 \(skipCount) 次轮询",
+            category: .player
+        )
+    }
+
+    /// 真正写一次：重建字典 + 赋值。`publish` 判定要写的时候才走到这里。
+    private func write(_ info: Info, elapsed: Double, isPlaying: Bool, rate: Double, full: Bool) {
         var dictionary = full ? [String: Any]() : (MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:])
 
         dictionary[MPMediaItemPropertyTitle] = info.title
@@ -226,7 +324,7 @@ final class NowPlayingCenter {
         }
         dictionary[MPMediaItemPropertyPlaybackDuration] = info.duration
         dictionary[MPNowPlayingInfoPropertyElapsedPlaybackTime] = elapsed
-        dictionary[MPNowPlayingInfoPropertyPlaybackRate] = isPlaying ? 1.0 : 0.0
+        dictionary[MPNowPlayingInfoPropertyPlaybackRate] = isPlaying ? rate : 0.0
         if full {
             // 报「音频」不报「视频」（LP 4720）：报成视频，系统就按视频内容处理那颗
             // 「正在播放」指示——点一下是展开、不跳 App；音乐 App 报音频，点一下进 App。
@@ -269,7 +367,13 @@ final class NowPlayingCenter {
                 self.artworkCache[url] = artwork
                 // 图回来了，如果还是这一集，就把封面补进去（这一下才整套重建）。
                 guard let current = self.info, current.artworkURL == url else { return }
-                self.publish(current, elapsed: self.lastElapsed, isPlaying: self.lastRate > 0, full: true)
+                self.publish(
+                    current,
+                    elapsed: self.lastElapsed,
+                    isPlaying: self.lastRate > 0,
+                    rate: self.lastRate,
+                    full: true
+                )
             }
         }
     }

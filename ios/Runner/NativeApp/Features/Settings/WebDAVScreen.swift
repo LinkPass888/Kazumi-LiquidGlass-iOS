@@ -288,10 +288,11 @@ struct WebDAVScreen: View {
         guard lastSyncAt > 0 else { return "还没同步过" }
         let date = Date(timeIntervalSince1970: lastSyncAt)
         let calendar = Calendar.current
-        let time = date.formatted(.dateTime.hour().minute())
+        // 语言固定中文（Camo 4914：跟着手机语言走会漏出「6:00 PM」）。
+        let time = KazumiTimeText.clock(date)
         if calendar.isDateInToday(date) { return "上次同步 今天 \(time)" }
         if calendar.isDateInYesterday(date) { return "上次同步 昨天 \(time)" }
-        return "上次同步 \(date.formatted(.dateTime.month().day())) \(time)"
+        return "上次同步 \(KazumiTimeText.day(date)) \(time)"
     }
 
     // MARK: - 绑定

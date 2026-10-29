@@ -180,6 +180,24 @@ struct WatchRecord: Identifiable, Codable, Hashable, Sendable {
         durationSeconds > 0 && durationSeconds - progressSeconds <= 5
     }
 
+    /// 「看到 8:21」这样具体的位置，照 main 的写法
+    /// （`lib/pages/history/history_record_tile.dart` 的 `_position`）。
+    /// 一集都没看下去就没有这一行。
+    var positionText: String? {
+        guard progressSeconds > 0 else { return nil }
+        return "看到 " + WatchRecord.clock(progressSeconds)
+    }
+
+    /// 时长写法：`8:21`，过一小时才带小时（`1:02:34`）。
+    static func clock(_ seconds: Double) -> String {
+        let total = max(0, Int(seconds.rounded()))
+        let hours = total / 3600
+        let minutes = (total % 3600) / 60
+        let rest = total % 60
+        guard hours > 0 else { return String(format: "%d:%02d", minutes, rest) }
+        return String(format: "%d:%02d:%02d", hours, minutes, rest)
+    }
+
     /// 读回时兼容两种形状：
     /// * 新格式有 `progresses`，直接用；
     /// * 老格式（本端旧文件、旧备份）只有 `episodeNumber` / `progressSeconds` /

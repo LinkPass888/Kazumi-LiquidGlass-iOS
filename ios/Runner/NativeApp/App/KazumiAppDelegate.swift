@@ -44,7 +44,12 @@ final class KazumiAppDelegate: NSObject, UIApplicationDelegate {
     private func configureAudioSession() {
         let session = AVAudioSession.sharedInstance()
         do {
-            try session.setCategory(.playback, mode: .moviePlayback, options: [.allowAirPlay, .allowBluetoothA2DP])
+            // options 必须是空数组（LP 4931）：`.allowAirPlay` 按苹果的规定只属于
+            // `.playAndRecord`，在 `.playback`（尤其叠了 `.moviePlayback`）上强行传会
+            // 被 CoreAudio 以 `OSStatus error -50` 直接拒掉——`setCategory` 抛错就等于
+            // 会话根本没切成 `.playback`，系统不认这个 App 在放媒体，灵动岛/锁屏卡片
+            // 就都不会认它。`.playback` 本身自带蓝牙耳机和 AirPlay，不用写。
+            try session.setCategory(.playback, mode: .moviePlayback, options: [])
             try session.setActive(true)
         } catch {
             KazumiLog.app.error("音频会话初始化失败：\(error.localizedDescription, privacy: .public)")
