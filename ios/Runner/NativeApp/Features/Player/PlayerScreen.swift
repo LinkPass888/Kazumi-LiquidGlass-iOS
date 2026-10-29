@@ -450,6 +450,7 @@ struct PlayerScreen: View {
         }
         .onChange(of: surface.isPlaying) { _, playing in
             // 暂停时不允许隐藏（简报要求）；重新起播后重新计时。
+            updateIdleTimer()
             if playing {
                 scheduleControlsHide()
             } else {
@@ -492,6 +493,8 @@ struct PlayerScreen: View {
         // 后台播放关着就退到后台即暂停；开着则让音频会话保持可播，
         // 熄屏 / 切出去继续出声（LP 清单「后台播放」，默认关）。
         .onChange(of: scenePhase) { _, phase in
+            // 进后台 / 锁屏一律放弃常亮；回前台且还在播就接回来。
+            updateIdleTimer()
             guard phase == .background else { return }
             if !settings.backgroundPlayback, surface.isPlaying {
                 surface.pause()
@@ -573,6 +576,8 @@ struct PlayerScreen: View {
             }
         }
         .onDisappear {
+            // 离开播放器：屏幕常亮无论如何都要还回去，不能带出这个页面。
+            UIApplication.shared.isIdleTimerDisabled = false
             // 先摘掉结束回调，避免关闭播放器时的 finish 又被当成「播完」触发连播。
             surface.onFinish = nil
             // 长按手势若被系统取消，松手回调不会来，退出时兜一次恢复。
@@ -1578,6 +1583,15 @@ struct PlayerScreen: View {
             try? session.setActive(true)
         } else {
             try? session.setCategory(.soloAmbient, mode: .default, options: [])
+        }
+    }
+
+    /// 屏幕常亮：只在「真的在播」且 App 在前台时开；暂停、缓冲、播完、退后台、离开播放器全部恢复默认，
+    /// 免得暂停一晚上屏幕还亮着。锁手势不影响——那时内核照样在播，就照样常亮。
+    private func updateIdleTimer() {
+        let keepAwake = surface.isPlaying && scenePhase == .active
+        if UIApplication.shared.isIdleTimerDisabled != keepAwake {
+            UIApplication.shared.isIdleTimerDisabled = keepAwake
         }
     }
 
@@ -3157,6 +3171,10 @@ struct PlayerScreen: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // 播放器整页被压成系统黑白，但失败页这两颗钮属于页面内容、不是播放区控制，
+        // 要跟站点/详情页同一套主题色（LP 2026-10-29）。显式取色而不是 `.accentColor`，
+        // 深色下才不偏（@design 4415）。
+        .tint(KazumiPalette.accent(for: colorScheme))
     }
 
     @ViewBuilder

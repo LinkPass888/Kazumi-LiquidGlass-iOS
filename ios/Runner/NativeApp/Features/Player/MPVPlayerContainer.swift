@@ -49,16 +49,26 @@ final class PlayerSurfaceModel {
     /// 正常播完（非出错）时的回调，交给页面处理自动连播。
     var onFinish: (@MainActor (PlayerSurfaceModel) -> Void)?
 
+    /// 这一集加载完就该自己开播（LP 2026-10-28 第 3 条）。
+    ///
+    /// `MPVEngine.load()` 里已经在 `loadfile` 之前放开了 pause，但 mpv 换文件时
+    /// 会把 pause 重新按选项值设一次，所以那条时序靠不住：实测加载完就停着，手点一下才走。
+    /// 于是在「第一帧到手」那一刻再补一次 `play()`——只补一次，用户随手暂停就作废。
+    private var autoPlayPending = false
+
     /// 需要在播放区浮现的临时提示（首 / 末集提示等）；页面渲染并在 2 秒后清空。
     var toastMessage: String?
 
     func play() {
+        autoPlayPending = false
         engine?.play()
         isPlaying = true
         applyDesiredRate()
     }
 
     func pause() {
+        // 用户自己按的暂停：起播后那次补播不能再把它拉起来。
+        autoPlayPending = false
         engine?.pause()
         isPlaying = false
     }
@@ -140,6 +150,14 @@ final class PlayerSurfaceModel {
             if videoSize != size { videoSize = size }
         }
         if snapshot.hasVideo {
+            if !isReady {
+                // 第一帧到手：把起播那次没生效的「别停」补回来，然后按正常播放补速率。
+                if autoPlayPending {
+                    autoPlayPending = false
+                    engine?.play()
+                    isPlaying = true
+                }
+            }
             isReady = true
             errorMessage = nil
         } else if let loadError = snapshot.loadError {
@@ -169,6 +187,8 @@ final class PlayerSurfaceModel {
 
     /// 切换分集前清掉上一集的展示状态，避免旧的时长 / 进度闪一下。
     func prepareForNewEpisode() {
+        // 这一集就绪后应该自己开播（见 `autoPlayPending`）。
+        autoPlayPending = true
         currentTime = 0
         duration = 0
         bufferedTime = 0
@@ -434,12 +454,10 @@ struct MPVPlayerContainer: UIViewRepresentable {
                 lastShaders = shaders
                 // 换着色器要现编 GLSL，质量档那几颗 VL 模型在手机上能卡几百毫秒。
                 // 这一步原来跟着 SwiftUI 的更新走、在主线程上做，点完菜单整段卡住，
-                // 点击就被吃掉、要点很多下（LP 2026-10-28）。mpv 的命令接口本身线程安全，
-                // 挪到后台队列去挂，主线程只管关菜单。
-                let paths = shaders
-                DispatchQueue.global(qos: .userInitiated).async {
-                    engine.setShaders(paths)
-                }
+                // 点击就被吃掉、要点很多下（LP 2026-10-28）。
+                // 2026-10-29 排查闪退得出的结论：与线程无关，瓶颈在编译本身；
+                // 主线程上这 6 颗挂上去实测 82ms，LP 验收不闪退。
+                engine.setShaders(shaders)
             }
             if fill != lastFill {
                 lastFill = fill
