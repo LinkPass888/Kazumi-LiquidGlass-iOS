@@ -28,6 +28,18 @@ final class PlayerSurfaceModel {
     /// 已缓冲到的时间点（相对视频开头），进度条据此画出缓冲段。
     var bufferedTime: Double = 0
     var isPlaying = false
+    /// 用户想让它在播（而不是自己按了暂停）。
+    ///
+    /// 只看内核状态会把「缓冲中」当成「暂停」：mpv 一卡 `core-idle` 就是 true，
+    /// 界面立刻换成暂停图标、还把控制栏弹回来（LP 2026-10-29 第 1、2 条：
+    /// 「解决不了就不要显示暂停，加个加载中符号」）。
+    /// 所以内核没走的时候要再分一步：是用户按停的（`pause`），还是没跟上（idle 但没暂停）。
+    private(set) var wantsPlaying = false
+    /// 内核最后一次报的 pause。系统中断、退后台这些外部暂停走它，不是用户按的。
+    private(set) var corePaused = false
+    /// 正在缓冲 / 卡住：想播、没在播、内核也没被暂停。界面用它显示加载符号，
+    /// 而不是暂停图标和控制栏。
+    var isStalled: Bool { wantsPlaying && !isPlaying && !corePaused }
     var isReady = false
     /// 这一集的第一帧是不是已经画上屏了。加载符号转到它为 true 为止。
     var hasFirstFrame = false
@@ -61,6 +73,7 @@ final class PlayerSurfaceModel {
 
     func play() {
         autoPlayPending = false
+        wantsPlaying = true
         engine?.play()
         isPlaying = true
         applyDesiredRate()
@@ -69,6 +82,7 @@ final class PlayerSurfaceModel {
     func pause() {
         // 用户自己按的暂停：起播后那次补播不能再把它拉起来。
         autoPlayPending = false
+        wantsPlaying = false
         engine?.pause()
         isPlaying = false
     }
@@ -94,9 +108,21 @@ final class PlayerSurfaceModel {
         engine?.setVideoTrackEnabled(enabled)
     }
 
+    /// 屏幕这块视图。mpv 自己出图失败时，从它兜底。
+    weak var hostView: MPVHostView?
+
     /// 抓当前这一帧（截图）。mpv 自己出 PNG，带上已经挂好的超分滤镜。
+    ///
+    /// mpv 那条会失败（真机上 1080p 要从关键帧重解，也可能直接被拒），
+    /// 那时不能让用户拿到空的：屏幕上已经有画了，直接读它。读到的整块视口
+    /// 带黑边、是屏幕的比例，所以按同一套 `videoRect` 裁成画面本身（LP 要的是
+    /// 画面比例，不是屏幕比例）。分辨率是屏幕的，比 mpv 原生出图低，但
+    /// 「有一张、比例对」比「没有」重要得多。
     func captureFrame() async -> UIImage? {
-        await engine?.captureFrame()
+        if let image = await engine?.captureFrame() { return image }
+        guard let image = hostView?.snapshotOfVideo() else { return nil }
+        KazumiLogBuffer.player("截图：mpv 没出图，改用屏幕那一帧 \(Int(image.size.width))×\(Int(image.size.height))")
+        return image
     }
 
     func togglePlay() {
@@ -157,6 +183,7 @@ final class PlayerSurfaceModel {
         engine?.stop()
         engine = nil
         isPlaying = false
+        wantsPlaying = false
     }
 
     /// 内核推来的一帧状态。
@@ -165,7 +192,18 @@ final class PlayerSurfaceModel {
         if snapshot.duration.isFinite, snapshot.duration > 0 {
             duration = snapshot.duration
         }
-        isPlaying = !snapshot.isPaused && !snapshot.isIdle
+        // 内核没在走有三种：正在缓冲/卡住（idle 但没暂停）、被暂停（用户或系统）、
+        // 还没起播。只有第二种才算暂停，第一种要留给界面转加载圈。
+        corePaused = snapshot.isPaused
+        let coreRunning = !snapshot.isPaused && !snapshot.isIdle
+        if coreRunning {
+            isPlaying = true
+        } else if snapshot.isPaused {
+            isPlaying = false
+        } else {
+            // 没暂停却没走：意图还在就仍然算「在播」，界面看 isStalled 转圈。
+            isPlaying = wantsPlaying
+        }
         if snapshot.videoWidth > 0, snapshot.videoHeight > 0 {
             let size = CGSize(width: snapshot.videoWidth, height: snapshot.videoHeight)
             if videoSize != size { videoSize = size }
@@ -175,6 +213,7 @@ final class PlayerSurfaceModel {
                 // 第一帧到手：把起播那次没生效的「别停」补回来，然后按正常播放补速率。
                 if autoPlayPending {
                     autoPlayPending = false
+                    wantsPlaying = true
                     engine?.play()
                     isPlaying = true
                 }
@@ -197,6 +236,7 @@ final class PlayerSurfaceModel {
     /// 出错只报错；只有确实播到结尾才触发 `onFinish`——停止 / 换集也会走到结尾附近。
     func handleFinish(errorMessage: String?) {
         isPlaying = false
+        wantsPlaying = false
         isReady = false
         if let errorMessage {
             self.errorMessage = errorMessage
@@ -210,6 +250,7 @@ final class PlayerSurfaceModel {
     func prepareForNewEpisode() {
         // 这一集就绪后应该自己开播（见 `autoPlayPending`）。
         autoPlayPending = true
+        wantsPlaying = true
         currentTime = 0
         duration = 0
         bufferedTime = 0
@@ -302,6 +343,41 @@ final class MPVHostView: UIView {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
+    /// 屏幕上真正的画面那一块（不含黑边），points。layoutSubviews 里算好。
+    private var currentVideoRect: CGRect = .zero
+
+    /// 兜底截图：读屏幕上那块画面，按画面比例把黑边裁掉再返回。
+    ///
+    /// 只有 mpv 自己出图失败时才走到这里，所以宁可是屏幕分辨率的一张，
+    /// 也不要给用户一张带黑边的整屏图。
+    func snapshotOfVideo() -> UIImage? {
+        let snapshot = glView.snapshot
+        let boundsSize = glView.bounds.size
+        guard boundsSize.width >= 1, boundsSize.height >= 1,
+              snapshot.size.width >= 1, snapshot.size.height >= 1
+        else { return nil }
+
+        // 视频还没报尺寸（或布局还没跑过）时按整块来，至少不是空的。
+        let rect = currentVideoRect.width >= 1 && currentVideoRect.height >= 1
+            ? currentVideoRect
+            : fillMode.videoRect(in: glView.bounds, videoSize: videoSize)
+
+        // snapshot 是像素，rect 是 points，换算过去再裁。
+        let sx = snapshot.size.width / boundsSize.width
+        let sy = snapshot.size.height / boundsSize.height
+        let crop = CGRect(
+            x: rect.minX * sx,
+            y: rect.minY * sy,
+            width: rect.width * sx,
+            height: rect.height * sy
+        ).integral.intersection(CGRect(origin: .zero, size: snapshot.size))
+
+        guard crop.width >= 1, crop.height >= 1,
+              let cgImage = snapshot.cgImage?.cropping(to: crop)
+        else { return snapshot }
+        return UIImage(cgImage: cgImage, scale: snapshot.scale, orientation: .up)
+    }
+
     /// 更新视频矩形所需的三样东西；真正的尺寸在 layoutSubviews 里按当前 bounds 算。
     func updateVideoLayout(
         videoSize: CGSize,
@@ -335,6 +411,7 @@ final class MPVHostView: UIView {
             glView.setNeedsDisplay()
         }
         let rect = fillMode.videoRect(in: bounds, videoSize: videoSize)
+        currentVideoRect = rect
         // 顶部让出控制栏（横屏 44pt），底部仍留 20% 给字幕：
         // 弹幕区 = 视频上方 80% 再往上收掉顶部留白。
         let inset = max(0, danmakuTopInset)
@@ -378,6 +455,7 @@ struct MPVPlayerContainer: UIViewRepresentable {
     func makeUIView(context: Context) -> MPVHostView {
         let host = MPVHostView()
         let engine = MPVEngine()
+        surface.hostView = host
         engine.glView = host.glView
         host.glView.engine = engine
         host.glView.enableSetNeedsDisplay = true

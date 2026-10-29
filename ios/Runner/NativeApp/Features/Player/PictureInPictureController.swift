@@ -647,14 +647,22 @@ private final class PiPFrameCopier {
             return
         }
 
+        // 画面尺寸现读 mpv：传进来的那两个是 250ms 一拍的快照抄过来的，
+        // 小窗要起的那一刻它可能还是 0，一退就退成「整块容器」——拷过去的长宽比
+        // 是容器的，系统再按 resizeAspect 放进小窗，上下就是各一条黑边，
+        // 看着像「顶部黑一截」然后才恢复（LP 2026-10-29 第 3 条）。
+        let pictureSize = resolvedVideoSize(fallbackWidth: videoWidth, fallbackHeight: videoHeight)
+        // 还是一个有效尺寸都没有：这一帧不拷。宁可让小窗晚一帧，也不送一张比例错的。
+        guard pictureSize.width > 1, pictureSize.height > 1 else { return }
+
         // 只拷画面那一块：容器里画面之外是黑边（16:9 的番放在更宽的屏幕里、
         // 或者用户选了别的画面比例），整块容器拷过去会把黑边一起送进小窗，
         // 小窗就变成「比例不对、两边有黑边」。拿不到画面尺寸时退回整块。
         let rect = videoRect(
             sourceWidth: sourceWidth,
             sourceHeight: sourceHeight,
-            videoWidth: videoWidth,
-            videoHeight: videoHeight
+            videoWidth: pictureSize.width,
+            videoHeight: pictureSize.height
         )
         let size = targetSize(sourceWidth: Int(rect.width), sourceHeight: Int(rect.height))
         guard let pixelBuffer = makePixelBuffer(width: size.width, height: size.height) else {
@@ -815,6 +823,26 @@ private final class PiPFrameCopier {
     /// mpv 按 `keepaspect` 把画面居中放进 FBO，画面之外是黑边。画中画只该拷这个矩形：
     /// 拷贝整块容器会把黑边一起带进小窗，看起来就是「比例不对、两边有黑边」。
     /// 拿不到画面尺寸（还没出第一帧）时退回整块容器。
+    /// 这一帧的画面尺寸：优先现读 mpv（dwidth/dheight 是算过 anamorphic 的显示尺寸），
+    /// 读不到才用外面传进来的快照值。
+    private func resolvedVideoSize(
+        fallbackWidth: Double,
+        fallbackHeight: Double
+    ) -> (width: Double, height: Double) {
+        if let mpv {
+            for names in [("dwidth", "dheight"), ("width", "height")] {
+                var width: Int64 = 0
+                var height: Int64 = 0
+                let haveWidth = mpv_get_property(mpv, names.0, MPV_FORMAT_INT64, &width) >= 0
+                let haveHeight = mpv_get_property(mpv, names.1, MPV_FORMAT_INT64, &height) >= 0
+                if haveWidth, haveHeight, width > 1, height > 1 {
+                    return (Double(width), Double(height))
+                }
+            }
+        }
+        return (fallbackWidth, fallbackHeight)
+    }
+
     private func videoRect(
         sourceWidth: Int,
         sourceHeight: Int,

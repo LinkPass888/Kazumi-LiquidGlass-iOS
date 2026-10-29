@@ -172,24 +172,35 @@ struct BangumiInfoScreen: View {
             let current = controller
             // 点结果：先关面板、再往右推进播放页（LP 3273 / Colo 3275）。
             // 返回时下面 onChange 把面板带着原来那批结果放回来，不重新检索。
-            SourceSheet(controller: current) { pluginName, result in
-                isShowingSources = false
-                returnToSourcesAfterPlayer = true
-                depthBeforePlayer = navigationDepth
-                router.push(
-                    .player(
-                        bangumiID: current.item.id,
-                        episode: 1,
-                        source: PlaybackSource(
-                            pluginName: pluginName,
-                            itemName: result.name,
-                            // 原样传 src：接口模式的规则拿它当 vod_id，拼成网址就查不到剧集。
-                            detailURL: result.src,
-                            directMediaURL: MediaUtility.isMediaURL(result.src) ? result.src : nil
+            SourceSheet(
+                controller: current,
+                onPlay: { pluginName, result in
+                    isShowingSources = false
+                    returnToSourcesAfterPlayer = true
+                    depthBeforePlayer = navigationDepth
+                    router.push(
+                        .player(
+                            bangumiID: current.item.id,
+                            episode: 1,
+                            source: PlaybackSource(
+                                pluginName: pluginName,
+                                itemName: result.name,
+                                // 原样传 src：接口模式的规则拿它当 vod_id，拼成网址就查不到剧集。
+                                detailURL: result.src,
+                                directMediaURL: MediaUtility.isMediaURL(result.src) ? result.src : nil
+                            )
                         )
                     )
-                )
-            }
+                },
+                // 空面板上的「去规则仓库添加」：不传这个就只有 dismiss，按钮点了不跳（LP 2026-10-29）。
+                // 跟点结果一样先收面板，回来再把面板开一次——装完规则正好接着选源。
+                onOpenRuleShop: {
+                    isShowingSources = false
+                    returnToSourcesAfterPlayer = true
+                    depthBeforePlayer = navigationDepth
+                    router.push(.pluginShop)
+                }
+            )
         }
         // 从播放页返回：把面板放回来。栈深回到推播放页之前就说明回来了。
         .onChange(of: navigationDepth) { _, newDepth in

@@ -421,7 +421,11 @@ struct PlayerScreen: View {
             }
         }
         .statusBarHidden(isFullscreen)
-        .persistentSystemOverlays(isFullscreen ? .hidden : .automatic)
+        // 这里原来还有 `.persistentSystemOverlays(isFullscreen ? .hidden : .automatic)`。
+        // 它连 home 指示条一起藏了，而指示条一藏，iOS 就把「上滑回主屏」改成两步：
+        // 第一下只把指示条叫出来，第二下才退 app——这就是 LP 2026-10-29 说的
+        // 「退出 app 要上滑两次」，而第一下又同时喂给了音量手势，看着像两个一起执行。
+        // 状态条该藏照藏（上一行），指示条交给系统：全屏播放器留着它是正常的。
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .navigationBar)
         .toolbar(.hidden, for: .tabBar)
@@ -862,7 +866,10 @@ struct PlayerScreen: View {
             // 解析阶段画面中央那颗 `statusOverlay` 已经带文字在转了，
             // 这里再画一颗就是两个圈（LP 2026-10-28 第 4 条 / Colo）。
             // 只在真的挂上 mpv（有播放地址）之后才画这颗。
-            if !surface.hasFirstFrame,
+            //
+            // 已开播后中途卡住也走这颗（LP 2026-10-29 第 2 条）：以前内核一 idle
+            // 就被当成暂停，弹出控制栏加暂停图标；现在卡住只转圈，控制栏不动。
+            if (!surface.hasFirstFrame || surface.isStalled),
                surface.errorMessage == nil,
                controller.playbackURL != nil {
                 hudAtQuarter {
@@ -1034,7 +1041,7 @@ struct PlayerScreen: View {
                     )
                     // 滑动手势关了就不收竖向拖拽（LP 清单「滑动手势」，默认开）。
                     .simultaneousGesture(
-                        surfaceDragGesture(width: surfaceSize.width),
+                        surfaceDragGesture(width: surfaceSize.width, height: surfaceSize.height),
                         including: settings.brightnessVolumeGesture && !isSurfaceLocked ? .all : .none
                     )
                     // 长按倍速：**按住的那段就是倍速**（LP 2026-10-28 第 10 条 / Colo）。
@@ -1068,10 +1075,17 @@ struct PlayerScreen: View {
     /// * 横着拖是调进度，换算照 main（`180000 / width` 毫秒每点，整块画面宽 ≈ 180 秒），
     ///   比拖进度条细得多，中途只显示「+15s」，松手才真跳到那儿；
     /// * 竖着拖左半边调亮度、右半边调音量，同样自己画横条，不弹系统那条。
-    private func surfaceDragGesture(width: CGFloat) -> some Gesture {
+    private func surfaceDragGesture(width: CGFloat, height: CGFloat) -> some Gesture {
         DragGesture(minimumDistance: 10, coordinateSpace: .local)
             .onChanged { value in
                 if dragAxis == nil {
+                    // 从最底下那条起手：那是 home 指示条的地盘，交给系统退 app，
+                    // 不能顺手再调一次音量（LP 2026-10-29「上滑控制音量和退出 app 同步执行」）。
+                    // 横屏全屏时这块一直铺到窗口底沿（那层 ignoresSafeArea 是 10-27 要的）。
+                    if isFullscreen, value.startLocation.y > height - Self.bottomSystemStrip {
+                        dragAxis = .ignored
+                        return
+                    }
                     if abs(value.translation.width) > abs(value.translation.height) {
                         // 贴左边缘往右起手是返回，交给外层的侧滑手势，不调进度。
                         if value.startLocation.x < 28, value.translation.width > 0 {
@@ -1228,6 +1242,10 @@ struct PlayerScreen: View {
 
     /// 顶条只往上多画这么多点：画在屏幕外，专门吃「跟窗口顶之间那几个点」的缝。
     private static let maskTopOvershoot: CGFloat = 16
+
+    /// 屏幕最底下留给系统手势的那一条（home 指示条）。竖向拖动的起手落在这条里就不接，
+    /// 交给系统去退 app。横屏时底部安全区是 21，再加两点余量。
+    private static let bottomSystemStrip: CGFloat = 24
 
     /// 两条压暗的长度（Colo 2026-10-28 4295）：顶 min(96, 画面高×0.25)、
     /// 底 min(200, 画面高×0.45)，再夹一句——顶栏＋顶渐隐＋底渐隐＋底栏 ≤ 画面高，
