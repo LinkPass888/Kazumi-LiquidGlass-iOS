@@ -55,6 +55,11 @@ final class PictureInPictureController: NSObject {
     /// 出问题时给播放页的日志行。
     var onLog: ((String) -> Void)?
 
+    /// 系统能不能在退后台时自己起小窗。跟着播放状态走，见 `ensureController()`。
+    var allowsAutoStart = true {
+        didSet { pipController?.canStartPictureInPictureAutomaticallyFromInline = allowsAutoStart }
+    }
+
     /// 画中画没起来（设备不支持 / 图层不在窗口 / 系统拒绝）。
     /// 页面据此退回原来的「后台播放」策略，不至于设置开着却没声音也没画面。
     var onFailed: (() -> Void)?
@@ -220,7 +225,9 @@ final class PictureInPictureController: NSObject {
             let controller = AVPictureInPictureController(contentSource: source)
             controller.delegate = self
             // 设置开着才有这个对象；允许系统在退后台时自动起，不用用户手点。
-            controller.canStartPictureInPictureAutomaticallyFromInline = true
+            // 但要跟着「在不在播」走：暂停着退后台不该自己弹出一个小窗
+            // （LP 真机上就是暂停状态退出去，小窗自己出来了）。
+            controller.canStartPictureInPictureAutomaticallyFromInline = allowsAutoStart
             pipController = controller
         }
         return true
@@ -465,6 +472,7 @@ private final class PiPFrameCopier {
     private let displayLayer: AVSampleBufferDisplayLayer
 
     var onLog: ((String) -> Void)?
+
     private(set) var isCapturing = false
 
     /// 两次拷贝之间至少隔多久。平时（还没进小窗）低频喂着，只要图层里有内容、

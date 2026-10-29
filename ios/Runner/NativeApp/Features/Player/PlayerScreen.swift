@@ -463,6 +463,8 @@ struct PlayerScreen: View {
             } else {
                 showControls()
             }
+            // 暂停着退后台不该自己弹小窗，起播了再放行自动起。
+            pictureInPicture?.allowsAutoStart = playing
             // 用户亲手按的暂停不归「回前台自动播放」管。
             if playing {
                 pausedByBackground = false
@@ -809,6 +811,8 @@ struct PlayerScreen: View {
             }
         }
         pictureInPicture = pip
+        // 建的那一刻就对齐当前播放状态：暂停着建的就不许自动起。
+        pip.allowsAutoStart = surface.isPlaying
         pip.prepare(engine: surface.engine, surface: surface)
     }
 
