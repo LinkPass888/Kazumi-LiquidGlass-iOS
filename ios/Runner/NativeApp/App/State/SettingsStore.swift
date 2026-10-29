@@ -103,16 +103,11 @@ enum PlaybackSpeed {
     /// 播放器菜单与设置页给的档位：0.5 到 3.0，够用又不至于一长串。
     static let all: [Double] = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0]
 
-    /// 档位文案：整数写 `2x`，小数写 `1.25x`（原版菜单是 `${value}x`）。
+    /// 档位文案：统一两位小数——`0.50x`、`1.25x`、`2.00x`、`3.00x`
+    /// （LP 4674：菜单里不要再出现 `2x` / `1.5x` 这种长短不一的写法）。
+    /// 菜单、控制栏那颗钮、长按倍速胶囊、设置页都走这一个函数，不会再分叉。
     static func label(_ value: Double) -> String {
-        if value == value.rounded() {
-            return "\(Int(value))x"
-        }
-        var text = String(format: "%.2f", value)
-        while text.hasSuffix("0") {
-            text.removeLast()
-        }
-        return "\(text)x"
+        String(format: "%.2fx", value)
     }
 
     /// 播放器按钮文案：1 倍时写「倍速」，其余写档位（对应原版的按钮用字）。

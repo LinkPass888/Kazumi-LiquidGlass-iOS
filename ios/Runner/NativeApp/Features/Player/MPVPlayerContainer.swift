@@ -71,6 +71,11 @@ final class PlayerSurfaceModel {
     /// 需要在播放区浮现的临时提示（首 / 末集提示等）；页面渲染并在 2 秒后清空。
     var toastMessage: String?
 
+    /// 摆在画面 1/4 那条线上的提示（LP 4668）：倍速、收藏状态、定时关闭这些
+    /// 「动作结果」都跟长按倍速指示器同一条线，不再挤在屏幕最顶上。
+    /// 顶部那条留给说明性的话（弹幕、错误、同步进度）。
+    var hudToastMessage: String?
+
     func play() {
         autoPlayPending = false
         wantsPlaying = true

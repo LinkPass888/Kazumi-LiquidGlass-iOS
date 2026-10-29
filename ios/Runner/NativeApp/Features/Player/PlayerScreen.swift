@@ -444,6 +444,7 @@ struct PlayerScreen: View {
         // 竖屏侧滑返回：导航栏藏了之后系统的手势会失效，这里把它接回来（全屏时不认）。
 
         .animation(.easeOut(duration: 0.2), value: surface.toastMessage)
+        .animation(.easeOut(duration: 0.2), value: surface.hudToastMessage)
         // 弹幕拉不到的时候说一句原因（Ato：对不上号 / 接口失败要说，
         // 「这集本来就没弹幕」是正常情况，安静地不显示）。
         .onChange(of: controller?.danmakuMessage) { _, message in
@@ -970,6 +971,15 @@ struct PlayerScreen: View {
             if isTemporarySpeed {
                 hudAtQuarter { temporarySpeedCapsule }
                     .transition(.opacity)
+            }
+            // 动作结果那句（倍速 / 收藏 / 定时关闭，LP 4668）也摆在这一条线上，
+            // 跟长按倍速胶囊同一个高度；顶部那条留给说明性的话。
+            if let message = surface.hudToastMessage {
+                hudAtQuarter {
+                    toastBubble(message)
+                        .task(id: message) { await hideToast(message, slot: .hud) }
+                }
+                .transition(.opacity)
             }
         }
         .modifier(PlayerBoxModifier(fillsWindow: isFullscreen,
@@ -1911,23 +1921,27 @@ struct PlayerScreen: View {
     }
 
     /// 横屏顶栏的定时关闭（LP 2026-10-28 第 7 条）。
+    ///
+    /// 倒数一开始符号换成 `moon.zzz.fill`（LP 4669）：顶栏那颗、菜单那一项都是这个。
+    /// 勾看 `sleepTimerMinutes`（定的是哪一档）而不是「剩余刚好等于这一档」——倒数中
+    /// 剩余每秒都在变，用后者的话一开始倒数勾就没了，等于看不出选了哪个。
     private var sleepTimerButton: some View {
         SystemMenuButton(
             items: [SystemMenuButton.Item(
                 title: "不开启",
-                symbol: sleepTimerRemaining == nil ? "checkmark" : ""
+                symbol: sleepTimerMinutes == nil ? "checkmark" : ""
             ) {
                 cancelSleepTimer()
             }] + [15, 30, 60, 90].map { minutes in
                 SystemMenuButton.Item(
-                    title: "\(minutes) 分钟",
-                    symbol: sleepTimerRemaining == minutes * 60 ? "checkmark" : ""
+                    title: sleepTimerItemTitle(minutes),
+                    symbol: sleepTimerMinutes == minutes ? "checkmark" : ""
                 ) {
                     startSleepTimer(minutes: minutes)
                 }
             },
             title: nil,
-            symbol: "moon.zzz",
+            symbol: sleepTimerRemaining == nil ? "moon.zzz" : "moon.zzz.fill",
             accessibilityLabel: "定时关闭",
             tint: .white,
             onOpen: { pinControlsWhileMenuOpen() }
@@ -1953,11 +1967,11 @@ struct PlayerScreen: View {
                     applyCollectType(type)
                 } label: {
                     HStack(spacing: 8) {
+                        // 勾打在这一项前面（LP 4673），跟定时关闭菜单里 `symbol:` 的位置一致。
+                        // 没选中的那几行也留同样的空位，五行的左边缘才对得齐。
+                        Image(systemName: "checkmark")
+                            .opacity(currentCollectType == type ? 1 : 0)
                         Label(type.buttonTitle, systemImage: type.statusSymbol)
-                        if currentCollectType == type {
-                            Spacer(minLength: 8)
-                            Image(systemName: "checkmark")
-                        }
                     }
                 }
             }
@@ -2031,6 +2045,8 @@ struct PlayerScreen: View {
             } else {
                 surface.toastMessage = type == .none ? "已取消追番" : "已标为\(type.title)"
             }
+            // 收藏状态那句走 HUD 那条线（LP 4668）；同步进度 / 结果仍留顶部。
+            surface.hudToastMessage = type == .none ? "已取消追番" : "已标为\(type.title)"
         }
     }
 
@@ -2051,6 +2067,15 @@ struct PlayerScreen: View {
         return max(1, Int((Double(remaining) / 60).rounded(.up)))
     }
 
+    /// 子菜单那一项的标题：定上了就把剩余时间写上去（LP 4669），例如
+    /// 「15 分钟 · 还剩 12:34」。点它就是按这一档重开倒数。
+    private func sleepTimerItemTitle(_ minutes: Int) -> String {
+        guard sleepTimerMinutes == minutes, let remaining = sleepTimerRemaining else {
+            return "\(minutes) 分钟"
+        }
+        return "\(minutes) 分钟 · 还剩 \(remaining / 60):\(String(format: "%02d", remaining % 60))"
+    }
+
     /// 到点暂停。定时器是一次性的 Task，改定或取消都要把上一个收掉。
     private func startSleepTimer(minutes: Int) {
         noteInteraction()
@@ -2067,10 +2092,11 @@ struct PlayerScreen: View {
             }
             sleepTimerRemaining = nil
             surface.pause()
-            surface.toastMessage = "定时关闭：已暂停"
+            // 定时关闭那句跟倍速、收藏同一条线（LP 4668）。
+            surface.hudToastMessage = "定时关闭：已暂停"
             showControls()
         }
-        surface.toastMessage = "定时关闭：\(minutes) 分钟后暂停"
+        surface.hudToastMessage = "定时关闭：\(minutes) 分钟后暂停"
     }
 
     private func cancelSleepTimer() {
@@ -2483,14 +2509,14 @@ struct PlayerScreen: View {
             },
             SystemMenuButton.Item(
                 title: "定时关闭",
-                symbol: "moon.zzz",
+                symbol: sleepTimerRemaining == nil ? "moon.zzz" : "moon.zzz.fill",
                 subtitle: sleepTimerValue,
-                submenu: [SystemMenuButton.Item(title: "不开启", symbol: sleepTimerRemaining == nil ? "checkmark" : "") {
+                submenu: [SystemMenuButton.Item(title: "不开启", symbol: sleepTimerMinutes == nil ? "checkmark" : "") {
                     cancelSleepTimer()
                 }] + [15, 30, 60, 90].map { minutes in
                     SystemMenuButton.Item(
-                        title: "\(minutes) 分钟",
-                        symbol: sleepTimerRemaining == minutes * 60 ? "checkmark" : ""
+                        title: sleepTimerItemTitle(minutes),
+                        symbol: sleepTimerMinutes == minutes ? "checkmark" : ""
                     ) {
                         startSleepTimer(minutes: minutes)
                     }
@@ -2949,7 +2975,8 @@ struct PlayerScreen: View {
     private func applySpeed(_ rate: Float) {
         playbackRate = rate
         surface.setPlaybackRate(rate)
-        surface.toastMessage = PlaybackSpeed.label(Double(rate))
+        // 倍速指示跟长按倍速胶囊同一条线（画面 1/4 处），LP 4668。
+        surface.hudToastMessage = PlaybackSpeed.label(Double(rate))
     }
 
     private func onScrub(_ editing: Bool) {
@@ -3245,28 +3272,43 @@ struct PlayerScreen: View {
             .allowsHitTesting(false)
     }
 
+    /// 提示挂在哪：顶部那条是说明性的话，画面 1/4 那条是动作结果（LP 4668）。
+    private enum ToastSlot {
+        case top
+        case hud
+    }
+
+    /// 提示气泡本身：顶部那条和 HUD 那条线共用，只是位置不同。
+    private func toastBubble(_ message: String) -> some View {
+        Text(message)
+            .font(.footnote.weight(.medium))
+            .foregroundStyle(.primary)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(.ultraThinMaterial)
+            )
+    }
+
+    /// 2 秒后自己收；task 以文案为 id，快速连点时上一条定时器自然作废。
+    private func hideToast(_ message: String, slot: ToastSlot) async {
+        try? await Task.sleep(for: .seconds(2))
+        guard !Task.isCancelled else { return }
+        switch slot {
+        case .top:
+            if surface.toastMessage == message { surface.toastMessage = nil }
+        case .hud:
+            if surface.hudToastMessage == message { surface.hudToastMessage = nil }
+        }
+    }
+
     @ViewBuilder
     private var toastView: some View {
         if let message = surface.toastMessage {
-            Text(message)
-                .font(.footnote.weight(.medium))
-                .foregroundStyle(.primary)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-                .background(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(.ultraThinMaterial)
-                )
+            toastBubble(message)
                 .padding(.top, 8)
-                // 自动消失只做纯赋值：出入场交给 body 上那个 .animation(value:)。
-                // task 以文案为 id，快速连点时上一条定时器自然作废。
-                .task(id: message) {
-                    try? await Task.sleep(for: .seconds(2))
-                    guard !Task.isCancelled else { return }
-                    if surface.toastMessage == message {
-                        surface.toastMessage = nil
-                    }
-                }
+                .task(id: message) { await hideToast(message, slot: .top) }
         }
     }
 
