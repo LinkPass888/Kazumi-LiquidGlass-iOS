@@ -65,6 +65,8 @@ final class PlayerController {
     /// 上次走的线路（历史里记的），以及这次进播放器是不是「接着看」。
     private var resumeRoad: Int?
     private var resumeFromHistory: Bool
+    /// 从历史卡片进来时带的那条规则名：重建播放源和取续播位置都按它取。
+    let resumeRule: String?
 
     init(
         bangumiID: Int,
@@ -73,13 +75,15 @@ final class PlayerController {
         plugins: PluginsController,
         library: LibraryStore? = nil,
         resumeRoad: Int? = nil,
-        resumeFromHistory: Bool = false
+        resumeFromHistory: Bool = false,
+        resumeRule: String? = nil
     ) {
         self.bangumiID = bangumiID
         self.source = source
         self.currentEpisode = max(1, episode)
         self.resumeRoad = resumeRoad
         self.resumeFromHistory = resumeFromHistory
+        self.resumeRule = resumeRule
         self.plugins = plugins
         self.library = library
         webView.onLog = { [weak self] line in
@@ -256,7 +260,12 @@ final class PlayerController {
     /// 因此先用规则搜一次番剧名，拿第一条（优先同名）结果的 `src` 当详情页。
     /// 失败就保持 `source` 为空，由 `start()` 报「没找到这部剧的播放源」。
     private func resolveSourceFromHistory() async {
-        guard let library, let record = library.record(for: bangumiID) else { return }
+        // 按卡片上那一条规则取（Fuck 4875）：同一部番在好几个源下各有一份记录，
+        // 按番剧号取「最新那份」会拿错源——卡片写着 B 源，放出来是 A 源。
+        guard let library else { return }
+        let record = resumeRule.flatMap { library.record(for: bangumiID, pluginName: $0) }
+            ?? library.record(for: bangumiID)
+        guard let record else { return }
         let keyword = record.bangumiName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !keyword.isEmpty else { return }
         // 记录的规则被删了就退回第一条已装规则，总比直接判死强。

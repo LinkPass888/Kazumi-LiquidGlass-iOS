@@ -94,7 +94,9 @@ struct WatchHistoryScreen: View {
                 source: nil,
                 // 跟详情页「开始观看」一个口径：线路也接，越界整条作废（Ato 4849）。
                 resumeRoad: record.roadIndex,
-                resumeFromHistory: true
+                resumeFromHistory: true,
+                // 按这张卡片这条规则的记录重建播放源，别按番剧号取最新那份（Fuck 4875）。
+                resumeRule: record.sourceRuleName
             ))
         } label: {
             HStack(spacing: 12) {
@@ -161,7 +163,9 @@ struct WatchHistoryScreen: View {
                 source: nil,
                 // 跟详情页「开始观看」一个口径：线路也接，越界整条作废（Ato 4849）。
                 resumeRoad: record.roadIndex,
-                resumeFromHistory: true
+                resumeFromHistory: true,
+                // 按这张卡片这条规则的记录重建播放源，别按番剧号取最新那份（Fuck 4875）。
+                resumeRule: record.sourceRuleName
             ))
             }
             Button("删除记录", role: .destructive) {

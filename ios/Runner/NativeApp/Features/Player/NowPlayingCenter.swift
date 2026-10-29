@@ -198,6 +198,15 @@ final class NowPlayingCenter {
         lastRate = 0
         lastElapsed = 0
         lastState = .stopped
+        // 遥控键的盒子一起放掉（Fuck 4881）：那几个闭包强持有 surface，而这里是
+        // 单例——不放掉，上一轮的 surface 一直被攥着（engine 早停了，但对象还在），
+        // 退出播放器后系统再送遥控事件还会打到已经停掉的 surface 上。
+        commands.onPlay = nil
+        commands.onPause = nil
+        commands.onNext = nil
+        commands.onPrevious = nil
+        commands.onSeek = nil
+        commands.isPlaying = false
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
         MPNowPlayingInfoCenter.default().playbackState = .stopped
     }

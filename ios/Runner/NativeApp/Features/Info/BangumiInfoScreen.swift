@@ -193,7 +193,8 @@ struct BangumiInfoScreen: View {
                                 directMediaURL: MediaUtility.isMediaURL(result.src) ? result.src : nil
                             ),
                             resumeRoad: point?.road,
-                            resumeFromHistory: true
+                            resumeFromHistory: true,
+                            resumeRule: nil
                         )
                     )
                 },

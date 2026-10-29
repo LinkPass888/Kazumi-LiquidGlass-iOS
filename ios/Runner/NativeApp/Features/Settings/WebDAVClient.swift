@@ -112,7 +112,9 @@ struct WebDAVClient {
             guard removedEntries.map(\.id).sorted() == other.removedEntries.map(\.id).sorted(),
                   Self.sameInstants(removedEntries.map(\.removedAt), other.removedEntries.map(\.removedAt))
             else { return false }
-            guard history.map(\.bangumiID).sorted() == other.history.map(\.bangumiID).sorted() else { return false }
+            // 观看记录的 ID 现在是「规则名 + 番剧号」：比 bangumiID 的话，
+            // 同一条记录的规则归属变了也会验成「对得上」（Fuck 4875）。
+            guard history.map(\.id).sorted() == other.history.map(\.id).sorted() else { return false }
             guard Self.sameInstants(entries.map(\.updatedAt), other.entries.map(\.updatedAt)) else { return false }
             return Self.sameInstants(history.map(\.updatedAt), other.history.map(\.updatedAt))
         }

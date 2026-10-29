@@ -84,12 +84,20 @@ enum AppRoute: Hashable, Sendable {
         episode: Int,
         source: PlaybackSource?,
         resumeRoad: Int?,
-        resumeFromHistory: Bool
+        resumeFromHistory: Bool,
+        resumeRule: String?
     )
 
     /// 兼容原有调用点：只带 bangumiID 与集数时，视为「待选源」。
     static func player(bangumiID: Int, episode: Int) -> AppRoute {
-        .player(bangumiID: bangumiID, episode: episode, source: nil, resumeRoad: nil, resumeFromHistory: false)
+        .player(
+            bangumiID: bangumiID,
+            episode: episode,
+            source: nil,
+            resumeRoad: nil,
+            resumeFromHistory: false,
+            resumeRule: nil
+        )
     }
 
     case pluginEditor(ruleID: String?)
@@ -186,10 +194,10 @@ extension AppRoute {
         case (.imageSearch, .imageSearch):
             // 回调不参与相等比较，页面自己持有识别状态。
             true
-        case let (.player(lhsID, lhsEpisode, lhsSource, lhsRoad, lhsResume),
-                  .player(rhsID, rhsEpisode, rhsSource, rhsRoad, rhsResume)):
+        case let (.player(lhsID, lhsEpisode, lhsSource, lhsRoad, lhsResume, lhsRule),
+                  .player(rhsID, rhsEpisode, rhsSource, rhsRoad, rhsResume, rhsRule)):
             lhsID == rhsID && lhsEpisode == rhsEpisode && lhsSource == rhsSource
-                && lhsRoad == rhsRoad && lhsResume == rhsResume
+                && lhsRoad == rhsRoad && lhsResume == rhsResume && lhsRule == rhsRule
         case let (.pluginEditor(lhs), .pluginEditor(rhs)):
             lhs == rhs
         case let (.pluginTest(lhs), .pluginTest(rhs)):
@@ -227,12 +235,20 @@ extension AppRoute {
             hasher.combine(zoom)
         case .search(let keyword):
             hasher.combine(keyword)
-        case .player(let bangumiID, let episode, let source, let resumeRoad, let resumeFromHistory):
+        case .player(
+            let bangumiID,
+            let episode,
+            let source,
+            let resumeRoad,
+            let resumeFromHistory,
+            let resumeRule
+        ):
             hasher.combine(bangumiID)
             hasher.combine(episode)
             hasher.combine(source)
             hasher.combine(resumeRoad)
             hasher.combine(resumeFromHistory)
+            hasher.combine(resumeRule)
         case .pluginEditor(let ruleID):
             hasher.combine(ruleID)
         case .pluginTest(let ruleID):

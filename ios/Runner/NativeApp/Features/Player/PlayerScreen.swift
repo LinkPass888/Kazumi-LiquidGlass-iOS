@@ -86,12 +86,30 @@ struct GestureHUDValue: Equatable {
     var kind: Kind
     var value: Double
 
-    /// Colo 2026-10-24 定的：横条左边固定一颗 15pt 图标，
-    /// 亮度 `sun.max`、音量 `speaker.wave.2`，不跟着档位换。
+    /// 横条左边那颗 15pt 图标，**跟着档位换**（LP 4876）：
+    /// 音量 0 是静音，往上依次加一道声波；亮度低半颗小太阳、高半颗大太阳。
     var symbol: String {
+        // 先夹到 0–1 再分档（Colo 4879）：拖到负数会落进最大那档。
+        let level = max(0, min(1, value))
         switch kind {
-        case .brightness: return "sun.max.fill"
-        case .volume: return "speaker.wave.2.fill"
+        // 亮度两档，对半。
+        case .brightness:
+            return level <= 0.5 ? "sun.min.fill" : "sun.max.fill"
+        // 音量四档，分界 1/3、2/3。
+        case .volume:
+            if level <= 0 { return "speaker.slash.fill" }
+            if level <= 1.0 / 3.0 { return "speaker.wave.1.fill" }
+            if level <= 2.0 / 3.0 { return "speaker.wave.2.fill" }
+            return "speaker.wave.3.fill"
+        }
+    }
+
+    /// 这颗符号自己的颜色（LP 4876 给的色）：音量 #00C0E8、亮度 #FFCC00，
+    /// 轨道和数值仍是白的。
+    var symbolColor: Color {
+        switch kind {
+        case .brightness: return Color(red: 1.0, green: 0.8, blue: 0.0)
+        case .volume: return Color(red: 0.0, green: 0.7529, blue: 0.9098)
         }
     }
 }
@@ -216,6 +234,8 @@ struct PlayerScreen: View {
     /// 续播信息（见 `AppRoute.player`）：上次那条线路，以及这次是不是「接着看」。
     var resumeRoad: Int?
     var resumeFromHistory: Bool = false
+    /// 历史卡片带过来的规则名：重建播放源时按这一条取，别按番剧号取「最新那份」。
+    var resumeRule: String?
 
     @State private var controller: PlayerController?
     @State private var surface = PlayerSurfaceModel()
@@ -755,7 +775,8 @@ struct PlayerScreen: View {
             plugins: environment.plugins,
             library: library,
             resumeRoad: resumeRoad,
-            resumeFromHistory: resumeFromHistory
+            resumeFromHistory: resumeFromHistory,
+            resumeRule: resumeRule
         )
         controller = created
         // 默认倍速：就绪 / 重新起播时由画面模型再补一次（AVPlayer 会回到 1.0）。
@@ -3127,14 +3148,16 @@ struct PlayerScreen: View {
     /// 只有存的正是当前这一集才续播，换集不迁跳（保留现有行为）。
     private func resumeIfNeeded(library: LibraryStore, controller: PlayerController) {
         guard settings.playResume else { return }
-        guard let record = library.record(for: controller.bangumiID) else { return }
-        // 跨源不接：B 源第 1 集停在 12:00，进 A 源也是第 1 集，别把 B 的 12:00 接上去
-        // （Fuck 4848）。没带源进来时（历史页进）记录本身就是那个源，不用比。
-        if let pluginName = controller.source?.pluginName,
-           !pluginName.isEmpty,
-           record.sourceRuleName != pluginName {
-            return
-        }
+        // 按「这条规则 + 这部番」取记录，不是跨规则取最新那份（Fuck 4875）：
+        // 详情页 / 推荐页是按这条规则算出集数和线路的，位置也得是这条规则记下的；
+        // 拿最新那份一比规则名不一样就整个 bail，这条源存的进度就用不上了。
+        // 没带源进来时（历史页进）记录本身就是那个源，按番剧号取。
+        // 历史卡片进来时源还没重建，用卡片上带的那条规则名。
+        let pluginName = controller.source?.pluginName ?? controller.resumeRule ?? ""
+        let record = pluginName.isEmpty
+            ? library.record(for: controller.bangumiID)
+            : library.record(for: controller.bangumiID, pluginName: pluginName)
+        guard let record else { return }
         guard record.episodeNumber == controller.currentEpisode else { return }
         guard record.progressSeconds > 1 else { return }
         // 存在结尾 5 秒内的一律当已看完，不续播（避免一进去就结束）。
@@ -3209,6 +3232,10 @@ struct PlayerScreen: View {
             let target = controller.currentEpisode - 1
             Task { await controller.selectEpisode(target) }
         }
+        // 盒子接好就把指令注册上（Fuck 4881）：注册原来只在 `update()` 里发生，
+        // 而 `update()` 被 `syncNowPlaying()` 的 `duration > 0 || isPlaying` 挡着——
+        // 播放页刚打开、还没起播那一段，那几颗键是没注册的。
+        center.configureRemoteCommands()
     }
 
     // MARK: - 上一集 / 下一集
@@ -3282,7 +3309,7 @@ struct PlayerScreen: View {
         return HStack(spacing: 8) {
             Image(systemName: hud.symbol)
                 .font(.system(size: 15, weight: .medium))
-                .foregroundStyle(.white)
+                .foregroundStyle(hud.symbolColor)
                 .contentTransition(.symbolEffect(.replace))
 
             // 轨道：底是 30% 白，填充是纯白，从左往右长。
