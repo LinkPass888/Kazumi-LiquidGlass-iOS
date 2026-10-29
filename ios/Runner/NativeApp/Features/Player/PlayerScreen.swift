@@ -529,20 +529,17 @@ struct PlayerScreen: View {
                 let pipStarted = settings.backgroundAutoPiP && surface.isPlaying
                     ? startPictureInPicture()
                     : false
-                // 画中画没起成也**不要**顺手把播放停掉：小窗起不来的常见原因是
-                // 那一刻图层里还没帧，停掉播放只会让下一次更起不来，回到 App 还发现
-                // 停着没接着播（LP 真机上就是这个）。开着自动画中画就按「后台继续」
-                // 处理，让声音先走，小窗随后补上。
-                let wantsPictureInPicture = settings.backgroundAutoPiP && surface.isPlaying
+                // 小窗这次连尝试都没法尝试（没在播、句柄没建好），就按设置收尾。
+                // 标成「因为切后台停的」，回前台那条会按设置接回来，不再出现
+                // 「回来发现停着、也没接着播」。
                 if !pipStarted {
-                    if !settings.backgroundPlayback, !wantsPictureInPicture, surface.isPlaying {
+                    if !settings.backgroundPlayback, surface.isPlaying {
                         pausedByBackground = true
                         surface.pause()
                     }
                     // 开着后台播放：声音继续，但画面在后台本来就不会重绘，
                     // 留在那只会让回来时音画对不上。先只留声音。
-                    // 等小窗起来的那一小段里也不能关视频轨：关了就没帧可喂。
-                    if settings.backgroundPlayback, !wantsPictureInPicture, surface.isPlaying {
+                    if settings.backgroundPlayback, surface.isPlaying {
                         surface.setVideoTrackEnabled(false)
                     }
                 }
@@ -784,12 +781,20 @@ struct PlayerScreen: View {
         }
         let pip = PictureInPictureController()
         pip.onLog = { message in KazumiLogBuffer.player("画中画: \(message)") }
+        let backgroundPaused = $pausedByBackground
         pip.onFailed = { [weak surface] in
-            // 画中画没起来：**不要**停播、也**不要**关视频轨。
-            // 停播就是「回前台发现停着、也没接着播」；关掉视频轨则再也喂不出帧，
-            // 下一次退后台照样起不来小窗。这里什么都不做，让声音继续走。
-            _ = surface
-            KazumiLogBuffer.player("画中画: 启动失败，继续按后台播放走，不停播")
+            // 小窗没起来，按「后台播放」这个设置收尾，别让设置关着却在后台一直出声。
+            // 关着就停下，但标成「因为切后台停的」，回前台那条会按设置接回来
+            // ——这正是「回来发现停着没接着播」的修法；不停播只是把设置破了。
+            guard let surface else { return }
+            KazumiLogBuffer.player("画中画: 启动失败，按后台播放设置收尾")
+            if settingsStore.backgroundPlayback {
+                // 开着后台播放：只留声音，视频轨关掉，别在后台白解码。
+                surface.setVideoTrackEnabled(false)
+            } else if surface.isPlaying {
+                backgroundPaused.wrappedValue = true
+                surface.pause()
+            }
         }
         pip.onStoppedInBackground = { [weak surface] in
             // 用户从画中画窗口关掉画面、App 还在后台：没开后台音频就停声，
@@ -798,6 +803,8 @@ struct PlayerScreen: View {
             if settingsStore.backgroundPlayback {
                 surface.setVideoTrackEnabled(false)
             } else if surface.isPlaying {
+                // 跟上面一条对齐：标成「切后台停的」，回前台照设置接回来。
+                backgroundPaused.wrappedValue = true
                 surface.pause()
             }
         }
