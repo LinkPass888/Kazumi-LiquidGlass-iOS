@@ -49,6 +49,14 @@ final class KazumiAppDelegate: NSObject, UIApplicationDelegate {
         } catch {
             KazumiLog.app.error("音频会话初始化失败：\(error.localizedDescription, privacy: .public)")
         }
+
+        // 锁屏 / 灵动岛那张卡要认到「是这个 App 在放」，得显式声明一句
+        // 「我要收远程控制事件」（LP 4738）。没有这一句，系统只当我们放了一段
+        // 普通音频流：卡能出来，但点它不回这个 App，退到后台时也不按我们的
+        // 进程收（LP 4715：别的 App 点一下进 App、长按才展开，我们反过来）。
+        // 现代 iOS 真正的按钮回调走 MPRemoteCommandCenter（NowPlayingCenter），
+        // 这行是老接口，但它就是那个「显式声明」，两样都要有。
+        UIApplication.shared.beginReceivingRemoteControlEvents()
     }
 }
 
