@@ -239,6 +239,11 @@ struct PlayerScreen: View {
     // 本批新增：画面比例、控制栏自动隐藏、锁定、长按临时倍速。
     @State private var aspectRatioMode: PlayerAspectRatioMode = .automatic
     @State private var controlsVisible = true
+    /// 「正在播放」的节拍计数：250 毫秒一轮，凑到 8 轮（2 秒）同步一次。
+    @State private var nowPlayingTick = 0
+    /// 这一集是「因为切到后台才停下的」吗——只有这种暂停才在回前台时自动接上，
+    /// 用户自己按的暂停不算（LP 2026-10-29「回到前台自动播放」）。
+    @State private var pausedByBackground = false
     /// 「更多」/ 倍速面板：自己握开关，好让控制层知道菜单还开着。
     ///
     /// 系统菜单不把开合告诉代码，所以另挂了一个 `SystemMenuProbe` 看它在不在，
@@ -456,6 +461,10 @@ struct PlayerScreen: View {
             } else {
                 showControls()
             }
+            // 用户亲手按的暂停不归「回前台自动播放」管。
+            if playing {
+                pausedByBackground = false
+            }
         }
         .onChange(of: isScrubbing) { _, scrubbing in
             if scrubbing {
@@ -468,6 +477,8 @@ struct PlayerScreen: View {
         // 位置 / 时长喂进去、seek 和切集请求接出来。时间轴只查一次，
         // 用户把 AniSkip 关了就把手上这份清掉。
         .task {
+            // 控制中心那几颗键只接一次：接在画面上，它们才真能暂停、切集、拖进度。
+            configureNowPlayingCommands()
             while !Task.isCancelled {
                 try? await Task.sleep(for: .milliseconds(250))
                 guard !Task.isCancelled else { return }
@@ -482,6 +493,12 @@ struct PlayerScreen: View {
                 skipPill.duration = surface.duration
                 skipPill.isScrubbing = isScrubbing
                 skipPill.update()
+                // 「正在播放」每 2 秒同步一次进度：只在状态变化时写的话，
+                // 拖动进度、跨集以后控制中心那条进度会停在旧位置。
+                nowPlayingTick += 1
+                if nowPlayingTick % 8 == 0 {
+                    syncNowPlaying()
+                }
                 if let target = skipPill.consumeSeekTarget() {
                     surface.seek(to: target)
                 }
@@ -495,12 +512,23 @@ struct PlayerScreen: View {
         .onChange(of: scenePhase) { _, phase in
             // 进后台 / 锁屏一律放弃常亮；回前台且还在播就接回来。
             updateIdleTimer()
-            guard phase == .background else { return }
-            if !settings.backgroundPlayback, surface.isPlaying {
-                surface.pause()
-            }
-            if let controller {
-                persistProgress(controller)
+            switch phase {
+            case .background:
+                if !settings.backgroundPlayback, surface.isPlaying {
+                    pausedByBackground = true
+                    surface.pause()
+                }
+                if let controller {
+                    persistProgress(controller)
+                }
+            case .active:
+                // 「回到前台自动播放」：只接回因切后台停下的那一集。
+                if settings.resumeOnForeground, pausedByBackground {
+                    pausedByBackground = false
+                    if !surface.isPlaying { surface.play() }
+                }
+            default:
+                break
             }
         }
         .onChange(of: settings.backgroundPlayback) { _, _ in
@@ -576,6 +604,8 @@ struct PlayerScreen: View {
             }
         }
         .onDisappear {
+            // 离开播放器：控制中心不该再挂着这一集。
+            NowPlayingCenter.shared.clear()
             // 离开播放器：屏幕常亮无论如何都要还回去，不能带出这个页面。
             UIApplication.shared.isIdleTimerDisabled = false
             // 先摘掉结束回调，避免关闭播放器时的 finish 又被当成「播完」触发连播。
@@ -2860,6 +2890,71 @@ struct PlayerScreen: View {
             return
         }
         surface.pendingResumeTime = record.progressSeconds
+    }
+
+    // MARK: - 正在播放（控制中心 / 锁屏 / 灵动岛）
+
+    /// 当前这一集在控制中心里叫什么、封面用哪张。
+    /// 追番列表里有就用它，否则退到观看记录，再退到播放源里的条目名。
+    private func nowPlayingMeta(_ controller: PlayerController) -> (title: String, artwork: String) {
+        let library = environment.library
+        if let entry = library.entry(for: controller.bangumiID), !entry.displayName.isEmpty {
+            return (entry.displayName, entry.imageURL)
+        }
+        if let record = library.record(for: controller.bangumiID), !record.bangumiName.isEmpty {
+            return (record.bangumiName, record.imageURL)
+        }
+        if let name = controller.source?.itemName, !name.isEmpty {
+            return (name, "")
+        }
+        return ("Kazumi", "")
+    }
+
+    /// 把这一集的剧名、集数、封面、进度交给系统。
+    /// 系统拿它画控制中心和锁屏那张卡；灵动岛上 Apple Music 那个样子也由它决定。
+    private func syncNowPlaying() {
+        guard let controller else { return }
+        // 还没拿到片源（时长 0）且没在播时不写：控制中心不该挂一张 00:00 的空卡片。
+        // 排查记录：起播前写空卡片是模拟器 SIGTRAP 的强相关触发点（已复现多次）。
+        guard surface.duration > 0 || surface.isPlaying else { return }
+        let meta = nowPlayingMeta(controller)
+        // 注意：`controller.episodes` 是每集的**播放地址**，不是标题（Colo 4444）。
+        // 原生这边拿不到集标题，第二行就只写「第 N 话」。
+        NowPlayingCenter.shared.update(
+            title: meta.title,
+            episode: controller.currentEpisode,
+            episodeTitle: nil,
+            artworkURL: meta.artwork,
+            duration: surface.duration,
+            elapsed: surface.currentTime,
+            isPlaying: surface.isPlaying
+        )
+    }
+
+    /// 控制中心那几颗键接到画面上。只接一次；重复接会叠起来。
+    private func configureNowPlayingCommands() {
+        let center = NowPlayingCenter.shared
+        let surface = self.surface
+        center.onPlay = { [surface] in surface.play() }
+        center.onPause = { [surface] in surface.pause() }
+        center.onSeek = { [surface] position in
+            surface.pendingResumeTime = nil
+            surface.seek(to: position)
+        }
+        center.onNext = { [weak controller, surface] in
+            guard let controller, !controller.episodes.isEmpty else { return }
+            guard controller.currentEpisode < controller.episodes.count else { return }
+            surface.prepareForNewEpisode()
+            let target = controller.currentEpisode + 1
+            Task { await controller.selectEpisode(target) }
+        }
+        center.onPrevious = { [weak controller, surface] in
+            guard let controller, !controller.episodes.isEmpty else { return }
+            guard controller.currentEpisode > 1 else { return }
+            surface.prepareForNewEpisode()
+            let target = controller.currentEpisode - 1
+            Task { await controller.selectEpisode(target) }
+        }
     }
 
     // MARK: - 上一集 / 下一集

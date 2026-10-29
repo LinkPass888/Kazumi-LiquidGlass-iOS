@@ -17,6 +17,10 @@ final class KazumiAppDelegate: NSObject, UIApplicationDelegate {
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
+        // 忽略 SIGPIPE：往已经关掉的 socket 写数据时，默认行为是直接干掉整个进程
+        // （日志里的 `terminated (exit 141)` 就是 128 + 13）。流媒体解析、换集、
+        // 取消加载时连接被对端关掉是常事，不该因此把 App 杀掉。
+        signal(SIGPIPE, SIG_IGN)
         configureAudioSession()
         UITabBar.appearance().isHidden = false
         UITableView.appearance().backgroundColor = .clear

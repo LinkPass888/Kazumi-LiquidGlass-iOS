@@ -167,6 +167,10 @@ enum SettingsKey {
     static let playResume = "playResume"
     /// 后台播放，沿用原版 `SettingsKeys.backgroundPlayback` 的键名，默认关闭。
     static let backgroundPlayback = "backgroundPlayback"
+    /// 切后台时自动起画中画（LP 2026-10-29），默认开启。
+    static let backgroundAutoPiP = "backgroundAutoPiP"
+    /// 回到前台自动接着播（LP 2026-10-29），默认开启。
+    static let resumeOnForeground = "resumeOnForeground"
     /// 竖向滑动调节音量和亮度，沿用原版 `SettingsKeys.brightnessVolumeGesture` 的键名，默认开启。
     static let brightnessVolumeGesture = "brightnessVolumeGesture"
     /// 隐身模式（不保留观看记录），沿用原版 `SettingsKeys.privateMode` 的键名，默认关闭。
@@ -435,9 +439,19 @@ final class SettingsStore {
         didSet { persist(playResume, SettingsKey.playResume) }
     }
 
-    /// 退到后台或熄屏时继续播放音频（对应原版「后台播放」开关，默认关闭）。
+    /// 退到后台或熄屏时继续播放音频（设置里叫「切后台继续播放音频」，默认关闭）。
     var backgroundPlayback: Bool {
         didSet { persist(backgroundPlayback, SettingsKey.backgroundPlayback) }
+    }
+
+    /// 切到后台时自动起画中画，让画面继续看得见（默认开启）。
+    var backgroundAutoPiP: Bool {
+        didSet { persist(backgroundAutoPiP, SettingsKey.backgroundAutoPiP) }
+    }
+
+    /// 回到前台时，把「因为切后台才停下的」那一集自动接着播（默认开启）。
+    var resumeOnForeground: Bool {
+        didSet { persist(resumeOnForeground, SettingsKey.resumeOnForeground) }
     }
 
     /// 画面上竖向滑动调节亮度与音量（对应原版「滑动手势」开关，默认开启）。
@@ -753,6 +767,8 @@ final class SettingsStore {
         playSpeed = PlaybackSpeed.nearest(Self.read(defaults, SettingsKey.playSpeed, 1.0))
         playResume = Self.read(defaults, SettingsKey.playResume, true)
         backgroundPlayback = Self.read(defaults, SettingsKey.backgroundPlayback, false)
+        backgroundAutoPiP = Self.read(defaults, SettingsKey.backgroundAutoPiP, true)
+        resumeOnForeground = Self.read(defaults, SettingsKey.resumeOnForeground, true)
         brightnessVolumeGesture = Self.read(defaults, SettingsKey.brightnessVolumeGesture, true)
         privateMode = Self.read(defaults, SettingsKey.privateMode, false)
         // 秒数必须为正：备份或旧数据里若写进了 0 / 负数，快进按钮会变成空操作。
@@ -830,6 +846,8 @@ final class SettingsStore {
         autoPlayNext = true
         playResume = true
         backgroundPlayback = false
+        backgroundAutoPiP = true
+        resumeOnForeground = true
         brightnessVolumeGesture = true
         privateMode = false
         playSpeed = 1.0

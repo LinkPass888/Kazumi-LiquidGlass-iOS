@@ -92,6 +92,8 @@ extension SettingsStore {
             SettingsKey.autoSkipOpEd,
             SettingsKey.playResume,
             SettingsKey.backgroundPlayback,
+            SettingsKey.backgroundAutoPiP,
+            SettingsKey.resumeOnForeground,
             SettingsKey.brightnessVolumeGesture,
             SettingsKey.privateMode,
             SettingsKey.buttonSkipTime,
@@ -148,6 +150,8 @@ extension SettingsStore {
             (SettingsKey.playSpeed, .double(playSpeed)),
             (SettingsKey.playResume, .bool(playResume)),
             (SettingsKey.backgroundPlayback, .bool(backgroundPlayback)),
+            (SettingsKey.backgroundAutoPiP, .bool(backgroundAutoPiP)),
+            (SettingsKey.resumeOnForeground, .bool(resumeOnForeground)),
             (SettingsKey.brightnessVolumeGesture, .bool(brightnessVolumeGesture)),
             (SettingsKey.privateMode, .bool(privateMode)),
             (SettingsKey.buttonSkipTime, .int(buttonSkipTime)),
@@ -288,6 +292,14 @@ extension SettingsStore {
         }
         if let flag = value(SettingsKey.backgroundPlayback)?.boolValue {
             backgroundPlayback = flag
+            restored += 1
+        }
+        if let flag = value(SettingsKey.backgroundAutoPiP)?.boolValue {
+            backgroundAutoPiP = flag
+            restored += 1
+        }
+        if let flag = value(SettingsKey.resumeOnForeground)?.boolValue {
+            resumeOnForeground = flag
             restored += 1
         }
         if let flag = value(SettingsKey.brightnessVolumeGesture)?.boolValue {

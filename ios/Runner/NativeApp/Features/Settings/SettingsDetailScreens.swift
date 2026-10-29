@@ -58,7 +58,11 @@ struct PlayerSettingsScreen: View {
             Section {
                 Group {
                     // 顺序照 main 的「播放行为」一段（Ato 2026-10-24：这三颗提到第一批）。
-                    Toggle("后台播放", isOn: backgroundPlaybackBinding)
+                    // LP 2026-10-29：这一项改名说清楚它只是「继续出声」，画面不会跟着走；
+                    // 下面两颗就是切后台/回前台的两条路。
+                    Toggle("切后台继续播放音频", isOn: backgroundPlaybackBinding)
+                    Toggle("后台自动画中画", isOn: backgroundAutoPiPBinding)
+                    Toggle("回到前台自动播放", isOn: resumeOnForegroundBinding)
                     Toggle("自动连播", isOn: autoPlayNextBinding)
                     Toggle("自动跳转到上次播放位置", isOn: playResumeBinding)
                     Toggle("竖向滑动调音量和亮度", isOn: brightnessVolumeGestureBinding)
@@ -218,6 +222,14 @@ struct PlayerSettingsScreen: View {
 
     private var backgroundPlaybackBinding: Binding<Bool> {
         Binding(get: { settings.backgroundPlayback }, set: { settings.backgroundPlayback = $0 })
+    }
+
+    private var backgroundAutoPiPBinding: Binding<Bool> {
+        Binding(get: { settings.backgroundAutoPiP }, set: { settings.backgroundAutoPiP = $0 })
+    }
+
+    private var resumeOnForegroundBinding: Binding<Bool> {
+        Binding(get: { settings.resumeOnForeground }, set: { settings.resumeOnForeground = $0 })
     }
 
     private var brightnessVolumeGestureBinding: Binding<Bool> {
