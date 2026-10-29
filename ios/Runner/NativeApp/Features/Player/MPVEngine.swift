@@ -110,6 +110,10 @@ final class MPVEngine {
         setOption("keep-open", "yes")
         setOption("idle", "yes")
         setOption("audio-display", "no")
+        // 独占音频：mpv 的 audiounit 输出每次初始化音频都会自己重设一次会话类别，
+        // 而它默认加的是 `mixWithOthers`——混音的会话不会被 iOS 当成「正在播放」，
+        // 控制中心 / 锁屏那张卡就永远不出来。开了这个，它不再加 mixWithOthers。
+        setOption("audio-exclusive", "yes")
         // 模拟器没有硬解，强行开 videotoolbox 会黑屏（MPVKit demo 同样的判断）。
         // 真机用 auto-safe，跟 main 的 `hardwareDecoder` 默认值一致：它是「只在
         // 确认安全时才开零拷贝互操作」的那一档，比硬写 videotoolbox 稳——
@@ -221,6 +225,20 @@ final class MPVEngine {
 
     func pause() {
         setFlag("pause", true)
+    }
+
+    /// 后台播放时把画面通道关掉、回前台再打开。
+    ///
+    /// 进后台 iOS 不再给画面算渲染周期（GLKView 的 draw 不会发生），但音频时钟
+    /// 因为有 `UIBackgroundModes: audio` 会一直走——画面就停在被冻结的那一帧，
+    /// 声音已经跑远了，回前台就是音画不同步。关掉 `vid` 让 mpv 只走声音；
+    /// 回来打开 `vid` 时，mpv 会在当前音频位置重新选视频轨，画面自己追上声音，
+    /// 不需要 seek，也就不会有一声破音。
+    func setVideoTrackEnabled(_ enabled: Bool) {
+        setOptionForPlayback("vid", enabled ? "auto" : "no")
+        if enabled {
+            glView?.setNeedsDisplay()
+        }
     }
 
     func setSpeed(_ rate: Float) {

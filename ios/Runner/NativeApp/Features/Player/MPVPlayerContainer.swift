@@ -73,6 +73,11 @@ final class PlayerSurfaceModel {
         isPlaying = false
     }
 
+    /// 后台播放时把画面通道关掉，回前台再打开（原因见 `MPVEngine.setVideoTrackEnabled`）。
+    func setVideoTrackEnabled(_ enabled: Bool) {
+        engine?.setVideoTrackEnabled(enabled)
+    }
+
     /// 抓当前这一帧（截图）。mpv 自己出 PNG，带上已经挂好的超分滤镜。
     func captureFrame() async -> UIImage? {
         await engine?.captureFrame()

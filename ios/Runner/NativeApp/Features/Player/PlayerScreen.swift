@@ -521,10 +521,20 @@ struct PlayerScreen: View {
                     pausedByBackground = true
                     surface.pause()
                 }
+                // 开着后台播放：声音继续，但画面在后台本来就不会重绘，
+                // 留在那只会让回来时音画对不上。先只留声音。
+                if settings.backgroundPlayback, surface.isPlaying {
+                    surface.setVideoTrackEnabled(false)
+                }
                 if let controller {
                     persistProgress(controller)
                 }
             case .active:
+                // 后台只跑了声音：回前台把画面接回来，mpv 按当前音频位置重新选轨，
+                // 画面直接对上声音（不 seek，所以不会有一声破音）。
+                if settings.backgroundPlayback {
+                    surface.setVideoTrackEnabled(true)
+                }
                 // 「回到前台自动播放」：只接回因切后台停下的那一集。
                 if settings.resumeOnForeground, pausedByBackground {
                     pausedByBackground = false
@@ -533,9 +543,6 @@ struct PlayerScreen: View {
             default:
                 break
             }
-        }
-        .onChange(of: settings.backgroundPlayback) { _, _ in
-            applyAudioSessionPolicy()
         }
         .onChange(of: isEditingSkipSeconds) { _, editing in
             if editing {
@@ -609,6 +616,7 @@ struct PlayerScreen: View {
         .onDisappear {
             // 离开播放器：控制中心不该再挂着这一集。
             NowPlayingCenter.shared.clear()
+            restoreAudioSessionAfterPlayer()
             // 离开播放器：屏幕常亮无论如何都要还回去，不能带出这个页面。
             UIApplication.shared.isIdleTimerDisabled = false
             // 先摘掉结束回调，避免关闭播放器时的 finish 又被当成「播完」触发连播。
@@ -1607,16 +1615,22 @@ struct PlayerScreen: View {
         }
     }
 
-    /// 音频会话：只有「后台播放」开着才要 .playback（熄屏、切出后台继续出声）；
-    /// 关着就退回默认，免得静音键不起作用。
+    /// 音频会话：播放器一打开就是 .playback。
+    ///
+    /// 系统只把「播放类别」的 app 当成正在播放的播放器；不是这个类别，
+    /// 控制中心、锁屏、灵动岛都不会有那张卡片（LP 4491 就是这里）。
+    /// 静音键管的是铃声和提示音，不该管视频音量——Apple Music 也一样。
+    /// 「切后台继续出声」是另一件事，由 scenePhase 那边决定要不要暂停。
+    /// 来电中断和拔耳机也挂在同一处，见 `PlayerAudioSession`。
     private func applyAudioSessionPolicy() {
-        let session = AVAudioSession.sharedInstance()
-        if settings.backgroundPlayback {
-            try? session.setCategory(.playback, mode: .moviePlayback, options: [])
-            try? session.setActive(true)
-        } else {
-            try? session.setCategory(.soloAmbient, mode: .default, options: [])
-        }
+        PlayerAudioSession.shared.surface = surface
+        PlayerAudioSession.shared.activate()
+    }
+
+    /// 离开播放器：退回默认类别，别让整个 App 一直占着播放位。
+    private func restoreAudioSessionAfterPlayer() {
+        PlayerAudioSession.shared.surface = nil
+        PlayerAudioSession.shared.restore()
     }
 
     /// 屏幕常亮：只在「真的在播」且 App 在前台时开；暂停、缓冲、播完、退后台、离开播放器全部恢复默认，
@@ -2917,6 +2931,9 @@ struct PlayerScreen: View {
     /// 系统拿它画控制中心和锁屏那张卡；灵动岛上 Apple Music 那个样子也由它决定。
     private func syncNowPlaying() {
         guard let controller else { return }
+        // 起播后再校一次音频会话：mpv 的音频输出会自己重设类别，
+        // 一旦它盖成混音，系统就不会把我们当「正在播放」。只查不写，便宜。
+        PlayerAudioSession.shared.reapplyIfNeeded()
         // 还没拿到片源（时长 0）且没在播时不写：控制中心不该挂一张 00:00 的空卡片。
         guard surface.duration > 0 || surface.isPlaying else { return }
         let meta = nowPlayingMeta(controller)
