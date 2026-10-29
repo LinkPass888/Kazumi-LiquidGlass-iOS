@@ -35,8 +35,14 @@ enum WebDAVLegacy {
                 let images: [String: String]?
             }
 
+            /// 原版每集的进度：episode / road / progressMs / updatedAtMs
+            /// （lib/modules/history/history_sync.dart 的 progressFromJson）。
             struct Progress: Decodable {
+                let episode: Int?
+                let road: Int?
                 let progressMs: Double?
+                /// 毫秒；原版允许缺（默认 0），缺的时候用这一条的 lastWatchTime 兑。
+                let updatedAtMs: Double?
             }
 
             let bangumiItem: Bangumi
@@ -71,13 +77,25 @@ enum WebDAVLegacy {
         let snapshot = try JSONDecoder().decode(Snapshot.self, from: data)
         let records: [WatchRecord] = snapshot.histories.compactMap { item in
             let episode = item.lastWatchEpisode ?? 0
-            let progressMs = item.progresses?[String(episode)]?.progressMs ?? 0
             let updatedMs = item.lastWatchTime ?? 0
             guard item.bangumiItem.id > 0 else { return nil }
             let nameCn = item.bangumiItem.nameCn?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             let name = item.bangumiItem.name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             let images = item.bangumiItem.images ?? [:]
             let cover = images["large"] ?? images["common"] ?? images["medium"] ?? images["small"] ?? ""
+            // 原版一份条目里存着这部番看过的每一集，全部接过来：
+            // 只接最后那一集的话，同步完本机就只剩一集的进度了。
+            var progresses: [String: EpisodeProgress] = [:]
+            for (slot, progress) in item.progresses ?? [:] {
+                let number = progress.episode ?? Int(slot) ?? 0
+                guard number > 0 else { continue }
+                progresses[String(number)] = EpisodeProgress(
+                    episode: number,
+                    road: progress.road ?? 0,
+                    progressSeconds: max(progress.progressMs ?? 0, 0) / 1000,
+                    updatedAt: Date(timeIntervalSince1970: max(progress.updatedAtMs ?? updatedMs, 0) / 1000)
+                )
+            }
             return WatchRecord(
                 bangumiID: item.bangumiItem.id,
                 bangumiName: nameCn.isEmpty ? name : nameCn,
@@ -85,10 +103,10 @@ enum WebDAVLegacy {
                 sourceRuleName: item.adapterName ?? "",
                 episodeTitle: item.lastWatchEpisodeName ?? "",
                 episodeNumber: episode,
-                progressSeconds: max(progressMs, 0) / 1000,
                 // 原版快照不记这一集的时长，留 0；播放器下次播到这儿会补上。
                 durationSeconds: 0,
-                updatedAt: Date(timeIntervalSince1970: max(updatedMs, 0) / 1000)
+                updatedAt: Date(timeIntervalSince1970: max(updatedMs, 0) / 1000),
+                progresses: progresses
             )
         }
         return LegacyHistory(records: records, raw: data)
@@ -238,27 +256,50 @@ enum WebDAVLegacy {
 
         for (offset, record) in records.enumerated() where record.bangumiID > 0 {
             progress?(offset, records.count)
-            let key = "\(record.sourceRuleName)\(record.bangumiID)::online"
+            let key = Self.entryKey(for: record, in: histories, index: index)
             let updatedMs = Int(record.updatedAt.timeIntervalSince1970 * 1000)
             let episode = record.episodeNumber
-            let version = version(updatedMs)
-            let slot = String(episode)
-            let progress: [String: Any] = [
-                "episode": episode,
-                "road": 0,
-                "progressMs": Int(record.progressSeconds * 1000),
-                "updatedAtMs": updatedMs
-            ]
+            // 局部变量不能叫 `version`：它会盖住下面用的那个静态方法 `version(_:)`。
+            let itemVersion = version(updatedMs)
+            // 这一份记录里看过的每一集都要写回去（main 的快照就是按集存的）：
+            // 只写最后那一集，会把原版存着的别的集的进度在本机这边「看不出看过」。
+            // 线路号取那一集自己的，不再写死 0。
+            var perEpisode = record.progresses
+            let lastSlot = String(episode)
+            if perEpisode[lastSlot] == nil, episode > 0 {
+                // 兜底：这份记录一份 progresses 都没有（老格式 0 进度那种），
+                // 最后看的那一集照老格式的字段写回去，别让云盘上少一条。
+                perEpisode[lastSlot] = EpisodeProgress(
+                    episode: episode,
+                    road: record.roadIndex,
+                    progressSeconds: record.progressSeconds,
+                    updatedAt: record.updatedAt
+                )
+            }
+            let progresses: [String: [String: Any]] = perEpisode.reduce(into: [:]) { result, pair in
+                let entry = pair.value
+                result[pair.key] = [
+                    "episode": entry.episode,
+                    "road": entry.road,
+                    "progressMs": Int(entry.progressSeconds * 1000),
+                    "updatedAtMs": Int(entry.updatedAt.timeIntervalSince1970 * 1000)
+                ]
+            }
 
             if let position = index[key] {
                 var item = histories[position]
-                var progresses = item["progresses"] as? [String: Any] ?? [:]
-                let previous = ms((progresses[slot] as? [String: Any])?["updatedAtMs"])
-                if previous <= Double(updatedMs) {
-                    progresses[slot] = progress
-                    item["progresses"] = progresses
-                    var versions = progressVersions[key] as? [String: Any] ?? [:]
-                    versions[slot] = version
+                var cloudProgresses = item["progresses"] as? [String: Any] ?? [:]
+                var versions = progressVersions[key] as? [String: Any] ?? [:]
+                for (slot, progress) in progresses {
+                    // 同一集：云盘上那份更新就不动（只保留更新的那边）。
+                    let previous = ms((cloudProgresses[slot] as? [String: Any])?["updatedAtMs"])
+                    let incoming = ms(progress["updatedAtMs"])
+                    guard previous <= incoming else { continue }
+                    cloudProgresses[slot] = progress
+                    versions[slot] = version(Int(incoming))
+                }
+                if !progresses.isEmpty {
+                    item["progresses"] = cloudProgresses
                     progressVersions[key] = versions
                 }
                 if ms(item["lastWatchTime"]) <= Double(updatedMs) {
@@ -266,7 +307,7 @@ enum WebDAVLegacy {
                     item["lastWatchTime"] = updatedMs
                     item["lastWatchEpisodeName"] = record.episodeTitle
                     item["bangumiItem"] = fillItem(item["bangumiItem"] as? [String: Any] ?? [:], from: record)
-                    itemVersions[key] = version
+                    itemVersions[key] = itemVersion
                 }
                 histories[position] = item
             } else {
@@ -279,11 +320,13 @@ enum WebDAVLegacy {
                     "lastWatchEpisodeName": record.episodeTitle,
                     "entryKind": "online",
                     "episodePageUrl": "",
-                    "progresses": [slot: progress]
+                    "progresses": progresses
                 ] as [String: Any])
                 index[key] = histories.count - 1
-                itemVersions[key] = version
-                progressVersions[key] = [slot: version]
+                itemVersions[key] = itemVersion
+                progressVersions[key] = progresses.reduce(into: [String: Any]()) { result, pair in
+                    result[pair.key] = version(Int(ms(pair.value["updatedAtMs"])))
+                }
             }
         }
 
@@ -305,6 +348,30 @@ enum WebDAVLegacy {
         let rule = item["adapterName"] as? String ?? ""
         let kind = item["entryKind"] as? String ?? "online"
         return "\(rule)\(id)::\(kind)"
+    }
+
+    /// 写回时这条本机记录该落到云盘哪一条目上。
+    ///
+    /// 正常就是「规则 + 番剧」的键。但迁移过来的老格式记录没存来源规则
+    /// （`sourceRuleName` 是空串），这时若直接追加，云盘上同一部番会多出
+    /// 一条空规则的重复条目（原版列表里就看得到两部一样的番）。
+    /// 所以规则名为空、且云盘上确实有这部番时，按番剧 ID 找一条认下来：
+    /// 多条时取最近看的那条（跟 `record(for:)` 跨规则取最新的语义一致）。
+    private static func entryKey(
+        for record: WatchRecord,
+        in histories: [[String: Any]],
+        index: [String: Int]
+    ) -> String {
+        if !record.sourceRuleName.isEmpty || index[record.id] != nil {
+            return record.id
+        }
+        let matches = histories.filter { item in
+            guard let bangumi = item["bangumiItem"] as? [String: Any] else { return false }
+            return Int(ms(bangumi["id"])) == record.bangumiID
+        }
+        let newest = matches.max { ms($0["lastWatchTime"]) < ms($1["lastWatchTime"]) }
+        if let newest, let key = entryKey(newest) { return key }
+        return record.id
     }
 
     /// 只在缺名字、缺封面时补，不改原版已经存下的番剧资料。

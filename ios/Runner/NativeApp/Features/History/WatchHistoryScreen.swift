@@ -22,6 +22,14 @@ struct WatchHistoryScreen: View {
             .sorted { $0.updatedAt > $1.updatedAt }
     }
 
+    /// 同一部番有好几份记录（不同规则各记一份）时才在卡片上写规则名，
+    /// 只有一份的时候写出来是噪声。
+    private func showRuleName(for record: WatchRecord) -> Bool {
+        records.contains {
+            $0.bangumiID == record.bangumiID && $0.id != record.id
+        }
+    }
+
     var body: some View {
         Group {
             if records.isEmpty {
@@ -66,7 +74,7 @@ struct WatchHistoryScreen: View {
         .confirmationDialog("确定清空全部观看历史？", isPresented: $isConfirmingClear, titleVisibility: .visible) {
             Button("清空全部", role: .destructive) {
                 for record in records {
-                    library.removeHistory(bangumiID: record.bangumiID)
+                    library.removeHistory(recordID: record.id)
                 }
             }
             Button("取消", role: .cancel) {}
@@ -98,6 +106,15 @@ struct WatchHistoryScreen: View {
                         .foregroundStyle(.primary)
                         .lineLimit(2)
                         .multilineTextAlignment(.leading)
+
+                    // 同一部番在别的规则下还有一份记录时，写上规则名，
+                    // 不然两行一模一样的卡片分不清哪个是哪个源。
+                    if showRuleName(for: record), !record.sourceRuleName.isEmpty {
+                        Text(record.sourceRuleName)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
 
                     Text(episodeLine(for: record))
                         .font(.footnote)
@@ -148,7 +165,7 @@ struct WatchHistoryScreen: View {
             ))
             }
             Button("删除记录", role: .destructive) {
-                library.removeHistory(bangumiID: record.bangumiID)
+                library.removeHistory(recordID: record.id)
             }
         }
     }

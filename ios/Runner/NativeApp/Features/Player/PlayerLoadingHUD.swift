@@ -23,15 +23,16 @@ struct PlayerLoadingHUD: View {
             ProgressView()
                 .tint(.white)
                 .scaleEffect(1.2)
-            if let speedText {
-                // 等宽数字：不然「9.8 MB/s」跳成「10.0 MB/s」时整行会左右抖一下。
-                Text(speedText)
-                    .font(.caption2.monospacedDigit())
-                    .foregroundStyle(.white.opacity(0.75))
-                    .transition(.opacity)
-            }
+            // 这一行**永远占着位置**，只是拿不到速度时透明（LP 4870：一开始有字时位置对，
+            // 字一没圈就往下掉到 1/4 线上）。圈是按整块的圆心摆在 1/4 的，少一行字整块
+            // 就矮一截、圆心跟着往下走，看起来就是「跳了一下」。
+            // 等宽数字：不然「9.8 MB/s」跳成「10.0 MB/s」时整行会左右抖一下。
+            Text(speedText ?? "0 KB/s")
+                .font(.caption2.monospacedDigit())
+                .foregroundStyle(.white.opacity(0.75))
+                .opacity(speedText == nil ? 0 : 1)
+                .animation(.easeOut(duration: 0.15), value: speedText)
         }
-        .animation(.easeOut(duration: 0.15), value: speedText)
     }
 
     /// 「1.2 MB/s」「860 KB/s」。拿不到（0、非数、小到没有意义）时返回 nil，

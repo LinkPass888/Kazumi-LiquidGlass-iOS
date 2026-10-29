@@ -875,9 +875,10 @@ struct PlayerScreen: View {
 
             // 加载符号：一颗系统圈 + 下面一行网速（LP 4810）。
             //
-            // 什么时候收：时间轴真的走起来（`hasStartedPlayback`），不是「第一帧画上屏」
-            // ——后者之后还有一小段等音画对齐的黑屏，圈先收了人就在那儿干等，
-            // 就是「不转圈了还要等一会才能看」。
+            // 什么时候收：引擎推到「在播」这个相位（第一帧画过、或者时间轴已经走起来），
+            // 不是「第一帧画上屏」那一刻——后者之后还有一小段等音画对齐的黑屏，
+            // 圈先收了人就在那儿干等，就是「不转圈了还要等一会才能看」。
+            // 判据不看一次性回调（Ato 4867），理由见 `MPVPlayerContainer.isLoadingFirstFrame`。
             // 中途卡住（网卡缓冲）、拖完进度在 seek，都走同一颗（LP 4810 第三句）。
             if showsLoadingHUD,
                surface.errorMessage == nil,
@@ -3249,10 +3250,9 @@ struct PlayerScreen: View {
     ///
     /// 三件事都算「在加载」：起播还没真正开始、中途卡住（网卡缓冲）、正在 seek。
     ///
-    /// `hasStartedPlayback` 是**锁存**的：这一集只要真播起来过就一直为 true，
-    /// 所以播到一半按暂停、播完停在结尾（`keep-open`）都不会再转圈（Fuck 4816 提的那两种）。
-    /// 剩下唯一的坑是「第一帧到了但没播」（打开就暂停着）：那时画面已经在了，
-    /// 不该用圈盖住它，`hasFirstFrame && corePaused` 直接放行。
+    /// 判据只看引擎推过来的相位（`isLoadingFirstFrame`）：打开中、等首帧才转，
+    /// 到「在播」就收，播完 / 暂停 / 拖进度各按自己的标志走（Fuck 4816 提的那两种）。
+    /// 唯一的例外是「有画面但暂停着」：那时画面已经在了，不该用圈盖住它。
     private var showsLoadingHUD: Bool {
         // 缓冲 / 拖进度：短暂提示，跟首帧那套逻辑分开（LP 4818 第 7 条）。
         if surface.isSeeking || surface.isStalled { return true }
@@ -4001,20 +4001,21 @@ private func persistWatchProgress(
     let entry = library.entry(for: controller.bangumiID)
     let storedName = source?.itemName ?? ""
     let storedImage = entry?.imageURL ?? ""
-    library.upsert(WatchRecord(
+    // 走 store 那一个入口写进度：同一「规则 + 番剧」只留一份记录，
+    // 每一集各带自己的线路号（main 的 History.progresses）。
+    library.recordWatch(
         bangumiID: controller.bangumiID,
         bangumiName: storedName,
         imageURL: storedImage,
-        sourceRuleName: source?.pluginName ?? "",
-        // 下次从详情页「开始观看」时按这条线路接上（main 记线路的原因）。
-        roadIndex: controller.selectedRoad,
+        pluginName: source?.pluginName ?? "",
+        episodeNumber: controller.currentEpisode,
         // 原生这边只有 URL，没有集标题，留空由历史页回退成「第 N 话」。
         episodeTitle: "",
-        episodeNumber: controller.currentEpisode,
-        progressSeconds: progress,
-        durationSeconds: duration.isFinite && duration > 0 ? duration : 0,
-        updatedAt: Date()
-    ))
+        // 下次从详情页「开始观看」时按这条线路接上（main 记线路的原因）。
+        road: controller.selectedRoad,
+        position: progress,
+        duration: duration.isFinite && duration > 0 ? duration : 0
+    )
 
     // 没追过番的条目，名字和封面在上面都是空串，记录就成了空壳。
     // Colo 3554：缺的那几样用番剧 ID 向 Bangumi 取一次、写回同一条记录；

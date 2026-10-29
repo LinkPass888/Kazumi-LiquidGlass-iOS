@@ -109,20 +109,67 @@ struct LibraryEntry: Identifiable, Codable, Hashable, Sendable {
     var collectType: CollectType { CollectType(rawValue: type) ?? .none }
 }
 
-/// 观看进度（对应原项目 history 记录）。
+/// 单集进度：一集一条，自己带线路号。
+///
+/// 对应 main 的 `Progress`（lib/modules/history/history_module.dart）：
+/// episode / road / progressMs / updatedAtMs。main 那边一条历史按
+/// 「规则名 + 番剧」存，`progresses` 里装着看过的每一集；本端照抄这套形状，
+/// 云盘上那份 `history/snapshot.json` 才能两边互读（见 `WebDAVLegacy`）。
+struct EpisodeProgress: Codable, Hashable, Sendable {
+    var episode: Int
+    var road: Int
+    var progressSeconds: Double
+    var updatedAt: Date
+}
+
+/// 观看记录（对应 main 的 `History`：一条 = 一个规则 + 一部番）。
+///
+/// 主键是「规则名 + 番剧 ID」（`id`），不是番剧 ID：同一部番在不同规则下
+/// 集数编号不一定一样，各自记一份（LP 4844「续播按 main 的方法」）。
+/// 每一集的进度在 `progresses` 里，各带自己的线路号——换线路看同一集时
+/// 线路号跟着这一集走，不像老格式那样整条记录只有一个 `roadIndex`。
 struct WatchRecord: Identifiable, Codable, Hashable, Sendable {
-    var id: Int { bangumiID }
+    /// 跟 main 的 `History.scopedKey` 同一个写法：`<规则名><番剧ID>::online`。
+    var id: String { "\(sourceRuleName)\(bangumiID)::online" }
     var bangumiID: Int
     var bangumiName: String
     var imageURL: String
     var sourceRuleName: String
-    /// 上次走的是第几条线路。老记录没有这一项（`nil`）就按第一条算，不迁移数据。
-    var roadIndex: Int? = nil
     var episodeTitle: String
     var episodeNumber: Int
-    var progressSeconds: Double
     var durationSeconds: Double
     var updatedAt: Date
+    /// 集号 → 那一集的进度。键是 `String(episode)`，跟 main 的快照里
+    /// `progresses` 的键一致，这样同一份 JSON 两边都能读。
+    var progresses: [String: EpisodeProgress]
+
+    init(
+        bangumiID: Int,
+        bangumiName: String,
+        imageURL: String,
+        sourceRuleName: String,
+        episodeTitle: String,
+        episodeNumber: Int,
+        durationSeconds: Double,
+        updatedAt: Date,
+        progresses: [String: EpisodeProgress] = [:]
+    ) {
+        self.bangumiID = bangumiID
+        self.bangumiName = bangumiName
+        self.imageURL = imageURL
+        self.sourceRuleName = sourceRuleName
+        self.episodeTitle = episodeTitle
+        self.episodeNumber = episodeNumber
+        self.durationSeconds = durationSeconds
+        self.updatedAt = updatedAt
+        self.progresses = progresses
+    }
+
+    /// 上次看的那一集走的是第几条线路；老数据没记就是第一条。
+    var roadIndex: Int { progresses[String(episodeNumber)]?.road ?? 0 }
+
+    /// 上次看的那一集停在多少秒。
+    var progressSeconds: Double { progresses[String(episodeNumber)]?.progressSeconds ?? 0 }
 
     var fraction: Double {
         guard durationSeconds > 0 else { return 0 }
@@ -131,6 +178,59 @@ struct WatchRecord: Identifiable, Codable, Hashable, Sendable {
 
     var isFinished: Bool {
         durationSeconds > 0 && durationSeconds - progressSeconds <= 5
+    }
+
+    /// 读回时兼容两种形状：
+    /// * 新格式有 `progresses`，直接用；
+    /// * 老格式（本端旧文件、旧备份）只有 `episodeNumber` / `progressSeconds` /
+    ///   `roadIndex` 三个平铺字段，这里现造一条 `EpisodeProgress` 出来，
+    ///   进度不会在读回的那一刻丢掉。
+    ///
+    /// 编码仍走合成实现（`progresses` 一起写），老版本读不了新文件是预期的。
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        bangumiID = try container.decodeIfPresent(Int.self, forKey: .bangumiID) ?? 0
+        bangumiName = try container.decodeIfPresent(String.self, forKey: .bangumiName) ?? ""
+        imageURL = try container.decodeIfPresent(String.self, forKey: .imageURL) ?? ""
+        sourceRuleName = try container.decodeIfPresent(String.self, forKey: .sourceRuleName) ?? ""
+        episodeTitle = try container.decodeIfPresent(String.self, forKey: .episodeTitle) ?? ""
+        episodeNumber = try container.decodeIfPresent(Int.self, forKey: .episodeNumber) ?? 0
+        durationSeconds = try container.decodeIfPresent(Double.self, forKey: .durationSeconds) ?? 0
+        updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? Date.distantPast
+        var map = try container.decodeIfPresent([String: EpisodeProgress].self, forKey: .progresses) ?? [:]
+        let legacyRoad = try container.decodeIfPresent(Int.self, forKey: .legacyRoadIndex) ?? 0
+        let legacySeconds = try container.decodeIfPresent(Double.self, forKey: .legacyProgressSeconds) ?? 0
+        if map[String(episodeNumber)] == nil, episodeNumber > 0, legacySeconds > 0 || legacyRoad > 0 {
+            map[String(episodeNumber)] = EpisodeProgress(
+                episode: episodeNumber,
+                road: legacyRoad,
+                progressSeconds: legacySeconds,
+                updatedAt: updatedAt
+            )
+        }
+        progresses = map
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case bangumiID, bangumiName, imageURL, sourceRuleName
+        case episodeTitle, episodeNumber, durationSeconds, updatedAt, progresses
+        /// 老格式平铺的两个字段，只为读；写出去的键里没有它们。
+        case legacyProgressSeconds = "progressSeconds"
+        case legacyRoadIndex = "roadIndex"
+    }
+
+    /// 写出去的键跟合成实现完全一样（多出来的两个老格式键只进读、不进写）。
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(bangumiID, forKey: .bangumiID)
+        try container.encode(bangumiName, forKey: .bangumiName)
+        try container.encode(imageURL, forKey: .imageURL)
+        try container.encode(sourceRuleName, forKey: .sourceRuleName)
+        try container.encode(episodeTitle, forKey: .episodeTitle)
+        try container.encode(episodeNumber, forKey: .episodeNumber)
+        try container.encode(durationSeconds, forKey: .durationSeconds)
+        try container.encode(updatedAt, forKey: .updatedAt)
+        try container.encode(progresses, forKey: .progresses)
     }
 }
 
@@ -198,14 +298,96 @@ final class LibraryStore {
     /// 一致（LP 4844「续播按 main 的方法」）：不同源的集数编号不一定一样，不跨源记。
     /// 越界（线路不够、集数超过那条线路的长度）由播放器判，判不成立就整条不用。
     func resumePoint(for bangumiID: Int, pluginName: String) -> (episode: Int, road: Int)? {
-        guard let record = history.first(where: {
-            $0.bangumiID == bangumiID && $0.sourceRuleName == pluginName
-        }), record.episodeNumber > 0 else { return nil }
-        return (record.episodeNumber, record.roadIndex ?? 0)
+        guard let record = self.record(for: bangumiID, pluginName: pluginName),
+              record.episodeNumber > 0 else { return nil }
+        return (record.episodeNumber, record.roadIndex)
     }
 
+    /// 这部剧最近看的那一条记录（跨规则取 `updatedAt` 最新的那一份）。
+    ///
+    /// 详情页 / 播放器只关心「这部剧看到哪儿了」，规则名不同就比不出来，
+    /// 所以这里不限定规则，跟老格式「一部番只有一条记录」时的结果一致。
     func record(for bangumiID: Int) -> WatchRecord? {
-        history.first { $0.bangumiID == bangumiID }
+        history.filter { $0.bangumiID == bangumiID }.max { $0.updatedAt < $1.updatedAt }
+    }
+
+    /// 这部剧在这条规则上的那一份记录。
+    func record(for bangumiID: Int, pluginName: String) -> WatchRecord? {
+        history.first { $0.bangumiID == bangumiID && $0.sourceRuleName == pluginName }
+    }
+
+    /// 写一次播放进度（播放器唯一该用的入口）。
+    ///
+    /// 找到（或新建）「这条规则 + 这部番」那一份记录：
+    /// * 这一集的进度按 `updatedAt` 比，新的才盖（换集重播时写回来的旧事件不盖掉新进度）；
+    /// * 最后看的那一集、集数、集标题、时间、时长跟着这次写；
+    /// * 番剧名 / 封面只在还空着的时候填（Colo 3554：不拿空的把已有值冲掉）。
+    /// 老格式那部番在别的规则上留下的记录不受影响，也不删。
+    func recordWatch(
+        bangumiID: Int,
+        bangumiName: String,
+        imageURL: String,
+        pluginName: String,
+        episodeNumber: Int,
+        episodeTitle: String,
+        road: Int,
+        position: Double,
+        duration: Double,
+        at date: Date = Date()
+    ) {
+        let slot = String(episodeNumber)
+        // 先找「这条规则 + 这部番」那一份。
+        var storedIndex = history.firstIndex {
+            $0.bangumiID == bangumiID && $0.sourceRuleName == pluginName
+        }
+        if storedIndex == nil, !pluginName.isEmpty {
+            // 迁移过来的老格式记录没存来源规则（空串）。这次播放用的规则就是它的来源，
+            // 认下来沿用那一份；不认的话同一部番会在历史列表里出现两遍。
+            let emptyRule = history.indices.filter {
+                history[$0].bangumiID == bangumiID && history[$0].sourceRuleName.isEmpty
+            }
+            if emptyRule.count == 1 { storedIndex = emptyRule[0] }
+        }
+        var record = storedIndex.map { history[$0] } ?? WatchRecord(
+            bangumiID: bangumiID,
+            bangumiName: bangumiName,
+            imageURL: imageURL,
+            sourceRuleName: pluginName,
+            episodeTitle: episodeTitle,
+            episodeNumber: episodeNumber,
+            durationSeconds: duration,
+            updatedAt: date,
+            progresses: [:]
+        )
+        if record.sourceRuleName.isEmpty { record.sourceRuleName = pluginName }
+        if let existing = record.progresses[slot], existing.updatedAt > date {
+            // 这一集已经有更新的进度：这次只是补最后看的那一集 / 时间，不盖进度。
+        } else {
+            record.progresses[slot] = EpisodeProgress(
+                episode: episodeNumber,
+                road: road,
+                progressSeconds: position,
+                updatedAt: date
+            )
+        }
+        record.episodeNumber = episodeNumber
+        record.episodeTitle = episodeTitle
+        record.updatedAt = date
+        record.durationSeconds = duration
+        if record.bangumiName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !bangumiName.isEmpty {
+            record.bangumiName = bangumiName
+        }
+        if record.imageURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !imageURL.isEmpty {
+            record.imageURL = imageURL
+        }
+        if let storedIndex {
+            history[storedIndex] = record
+        } else if let index = history.firstIndex(where: { $0.id == record.id }) {
+            history[index] = record
+        } else {
+            history.insert(record, at: 0)
+        }
+        save()
     }
 
     // MARK: - 持久化
@@ -292,9 +474,13 @@ final class LibraryStore {
         save()
     }
 
+    /// 写一条观看记录。同一条（规则 + 番剧）已经有一份时并起来：
+    /// `progresses` 求并集、同一集新的赢，最后看的那一集取 `updatedAt` 新的那整条；
+    /// 不是拿新的整条盖掉旧的——那样会把这部番看过的其它集的进度抹了
+    /// （main 那边一条记录里就装着每一集的进度）。
     func upsert(_ record: WatchRecord) {
-        if let index = history.firstIndex(where: { $0.bangumiID == record.bangumiID }) {
-            history[index] = record
+        if let index = history.firstIndex(where: { $0.id == record.id }) {
+            history[index] = Self.merged(history[index], record)
         } else {
             history.insert(record, at: 0)
         }
@@ -303,28 +489,38 @@ final class LibraryStore {
 
     /// 只补空着的名字 / 封面，别的字段（进度、集数、时间）一律不动。
     ///
-    /// 播放页写记录时，没追过番的条目本地拿不到番剧名和封面（Colo 3554：
-    /// `PlayerScreen.swift` 那两处都是 `?? ""`），记录就成了空壳，
-    /// 历史列表和「我的」页上只剩一个占位框。补的时候走 Bangumi 取一次。
+    /// 同一部番在不同规则下可能是好几份记录，名字和封面几份都要补上：
+    /// 少补一份，历史列表里就还是有一张空占位框（Colo 3566）。
     func backfillHistoryMeta(bangumiID: Int, name: String, imageURL: String) {
-        guard let index = history.firstIndex(where: { $0.bangumiID == bangumiID }) else { return }
-        var record = history[index]
         var changed = false
-        if record.bangumiName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-           !name.isEmpty {
-            record.bangumiName = name
-            changed = true
+        for (index, stored) in history.enumerated() where stored.bangumiID == bangumiID {
+            var record = stored
+            var dirty = false
+            if record.bangumiName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !name.isEmpty {
+                record.bangumiName = name
+                dirty = true
+            }
+            if record.imageURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !imageURL.isEmpty {
+                record.imageURL = imageURL
+                dirty = true
+            }
+            if dirty {
+                history[index] = record
+                changed = true
+            }
         }
-        if record.imageURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-           !imageURL.isEmpty {
-            record.imageURL = imageURL
-            changed = true
-        }
-        guard changed else { return }
-        history[index] = record
+        if changed { save() }
+    }
+
+    /// 只删这一份记录（规则 + 番剧那一条）。
+    ///
+    /// 同一部番在别的规则下那份不该跟着走：用户删的是这一条来源的记录。
+    func removeHistory(recordID: String) {
+        history.removeAll { $0.id == recordID }
         save()
     }
 
+    /// 删掉这部剧的全部记录（不分规则）。
     func removeHistory(bangumiID: Int) {
         history.removeAll { $0.bangumiID == bangumiID }
         save()
@@ -355,19 +551,40 @@ final class LibraryStore {
     }
 
     static func deduplicated(_ history: [WatchRecord]) -> [WatchRecord] {
-        var indexByID: [Int: Int] = [:]
+        var indexByID: [String: Int] = [:]
         var result: [WatchRecord] = []
         for record in history {
-            if let index = indexByID[record.bangumiID] {
-                if record.updatedAt > result[index].updatedAt {
-                    result[index] = record
-                }
+            if let index = indexByID[record.id] {
+                // 同一「规则 + 番剧」的两份（旧版留下的、恢复备份带进来的）并成一份：
+                // 丢一份就等于丢这部番看过的那些集的进度，不能丢。
+                result[index] = merged(result[index], record)
             } else {
-                indexByID[record.bangumiID] = result.count
+                indexByID[record.id] = result.count
                 result.append(record)
             }
         }
         return result
+    }
+
+    /// 两份同「规则 + 番剧」的记录并成一份。
+    ///
+    /// `progresses` 求并集，同一集里 `updatedAt` 新的那条赢（main 的
+    /// `HistorySyncCodec` 也是按每个 progress 的版本单独比的）；
+    /// 最后看的那一集（集数、集标题、时间、名字、封面、时长）取自 `updatedAt`
+    /// 新的那整条，这样列表上显示的「看到哪儿了」跟用户最后一次看的一致。
+    static func merged(_ lhs: WatchRecord, _ rhs: WatchRecord) -> WatchRecord {
+        let (base, other) = lhs.updatedAt > rhs.updatedAt ? (lhs, rhs) : (rhs, lhs)
+        var record = base
+        for (slot, progress) in other.progresses {
+            guard let kept = record.progresses[slot] else {
+                record.progresses[slot] = progress
+                continue
+            }
+            if progress.updatedAt > kept.updatedAt {
+                record.progresses[slot] = progress
+            }
+        }
+        return record
     }
 
     // MARK: - 编解码

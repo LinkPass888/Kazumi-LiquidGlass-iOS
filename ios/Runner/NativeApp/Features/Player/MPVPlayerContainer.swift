@@ -57,12 +57,21 @@ final class PlayerSurfaceModel {
 
     /// 首帧还没出来 / 刚换集：加载圈该转。
     ///
-    /// 三条各自有来处：`hasStartedPlayback` 是锁存（这一集真播过就不再转），
-    /// `hasFirstFrame && corePaused` 放行「有画面只是没播」，剩下的都算在加载。
+    /// 判据只看引擎一路推过来的相位，不看「首帧到了」那个标记：那个通知是一次性的
+    /// （渲染回调里发一次就不发了），而换集时界面这边会把标记清掉，两件事谁先谁后不定
+    /// ——清理落在通知之后就再也回不来，画面在放也照样转圈（Ato 4867，模拟器上切集
+    /// 复现过）。相位由 `MPV_EVENT_START_FILE / FILE_LOADED / PLAYBACK_RESTART` 和
+    /// 时间轴推进一起推，不依赖一次性回调。
+    ///
+    /// 「有画面、用户自己暂停着」还是放行：那时画面已经在了，不该拿圈盖住它。
     var isLoadingFirstFrame: Bool {
-        if hasStartedPlayback { return false }
-        if hasFirstFrame, corePaused { return false }
-        return true
+        switch loadPhase {
+        case .opening, .awaitingFirstFrame:
+            if hasFirstFrame, corePaused { return false }
+            return true
+        case .idle, .playing:
+            return false
+        }
     }
     var errorMessage: String?
     /// 视频的像素尺寸；还没拿到时是 .zero，布局回落到整块画面。

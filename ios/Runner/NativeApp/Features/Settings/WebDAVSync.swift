@@ -9,7 +9,8 @@
 //  再把合并结果写回去，最后只把开着的两类写回本机。
 //
 //  合并规则：
-//  · 观看记录、收藏都以番剧 ID 为主键，同一条留 `updatedAt` 新的那份；
+//  · 观看记录以「规则 + 番剧」为主键，同一条内部把每集进度并起来（新的一份赢）；
+//    收藏以番剧 ID 为主键，同一条留 `updatedAt` 新的那份；
 //  · 弹幕屏蔽词是文本，两边按行求并集，本机的顺序在前，云盘多出来的接在后面。
 //
 //  关掉的那一类不拉、不写本机，写回云盘时也原样用云盘那份，
@@ -139,7 +140,10 @@ enum WebDAVSync {
                 legacyHistoryRead = legacy.raw != nil
                 legacySnapshot = legacy.raw
                 legacyHistoryCount = legacy.records.count
-                history = mergeHistory(local: library.history, remote: history + legacy.records)
+                history = mergeHistory(
+                    local: adoptLegacyRuleNames(library.history, from: legacy.records),
+                    remote: history + legacy.records
+                )
             } else {
                 history = mergeHistory(local: library.history, remote: history)
             }
@@ -306,14 +310,40 @@ enum WebDAVSync {
 
     // MARK: - 合并
 
+    // 观看记录与收藏都以「番剧 ID / 规则 + 番剧」为主键，同一条留 `updatedAt`
+    // 新的那份；观看记录内部还要把每一集的进度并起来（见 `mergeHistory`）。
+
+    /// 观看记录：按「规则 + 番剧」合，两份都有就把每集进度并起来
+    /// （同一集新的赢）。不能按番剧 ID 压成一条——不同源是两份记录，
+    /// 压一条就等于丢掉其中一源看过的那些集。
     private static func mergeHistory(local: [WatchRecord], remote: [WatchRecord]) -> [WatchRecord] {
-        var byID: [Int: WatchRecord] = [:]
-        for record in remote { byID[record.bangumiID] = record }
-        for record in local {
-            if let kept = byID[record.bangumiID], kept.updatedAt >= record.updatedAt { continue }
-            byID[record.bangumiID] = record
+        // 顺序跟合并前一致：云盘上那份在前，本机多出来的接在后面（字典序稳定）。
+        LibraryStore.deduplicated(remote + local)
+            .sorted { $0.updatedAt > $1.updatedAt }
+    }
+
+    /// 迁移过来的老格式记录没存来源规则（空串），而原版快照里同一部番只有一条带规则名的。
+    /// 那就把规则名认过来，合并时两边能并成一条；不认的话同一部番会在历史列表里
+    /// 出现两遍（一条带规则名、一条不带），看上去像重复记录。
+    ///
+    /// 多条不同规则时不猜——老格式本来就没存是哪一条，硬选一条会把记录安到错的来源上。
+    private static func adoptLegacyRuleNames(
+        _ local: [WatchRecord],
+        from legacy: [WatchRecord]
+    ) -> [WatchRecord] {
+        var result = local
+        for index in result.indices where result[index].sourceRuleName.isEmpty {
+            let bangumiID = result[index].bangumiID
+            let rules = Set(
+                legacy
+                    .filter { $0.bangumiID == bangumiID && !$0.sourceRuleName.isEmpty }
+                    .map(\.sourceRuleName)
+            )
+            if rules.count == 1, let rule = rules.first {
+                result[index].sourceRuleName = rule
+            }
         }
-        return byID.values.sorted { $0.updatedAt > $1.updatedAt }
+        return result
     }
 
     /// 收藏：本机的顺序留着（用户摆过的分类顺序），云盘上多出来的接在后面。
