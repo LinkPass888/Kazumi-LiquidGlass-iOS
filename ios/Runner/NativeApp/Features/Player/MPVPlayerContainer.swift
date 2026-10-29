@@ -35,14 +35,7 @@ final class PlayerSurfaceModel {
     /// 视频的像素尺寸；还没拿到时是 .zero，布局回落到整块画面。
     var videoSize: CGSize = .zero
 
-    weak var engine: MPVEngine? {
-        didSet {
-            // 换了内核（新一集 / 重开播放器）就是一条全新的画面通道：
-            // 别把上一轮的「已经关掉」带过来，否则下一集回来会一直没画面。
-            guard engine !== oldValue else { return }
-            isVideoTrackEnabled = true
-        }
-    }
+    weak var engine: MPVEngine?
     /// 弹幕画布：横屏底栏「发弹幕」往这里补一条自己发的。
     weak var danmakuOverlay: DanmakuOverlayView?
 
@@ -82,13 +75,22 @@ final class PlayerSurfaceModel {
 
     /// 后台播放时把画面通道关掉，回前台再打开（原因见 `MPVEngine.setVideoTrackEnabled`）。
     ///
-    /// 状态没变就什么都不做。回前台那条每次都会调 `true`，如果无脑转给 mpv，
-    /// 等于每次回来都让 mpv 重新选一遍视频轨——回来那一下会顿（LP：返回 app 时会暂停一会）。
-    private var isVideoTrackEnabled = true
+    /// 回前台那条每次都会调 `true`，如果无脑转给 mpv，等于每次回来都让 mpv
+    /// 重新选一遍视频轨——回来那一下会顿（LP：返回 app 时会暂停一会）。
+    /// 所以同一个内核、同一个值就不重复转发。
+    ///
+    /// 上一次真的转发给 mpv 的那一对：发给哪个内核、开还是关。
+    ///
+    /// 只记「我想要的状态」不够——记忆里说开着、mpv 其实关着的时候，
+    /// 那一句「开」会被吞掉，画面就再也回不来了（有声音、画面一直转圈）。
+    /// 所以拿当前内核比：内核换了就一定要转发一次。
+    private weak var lastTrackEngine: MPVEngine?
+    private var lastTrackEnabled = true
 
     func setVideoTrackEnabled(_ enabled: Bool) {
-        guard enabled != isVideoTrackEnabled else { return }
-        isVideoTrackEnabled = enabled
+        if engine === lastTrackEngine, enabled == lastTrackEnabled { return }
+        lastTrackEngine = engine
+        lastTrackEnabled = enabled
         engine?.setVideoTrackEnabled(enabled)
     }
 

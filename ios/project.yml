@@ -95,6 +95,11 @@ targets:
         LSRequiresIPhoneOS: true
         UILaunchStoryboardName: LaunchScreen
         UIApplicationSupportsIndirectInputEvents: true
+        # 单场景。以前这里没有这一段，生成的包里压根不带场景清单
+        # （源码 Info.plist 里那份是空配置，xcodegen 合并时被丢了）。
+        # 点锁屏卡片让系统拉起 app 走的就是场景激活这条路（LP 4626）。
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
         UIStatusBarHidden: false
         UIViewControllerBasedStatusBarAppearance: true
         CADisableMinimumFrameDurationOnPhone: true
