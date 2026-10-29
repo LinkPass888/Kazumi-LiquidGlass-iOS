@@ -35,7 +35,14 @@ final class PlayerSurfaceModel {
     /// 视频的像素尺寸；还没拿到时是 .zero，布局回落到整块画面。
     var videoSize: CGSize = .zero
 
-    weak var engine: MPVEngine?
+    weak var engine: MPVEngine? {
+        didSet {
+            // 换了内核（新一集 / 重开播放器）就是一条全新的画面通道：
+            // 别把上一轮的「已经关掉」带过来，否则下一集回来会一直没画面。
+            guard engine !== oldValue else { return }
+            isVideoTrackEnabled = true
+        }
+    }
     /// 弹幕画布：横屏底栏「发弹幕」往这里补一条自己发的。
     weak var danmakuOverlay: DanmakuOverlayView?
 
