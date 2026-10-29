@@ -213,6 +213,9 @@ struct PlayerScreen: View {
     var bangumiID: Int
     var episode: Int
     var source: PlaybackSource?
+    /// 续播信息（见 `AppRoute.player`）：上次那条线路，以及这次是不是「接着看」。
+    var resumeRoad: Int?
+    var resumeFromHistory: Bool = false
 
     @State private var controller: PlayerController?
     @State private var surface = PlayerSurfaceModel()
@@ -449,6 +452,12 @@ struct PlayerScreen: View {
         .animation(.easeOut(duration: 0.2), value: surface.hudToastMessage)
         // 弹幕拉不到的时候说一句原因（Ato：对不上号 / 接口失败要说，
         // 「这集本来就没弹幕」是正常情况，安静地不显示）。
+        // 「看到 90% 自动标为看过」成了也说一句，跟倍速/收藏同一处（1/4 那条线）。
+        .onChange(of: environment.bangumiProgress.markedNotice) { _, message in
+            if let message, !message.isEmpty {
+                surface.hudToastMessage = message
+            }
+        }
         .onChange(of: controller?.danmakuMessage) { _, message in
             if let message, !message.isEmpty {
                 // 放画面 1/4 那条线上（LP 4773），跟倍速/收藏/定时关闭同一个位置。
@@ -744,7 +753,9 @@ struct PlayerScreen: View {
             episode: episode,
             source: source,
             plugins: environment.plugins,
-            library: library
+            library: library,
+            resumeRoad: resumeRoad,
+            resumeFromHistory: resumeFromHistory
         )
         controller = created
         // 默认倍速：就绪 / 重新起播时由画面模型再补一次（AVPlayer 会回到 1.0）。
@@ -862,22 +873,17 @@ struct PlayerScreen: View {
                 ScreenshotFlashView(progress: screenshotFlash)
             }
 
-            // 加载符号：转到**第一帧真的画上屏**为止（LP 2026-10-28 第 4 条）。
-            // 以前只在还没有 controller 的时候转，一旦内核报「有视频参数」就收掉，
-            // 可那会儿画面还没出来，于是收掉之后是一段纯黑。
-            // 解析阶段画面中央那颗 `statusOverlay` 已经带文字在转了，
-            // 这里再画一颗就是两个圈（LP 2026-10-28 第 4 条 / Colo）。
-            // 只在真的挂上 mpv（有播放地址）之后才画这颗。
+            // 加载符号：一颗系统圈 + 下面一行网速（LP 4810）。
             //
-            // 已开播后中途卡住也走这颗（LP 2026-10-29 第 2 条）：以前内核一 idle
-            // 就被当成暂停，弹出控制栏加暂停图标；现在卡住只转圈，控制栏不动。
-            if (!surface.hasFirstFrame || surface.isStalled),
+            // 什么时候收：时间轴真的走起来（`hasStartedPlayback`），不是「第一帧画上屏」
+            // ——后者之后还有一小段等音画对齐的黑屏，圈先收了人就在那儿干等，
+            // 就是「不转圈了还要等一会才能看」。
+            // 中途卡住（网卡缓冲）、拖完进度在 seek，都走同一颗（LP 4810 第三句）。
+            if showsLoadingHUD,
                surface.errorMessage == nil,
                controller.playbackURL != nil {
                 hudAtQuarter {
-                    ProgressView()
-                        .tint(.white)
-                        .scaleEffect(1.2)
+                    PlayerLoadingHUD(bytesPerSecond: surface.downloadSpeed)
                 }
                 .transition(.opacity)
             }
@@ -1088,10 +1094,34 @@ struct PlayerScreen: View {
     /// * 横着拖是调进度，换算照 main（`180000 / width` 毫秒每点，整块画面宽 ≈ 180 秒），
     ///   比拖进度条细得多，中途只显示「+15s」，松手才真跳到那儿；
     /// * 竖着拖左半边调亮度、右半边调音量，同样自己画横条，不弹系统那条。
+    ///
+    /// 起手有三道门（LP 2026-10-29 4790 那份参考实现）：
+    /// 1. **上下安全区屏蔽**：起手点落在窗口最上 / 最下 40 点里就不认——那是控制中心
+    ///    和 home 指示条的地盘，抢过来就变成「拉亮度和划控制中心一起发生」；
+    /// 2. **方向锁定死区**：`minimumDistance` 就是那 10 点，跨过去才决定这一路是调进度
+    ///    还是调亮度/音量，定下来就不再改（`dragAxis` 只在 nil 时赋值）；
+    /// 3. 左半屏亮度、右半屏音量。
+    ///
+    /// 坐标用 `.global`（窗口坐标）而不是画面局部坐标：安全区是按**屏幕**算的，
+    /// 竖屏内联时画面只有 226 点高、上下都离屏幕边很远，拿局部坐标量安全区没意义。
     private func surfaceDragGesture(width: CGFloat, height: CGFloat) -> some Gesture {
-        DragGesture(minimumDistance: 10, coordinateSpace: .local)
+        DragGesture(minimumDistance: Self.directionLockThreshold, coordinateSpace: .global)
             .onChanged { value in
+                let window = UIScreen.main.bounds
+                // 按住倍速已经起来了：这一路拖动什么都不做——不调进度、不碰亮度音量，
+                // 倍速继续到松手（LP 2026-10-29「按住倍速时不应该还能触发音量亮度
+                // 进度调节等手势」）。所以这里不能走下面那段「拖出容差就结束倍速」。
+                if isTemporarySpeed {
+                    dragAxis = .ignored
+                    return
+                }
                 if dragAxis == nil {
+                    // 安全区这道门先过：上下 40 点里起手，这一路什么都不做。
+                    guard value.startLocation.y > Self.gestureEdgeGuard,
+                          value.startLocation.y < window.height - Self.gestureEdgeGuard else {
+                        dragAxis = .ignored
+                        return
+                    }
                     if abs(value.translation.width) > abs(value.translation.height) {
                         // 贴左边缘往右起手是返回，交给外层的侧滑手势，不调进度。
                         if value.startLocation.x < 28, value.translation.width > 0 {
@@ -1101,14 +1131,14 @@ struct PlayerScreen: View {
                         dragAxis = .seek
                         seekDragStart = surface.currentTime
                         seekDragTarget = surface.currentTime
-                    } else if isFullscreen, value.startLocation.y > height - Self.bottomSystemStrip {
+                    } else if isFullscreen, value.startLocation.y > window.height - Self.bottomSystemStrip {
                         // 竖向从最底下那条起手：那是 home 指示条的地盘，让给系统退 app，
                         // 不在这里再调一次亮度/音量（LP 2026-10-29「上滑控制音量和退出 app 同步执行」）。
                         // 只限竖向：横向拖进度不碰系统手势，照旧可用。
                         // 横屏全屏时这块一直铺到窗口底沿（那层 ignoresSafeArea 是 10-27 要的）。
                         dragAxis = .ignored
                         return
-                    } else if value.startLocation.x < width / 2 {
+                    } else if value.startLocation.x < window.width / 2 {
                         dragAxis = .brightness
                         dragValueStart = Double(UIScreen.main.brightness)
                     } else {
@@ -1139,8 +1169,15 @@ struct PlayerScreen: View {
                     seekHUD = Int((target - start).rounded())
                 case .brightness, .volume:
                     guard let start = dragValueStart else { return }
-                    // 整块画面高 ≈ 226pt，滑完一屏就到底，手感与原版一致。
-                    let delta = Double(-value.translation.height) / 220
+                    // 倍率照 main（player_item.dart 1214 / 1233）：亮度 level = 高度×2
+                    // （滑两屏到底），音量 level = 高度×0.03 而 main 的音量是 0–100，
+                    // 折成 0–1 就是三屏到底。原来两样都写死 220pt，比原版快十倍，
+                    // 手指一抖就拉到底（LP 2026-10-29「降低音量亮度手势调节的倍率」）。
+                    // 分母用**窗口**高度（main 的 MediaQuery.sizeOf(context).height），
+                    // 不是画面那块的高度：竖屏内联时画面只有 226 点高，拿它算会比原版灵敏三倍。
+                    let windowHeight = Double(max(1, window.height))
+                    let level = dragAxis == .brightness ? windowHeight * 2 : windowHeight * 3
+                    let delta = Double(-value.translation.height) / level
                     let target = min(1, max(0, start + delta))
                     if dragAxis == .brightness {
                         UIScreen.main.brightness = CGFloat(target)
@@ -1259,6 +1296,13 @@ struct PlayerScreen: View {
     /// 屏幕最底下留给系统手势的那一条（home 指示条）。竖向拖动的起手落在这条里就不接，
     /// 交给系统去退 app。横屏时底部安全区是 21，再加两点余量。
     private static let bottomSystemStrip: CGFloat = 24
+
+    /// 竖向拖动起手的安全区：窗口最上 / 最下这么宽的一段不认，免得跟控制中心、
+    /// home 指示条抢（LP 2026-10-29 4790 的参考实现里是 40 点）。
+    private static let gestureEdgeGuard: CGFloat = 40
+
+    /// 方向锁定的死区：手指先走这么多点，才决定这一路是调进度还是调亮度/音量。
+    private static let directionLockThreshold: CGFloat = 10
 
     /// 两条压暗的长度（Colo 2026-10-28 4295）：顶 min(96, 画面高×0.25)、
     /// 底 min(200, 画面高×0.45)，再夹一句——顶栏＋顶渐隐＋底渐隐＋底栏 ≤ 画面高，
@@ -2650,25 +2694,20 @@ struct PlayerScreen: View {
         VStack(spacing: 10) {
             switch controller.phase {
             case .idle, .searchingSource, .resolvingChapters, .parsingMedia:
-                ProgressView()
-                    .tint(.white)
+                // 解析阶段还没有 mpv，拿不到网速，所以只转圈（`bytesPerSecond` 默认 0）。
+                PlayerLoadingHUD()
                 Text(phaseTitle(controller.phase))
                     .font(.subheadline)
                     .foregroundStyle(.white.opacity(0.85))
                 // 切集时先亮一下目标集数，代替原版的「正在加载${集标题}」
                 // （原生这边只有 URL，没有集标题）。
                 if showsEpisodeLoadingLine(controller.phase) {
-                    Text("正在加载第 \(controller.currentEpisode) 话")
+                    Text("正在加载第 \(controller.currentEpisode) 集")
                         .font(.caption)
                         .foregroundStyle(.white.opacity(0.7))
                 }
-                if let last = controller.logLines.last, showsLogLine(controller.phase) {
-                    Text(last)
-                        .font(.caption2)
-                        .foregroundStyle(.white.opacity(0.55))
-                        .lineLimit(1)
-                        .padding(.horizontal, 24)
-                }
+                // 原来这儿挂着内核日志的最后一行。LP 4810：屏蔽掉，
+                // 画面上只留圈（+ 网速），日志照旧进 KazumiLogBuffer 给排查用。
             case .failed:
                 // 失败提示不压在画面正中间：挪到下面「选集」那一块里
                 // （平时列剧集的位置），跟页面一起推进来（LP 3286 / Colo 3287）。
@@ -3088,6 +3127,13 @@ struct PlayerScreen: View {
     private func resumeIfNeeded(library: LibraryStore, controller: PlayerController) {
         guard settings.playResume else { return }
         guard let record = library.record(for: controller.bangumiID) else { return }
+        // 跨源不接：B 源第 1 集停在 12:00，进 A 源也是第 1 集，别把 B 的 12:00 接上去
+        // （Fuck 4848）。没带源进来时（历史页进）记录本身就是那个源，不用比。
+        if let pluginName = controller.source?.pluginName,
+           !pluginName.isEmpty,
+           record.sourceRuleName != pluginName {
+            return
+        }
         guard record.episodeNumber == controller.currentEpisode else { return }
         guard record.progressSeconds > 1 else { return }
         // 存在结尾 5 秒内的一律当已看完，不续播（避免一进去就结束）。
@@ -3199,6 +3245,20 @@ struct PlayerScreen: View {
     /// 音量交给系统的 `MPVolumeView`，不再自绘第二条滑杆。
     @ViewBuilder
     /// 把一朵 HUD 摆在画面高度 1/4 的位置（水平居中）。
+    /// 加载符号该不该出现。
+    ///
+    /// 三件事都算「在加载」：起播还没真正开始、中途卡住（网卡缓冲）、正在 seek。
+    ///
+    /// `hasStartedPlayback` 是**锁存**的：这一集只要真播起来过就一直为 true，
+    /// 所以播到一半按暂停、播完停在结尾（`keep-open`）都不会再转圈（Fuck 4816 提的那两种）。
+    /// 剩下唯一的坑是「第一帧到了但没播」（打开就暂停着）：那时画面已经在了，
+    /// 不该用圈盖住它，`hasFirstFrame && corePaused` 直接放行。
+    private var showsLoadingHUD: Bool {
+        // 缓冲 / 拖进度：短暂提示，跟首帧那套逻辑分开（LP 4818 第 7 条）。
+        if surface.isSeeking || surface.isStalled { return true }
+        return surface.isLoadingFirstFrame
+    }
+
     private func hudAtQuarter<Content: View>(
         interactive: Bool = false,
         @ViewBuilder _ content: () -> Content
@@ -3268,7 +3328,9 @@ struct PlayerScreen: View {
         HStack(spacing: 6) {
             Image(systemName: symbol)
                 .font(.system(size: 12, weight: .semibold))
-            Text(symbol == "play.fill" ? "播放" : "暂停")
+            // 文字跟着「刚做了什么」走，符号不动（LP 2026-10-29 4800/4802：
+            // 三角那颗写「暂停」，两条竖线那颗写「播放」）。
+            Text(symbol == "play.fill" ? "暂停" : "播放")
                 .font(.footnote.weight(.medium))
         }
         .foregroundStyle(.primary)
@@ -3293,8 +3355,11 @@ struct PlayerScreen: View {
     }
 
     /// 双击中间：把刚切过去的状态画出来。暂停着就一直留着，播起来才淡出。
-    /// 符号和左下角那颗读同一个状态：在播画 pause.fill（可以按它暂停），
-    /// 暂停画 play.fill——两处不一致就是这里写反了（LP 2174）。
+    /// 符号跟左下角那颗按钮读同一个状态：在播画 pause.fill、暂停画 play.fill，
+    /// 两处不一致就是这里写反了（LP 2174）。
+    ///
+    /// 符号不动，文字翻过来（LP 2026-10-29 4800/4802）：三角那颗配「暂停」、
+    /// 两条竖线那颗配「播放」。
     private func flashPlayPauseHUD() {
         withAnimation(.easeOut(duration: 0.2)) {
             gestureHUD = nil
@@ -3310,7 +3375,7 @@ struct PlayerScreen: View {
         hudHideTask = Task { @MainActor in
             try? await Task.sleep(for: .seconds(seconds))
             guard !Task.isCancelled else { return }
-            // 暂停时那朵播放键留着，直到重新播起来。
+            // 暂停时那朵留着，直到重新播起来（LP 4802「就是只调文字」，这条没动）。
             if playPauseHUD != nil, !surface.isPlaying { return }
             withAnimation(.easeOut(duration: 0.2)) {
                 gestureHUD = nil
@@ -3532,15 +3597,15 @@ struct PlayerScreen: View {
                                 let a = page * pageSize + 1
                                 let b = min(total, (page + 1) * pageSize)
                                 return SystemMenuButton.Selection.Option(
-                                    title: "\(a)–\(b) 话",
+                                    title: "\(a)–\(b) 集",
                                     isSelected: episodeGridPage == page
                                 ) {
                                     episodeGridPage = page
                                 }
                             }),
-                            title: "\(lo + 1)–\(hi) 话",
+                            title: "\(lo + 1)–\(hi) 集",
                             symbol: "",
-                            accessibilityLabel: "快速跳转，现在显示第 \(lo + 1) 到 \(hi) 话",
+                            accessibilityLabel: "快速跳转，现在显示第 \(lo + 1) 到 \(hi) 集",
                             // 剧集/评论区不算播放器菜单，字和选中态跟主题色
                             // （LP 2026-10-28；Colo 划的界）。
                             tint: .accentColor,
@@ -3639,9 +3704,9 @@ struct PlayerScreen: View {
                 // 点了不执行（LP 3321「剧集和评论下边的都换了吗」）。
                 SystemMenuButton(
                     selection: commentEpisodeSelection(),
-                    title: commentEpisode.map { "第 \($0) 话" } ?? "第 — 话",
+                    title: commentEpisode.map { "第 \($0) 集" } ?? "第 — 集",
                     symbol: "",
-                    accessibilityLabel: commentEpisode.map { "当前查看第 \($0) 话评论" } ?? "当前查看集数评论",
+                    accessibilityLabel: commentEpisode.map { "当前查看第 \($0) 集评论" } ?? "当前查看集数评论",
                     // 评论区那颗，跟选集数 / 排序一样回主题色（LP 2026-10-28）。
                     tint: .accentColor,
                     showsChevron: true,
@@ -3775,7 +3840,7 @@ struct PlayerScreen: View {
         let total = controller?.episodes.count ?? 0
         guard total > 0 else { return .init(options: []) }
         return .init(options: (1 ... total).map { ep in
-            .init(title: "第 \(ep) 话", isSelected: commentEpisode == ep) {
+            .init(title: "第 \(ep) 集", isSelected: commentEpisode == ep) {
                 switchCommentEpisode(ep)
             }
         })
@@ -3839,7 +3904,7 @@ struct PlayerScreen: View {
         let number = index + 1
         let isCurrent = number == controller.currentEpisode
         return HStack(spacing: 8) {
-            Text("第 \(number) 话")
+            Text("第 \(number) 集")
                 .font(.subheadline.monospacedDigit())
                 .foregroundStyle(isCurrent ? Color.accentColor : Color.secondary)
             Spacer(minLength: 8)
@@ -3941,6 +4006,8 @@ private func persistWatchProgress(
         bangumiName: storedName,
         imageURL: storedImage,
         sourceRuleName: source?.pluginName ?? "",
+        // 下次从详情页「开始观看」时按这条线路接上（main 记线路的原因）。
+        roadIndex: controller.selectedRoad,
         // 原生这边只有 URL，没有集标题，留空由历史页回退成「第 N 话」。
         episodeTitle: "",
         episodeNumber: controller.currentEpisode,

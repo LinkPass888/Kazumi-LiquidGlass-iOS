@@ -76,11 +76,20 @@ enum AppRoute: Hashable, Sendable {
     /// `onPick` 由 SearchScreen 传入，用于把识别到的番名直接填进搜索框。
     case imageSearch(onPick: @MainActor @Sendable (String) -> Void)
     /// 播放：bangumiID + 集数；由选源面板进入时带上规则名与分集页面地址。
-    case player(bangumiID: Int, episode: Int, source: PlaybackSource?)
+    /// 续播：`resumeFromHistory` 为真表示这是「接着看」（详情页开始观看、推荐页开始观看、
+    /// 历史页继续观看），线路和集数都要在范围内才用，否则整条不用、从第一集第一条线路起
+    /// （跟 main 的 `_initOnlineMode` 一致）。用户点的某一集不带这个标记，越界按夹取处理。
+    case player(
+        bangumiID: Int,
+        episode: Int,
+        source: PlaybackSource?,
+        resumeRoad: Int?,
+        resumeFromHistory: Bool
+    )
 
     /// 兼容原有调用点：只带 bangumiID 与集数时，视为「待选源」。
     static func player(bangumiID: Int, episode: Int) -> AppRoute {
-        .player(bangumiID: bangumiID, episode: episode, source: nil)
+        .player(bangumiID: bangumiID, episode: episode, source: nil, resumeRoad: nil, resumeFromHistory: false)
     }
 
     case pluginEditor(ruleID: String?)
@@ -177,8 +186,10 @@ extension AppRoute {
         case (.imageSearch, .imageSearch):
             // 回调不参与相等比较，页面自己持有识别状态。
             true
-        case let (.player(lhsID, lhsEpisode, lhsSource), .player(rhsID, rhsEpisode, rhsSource)):
+        case let (.player(lhsID, lhsEpisode, lhsSource, lhsRoad, lhsResume),
+                  .player(rhsID, rhsEpisode, rhsSource, rhsRoad, rhsResume)):
             lhsID == rhsID && lhsEpisode == rhsEpisode && lhsSource == rhsSource
+                && lhsRoad == rhsRoad && lhsResume == rhsResume
         case let (.pluginEditor(lhs), .pluginEditor(rhs)):
             lhs == rhs
         case let (.pluginTest(lhs), .pluginTest(rhs)):
@@ -216,10 +227,12 @@ extension AppRoute {
             hasher.combine(zoom)
         case .search(let keyword):
             hasher.combine(keyword)
-        case .player(let bangumiID, let episode, let source):
+        case .player(let bangumiID, let episode, let source, let resumeRoad, let resumeFromHistory):
             hasher.combine(bangumiID)
             hasher.combine(episode)
             hasher.combine(source)
+            hasher.combine(resumeRoad)
+            hasher.combine(resumeFromHistory)
         case .pluginEditor(let ruleID):
             hasher.combine(ruleID)
         case .pluginTest(let ruleID):

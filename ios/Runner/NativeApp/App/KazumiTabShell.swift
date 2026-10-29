@@ -161,8 +161,14 @@ struct AppRouteView: View {
             ImageSearchScreen(onPickKeyword: onPick)
         case .webSearchHistory:
             SearchHistoryScreen()
-        case .player(let bangumiID, let episode, let source):
-            PlayerScreen(bangumiID: bangumiID, episode: episode, source: source)
+        case .player(let bangumiID, let episode, let source, let resumeRoad, let resumeFromHistory):
+            PlayerScreen(
+                bangumiID: bangumiID,
+                episode: episode,
+                source: source,
+                resumeRoad: resumeRoad,
+                resumeFromHistory: resumeFromHistory
+            )
         case .pluginEditor(let ruleID):
             PluginEditorScreen(ruleID: ruleID)
         case .pluginTest(let ruleID):

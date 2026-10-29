@@ -62,16 +62,24 @@ final class PlayerController {
     private let webView = VideoSourceWebView()
     private var cancelToken = RuleCancelToken()
 
+    /// 上次走的线路（历史里记的），以及这次进播放器是不是「接着看」。
+    private var resumeRoad: Int?
+    private var resumeFromHistory: Bool
+
     init(
         bangumiID: Int,
         episode: Int,
         source: PlaybackSource?,
         plugins: PluginsController,
-        library: LibraryStore? = nil
+        library: LibraryStore? = nil,
+        resumeRoad: Int? = nil,
+        resumeFromHistory: Bool = false
     ) {
         self.bangumiID = bangumiID
         self.source = source
         self.currentEpisode = max(1, episode)
+        self.resumeRoad = resumeRoad
+        self.resumeFromHistory = resumeFromHistory
         self.plugins = plugins
         self.library = library
         webView.onLog = { [weak self] line in
@@ -116,9 +124,7 @@ final class PlayerController {
                     cancelToken: cancelToken
                 )
                 roads = trace.roads
-                // 历史里没记是哪条线路，统一从第一条起播（与切源页行为一致）。
-                selectedRoad = 0
-                episodes = trace.roads.first?.data ?? []
+                applyStartPoint(roads: trace.roads)
                 if episodes.isEmpty {
                     phase = .failed("该播放源没有解析到剧集")
                     return
@@ -133,7 +139,7 @@ final class PlayerController {
         }
 
         guard episodes.indices.contains(currentEpisode - 1) else {
-            phase = .failed("第 \(currentEpisode) 话不存在")
+            phase = .failed("第 \(currentEpisode) 集不存在")
             return
         }
         let target = episodes[currentEpisode - 1]
@@ -145,6 +151,33 @@ final class PlayerController {
         applyHeaders(plugin: plugin)
         phase = .parsingMedia
         await webView.load(url: target, useLegacyParser: plugin.useLegacyParser)
+    }
+
+    /// 进播放页定「从第几集、第几条线路起」（对应 main `video_page._initOnlineMode`）。
+    ///
+    /// 续播（从详情页「开始观看」进来）：线路和集数都要在范围内才用——线路超出、
+    /// 或者集数超过那条线路的长度，就整条记录作废，从第一集、第一条线路起。
+    /// 不夹到最后一集：源常把一集切成几段，夹过去多半落在片尾（Ato 4843）。
+    ///
+    /// 用户点的那一集（历史页、切集）不算续播：这条源没那么多集时夹到最后一集，
+    /// 免得一进来就「第 N 集不存在」。
+    private func applyStartPoint(roads: [Road]) {
+        let road = resumeRoad ?? 0
+        if resumeFromHistory {
+            if roads.indices.contains(road), currentEpisode >= 1,
+               currentEpisode <= roads[road].data.count {
+                selectedRoad = road
+                episodes = roads[road].data
+            } else {
+                selectedRoad = 0
+                episodes = roads.first?.data ?? []
+                currentEpisode = 1
+            }
+        } else {
+            selectedRoad = 0
+            episodes = roads.first?.data ?? []
+            currentEpisode = min(currentEpisode, max(1, episodes.count))
+        }
     }
 
     /// 切线路后直接起播：原版只切列表、等用户再点集数，这里按本批要求自动接上。

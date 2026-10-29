@@ -91,10 +91,18 @@ final class PictureInPictureController: NSObject {
         attachHostIfNeeded()
         guard let engine else { return }
 
+        // 取帧器认的是「引擎」，不是抄下来的那个 mpv 句柄。
+        // 引擎换过（播放页重建 / 内核重启）就整个重建：旧句柄已经随旧内核还回去了，
+        // 拿它去 mpv_get_property 就是读一块已经释放的内存——真机切后台那一帧崩在这儿。
+        // GL 上下文也归引擎所有，一起换掉。
+        if let copier, copier.engine !== engine {
+            copier.teardown()
+            self.copier = nil
+        }
+
         if copier == nil {
             let copier = PiPFrameCopier(
-                mpv: engine.handle,
-                context: engine.glContext,
+                engine: engine,
                 displayLayer: hostView.displayLayer
             )
             copier.onLog = { [weak self] message in
@@ -154,9 +162,9 @@ final class PictureInPictureController: NSObject {
         self.engine = engine
         self.surface = surface
         didReportFailure = false
-        if copier == nil {
-            prepare(engine: engine, surface: surface)
-        }
+        // 每次都走一遍 prepare：引擎可能已经换过，钩子得装到当前这只上。
+        // 取帧器要不要重建由 prepare 自己判断。
+        prepare(engine: engine, surface: surface)
         guard copier != nil else {
             log("取帧器没建起来，画中画不可用")
             onFailed?()
@@ -512,9 +520,19 @@ private final class PiPHostView: UIView {
 /// 不持有 mpv 的渲染上下文，只借它的时间戳做 PTS / seek 判断。
 @MainActor
 private final class PiPFrameCopier {
-    private let mpv: OpaquePointer?
-    private let context: EAGLContext
+    /// 只弱持有引擎，句柄每次现读（`mpv` 是算出来的）。
+    ///
+    /// 原来是 init 时把 `engine.handle` 抄进一个 `let`：内核一销毁（关播放器、换集、
+    /// 重建视图都会 `MPVEngine.stop()` → `mpv_terminate_destroy`），那个指针就悬空了，
+    /// 而 `capture` 里的空判断只挡得住 nil、挡不住「指针还在、东西没了」。
+    /// 真机崩在切后台补画的那一帧：`mpv_get_property` 读 `time-pos` → SIGSEGV。
+    fileprivate weak var engine: MPVEngine?
+    private var context: EAGLContext { engine?.glContext ?? fallbackContext }
+    private let fallbackContext: EAGLContext
     private let displayLayer: AVSampleBufferDisplayLayer
+
+    /// 当前活着的 mpv 句柄；引擎没了或已 stop 就是 nil。
+    private var mpv: OpaquePointer? { engine?.handle }
 
     var onLog: ((String) -> Void)?
 
@@ -551,9 +569,10 @@ private final class PiPFrameCopier {
     var onVideoAspectChanged: ((CGFloat) -> Void)?
     private var lastReportedAspect: CGFloat = 0
 
-    init(mpv: OpaquePointer?, context: EAGLContext, displayLayer: AVSampleBufferDisplayLayer) {
-        self.mpv = mpv
-        self.context = context
+    init(engine: MPVEngine, displayLayer: AVSampleBufferDisplayLayer) {
+        self.engine = engine
+        // 引擎走了也得有个上下文来删 GL 资源，不能是可选。
+        self.fallbackContext = engine.glContext
         self.displayLayer = displayLayer
     }
 
@@ -652,7 +671,8 @@ private final class PiPFrameCopier {
         videoWidth: Double,
         videoHeight: Double
     ) {
-        guard isCapturing, sourceWidth > 1, sourceHeight > 1 else { return }
+        // 内核没了（句柄已释放）这一帧就别拷了：下面的 mpv_get_property 全是裸指针读。
+        guard isCapturing, mpv != nil, sourceWidth > 1, sourceHeight > 1 else { return }
 
         let hostNow = CACurrentMediaTime()
         guard lastCaptureHostTime == 0 || hostNow - lastCaptureHostTime >= captureInterval else {

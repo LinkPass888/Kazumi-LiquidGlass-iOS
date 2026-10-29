@@ -178,17 +178,22 @@ struct BangumiInfoScreen: View {
                     isShowingSources = false
                     returnToSourcesAfterPlayer = true
                     depthBeforePlayer = navigationDepth
+                    // 从哪一集接着看：按「这部剧 + 这条规则名」查历史，记着第几集、
+                    // 哪条线路就从哪里起（LP 4822 / 4844，跟 main 的 _initOnlineMode 一致）。
+                    let point = resumePoint(for: current.item.id, pluginName: pluginName)
                     router.push(
                         .player(
                             bangumiID: current.item.id,
-                            episode: 1,
+                            episode: point?.episode ?? 1,
                             source: PlaybackSource(
                                 pluginName: pluginName,
                                 itemName: result.name,
                                 // 原样传 src：接口模式的规则拿它当 vod_id，拼成网址就查不到剧集。
                                 detailURL: result.src,
                                 directMediaURL: MediaUtility.isMediaURL(result.src) ? result.src : nil
-                            )
+                            ),
+                            resumeRoad: point?.road,
+                            resumeFromHistory: true
                         )
                     )
                 },
@@ -646,6 +651,12 @@ extension BangumiInfoScreen {
     ///
     /// 按压反馈用自定义 ButtonStyle：`.plain` 会在按住时把整个按钮变半透明，
     /// 深色下看起来像消失了；这里改成轻微缩放 + 压暗。
+    /// 这部剧在这条规则上接着看的位置（第几集 + 第几条线路），没有记录就是 nil。
+    /// 越界怎么退由播放器判（`PlayerController.applyStartPoint`）。
+    private func resumePoint(for bangumiID: Int, pluginName: String) -> (episode: Int, road: Int)? {
+        library.resumePoint(for: bangumiID, pluginName: pluginName)
+    }
+
     private var startPlayingButton: some View {
         Button {
             isShowingSources = true

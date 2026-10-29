@@ -27,6 +27,10 @@ final class BangumiProgressService {
     /// 这次运行里已经处理过的「番剧:集数」。只记内存：重开 App 再标一次也不会错，
     /// 服务端同状态重复写是幂等的。
     private var handled = Set<String>()
+
+    /// 刚标上的那一集，给播放器显示一句提示（LP 2026-10-29 4795「标记后加个提示就好了」）。
+    /// 只存最新一句：补队列时连着标好几集，屏幕上也只说最后那集。
+    private(set) var markedNotice: String?
     /// 番剧 → (集数 → Bangumi 单集 id)。同一次播放里会反复问进度，缓存一次省一批请求。
     private var episodeIndex: [Int: [Int: Int]] = [:]
     /// 串行化：上一集还在标，下一集不要抢在同一条队列前面。
@@ -132,6 +136,7 @@ final class BangumiProgressService {
             KazumiLog.network.notice(
                 "Bangumi: 已标记看过 \(subjectID, privacy: .public) 第 \(episodeNumber, privacy: .public) 集"
             )
+            markedNotice = "已标记本集看过"
             return false
         case .unauthorized:
             // 令牌没了或过期：这次就算了，不要拿一个失效凭据反复重试。

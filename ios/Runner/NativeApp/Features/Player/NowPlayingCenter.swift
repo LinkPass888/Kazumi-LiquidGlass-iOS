@@ -166,7 +166,7 @@ final class NowPlayingCenter {
     ) {
         configureRemoteCommands()
 
-        let artist = episodeTitle.map { "第 \(episode) 话 · \($0)" } ?? "第 \(episode) 话"
+        let artist = episodeTitle.map { "第 \(episode) 集 · \($0)" } ?? "第 \(episode) 集"
         let next = Info(
             title: title,
             artist: artist,

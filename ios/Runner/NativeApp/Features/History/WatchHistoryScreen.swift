@@ -80,7 +80,14 @@ struct WatchHistoryScreen: View {
 
     private func card(_ record: WatchRecord) -> some View {
         Button {
-            router.push(.player(bangumiID: record.bangumiID, episode: record.episodeNumber))
+            router.push(.player(
+                bangumiID: record.bangumiID,
+                episode: record.episodeNumber,
+                source: nil,
+                // 跟详情页「开始观看」一个口径：线路也接，越界整条作废（Ato 4849）。
+                resumeRoad: record.roadIndex,
+                resumeFromHistory: true
+            ))
         } label: {
             HStack(spacing: 12) {
                 poster(record)
@@ -131,7 +138,14 @@ struct WatchHistoryScreen: View {
         .contextMenu {
             // 已看完的从头播，就不能再叫「继续观看」——名字要跟代码做的事一致。
             Button(record.isFinished ? "重新观看" : "继续观看") {
-                router.push(.player(bangumiID: record.bangumiID, episode: record.episodeNumber))
+                router.push(.player(
+                bangumiID: record.bangumiID,
+                episode: record.episodeNumber,
+                source: nil,
+                // 跟详情页「开始观看」一个口径：线路也接，越界整条作废（Ato 4849）。
+                resumeRoad: record.roadIndex,
+                resumeFromHistory: true
+            ))
             }
             Button("删除记录", role: .destructive) {
                 library.removeHistory(bangumiID: record.bangumiID)
@@ -156,11 +170,14 @@ struct WatchHistoryScreen: View {
 
     private static let coverWidth: CGFloat = 84
 
-    /// 「第 1 话」或「第 1 话 · 标题」：有集标题就用集标题，没有就退回话数。
+    /// 「第 1 集」或「第 1 集 · 标题」：有集标题就用集标题，没有就退回集数。
     private func episodeLine(for record: WatchRecord) -> String {
-        let number = "第 \(record.episodeNumber) 话"
+        let number = "第 \(record.episodeNumber) 集"
         let title = record.episodeTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        return title.isEmpty || title == number ? number : "\(number) · \(title)"
+        // 老记录里的集标题是「第 N 话」（LP 4824「已经记录的就算了」，不迁移数据），
+        // 跟新的「第 N 集」并排比一次，别把同一句话拼成「第 3 集 · 第 3 话」。
+        let legacy = "第 \(record.episodeNumber) 话"
+        return title.isEmpty || title == number || title == legacy ? number : "\(number) · \(title)"
     }
 
     /// 底部状态：看完的写「已看完」，没看完的写百分比，刚看了一点的说「刚开始」。

@@ -84,7 +84,7 @@ enum DanmakuError: LocalizedError {
         case .badURL: "弹幕地址无效"
         case .badResponse: "弹幕接口返回了无效响应"
         case .unauthorized: "弹幕接口需要有效的 DanDanPlay 凭据"
-        case .status(429): "弹幕请求太频繁，稍后再试"
+        case .status(429): "今日弹幕请求次数已达上限"
         case .status(let code): "弹幕接口返回 HTTP \(code)"
         }
     }

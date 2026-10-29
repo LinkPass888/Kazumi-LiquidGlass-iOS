@@ -101,7 +101,7 @@ struct BangumiTimelineCard: View {
                     pill(symbol: "clock", text: updateText)
                 }
                 if let currentEpisode {
-                    pill(symbol: "list.number", text: "第 \(currentEpisode) 话")
+                    pill(symbol: "list.number", text: "第 \(currentEpisode) 集")
                 }
                 if isWatching {
                     Image(systemName: "bookmark.fill")

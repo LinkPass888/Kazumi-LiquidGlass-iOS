@@ -116,6 +116,8 @@ struct WatchRecord: Identifiable, Codable, Hashable, Sendable {
     var bangumiName: String
     var imageURL: String
     var sourceRuleName: String
+    /// 上次走的是第几条线路。老记录没有这一项（`nil`）就按第一条算，不迁移数据。
+    var roadIndex: Int? = nil
     var episodeTitle: String
     var episodeNumber: Int
     var progressSeconds: Double
@@ -188,6 +190,18 @@ final class LibraryStore {
 
     func entry(for bangumiID: Int) -> LibraryEntry? {
         entries.first { $0.id == bangumiID }
+    }
+
+    /// 这部剧在这条规则上接着看的位置：第几集 + 第几条线路。没有记录就是 nil。
+    ///
+    /// 键是「这部剧 + 这条规则名」，跟 main 的 `lastWatching(bangumiItem, adapterName)`
+    /// 一致（LP 4844「续播按 main 的方法」）：不同源的集数编号不一定一样，不跨源记。
+    /// 越界（线路不够、集数超过那条线路的长度）由播放器判，判不成立就整条不用。
+    func resumePoint(for bangumiID: Int, pluginName: String) -> (episode: Int, road: Int)? {
+        guard let record = history.first(where: {
+            $0.bangumiID == bangumiID && $0.sourceRuleName == pluginName
+        }), record.episodeNumber > 0 else { return nil }
+        return (record.episodeNumber, record.roadIndex ?? 0)
     }
 
     func record(for bangumiID: Int) -> WatchRecord? {

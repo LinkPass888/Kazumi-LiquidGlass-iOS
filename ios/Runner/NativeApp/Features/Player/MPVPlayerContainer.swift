@@ -41,8 +41,29 @@ final class PlayerSurfaceModel {
     /// 而不是暂停图标和控制栏。
     var isStalled: Bool { wantsPlaying && !isPlaying && !corePaused }
     var isReady = false
-    /// 这一集的第一帧是不是已经画上屏了。加载符号转到它为 true 为止。
+    /// 这一集的第一帧是不是已经画上屏了。
     var hasFirstFrame = false
+    /// 时间轴真的走起来了（第一帧之后又过了 0.15 秒）。
+    ///
+    /// 加载符号收到这里为止，不是收到 `hasFirstFrame`（LP 4810）：第一帧画上屏之后
+    /// 还要等音画对齐、时钟起跳，中间那一小段画面是黑的——圈先收了，人就在那儿干等。
+    private(set) var hasStartedPlayback = false
+    /// 当前下载速度（字节/秒），加载符号下面那行网速。平滑过，不然一秒跳四个数字。
+    private(set) var downloadSpeed: Double = 0
+    /// 内核正在 seek（拖进度、换集）。
+    private(set) var isSeeking = false
+    /// 这次加载走到哪一步（由 mpv 事件推，见 `MPVLoadPhase`）。
+    private(set) var loadPhase: MPVLoadPhase = .idle
+
+    /// 首帧还没出来 / 刚换集：加载圈该转。
+    ///
+    /// 三条各自有来处：`hasStartedPlayback` 是锁存（这一集真播过就不再转），
+    /// `hasFirstFrame && corePaused` 放行「有画面只是没播」，剩下的都算在加载。
+    var isLoadingFirstFrame: Bool {
+        if hasStartedPlayback { return false }
+        if hasFirstFrame, corePaused { return false }
+        return true
+    }
     var errorMessage: String?
     /// 视频的像素尺寸；还没拿到时是 .zero，布局回落到整块画面。
     var videoSize: CGSize = .zero
@@ -214,6 +235,29 @@ final class PlayerSurfaceModel {
         // 内核没在走有三种：正在缓冲/卡住（idle 但没暂停）、被暂停（用户或系统）、
         // 还没起播。只有第二种才算暂停，第一种要留给界面转加载圈。
         corePaused = snapshot.isPaused
+        isSeeking = snapshot.isSeeking
+        if snapshot.loadPhase != loadPhase {
+            // 新的一次加载开始（换集 / 重新加载 / 换源）：首帧那套状态清掉，
+            // 圈重新转。seek 不经过这里（相位还是 playing），所以不会误触发
+            // 首帧逻辑（LP 4818 第 7 条）。
+            if snapshot.loadPhase == .opening {
+                hasFirstFrame = false
+                hasStartedPlayback = false
+            }
+            loadPhase = snapshot.loadPhase
+        }
+        // 网速平滑一下：mpv 报的是瞬时值，直接显示就是每 250ms 乱跳的数字。
+        // 掉到 0 时直接归零，别让「已经不下载了」还挂着上一个速度。
+        if snapshot.downloadSpeed > 0 {
+            downloadSpeed = downloadSpeed > 0
+                ? downloadSpeed * 0.6 + snapshot.downloadSpeed * 0.4
+                : snapshot.downloadSpeed
+        } else {
+            downloadSpeed = 0
+        }
+        if hasFirstFrame, snapshot.time > 0.15 {
+            hasStartedPlayback = true
+        }
         let coreRunning = !snapshot.isPaused && !snapshot.isIdle
         if coreRunning {
             isPlaying = true
@@ -275,6 +319,9 @@ final class PlayerSurfaceModel {
         bufferedTime = 0
         isReady = false
         hasFirstFrame = false
+        hasStartedPlayback = false
+        isSeeking = false
+        downloadSpeed = 0
         pendingResumeTime = nil
         errorMessage = nil
         // 换集先清尺寸：新的一集分辨率可能不同，拿到之前回落到整块画面。

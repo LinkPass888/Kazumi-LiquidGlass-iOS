@@ -43,6 +43,22 @@ struct PlaybackInfo: Sendable, Equatable {
 }
 
 /// 一次属性快照，从 mpv 的事件线程递回主线程。
+/// 一次加载走到哪一步。由 mpv 事件推，不由计时器推（LP 4818）。
+///
+/// `FILE_LOADED` 只说明文件打开了，不代表首帧已经画上屏；真正的判据是本进程
+/// 渲染回调里那一帧（见 `MPVEngine.render(in:)`）。所以中间要有
+/// `awaitingFirstFrame` 这一档，别把两件事合成一件。
+enum MPVLoadPhase: Sendable {
+    /// 没有文件在加载（播放器刚建好，或者这一集已经结束）。
+    case idle
+    /// 收到 START_FILE：正在打开 / 连源。
+    case opening
+    /// FILE_LOADED / PLAYBACK_RESTART 之后：等第一帧真的画上屏。
+    case awaitingFirstFrame
+    /// 第一帧已经在本进程的渲染回调里画过。
+    case playing
+}
+
 struct MPVSnapshot: Sendable {
     var time: Double
     var duration: Double
@@ -56,6 +72,14 @@ struct MPVSnapshot: Sendable {
     /// 弹幕层与控制层要用它算出画面在容器里的真实矩形。
     var videoWidth: Double = 0
     var videoHeight: Double = 0
+    /// 当前下载速度（字节/秒）。没在下载（缓存够、本地文件、播完）时是 0。
+    /// 加载符号下面那行网速用它（LP 4810）。
+    var downloadSpeed: Double = 0
+    /// 内核正在 seek（拖进度、换集）。加载符号在这段时间也要转，
+    /// 不然拖完进度就是一整块静止的黑屏。
+    var isSeeking: Bool = false
+    /// 这次加载走到哪一步了（LP 4818）。
+    var loadPhase: MPVLoadPhase = .idle
 }
 
 @MainActor
@@ -230,6 +254,9 @@ final class MPVEngine {
         // 换集 / 重试都按「接着看」处理：内核里 pause 可能还是上一集留下的 true，
         // 不显式放开，加载完了就停在那儿黑着（LP 2026-10-28 第 4 条「不会自动播放」）。
         reportedFirstFrame = false
+        // 换集 / 重新加载 / 换源：从这一刻起就是「在加载」，别等 mpv 的 START_FILE
+        // 事件（那要等它自己排到），界面上的圈要立刻转起来。
+        pump?.beginLoad()
         setFlag("pause", false)
         command("loadfile", [url.absoluteString, "replace"])
     }
@@ -445,6 +472,9 @@ final class MPVEngine {
     // MARK: - 收尾
 
     func stop() {
+        // 先把出帧钩子摘掉，再销毁内核：钩子那头的画中画取帧器会去读 mpv 句柄，
+        // 留着它，销毁之后补画的一帧就会读一块已经还回去的内存（真机 SIGSEGV）。
+        onFrameRendered = nil
         pump?.stop()
         pump = nil
         // 引擎要没了，还等着的命令不能继续挂着。
@@ -595,6 +625,9 @@ final class MPVEngine {
         )
         if !reportedFirstFrame {
             reportedFirstFrame = true
+            // 这一帧是「真的在渲染流程里画出来的」，不是收到某个回调就假定画好了
+            // （LP 4818 第 5 条）。事件泵据此把 awaitingFirstFrame 推进到 playing。
+            pump?.markFirstFrameRendered()
             let callback = onFirstFrame
             Task { @MainActor in callback?() }
         }
@@ -658,8 +691,14 @@ final class MPVEventPump: @unchecked Sendable {
     private var ticker: DispatchSourceTimer?
     /// 最近一次加载失败的原因；成功起播后清掉。
     private var lastError: String?
+    /// 内核最后一条 error / fatal 级日志的原文，报错提示拼原因用。
+    private var lastCoreErrorText: String?
     /// 这一集的格式参数只记一次。
     private var loggedVideoInfo = false
+    /// 这次加载走到哪一步（LP 4818）。只在事件泵自己的队列上读写。
+    private var loadPhase: MPVLoadPhase = .idle
+    /// 这次加载里，第一帧有没有真的在渲染回调里画过。
+    private var firstFrameRendered = false
 
     init(
         mpv: OpaquePointer,
@@ -710,6 +749,24 @@ final class MPVEventPump: @unchecked Sendable {
         mpv_set_wakeup_callback(mpv, nil, nil)
     }
 
+    /// 引擎要开始新的一次加载了（换集 / 重试 / 换源）。
+    func beginLoad() {
+        queue.async { [weak self] in
+            guard let self else { return }
+            self.loadPhase = .opening
+            self.firstFrameRendered = false
+        }
+    }
+
+    /// 第一帧已经在渲染回调里画过（由引擎在主线程调）。
+    func markFirstFrameRendered() {
+        queue.async { [weak self] in
+            guard let self else { return }
+            self.firstFrameRendered = true
+            if self.loadPhase == .awaitingFirstFrame { self.loadPhase = .playing }
+        }
+    }
+
     fileprivate func signal() {
         guard running else { return }
         MPVEventPump.debugLog("wakeup")
@@ -724,12 +781,33 @@ final class MPVEventPump: @unchecked Sendable {
             let id = event.pointee.event_id
             if id == MPV_EVENT_NONE { break }
             if id == MPV_EVENT_SHUTDOWN { return }
+            if id == MPV_EVENT_START_FILE {
+                // 开始打开文件：圈从现在开始转（LP 4818 第 2 条）。
+                loadPhase = .opening
+                firstFrameRendered = false
+            }
+            if id == MPV_EVENT_FILE_LOADED {
+                // 文件打开了不等于有画面：不在这儿收圈，往后推到「等首帧」
+                // （LP 4818 第 3 条）。
+                if loadPhase == .opening { loadPhase = .awaitingFirstFrame }
+            }
+            if id == MPV_EVENT_PLAYBACK_RESTART {
+                // 起播 / seek 完都会来这条。起播时推进到「等首帧」，
+                // seek 时相位已经是 playing，不动——别让 seek 误触发首帧逻辑
+                // （LP 4818 第 4、7 条）。
+                if loadPhase == .opening { loadPhase = .awaitingFirstFrame }
+            }
             if id == MPV_EVENT_END_FILE, let raw = event.pointee.data {
+                // 播完 / 出错：加载状态清掉，别让圈挂在那儿转（LP 4818 第 8 条）。
+                loadPhase = .idle
                 let endFile = UnsafeMutablePointer<mpv_event_end_file>(OpaquePointer(raw))
                 if endFile.pointee.reason == MPV_END_FILE_REASON_ERROR {
                     let message = String(cString: mpv_error_string(endFile.pointee.error))
-                    lastError = "播放失败：\(message)"
-                    onLog("end-file 错误：\(message)")
+                    // 画面上那行内核日志已经拿掉了（LP 4810），所以这里必须给一句人话：
+                    // 内核报的是英文（`Failed to open ...`），翻成用户看得懂的原因。
+                    // 原文照旧进日志，排查时还要靠它。
+                    lastError = PlayerErrorMessage.friendly(core: message, detail: lastCoreErrorText)
+                    onLog("end-file 错误：\(message)\(lastCoreErrorText.map { " / \($0)" } ?? "")")
                 }
             }
             if id == MPV_EVENT_LOG_MESSAGE, let raw = event.pointee.data {
@@ -738,7 +816,14 @@ final class MPVEventPump: @unchecked Sendable {
                 )
                 let text = String(cString: message.pointee.text)
                 let prefix = String(cString: message.pointee.prefix)
+                let level = String(cString: message.pointee.level)
                 onLog("[\(prefix)] \(text)")
+                // 留一条 error / fatal 级的原文：内核真正的原因（域名解析不了、
+                // 403、解码器起不来）往往只在日志里说，end-file 那条只有一句
+                // `Failed to open`。报错提示要拼上它才说得准。
+                if level == "error" || level == "fatal" {
+                    lastCoreErrorText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                }
             }
             if id == MPV_EVENT_COMMAND_REPLY {
                 // 异步命令做完了。`reply_userdata` 就是发命令时给的那个号，
@@ -748,6 +833,14 @@ final class MPVEventPump: @unchecked Sendable {
             }
         }
         var snap = snapshot()
+        // 「自动播放真的起来了」的两个判据，满足一个就算（LP 4820）：
+        // 一是第一帧已经在渲染回调里画过，二是时间轴真的在推进（没暂停、time-pos 走起来了）。
+        // 后者兜住「帧画出来了但首帧回调没轮到」这种情况。
+        if loadPhase == .awaitingFirstFrame {
+            if firstFrameRendered || (!snap.isPaused && snap.time > 0.1) {
+                loadPhase = .playing
+            }
+        }
         if snap.hasVideo { lastError = nil }
         // 第一帧出来的时候把源的真实格式记下来：位深、矩阵、范围这三样
         // 直接决定颜色对不对，pixelformat 里带 10 就是 10bit 片源。
@@ -756,6 +849,7 @@ final class MPVEventPump: @unchecked Sendable {
             onLog("片源 \(videoInfoLine())")
         }
         snap.loadError = lastError
+        snap.loadPhase = loadPhase
         MPVEventPump.debugLog("snap t=\(snap.time) d=\(snap.duration) paused=\(snap.isPaused) idle=\(snap.isIdle) video=\(snap.hasVideo) err=\(lastError ?? "-")")
         onSnapshot(snap)
     }
@@ -803,6 +897,8 @@ final class MPVEventPump: @unchecked Sendable {
             mpv_get_property(mpv, "width", MPV_FORMAT_INT64, &videoWidth)
             mpv_get_property(mpv, "height", MPV_FORMAT_INT64, &videoHeight)
         }
+        var seeking: Int32 = 0
+        mpv_get_property(mpv, "seeking", MPV_FORMAT_FLAG, &seeking)
         return MPVSnapshot(
             time: time.isFinite ? time : 0,
             duration: duration.isFinite ? duration : 0,
@@ -811,8 +907,30 @@ final class MPVEventPump: @unchecked Sendable {
             hasVideo: hasVideo,
             ended: ended > 0,
             videoWidth: videoWidth > 0 ? Double(videoWidth) : 0,
-            videoHeight: videoHeight > 0 ? Double(videoHeight) : 0
+            videoHeight: videoHeight > 0 ? Double(videoHeight) : 0,
+            downloadSpeed: downloadSpeed(),
+            isSeeking: seeking > 0
         )
+    }
+
+    /// 当前的下载速度（字节/秒）。
+    ///
+    /// 先问 `cache-speed`：它就是「demuxer 缓存正在被填多快」。个别内核版本这个
+    /// 属性是空的，再退回 `demuxer-cache-state` 里的 `raw-input-rate`
+    /// （mpv 的 node map 支持按子键取值，直接拿字符串再转数最省事）。
+    /// 两个都拿不到就是 0：界面上不显示网速，不留一个「0 KB/s」在那儿。
+    private func downloadSpeed() -> Double {
+        var speed = Double(0)
+        if mpv_get_property(mpv, "cache-speed", MPV_FORMAT_DOUBLE, &speed) >= 0,
+           speed.isFinite, speed > 0 {
+            return speed
+        }
+        guard let raw = mpv_get_property_string(mpv, "demuxer-cache-state/raw-input-rate") else {
+            return 0
+        }
+        defer { mpv_free(raw) }
+        let value = Double(String(cString: raw)) ?? 0
+        return value.isFinite && value > 0 ? value : 0
     }
 }
 

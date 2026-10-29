@@ -263,11 +263,14 @@ struct ProfileScreen: View {
         return percent <= 1 ? "刚开始" : "看了 \(percent)%"
     }
 
-    /// 「第 1 话」或「第 1 话 · 标题」，跟观看历史页同一份写法。
+    /// 「第 1 集」或「第 1 集 · 标题」，跟观看历史页同一份写法。
     private func episodeLine(for record: WatchRecord) -> String {
-        let number = "第 \(record.episodeNumber) 话"
+        let number = "第 \(record.episodeNumber) 集"
         let title = record.episodeTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        return title.isEmpty || title == number ? number : "\(number) · \(title)"
+        // 老记录里的集标题是「第 N 话」（LP 4824「已经记录的就算了」，不迁移数据），
+        // 跟新的「第 N 集」并排比一次，别把同一句话拼成「第 3 集 · 第 3 话」。
+        let legacy = "第 \(record.episodeNumber) 话"
+        return title.isEmpty || title == number || title == legacy ? number : "\(number) · \(title)"
     }
 
     private func rowButton(

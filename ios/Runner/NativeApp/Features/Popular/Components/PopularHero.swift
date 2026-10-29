@@ -727,17 +727,21 @@ struct PopularHero: View {
                 SourceSheetCoordinator.shared.dismiss()
                 returnToSourcesAfterPlayer = true
                 depthBeforePlayer = navigationDepth
+                // 跟详情页「开始观看」一个口径：这部剧在这条规则上看到哪就从哪起。
+                let point = library.resumePoint(for: controller.item.id, pluginName: pluginName)
                 router.push(
                     .player(
                         bangumiID: controller.item.id,
-                        episode: 1,
+                        episode: point?.episode ?? 1,
                         source: PlaybackSource(
                             pluginName: pluginName,
                             itemName: result.name,
                             // 原样传 src：接口模式要的是 vod_id，拼成网址就查不到剧集。
                             detailURL: result.src,
                             directMediaURL: MediaUtility.isMediaURL(result.src) ? result.src : nil
-                        )
+                        ),
+                        resumeRoad: point?.road,
+                        resumeFromHistory: true
                     )
                 )
             },

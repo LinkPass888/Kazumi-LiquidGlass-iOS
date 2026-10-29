@@ -303,7 +303,7 @@ struct BangumiEpisode: Identifiable, Hashable, Sendable {
         let translated = nameCn.trimmingCharacters(in: .whitespacesAndNewlines)
         if !translated.isEmpty { return translated }
         let original = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        return original.isEmpty ? "第 \(Int(sort)) 话" : original
+        return original.isEmpty ? "第 \(Int(sort)) 集" : original
     }
 
     static func fromJSON(_ json: JSONValue) -> BangumiEpisode {

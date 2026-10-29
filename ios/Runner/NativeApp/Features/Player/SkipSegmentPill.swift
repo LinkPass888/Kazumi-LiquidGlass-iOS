@@ -8,7 +8,7 @@
 //  * 提前 5 秒弹出，圆环倒数 5..0，倒数到 0 自动 seek 到区间结束；
 //  * 弹窗上「跳过」立刻跳，「取消」本段不再自动跳；
 //  * 跳完给 5 秒「撤销」窗口，撤销跳回区间开头；
-//  * 片尾结束到全集结尾 ≤3 秒时（ED 就是本集结尾）换成「下一集 / 取消」，
+//  * 片尾结束到全集结尾 ≤5 秒时（ED 就是本集结尾）换成「下一集 / 取消」，
 //    倒数到 0 用户无操作就取消——不自动切集，把决定权留给用户。
 //
 //  时间轴来自 AniSkip，是按在线片源测的，不同压制版本会有偏差，
@@ -35,7 +35,10 @@ final class SkipSegmentPillModel {
     /// 跳完后的撤销窗口时长。
     static let undoSeconds: Double = 5
     /// 片尾结束到全集结尾的「短」阈值：≤ 该值时认为 ED 就是本集结尾。
-    static let postCreditsThreshold: Double = 3
+    ///
+    /// 原来是 3 秒，片尾和正片结尾贴得太近时会误判成「ED 就是本集结尾」
+    /// 弹出「下一集」（LP 2026-10-29 4798），放宽到 5 秒。
+    static let postCreditsThreshold: Double = 5
 
     /// 这一集的片头片尾。换集 / 重新查询时由外面推进来。
     var segments: SkipSegments = .empty
@@ -212,7 +215,7 @@ final class SkipSegmentPillModel {
         }
     }
 
-    /// 片尾结束到全集结尾 ≤3 秒：这时 ED 就是本集结尾，换成「下一集 / 取消」。
+    /// 片尾结束到全集结尾 ≤5 秒：这时 ED 就是本集结尾，换成「下一集 / 取消」。
     private func endsEpisode(_ kind: SkipKind, _ range: SkipRange) -> Bool {
         kind == .ending && duration > 0 && duration - range.end <= Self.postCreditsThreshold
     }
