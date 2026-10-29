@@ -55,6 +55,13 @@ final class PictureInPictureController: NSObject {
     /// 出问题时给播放页的日志行。
     var onLog: ((String) -> Void)?
 
+    /// 「刚要起小窗」那几秒要的续命牌。
+    ///
+    /// 刚起播就退后台时，音频还没真正跑起来，系统可能当这个 App 没在播放，直接挂起——
+    /// 我们那条「等小窗可用」的轮询根本没机会跑，表现就是「刚播放时退出去没有小窗」。
+    /// 起小窗期间拿一张后台续命牌，起来之后小窗自己会保活，这张就还回去。
+    private var pipBackgroundTask: UIBackgroundTaskIdentifier = .invalid
+
     /// 系统能不能在退后台时自己起小窗。跟着播放状态走，见 `ensureController()`。
     var allowsAutoStart = true {
         didSet { pipController?.canStartPictureInPictureAutomaticallyFromInline = allowsAutoStart }
@@ -115,6 +122,19 @@ final class PictureInPictureController: NSObject {
         }
     }
 
+    private func beginBackgroundTaskIfNeeded() {
+        guard pipBackgroundTask == .invalid else { return }
+        pipBackgroundTask = UIApplication.shared.beginBackgroundTask(withName: "picture-in-picture-start") { [weak self] in
+            Task { @MainActor in self?.endBackgroundTaskIfNeeded() }
+        }
+    }
+
+    private func endBackgroundTaskIfNeeded() {
+        guard pipBackgroundTask != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(pipBackgroundTask)
+        pipBackgroundTask = .invalid
+    }
+
     /// 切后台时调用。返回 false 表示这次没法走画中画，页面应退回原有的后台策略。
     @discardableResult
     func start(engine: MPVEngine?, surface: PlayerSurfaceModel) -> Bool {
@@ -139,6 +159,8 @@ final class PictureInPictureController: NSObject {
             onFailed?()
             return false
         }
+
+        beginBackgroundTaskIfNeeded()
 
         // 后台 UIKit 不会主动给 GLKView 发 draw，这里自己按 30Hz 驱动；
         // 前台时多出来的 display 也只是重画当前帧，不改变播放状态。
@@ -187,6 +209,7 @@ final class PictureInPictureController: NSObject {
     func teardown() {
         startTask?.cancel()
         startTask = nil
+        endBackgroundTaskIfNeeded()
         if pipController?.isPictureInPictureActive == true {
             pipController?.stopPictureInPicture()
         }
@@ -278,6 +301,7 @@ final class PictureInPictureController: NSObject {
     private func finishStopping() {
         startTask?.cancel()
         startTask = nil
+        endBackgroundTaskIfNeeded()
         // 只停「自己驱动渲染」的那条节拍；喂帧本身继续留着。
         // 停了它，回前台之后图层就又没有新帧了，下一次退后台照样起不来小窗。
         captureTimer?.cancel()
@@ -314,6 +338,8 @@ extension PictureInPictureController: @preconcurrency AVPictureInPictureControll
         _ pictureInPictureController: AVPictureInPictureController
     ) {
         isActive = true
+        // 小窗起来了：它自己会保活，续命牌还回去。
+        endBackgroundTaskIfNeeded()
         // 小窗真的在显示了才用满帧率；平时低频喂着就够。
         copier?.captureInterval = 1.0 / 30.0
         log("画中画已启动")
@@ -340,7 +366,7 @@ extension PictureInPictureController: @preconcurrency AVPictureInPictureControll
     ) {
         isActive = false
         // 收回低频：内联播放时不需要 30Hz 的额外拷贝。
-        copier?.captureInterval = 1.0 / 10.0
+        copier?.captureInterval = 1.0 / 2.0
         if UIApplication.shared.applicationState == .background {
             // 用户自己点了画中画窗口的关闭键、App 还在后台：画面没了。
             // 没开后台音频就停声；开着则继续当音频播放器用。
@@ -477,7 +503,11 @@ private final class PiPFrameCopier {
 
     /// 两次拷贝之间至少隔多久。平时（还没进小窗）低频喂着，只要图层里有内容、
     /// `isPictureInPicturePossible` 能变 true 就够；小窗真起来了才提到满帧率。
-    var captureInterval: Double = 1.0 / 10.0
+    ///
+    /// 别调密：内联时这层是藏着不显示的，喂进去的帧没人消费，会一直堆在
+    /// AVFoundation 的队列里（1080p 一帧好几兆），还把后到的真帧挡在外面——
+    /// 小窗刚出时那段灰屏就跟这个有关。
+    var captureInterval: Double = 1.0 / 2.0
 
     private var textureCache: CVOpenGLESTextureCache?
     private var framebuffer: GLuint = 0
