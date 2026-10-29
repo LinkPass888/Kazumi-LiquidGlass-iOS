@@ -1973,9 +1973,7 @@ struct PlayerScreen: View {
     /// 行尾不放勾（LP 4721）：菜单行只有一个图标槽，多塞的那颗系统不画。
     private var collectButton: some View {
         // 点一下只出菜单，不改状态、不震动（LP 2026-10-28 / Colo 3990）：
-        // 符号＝当前状态，五项状态 + 取消追番都在菜单里，当前项打勾。
-        // 先拿收藏菜单试 SwiftUI 的 `Menu`（LP 2026-10-28）：系统观感回来了，
-        // 点一下只出菜单、不改状态、不震动；当前项右边打勾。
+        // 符号＝当前状态，五项状态 + 取消追番都在菜单里。
         Menu {
             ForEach(CollectType.enabledCases) { type in
                 Button {
@@ -1995,7 +1993,7 @@ struct PlayerScreen: View {
                     noteInteraction()
                     applyCollectType(.none)
                 } label: {
-                    Label("取消追番", systemImage: "heart.slash")
+                    Label("取消追番", systemImage: "trash")
                 }
             }
         } label: {
