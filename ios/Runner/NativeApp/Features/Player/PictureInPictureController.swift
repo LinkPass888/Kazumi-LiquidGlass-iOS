@@ -800,7 +800,9 @@ private final class PiPFrameCopier {
     /// 输出宽度不超过 1280，保持源画面比例，宽高取偶数。
     /// 小窗本身不大，但 640 那一档放大到平板 / 大屏画中画时会糊（LP 抓到画质被压）。
     private func targetSize(sourceWidth: Int, sourceHeight: Int) -> (width: Int, height: Int) {
-        let scale = min(1.0, 1280.0 / Double(sourceWidth))
+        // 上限就放在 1920：1080p 的番原样拷，不缩。小窗本来显示得小，但用户点开
+        // 小窗是全屏看的，拷小了那一步就只能放大糊着看——「画质被压缩过」就是它。
+        let scale = min(1.0, 1920.0 / Double(sourceWidth))
         let width = max(2, Int((Double(sourceWidth) * scale).rounded()) & ~1)
         let height = max(2, Int((Double(sourceHeight) * scale).rounded()) & ~1)
         return (width, height)
