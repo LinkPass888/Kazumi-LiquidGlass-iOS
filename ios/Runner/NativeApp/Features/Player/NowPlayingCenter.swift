@@ -219,7 +219,9 @@ final class NowPlayingCenter {
         dictionary[MPNowPlayingInfoPropertyElapsedPlaybackTime] = elapsed
         dictionary[MPNowPlayingInfoPropertyPlaybackRate] = isPlaying ? 1.0 : 0.0
         if full {
-            dictionary[MPNowPlayingInfoPropertyMediaType] = MPNowPlayingInfoMediaType.video.rawValue
+            // 报「音频」不报「视频」（LP 4720）：报成视频，系统就按视频内容处理那颗
+            // 「正在播放」指示——点一下是展开、不跳 App；音乐 App 报音频，点一下进 App。
+            dictionary[MPNowPlayingInfoPropertyMediaType] = MPNowPlayingInfoMediaType.audio.rawValue
             // 集数：系统自带的「第 N 集」字段就是专辑里的音轨号，控制中心会拿出来显示。
             dictionary[MPMediaItemPropertyAlbumTrackNumber] = info.episode
         }

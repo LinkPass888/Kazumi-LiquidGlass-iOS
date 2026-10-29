@@ -1969,8 +1969,8 @@ struct PlayerScreen: View {
     /// 未收藏是 `plus`、收藏了是实心 `heart.fill`，一律白色 20pt——播放器里不用主题色，
     /// 靠实心与否区分，不靠颜色。
     ///
-    /// 点一下只弹菜单，不改状态、不震动：五项状态和「取消追番」都在里面，
-    /// 当前项右边打勾（LP 2026-10-28 / Colo 3984、3990）。
+    /// 点一下只弹菜单，不改状态、不震动：五项状态和「取消追番」都在里面。
+    /// 行尾不放勾（LP 4721）：菜单行只有一个图标槽，多塞的那颗系统不画。
     private var collectButton: some View {
         // 点一下只出菜单，不改状态、不震动（LP 2026-10-28 / Colo 3990）：
         // 符号＝当前状态，五项状态 + 取消追番都在菜单里，当前项打勾。
@@ -1982,15 +1982,11 @@ struct PlayerScreen: View {
                     noteInteraction()
                     applyCollectType(type)
                 } label: {
-                    // 符号留在前导位（菜单行只认 Label 的图标槽），勾放行尾——
-                    // 这正是 LP 4673 之前的结构，符号和勾两样都显示得出来。
-                    HStack(spacing: 8) {
-                        Label(type.buttonTitle, systemImage: type.statusSymbol)
-                        if currentCollectType == type {
-                            Spacer(minLength: 8)
-                            Image(systemName: "checkmark")
-                        }
-                    }
+                    // 只留 Label 自己的前导图标。行尾那颗勾加不进去：菜单每行只给一个
+                    // 图标槽，HStack 里再塞 Spacer + Image 会被系统整行吃掉（LP 4721
+                    // 真机上就是「后面没有打勾」）。既然显示不出来，就不放它了——
+                    // 当前是哪个状态由钮上那颗符号自己体现。
+                    Label(type.buttonTitle, systemImage: type.statusSymbol)
                 }
             }
             if currentCollectType != .none {
