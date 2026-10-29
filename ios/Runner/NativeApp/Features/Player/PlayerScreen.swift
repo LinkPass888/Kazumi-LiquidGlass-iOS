@@ -1378,7 +1378,7 @@ struct PlayerScreen: View {
         }
     }
 
-    /// 截图：抓帧 → 存相册 → 闪一下取景框；存不进相册才出提示。
+    /// 截图：抓帧 → 存相册 → 闪一下取景框，存好/没存好都要说一句（LP 4709）。
     ///
     /// 抓帧走 mpv 的 `screenshot-to-file`（原始分辨率、不含字幕和 OSD，LP 4695），
     /// 出的是临时文件；这里再把文件交给相册那条路，存完删掉。
@@ -1401,7 +1401,13 @@ struct PlayerScreen: View {
             let failure = await PlayerScreenshot.save(pngAt: url)
             // 临时文件不再需要；存成功也是它自己那份了。
             try? FileManager.default.removeItem(at: url)
-            if let failure { surface.toastMessage = failure }
+            if let failure {
+                surface.toastMessage = failure
+            } else {
+                // 存成功也要说话（LP 4709）：取景框闪一下只是快门，没人知道到底存没存进去。
+                // 跟倍速/收藏/定时关闭同一条线（LP 4668）——这是动作结果，不是说明。
+                surface.hudToastMessage = "已保存到相册"
+            }
         }
     }
 
