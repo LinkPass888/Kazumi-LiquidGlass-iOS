@@ -91,13 +91,21 @@ final class PictureInPictureController: NSObject {
             self.copier = copier
         }
 
-        // 钩子只装一次。真正拷贝由 `isCapturing` 控制：设置开着但还没进 PiP 时，
-        // 这里只多一次可选闭包调用，不做 GPU 拷贝。
-        engine.onFrameRendered = { [weak self] fbo, width, height in
+        // 播放器一打开就开始喂画面（低频），不要等小窗要起了才喂。
+        //
+        // 原来是「小窗要起的时候才 beginCapture」，于是第一次退后台时图层里一帧都还没有，
+        // `isPictureInPicturePossible` 一直是 false，小窗起不来；等那一轮拷过帧之后，
+        // 下一次退后台才成功——正好就是「第一次不出、再退出反而出了」。
+        copier?.beginCapture()
+
+        // 钩子只装一次；`isCapturing` 由 prepare / teardown 控制。
+        engine.onFrameRendered = { [weak self] fbo, width, height, videoWidth, videoHeight in
             self?.copier?.capture(
                 sourceFBO: fbo,
                 sourceWidth: width,
-                sourceHeight: height
+                sourceHeight: height,
+                videoWidth: videoWidth,
+                videoHeight: videoHeight
             )
         }
     }
@@ -263,9 +271,10 @@ final class PictureInPictureController: NSObject {
     private func finishStopping() {
         startTask?.cancel()
         startTask = nil
+        // 只停「自己驱动渲染」的那条节拍；喂帧本身继续留着。
+        // 停了它，回前台之后图层就又没有新帧了，下一次退后台照样起不来小窗。
         captureTimer?.cancel()
         captureTimer = nil
-        copier?.endCapture()
         isActive = false
     }
 
@@ -298,6 +307,8 @@ extension PictureInPictureController: @preconcurrency AVPictureInPictureControll
         _ pictureInPictureController: AVPictureInPictureController
     ) {
         isActive = true
+        // 小窗真的在显示了才用满帧率；平时低频喂着就够。
+        copier?.captureInterval = 1.0 / 30.0
         log("画中画已启动")
     }
 
@@ -321,6 +332,8 @@ extension PictureInPictureController: @preconcurrency AVPictureInPictureControll
         _ pictureInPictureController: AVPictureInPictureController
     ) {
         isActive = false
+        // 收回低频：内联播放时不需要 30Hz 的额外拷贝。
+        copier?.captureInterval = 1.0 / 10.0
         if UIApplication.shared.applicationState == .background {
             // 用户自己点了画中画窗口的关闭键、App 还在后台：画面没了。
             // 没开后台音频就停声；开着则继续当音频播放器用。
@@ -454,6 +467,10 @@ private final class PiPFrameCopier {
     var onLog: ((String) -> Void)?
     private(set) var isCapturing = false
 
+    /// 两次拷贝之间至少隔多久。平时（还没进小窗）低频喂着，只要图层里有内容、
+    /// `isPictureInPicturePossible` 能变 true 就够；小窗真起来了才提到满帧率。
+    var captureInterval: Double = 1.0 / 10.0
+
     private var textureCache: CVOpenGLESTextureCache?
     private var framebuffer: GLuint = 0
     private var pixelBufferPool: CVPixelBufferPool?
@@ -565,12 +582,17 @@ private final class PiPFrameCopier {
     // MARK: 每帧
 
     /// 由 `MPVEngine.render(in:)` 在 mpv 画完当前 FBO 后同步调用。
-    func capture(sourceFBO: GLint, sourceWidth: Int, sourceHeight: Int) {
+    func capture(
+        sourceFBO: GLint,
+        sourceWidth: Int,
+        sourceHeight: Int,
+        videoWidth: Double,
+        videoHeight: Double
+    ) {
         guard isCapturing, sourceWidth > 1, sourceHeight > 1 else { return }
 
-        // 30Hz 够了：PiP 窗口小，60Hz 只会白烧 GPU / 电量。
         let hostNow = CACurrentMediaTime()
-        guard lastCaptureHostTime == 0 || hostNow - lastCaptureHostTime >= 1.0 / 30.0 else {
+        guard lastCaptureHostTime == 0 || hostNow - lastCaptureHostTime >= captureInterval else {
             return
         }
         lastCaptureHostTime = hostNow
@@ -587,7 +609,16 @@ private final class PiPFrameCopier {
             return
         }
 
-        let size = targetSize(sourceWidth: sourceWidth, sourceHeight: sourceHeight)
+        // 只拷画面那一块：容器里画面之外是黑边（16:9 的番放在更宽的屏幕里、
+        // 或者用户选了别的画面比例），整块容器拷过去会把黑边一起送进小窗，
+        // 小窗就变成「比例不对、两边有黑边」。拿不到画面尺寸时退回整块。
+        let rect = videoRect(
+            sourceWidth: sourceWidth,
+            sourceHeight: sourceHeight,
+            videoWidth: videoWidth,
+            videoHeight: videoHeight
+        )
+        let size = targetSize(sourceWidth: Int(rect.width), sourceHeight: Int(rect.height))
         guard let pixelBuffer = makePixelBuffer(width: size.width, height: size.height) else {
             logOnce("CVPixelBuffer 分配失败")
             return
@@ -599,8 +630,7 @@ private final class PiPFrameCopier {
             lastPTS = .nan
         }
 
-        guard blit(sourceFBO: sourceFBO, sourceWidth: sourceWidth, sourceHeight: sourceHeight,
-                   pixelBuffer: pixelBuffer) else {
+        guard blit(sourceFBO: sourceFBO, rect: rect, pixelBuffer: pixelBuffer) else {
             return
         }
 
@@ -637,8 +667,7 @@ private final class PiPFrameCopier {
 
     private func blit(
         sourceFBO: GLint,
-        sourceWidth: Int,
-        sourceHeight: Int,
+        rect: CGRect,
         pixelBuffer: CVPixelBuffer
     ) -> Bool {
         guard let cache = ensureTextureCache() else { return false }
@@ -696,7 +725,8 @@ private final class PiPFrameCopier {
         // CVPixelBuffer 反过来：内存第 0 行被 AVFoundation 当成画面顶部。
         // 目标 y 反向写，正好让源底部落到 PixelBuffer 的最后一行（画面底部）。
         glBlitFramebuffer(
-            0, 0, GLsizei(sourceWidth), GLsizei(sourceHeight),
+            GLint(rect.minX), GLint(rect.minY),
+            GLint(rect.maxX), GLint(rect.maxY),
             0, GLsizei(height), GLsizei(width), 0,
             GLbitfield(GL_COLOR_BUFFER_BIT),
             GLenum(GL_LINEAR)
@@ -742,9 +772,35 @@ private final class PiPFrameCopier {
 
     // MARK: 像素缓冲与 sample buffer
 
-    /// 输出宽度不超过 640，保持源画面比例，宽高取偶数。
+    /// 画面在容器里的矩形（GL 坐标，y 从底往上）。
+    ///
+    /// mpv 按 `keepaspect` 把画面居中放进 FBO，画面之外是黑边。画中画只该拷这个矩形：
+    /// 拷贝整块容器会把黑边一起带进小窗，看起来就是「比例不对、两边有黑边」。
+    /// 拿不到画面尺寸（还没出第一帧）时退回整块容器。
+    private func videoRect(
+        sourceWidth: Int,
+        sourceHeight: Int,
+        videoWidth: Double,
+        videoHeight: Double
+    ) -> CGRect {
+        guard videoWidth > 1, videoHeight > 1 else {
+            return CGRect(x: 0, y: 0, width: sourceWidth, height: sourceHeight)
+        }
+        let scale = min(Double(sourceWidth) / videoWidth, Double(sourceHeight) / videoHeight)
+        let width = (videoWidth * scale).rounded()
+        let height = (videoHeight * scale).rounded()
+        // 宽高取偶数：CVPixelBuffer 的 4:2:0 兼容性、以及奇数列在缩放时容易出锯齿。
+        let evenWidth = max(2, min(Double(sourceWidth), width - width.truncatingRemainder(dividingBy: 2)))
+        let evenHeight = max(2, min(Double(sourceHeight), height - height.truncatingRemainder(dividingBy: 2)))
+        let x = ((Double(sourceWidth) - evenWidth) / 2).rounded()
+        let y = ((Double(sourceHeight) - evenHeight) / 2).rounded()
+        return CGRect(x: x, y: y, width: evenWidth, height: evenHeight)
+    }
+
+    /// 输出宽度不超过 1280，保持源画面比例，宽高取偶数。
+    /// 小窗本身不大，但 640 那一档放大到平板 / 大屏画中画时会糊（LP 抓到画质被压）。
     private func targetSize(sourceWidth: Int, sourceHeight: Int) -> (width: Int, height: Int) {
-        let scale = min(1.0, 640.0 / Double(sourceWidth))
+        let scale = min(1.0, 1280.0 / Double(sourceWidth))
         let width = max(2, Int((Double(sourceWidth) * scale).rounded()) & ~1)
         let height = max(2, Int((Double(sourceHeight) * scale).rounded()) & ~1)
         return (width, height)

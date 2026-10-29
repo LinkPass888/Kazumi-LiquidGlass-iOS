@@ -78,7 +78,7 @@ final class MPVEngine {
 
     /// 内联画面刚画完时同步回调（主线程、GL 上下文 current）。
     /// 画中画拿这一帧去 `glBlitFramebuffer` 到 CVPixelBuffer，不需要第二个 mpv 上下文。
-    var onFrameRendered: (@MainActor (GLint, Int, Int) -> Void)?
+    var onFrameRendered: (@MainActor (GLint, Int, Int, Double, Double) -> Void)?
 
     private var lastSnapshot = MPVSnapshot(
         time: 0, duration: 0, isPaused: true, isIdle: true, hasVideo: false, ended: false
@@ -470,7 +470,15 @@ final class MPVEngine {
         // 告诉 mpv 这一帧确实上屏了：不报的话它按「还没显示」算，帧会被丢。
         mpv_render_context_report_swap(renderContext)
         // 画面还在当前 FBO 里，趁没被下一帧覆盖交给画中画拷走。
-        onFrameRendered?(fbo, Int(viewport[2]), Int(viewport[3]))
+        // 后两个是这一集的显示尺寸（dwidth/dheight）：画中画要按真实的画面比例裁，
+        // 不能整块容器都拷过去——那样两边的黑边也会被拷进去。
+        onFrameRendered?(
+            fbo,
+            Int(viewport[2]),
+            Int(viewport[3]),
+            lastSnapshot.videoWidth,
+            lastSnapshot.videoHeight
+        )
         if !reportedFirstFrame {
             reportedFirstFrame = true
             let callback = onFirstFrame

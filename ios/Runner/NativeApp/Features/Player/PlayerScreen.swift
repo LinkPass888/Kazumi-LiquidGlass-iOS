@@ -529,14 +529,20 @@ struct PlayerScreen: View {
                 let pipStarted = settings.backgroundAutoPiP && surface.isPlaying
                     ? startPictureInPicture()
                     : false
+                // 画中画没起成也**不要**顺手把播放停掉：小窗起不来的常见原因是
+                // 那一刻图层里还没帧，停掉播放只会让下一次更起不来，回到 App 还发现
+                // 停着没接着播（LP 真机上就是这个）。开着自动画中画就按「后台继续」
+                // 处理，让声音先走，小窗随后补上。
+                let wantsPictureInPicture = settings.backgroundAutoPiP && surface.isPlaying
                 if !pipStarted {
-                    if !settings.backgroundPlayback, surface.isPlaying {
+                    if !settings.backgroundPlayback, !wantsPictureInPicture, surface.isPlaying {
                         pausedByBackground = true
                         surface.pause()
                     }
                     // 开着后台播放：声音继续，但画面在后台本来就不会重绘，
                     // 留在那只会让回来时音画对不上。先只留声音。
-                    if settings.backgroundPlayback, surface.isPlaying {
+                    // 等小窗起来的那一小段里也不能关视频轨：关了就没帧可喂。
+                    if settings.backgroundPlayback, !wantsPictureInPicture, surface.isPlaying {
                         surface.setVideoTrackEnabled(false)
                     }
                 }
@@ -779,16 +785,11 @@ struct PlayerScreen: View {
         let pip = PictureInPictureController()
         pip.onLog = { message in KazumiLogBuffer.player("画中画: \(message)") }
         pip.onFailed = { [weak surface] in
-            // 画中画没起来：退回原来的后台策略。默认「后台播放」是关的，
-            // 这时把这一集停下，别让设置看起来生效了、实际黑着屏一直耗电。
-            guard let surface else { return }
-            if settingsStore.backgroundPlayback {
-                // 进后台时因为「PiP 起来了」而没有关视频轨，现在 PiP 失败，
-                // 必须补做原来的「只留声音」，否则后台没人出帧、音画会越跑越偏。
-                surface.setVideoTrackEnabled(false)
-            } else if surface.isPlaying {
-                surface.pause()
-            }
+            // 画中画没起来：**不要**停播、也**不要**关视频轨。
+            // 停播就是「回前台发现停着、也没接着播」；关掉视频轨则再也喂不出帧，
+            // 下一次退后台照样起不来小窗。这里什么都不做，让声音继续走。
+            _ = surface
+            KazumiLogBuffer.player("画中画: 启动失败，继续按后台播放走，不停播")
         }
         pip.onStoppedInBackground = { [weak surface] in
             // 用户从画中画窗口关掉画面、App 还在后台：没开后台音频就停声，
@@ -1183,14 +1184,6 @@ struct PlayerScreen: View {
                 .transition(.opacity)
             }
 
-            // 锁住时只剩这一颗：点一下浮出来，几秒没人碰就收回去。
-            if isSurfaceLocked, unlockAffordanceShown {
-                lockButton
-                    .padding(.leading, 16)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-                    .transition(.opacity)
-            }
-
             if !controlsShown {
                 // 控制层收起时，整块画面都是「把控制层叫回来」的命中区；
                 // 锁着的时候这一下只唤出解锁钮，不显示控制层（LP 2026-10-28 第 4 条）。
@@ -1199,6 +1192,18 @@ struct PlayerScreen: View {
                     .onTapGesture {
                         if isSurfaceLocked { showUnlockAffordance() } else { showControls() }
                     }
+            }
+
+            // 锁住时只剩这一颗：点一下浮出来，几秒没人碰就收回去。
+            //
+            // 必须排在上面那块满屏命中区**之后**。锁着时 `controlsShown` 恒为 false，
+            // 那块 `Color.clear` 一直都在；放在它前面就会被它整个盖住，
+            // 于是「锁上以后再点就是解不开」——点多少下都只走「唤出解锁钮」。
+            if isSurfaceLocked, unlockAffordanceShown {
+                lockButton
+                    .padding(.leading, 16)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                    .transition(.opacity)
             }
 
         }
@@ -1275,7 +1280,7 @@ struct PlayerScreen: View {
         Button {
             toggleSurfaceLock()
         } label: {
-            Image(systemName: isSurfaceLocked ? "lock.fill" : "lock")
+            Image(systemName: isSurfaceLocked ? "lock" : "lock.open")
                 .font(.system(size: 20, weight: .regular))
                 .foregroundStyle(.white)
                 .frame(width: 44, height: 44)
