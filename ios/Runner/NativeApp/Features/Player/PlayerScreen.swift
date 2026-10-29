@@ -2035,15 +2035,53 @@ struct PlayerScreen: View {
                 entry.type = type.rawValue
                 entry.updatedAt = Date()
                 environment.library.upsert(entry)
+            } else if type == .none {
+                // 本来就没收藏，取消追番就什么也不用改。
+            } else if await addToLibrary(type) {
+                // 收藏库里没有这部番：从播放器加进去（见 addToLibrary）。
+            } else {
+                // 拿不到番剧信息就不假装加过（跟同步失败同一条口径）。
+                surface.toastMessage = "拿不到番剧信息，没能加入收藏"
+                return
+            }
+            if type == .none {
+                BangumiTimelineStore.shared.dropIfNotWatching(bangumiID, collectType: .none)
             }
             if syncEnabled, showToast {
                 surface.toastMessage = "已同步到 Bangumi"
-            } else {
-                surface.toastMessage = type == .none ? "已取消追番" : "已标为\(type.title)"
             }
-            // 收藏状态那句走 HUD 那条线（LP 4668）；同步进度 / 结果仍留顶部。
+            // 收藏状态那句只走 HUD 那条线（LP 4668）；顶部那条只留给同步进度 / 结果。
+            // 两处都写就会弹两次（LP 4742）。
             surface.hudToastMessage = type == .none ? "已取消追番" : "已标为\(type.title)"
         }
+    }
+
+    /// 收藏库里还没有这部番时，从播放器把它加进去。
+    ///
+    /// 播放器手上只有番剧 ID（名字、封面都在来源那边），所以缺的字段向 Bangumi 取一次，
+    /// 字段跟详情页 `applyCollect(_:_:)` 建条目那一套完全一致——两处加的必须是同一种条目。
+    private func addToLibrary(_ type: CollectType) async -> Bool {
+        guard let item = await BangumiAPI.info(id: bangumiID) else { return false }
+        environment.library.upsert(
+            LibraryEntry(
+                id: item.id,
+                type: type.rawValue,
+                name: item.name,
+                nameCn: item.nameCn,
+                summary: item.summary,
+                airDate: item.airDate,
+                imageURL: item.largeImage,
+                rating: item.ratingScore,
+                rank: item.rank,
+                tags: item.tags.map(\.name),
+                totalEpisodes: controller?.episodes.count ?? 0,
+                currentEpisode: controller?.currentEpisode ?? 0,
+                addedAt: Date(),
+                updatedAt: Date()
+            )
+        )
+        BangumiTimelineStore.shared.dropIfNotWatching(bangumiID, collectType: type)
+        return true
     }
 
     /// 定时关闭的菜单标题：定上了就把分钟数写在上面。
