@@ -100,6 +100,9 @@ final class PictureInPictureController: NSObject {
             copier.onLog = { [weak self] message in
                 self?.log(message)
             }
+            copier.onVideoAspectChanged = { [weak self] aspect in
+                self?.syncHostAspect(aspect)
+            }
             self.copier = copier
         }
 
@@ -269,6 +272,21 @@ final class PictureInPictureController: NSObject {
         hostView.autoresizingMask = [.flexibleRightMargin, .flexibleBottomMargin]
         window.insertSubview(hostView, at: 0)
         return true
+    }
+
+    /// 内联那块画面的形状改成跟片源同比例。
+    ///
+    /// 系统起小窗时，先把内联画面那块按它的形状铺开，等第一帧到了再改成片源比例；
+    /// 两者不一样就是「顶部黑一截然后恢复」（LP 4711）。内联期间取帧一直跑着，
+    /// 所以真退后台时这块早就是对的形状了，系统从第一帧起就不会铺错。
+    /// 宽度固定 320（反正是几乎透明的那块），高度按比例算。
+    private func syncHostAspect(_ aspect: CGFloat) {
+        guard aspect.isFinite, aspect > 0.1, aspect < 10 else { return }
+        let width: CGFloat = 320
+        let height = max(2, (width / aspect).rounded())
+        guard abs(hostView.frame.height - height) > 0.5 else { return }
+        hostView.frame = CGRect(x: 0, y: 0, width: width, height: height)
+        log("内联画面形状改成 \(Int(width))×\(Int(height))（片源 \(String(format: "%.3f", aspect)):1）")
     }
 
     private static func keyWindow() -> UIWindow? {
@@ -471,6 +489,7 @@ private final class PiPHostView: UIView {
         super.init(frame: .zero)
         // 320×180 是给系统的「内联画面」，不是给用户看的：几乎全透明、放在最底层。
         // 不能 hidden，也不能做成 0×0，否则 PiP 的 content source 不成立。
+        // 高度会被 `syncHostAspect` 改成跟片源同比例，别把这里的 180 当准数。
         backgroundColor = .clear
         alpha = 0.01
         isUserInteractionEnabled = false
@@ -525,6 +544,12 @@ private final class PiPFrameCopier {
     private var hasCapturedOnce = false
     private var didLogRenderFailure = false
     private var didLogFirstFrame = false
+
+    /// 片源的真实画面比例（宽 / 高）。系统起小窗时先按「内联画面」的形状铺，
+    /// 等第一帧到了才改成片源比例——中间那一下就是「顶部黑一截然后恢复」（LP 4711）。
+    /// 所以一拿到真实比例就报出去，让内联那块从一开始就是对的形状。
+    var onVideoAspectChanged: ((CGFloat) -> Void)?
+    private var lastReportedAspect: CGFloat = 0
 
     init(mpv: OpaquePointer?, context: EAGLContext, displayLayer: AVSampleBufferDisplayLayer) {
         self.mpv = mpv
@@ -654,6 +679,13 @@ private final class PiPFrameCopier {
         let pictureSize = resolvedVideoSize(fallbackWidth: videoWidth, fallbackHeight: videoHeight)
         // 还是一个有效尺寸都没有：这一帧不拷。宁可让小窗晚一帧，也不送一张比例错的。
         guard pictureSize.width > 1, pictureSize.height > 1 else { return }
+
+        // 内联那块画面的形状跟着片源走（见 onVideoAspectChanged）。
+        let aspect = CGFloat(pictureSize.width / pictureSize.height)
+        if aspect.isFinite, aspect > 0.1, aspect < 10, abs(aspect - lastReportedAspect) > 0.001 {
+            lastReportedAspect = aspect
+            onVideoAspectChanged?(aspect)
+        }
 
         // 只拷画面那一块：容器里画面之外是黑边（16:9 的番放在更宽的屏幕里、
         // 或者用户选了别的画面比例），整块容器拷过去会把黑边一起送进小窗，
