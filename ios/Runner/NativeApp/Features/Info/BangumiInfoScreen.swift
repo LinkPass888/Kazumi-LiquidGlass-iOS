@@ -938,20 +938,14 @@ extension BangumiInfoScreen {
         Task { @MainActor in
             do {
                 let (data, _) = try await URLSession.shared.data(from: url)
-                // 同 PlayerScreenshot：PhotoKit 在自己队列上回调，闭包不能被主线程隔离，
-                // 否则进去就撞断言直接崩。这里在 continuation 的 @Sendable 闭包里，嵌套闭包默认 nonisolated。
-                try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
-                    PHPhotoLibrary.shared().performChanges(
-                        {
-                            // iOS 26 SDK 起 addResource 必须显式传 options（无默认值的重载已被移除）。
-                            PHAssetCreationRequest.forAsset().addResource(with: .photo, data: data, options: nil)
-                        },
-                        completionHandler: { _, error in
-                            if let error { cont.resume(throwing: error) } else { cont.resume() }
-                        }
-                    )
+                // 交给 PlayerScreenshot 那条 nonisolated 的路（LP 4688 / Fuck 4696）：
+                // 这里原来是 Task { @MainActor } 里套 continuation，闭包照样被染成主线程隔离，
+                // PhotoKit 在自己队列上回调就撞断言直接崩。两个页面同一条路，不再各写一份。
+                if let failure = await PlayerScreenshot.save(png: data) {
+                    toastMessage = failure
+                } else {
+                    toastMessage = "已保存到相册"
                 }
-                toastMessage = "已保存到相册"
             } catch {
                 toastMessage = "封面保存失败，请重试"
             }

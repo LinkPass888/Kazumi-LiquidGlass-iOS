@@ -15,29 +15,26 @@ import UIKit
 enum PlayerScreenshot {
     /// 存进系统相册。成功返回 nil，失败返回给用户看的那句话。
     ///
-    /// 权限文案已经在 `Info.plist` 的 `NSPhotoLibraryAddUsageDescription` 里，
-    /// 这里只申请「仅添加」这一档，不需要读相册。
-    @MainActor
-    static func save(png data: Data) async -> String? {
+    /// **必须是 nonisolated**：PhotoKit 是在它自己的队列
+    /// （`com.apple.PHPhotoLibrary.transaction.high`）上回调这两个闭包的。外层只要标着
+    /// `@MainActor`，闭包就被染成主线程隔离，进去就撞主线程断言、直接 trap——
+    /// 真机上按一次截图就崩一次，连提示都来不及出（LP 4664 / 4688，栈就在这里）。
+    /// 所以整段都写在 nonisolated 的地方，不靠「continuation 的闭包自动 nonisolated」。
+    nonisolated static func save(pngAt fileURL: URL) async -> String? {
         let status = await PHPhotoLibrary.requestAuthorization(for: .addOnly)
         guard status == .authorized || status == .limited else {
             return "截图保存失败：没有相册写入权限"
         }
-        // 文件名照 main：时间戳毫秒 + .png。
-        let name = "\(Int(Date().timeIntervalSince1970 * 1000)).png"
+        guard FileManager.default.fileExists(atPath: fileURL.path) else {
+            return "截图保存失败：截图文件不见了（\(fileURL.lastPathComponent)）"
+        }
         do {
-            // 用带 completionHandler 的版本，不走那个闭包。
-            // 原因：PhotoKit 是在它自己的队列（com.apple.PHPhotoLibrary.transaction.high）
-            // 上回调的；闭包会被 @MainActor 的上下文染成主线程隔离，进去就撞主线程断言、
-            // 直接 trap——真机上每点一次截图就崩一次（LP 4664，栈就在这里）。
-            // 这里整段在 continuation 的 @Sendable 闭包里，嵌套的闭包默认就是 nonisolated。
-            try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
+            // 显式写 isolation: nil：这条闭包不能被绑到任何 actor 上。
+            try await withCheckedThrowingContinuation(isolation: nil) { (cont: CheckedContinuation<Void, Error>) in
                 PHPhotoLibrary.shared().performChanges(
                     {
-                        let request = PHAssetCreationRequest.forAsset()
-                        let options = PHAssetResourceCreationOptions()
-                        options.originalFilename = name
-                        request.addResource(with: .photo, data: data, options: options)
+                        // 从文件 URL 建，不把整张 PNG 读进内存（LP 4695 第 6 条）。
+                        PHAssetChangeRequest.creationRequestForAssetFromImage(atFileURL: fileURL)
                     },
                     completionHandler: { _, error in
                         if let error { cont.resume(throwing: error) } else { cont.resume() }
@@ -48,6 +45,21 @@ enum PlayerScreenshot {
         } catch {
             return "截图保存失败：\(error.localizedDescription)"
         }
+    }
+
+    /// 从内存里的 PNG 存（详情页封面那条路）。先落临时文件，再走上面那条。
+    ///
+    /// 文件名带时间戳，跟截图那条区分开。
+    nonisolated static func save(png data: Data) async -> String? {
+        let name = "\(Int(Date().timeIntervalSince1970 * 1000)).png"
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(name)
+        do {
+            try data.write(to: url)
+        } catch {
+            return "保存失败：临时文件写不出去"
+        }
+        defer { try? FileManager.default.removeItem(at: url) }
+        return await save(pngAt: url)
     }
 }
 

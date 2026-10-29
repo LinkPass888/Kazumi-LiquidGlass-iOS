@@ -116,21 +116,32 @@ final class PlayerSurfaceModel {
     /// 屏幕这块视图。mpv 自己出图失败时，从它兜底。
     weak var hostView: MPVHostView?
 
-    /// 抓当前这一帧（截图）。mpv 自己出 PNG，带上已经挂好的超分滤镜。
+    /// 抓当前这一帧（截图）。mpv 自己出 PNG 写临时文件。
     ///
     /// mpv 那条会失败（真机上 1080p 要从关键帧重解，也可能直接被拒），
     /// 那时不能让用户拿到空的：屏幕上已经有画了，直接读它。读到的整块视口
     /// 带黑边、是屏幕的比例，所以按同一套 `videoRect` 裁成画面本身（LP 要的是
     /// 画面比例，不是屏幕比例）。分辨率是屏幕的，比 mpv 原生出图低，但
     /// 「有一张、比例对」比「没有」重要得多。
-    func captureFrame() async -> (image: UIImage?, note: String) {
-        if let image = await engine?.captureFrame().image { return (image, "") }
-        guard let image = hostView?.snapshotOfVideo() else {
+    ///
+    /// 返回 `(文件, 给用户看的那句话)`：文件在就交给相册那条路存。
+    func captureFrame() async -> (url: URL?, note: String) {
+        if let url = await engine?.captureFrameToFile().url { return (url, "") }
+        guard let image = hostView?.snapshotOfVideo(),
+              let data = image.pngData()
+        else {
             return (nil, "截图失败：没抓到画面")
+        }
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("kazumi-shot-\(UUID().uuidString).png")
+        do {
+            try data.write(to: url)
+        } catch {
+            return (nil, "截图失败：临时文件写不出去")
         }
         let note = "截图：mpv 没出图，改用屏幕那一帧 \(Int(image.size.width))×\(Int(image.size.height))"
         KazumiLogBuffer.player(note)
-        return (image, note)
+        return (url, note)
     }
 
     func togglePlay() {

@@ -17,6 +17,7 @@
 
 import Foundation
 import GLKit
+import ImageIO
 import Libmpv
 import OpenGLES
 import UIKit
@@ -86,6 +87,12 @@ final class MPVEngine {
 
     /// 上一次记过的画面几何，变了才写日志（每帧写会把日志冲爆）。
     private var lastGeometry = ""
+
+    /// 已下发、还没回执的异步命令。
+    private var pendingCommands: [UInt64: CommandRequest] = [:]
+    private var nextCommandID: UInt64 = 1
+    /// 截图回执的超时。mpv 要从关键帧重解，网络流上慢，但超过这个数就没必要再等了。
+    private static let screenshotTimeoutSeconds: Double = 20
 
     init() {
         glContext = EAGLContext(api: .openGLES3) ?? EAGLContext(api: .openGLES2)!
@@ -196,6 +203,9 @@ final class MPVEngine {
             Task { @MainActor in self?.apply(snapshot) }
         } log: { [weak self] message in
             Task { @MainActor in self?.onLog?(message) }
+        }
+        pump.onCommandReply = { [weak self] id, error in
+            Task { @MainActor in self?.finishCommand(id: id, error: error) }
         }
         self.pump = pump
         pump.start()
@@ -367,45 +377,71 @@ final class MPVEngine {
 
     // MARK: - 截图
 
-    /// 抓当前这一帧（视频画面，不含 OSD）。mpv 自己出 PNG，写临时文件再读回来。
+    /// 抓当前这一帧，mpv 直接出 PNG 写临时文件（LP 4695）。
     ///
-    /// 返回 `(图, 给用户看的那句话)`：拿到图时那句是成功细节，没拿到时那句就是失败原因，
-    /// 直接进 toast——真机上点一次就能看出是 mpv 没出文件，还是出了但下一步崩了。
-    /// （原来这些只进日志，得去「设置 → 存储与日志」里翻，真机上不好定位。）
-    func captureFrame() async -> (image: UIImage?, note: String) {
+    /// 返回 `(文件, 给用户看的那句话)`：拿到文件时那句是成功细节（尺寸、多少毫秒），
+    /// 没拿到时那句就是失败原因，直接进 toast。
+    ///
+    /// 跟原来那版的区别：
+    ///  1) 走 `mpv_command_async` + `COMMAND_REPLY`，命令真回复了才算成，不再用
+    ///     「每 50 毫秒看一眼文件在不在、最多 2 秒」那种固定延时去猜（LP 4695 第 4 条）。
+    ///  2) 主线程只发命令、只等回执，mpv 重解码那几秒不在主线程上卡着（Fuck 4696）。
+    ///  3) `video` 标志：只要视频画面，不含字幕、不含 OSD，分辨率是片源的原始分辨率。
+    ///     万一这条被拒（个别 vo / 硬解路径不认），退回不带标志的那条——它仍然是
+    ///     视频帧本身（不是屏幕截图），比例还是画面的。
+    func captureFrameToFile() async -> (url: URL?, note: String) {
         let started = Date()
-        // 两条路都试，等到能读出整张图为上：
-        //  1) "video"：只要画面那一块，比例就是这一集的，不带黑边、不带字幕。
-        //  2) 万一这条被拒（不同 vo / 硬解路径不一样），退回不带 flag 的那条：
-        //     它仍然是视频帧本身（不是屏幕截图），比例还是画面的。
-        //
-        // 原来只等 480 毫秒——真机上 mpv 要从最近的关键帧重新解一遍这一帧，
-        // 1080p 的流经常比这慢，文件还没落盘我们就走了，表现就是「抓不到图片」。
-        // 现在每条路等 2 秒（两条加起来 4 秒）。
-        let flags: [[String?]] = [["video"], []]
-        for (index, flag) in flags.enumerated() {
-            let path = FileManager.default.temporaryDirectory
-                .appendingPathComponent("shot-\(Int(Date().timeIntervalSince1970 * 1000))-\(index).png")
-            var args = [path.path]
-            args.append(contentsOf: flag.compactMap { $0 })
-            command("screenshot-to-file", args)
+        let path = FileManager.default.temporaryDirectory
+            .appendingPathComponent("kazumi-shot-\(UUID().uuidString).png")
 
-            let deadline = Date().addingTimeInterval(2.0)
-            while Date() < deadline {
-                try? await Task.sleep(for: .milliseconds(50))
-                if let data = try? Data(contentsOf: path), let image = UIImage(data: data) {
-                    try? FileManager.default.removeItem(at: path)
-                    let note = "截图成功：第 \(index + 1) 种方式，\(Int(Date().timeIntervalSince(started) * 1000)) 毫秒，\(Int(image.size.width))×\(Int(image.size.height))"
-                    onLog?(note)
-                    return (image, note)
-                }
-            }
-            try? FileManager.default.removeItem(at: path)
-            onLog?("截图第 \(index + 1) 种方式没等到文件")
+        var result = await runAsyncCommand("screenshot-to-file", [path.path, "video"])
+        var way = "video 标志"
+        if result < 0 {
+            // 退回不带标志的那条。video 标志在 mpv 里要求能下载到原始帧，
+            // 个别硬解路径会拒；不带标志它仍然出的是视频帧。
+            result = await runAsyncCommand("screenshot-to-file", [path.path])
+            way = "无标志"
         }
-        let note = "截图失败：两条方式都没出图，共 \(Int(Date().timeIntervalSince(started) * 1000)) 毫秒"
+        guard result >= 0 else {
+            let note = "截图失败：mpv 命令没成（\(way)，错误码 \(result)），共 \(Int(Date().timeIntervalSince(started) * 1000)) 毫秒"
+            onLog?(note)
+            return (nil, note)
+        }
+
+        guard FileManager.default.fileExists(atPath: path.path) else {
+            let note = "截图失败：命令成了但文件没落盘（\(path.path)）"
+            onLog?(note)
+            return (nil, note)
+        }
+        let size = Self.pixelSize(of: path)
+        let sizeText = size.map { "\(Int($0.width))×\(Int($0.height))" } ?? "尺寸读不到"
+        let note = "截图成功：\(way)，\(sizeText)，\(Int(Date().timeIntervalSince(started) * 1000)) 毫秒"
         onLog?(note)
-        return (nil, note)
+        return (path, note)
+    }
+
+    /// 只读 PNG 头部拿像素尺寸，不解码整张图。
+    private static func pixelSize(of url: URL) -> CGSize? {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+        guard let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
+        else { return nil }
+        guard
+            let width = properties[kCGImagePropertyPixelWidth] as? Int,
+            let height = properties[kCGImagePropertyPixelHeight] as? Int,
+            width > 0, height > 0
+        else { return nil }
+        return CGSize(width: width, height: height)
+    }
+
+    /// 兼容旧调用点：读回内存。截图本身不再走这条（写文件再存相册更省）。
+    func captureFrame() async -> (image: UIImage?, note: String) {
+        let (url, note) = await captureFrameToFile()
+        guard let url, let data = try? Data(contentsOf: url) else {
+            return (nil, note)
+        }
+        let image = UIImage(data: data)
+        try? FileManager.default.removeItem(at: url)
+        return (image, note)
     }
 
     // MARK: - 收尾
@@ -413,6 +449,8 @@ final class MPVEngine {
     func stop() {
         pump?.stop()
         pump = nil
+        // 引擎要没了，还等着的命令不能继续挂着。
+        failPendingCommands(-1)
         if let renderContext {
             mpv_render_context_free(renderContext)
         }
@@ -444,6 +482,59 @@ final class MPVEngine {
     private func setFlag(_ name: String, _ flag: Bool) {
         var value: Int32 = flag ? 1 : 0
         mpv_set_property(handle, name, MPV_FORMAT_FLAG, &value)
+    }
+
+    /// 异步命令：把命令丢进 mpv 就走，等事件泵里那条 `COMMAND_REPLY` 回来再继续。
+    ///
+    /// 为什么不用同步 `mpv_command`：截图要 mpv 回到最近的关键帧重新解码，网络流上
+    /// 这一下是秒级的；同步调用会把主线程一起卡住（MPVEngine 整个是 @MainActor，
+    /// 命令是从主线程发下去的）。回执带超时：超时了也要把等待者放走，不然 task 挂死。
+    /// 返回错误码（>= 0 成功），-1 表示引擎还没起来，-2 表示超时。
+    func runAsyncCommand(_ name: String, _ args: [String?] = []) async -> Int32 {
+        guard let handle else { return -1 }
+        let id = nextCommandID
+        nextCommandID += 1
+        // C 字符串得活到回执那一刻：mpv 只保证在调用期间有效，所以自己 strdup，
+        // 收尾时统一 free。
+        var strings: [UnsafeMutablePointer<CChar>] = []
+        for item in [name] + args.compactMap({ $0 }) {
+            strings.append(strdup(item))
+        }
+        return await withCheckedContinuation { (cont: CheckedContinuation<Int32, Never>) in
+            let waiter = CommandWaiter(cont)
+            pendingCommands[id] = CommandRequest(waiter: waiter, strings: strings)
+            var pointers: [UnsafePointer<CChar>?] = strings.map { UnsafePointer($0) }
+            pointers.append(nil)
+            let status = mpv_command_async(handle, id, &pointers)
+            if status < 0 {
+                onLog?("命令 \(name) 异步下发失败：\(String(cString: mpv_error_string(status)))")
+                finishCommand(id: id, error: status)
+                return
+            }
+            // 超时：放走等待者。回执要是迟到了，`finishCommand` 看到队列里已经没它、
+            // 就不会重复 resume。
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(20))
+                finishCommand(id: id, error: -2)
+            }
+        }
+    }
+
+    /// 回执落地：把 C 字符串释放、把等待者放走。只认一次（重复回执直接忽略）。
+    private func finishCommand(id: UInt64, error: Int32) {
+        guard let request = pendingCommands.removeValue(forKey: id) else { return }
+        for pointer in request.strings { free(pointer) }
+        request.waiter.resume(error)
+    }
+
+    /// 收尾：把还在等的命令全放走，避免有 task 永远挂着。
+    private func failPendingCommands(_ error: Int32) {
+        let requests = pendingCommands
+        pendingCommands.removeAll()
+        for request in requests.values {
+            for pointer in request.strings { free(pointer) }
+            request.waiter.resume(error)
+        }
     }
 
     private func command(_ name: String, _ args: [String?] = []) {
@@ -535,12 +626,36 @@ final class MPVEngine {
     }
 }
 
+/// 一条异步命令的等待者。回执和超时都会来敲门，只能认一次——续两次会直接崩。
+/// 只在主线程上动。
+private final class CommandWaiter {
+    private var continuation: CheckedContinuation<Int32, Never>?
+
+    init(_ continuation: CheckedContinuation<Int32, Never>) {
+        self.continuation = continuation
+    }
+
+    func resume(_ error: Int32) {
+        continuation?.resume(returning: error)
+        continuation = nil
+    }
+}
+
+private struct CommandRequest {
+    let waiter: CommandWaiter
+    /// 自己 strdup 出来的命令字符串，回执或超时到了才能释放。
+    let strings: [UnsafeMutablePointer<CChar>]
+}
+
 /// 在 mpv 自己的线程上收事件，攒成快照再递回主线程。
 final class MPVEventPump: @unchecked Sendable {
     private let mpv: OpaquePointer
     private let queue = DispatchQueue(label: "kazumi.mpv.events", qos: .userInteractive)
     private let onSnapshot: @Sendable (MPVSnapshot) -> Void
     private let onLog: @Sendable (String) -> Void
+    /// 异步命令的回执：`(reply_userdata, 错误码)`，错误码 >= 0 就是成了。
+    /// 走 mpv 自己的线程，进来先跳回主线程再唤醒等待者。
+    var onCommandReply: (@Sendable (UInt64, Int32) -> Void)?
     private var running = false
     private var ticker: DispatchSourceTimer?
     /// 最近一次加载失败的原因；成功起播后清掉。
@@ -626,6 +741,12 @@ final class MPVEventPump: @unchecked Sendable {
                 let text = String(cString: message.pointee.text)
                 let prefix = String(cString: message.pointee.prefix)
                 onLog("[\(prefix)] \(text)")
+            }
+            if id == MPV_EVENT_COMMAND_REPLY {
+                // 异步命令做完了。`reply_userdata` 就是发命令时给的那个号，
+                // 错误码在 event.error 上（>= 0 成功）。截图靠这条判断文件写没写成，
+                // 不再用「每 50 毫秒看一眼文件在不在」那种固定延时去猜（LP 4695 第 4 条）。
+                onCommandReply?(event.pointee.reply_userdata, event.pointee.error)
             }
         }
         var snap = snapshot()

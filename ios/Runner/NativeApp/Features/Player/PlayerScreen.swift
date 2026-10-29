@@ -934,8 +934,8 @@ struct PlayerScreen: View {
             .ignoresSafeArea(.container, edges: isFullscreen ? [.top, .bottom] : [])
 
             // HUD 一律放在画面从上往下 1/4 处、水平居中（LP 2026-10-28 第 11 条 / Colo）：
-            // 亮度 / 音量横条、横滑的秒数、长按倍速的胶囊都在这一条线上，
-            // 只有双击的播放 / 暂停还在正中。按播放器可视高度算，不按窗口高。
+            // 亮度 / 音量横条、横滑的秒数、长按倍速的胶囊、双击的播放 / 暂停都在这一条线上。
+            // 按播放器可视高度算，不按窗口高。
             if let gestureHUD {
                 hudAtQuarter { gestureOverlay(gestureHUD) }
             }
@@ -954,8 +954,10 @@ struct PlayerScreen: View {
                 }
                 .transition(.opacity)
             }
+            // 双击的播放 / 暂停也摆在这一条线上（LP 4687），小符号 + 文字，跟动作结果同一款气泡。
             if let playPauseHUD {
-                playPauseOverlay(playPauseHUD)
+                hudAtQuarter { playPauseBubble(playPauseHUD) }
+                    .transition(.opacity)
             }
 
             // 片头片尾弹窗：横屏固定位置（跟控制栏显隐无关），竖屏贴控制栏上沿。
@@ -1377,21 +1379,25 @@ struct PlayerScreen: View {
     }
 
     /// 截图：抓帧 → 存相册 → 闪一下取景框；存不进相册才出提示。
+    ///
+    /// 抓帧走 mpv 的 `screenshot-to-file`（原始分辨率、不含字幕和 OSD，LP 4695），
+    /// 出的是临时文件；这里再把文件交给相册那条路，存完删掉。
     private func takeScreenshot() {
         noteInteraction()
         showControlsBriefly()
         Task { @MainActor in
             let captured = await surface.captureFrame()
-            guard let image = captured.image, let data = image.pngData() else {
-                // 抓帧自己会给一句能直接给用户看的话（哪条方式、等了多少毫秒），
-                // 拿不到图就拿它当 toast，别再只说「没抓到画面」。
+            guard let url = captured.url else {
+                // 抓帧自己会给一句能直接给用户看的话（哪种方式、多少毫秒、什么尺寸），
+                // 拿不到就拿它当 toast，别再只说「没抓到画面」。
                 surface.toastMessage = captured.note.isEmpty ? "截图失败：没抓到画面" : captured.note
                 return
             }
             flashScreenshot()
-            if let failure = await PlayerScreenshot.save(png: data) {
-                surface.toastMessage = failure
-            }
+            let failure = await PlayerScreenshot.save(pngAt: url)
+            // 临时文件不再需要；存成功也是它自己那份了。
+            try? FileManager.default.removeItem(at: url)
+            if let failure { surface.toastMessage = failure }
         }
     }
 
@@ -1966,12 +1972,14 @@ struct PlayerScreen: View {
                     noteInteraction()
                     applyCollectType(type)
                 } label: {
+                    // 符号留在前导位（菜单行只认 Label 的图标槽），勾放行尾——
+                    // 这正是 LP 4673 之前的结构，符号和勾两样都显示得出来。
                     HStack(spacing: 8) {
-                        // 勾打在这一项前面（LP 4673），跟定时关闭菜单里 `symbol:` 的位置一致。
-                        // 没选中的那几行也留同样的空位，五行的左边缘才对得齐。
-                        Image(systemName: "checkmark")
-                            .opacity(currentCollectType == type ? 1 : 0)
                         Label(type.buttonTitle, systemImage: type.statusSymbol)
+                        if currentCollectType == type {
+                            Spacer(minLength: 8)
+                            Image(systemName: "checkmark")
+                        }
                     }
                 }
             }
@@ -2728,6 +2736,9 @@ struct PlayerScreen: View {
     private func playPauseButton(size: CGFloat) -> some View {
         Button {
             surface.togglePlay()
+            // 跟双击中间那一朵共用同一个指示器（LP 4689）：两种按法都出同一句话、
+            // 同一个位置，不分开各画一套。
+            flashPlayPauseHUD()
             noteInteraction()
         } label: {
             Image(systemName: surface.isPlaying ? "pause.fill" : "play.fill")
@@ -3213,14 +3224,24 @@ struct PlayerScreen: View {
             .transition(.opacity)
     }
 
-    /// 双击中间那朵播放 / 暂停。
-    private func playPauseOverlay(_ symbol: String) -> some View {
-        Image(systemName: symbol)
-            .font(.system(size: 44, weight: .semibold))
-            .foregroundStyle(.white)
-            .shadow(color: .black.opacity(0.35), radius: 8, y: 1)
-            .allowsHitTesting(false)
-            .transition(.opacity)
+    /// 双击中间那朵播放 / 暂停：小符号 + 「播放」/「暂停」，跟倍速、收藏、定时关闭
+    /// 那些动作结果摆同一条线（LP 4687）。
+    private func playPauseBubble(_ symbol: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: symbol)
+                .font(.system(size: 12, weight: .semibold))
+            Text(symbol == "play.fill" ? "播放" : "暂停")
+                .font(.footnote.weight(.medium))
+        }
+        .foregroundStyle(.primary)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(.ultraThinMaterial)
+        )
+        .allowsHitTesting(false)
+        .transition(.opacity)
     }
 
     /// 双击两侧：闪一下秒数。
