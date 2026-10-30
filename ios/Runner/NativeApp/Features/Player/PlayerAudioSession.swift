@@ -57,15 +57,18 @@ final class PlayerAudioSession {
     func activate() {
         applyPlaybackCategory()
         installObservers()
-        // 会话激活之后把静音锚点挂上（LP 4984 第 2 条）。
-        startPlaybackAnchor()
     }
 
-    /// 把会话配成「长视频播放」并激活，不加 mixWithOthers。
+    /// 把会话配成「播放中」并激活，不加 mixWithOthers。
     ///
     /// 两处细节都是为了控制中心那张卡：
     /// * 不加 `mixWithOthers`——混音的会话不会被 iOS 当成「正在播放」；
-    /// * 用 `.longFormVideo` 路由策略，锁屏和控制中心按视频来画，而不是当成音乐。
+    /// * **不带视频身份**（LP 4990）：这里以前是 `mode: .moviePlayback` +
+    ///   `policy: .longFormVideo`，等于告诉系统「本 App 放的是长视频」。卡片那边
+    ///   `MPNowPlayingInfoPropertyMediaType` 早就报的是 `.audio`，只剩这一处还带
+    ///   视频味道——而 LP 4720 那次的现象正是「报成视频，点一下只展开、不跳 App」。
+    ///   真机日志里的 `模式=AVAudioSessionModeMoviePlayback` 就是它，换掉以后
+    ///   那行应该变成 `AVAudioSessionModeDefault`。
     /// mpv 的音频输出会在开始出声时自己重设一次类别（会盖掉这里的设置），
     /// 所以起播后要再调一次 `reapplyIfNeeded()`。
     ///
@@ -79,8 +82,7 @@ final class PlayerAudioSession {
         do {
             try session.setCategory(
                 .playback,
-                mode: .moviePlayback,
-                policy: .longFormVideo,
+                mode: .default,
                 options: []
             )
             try session.setActive(true)
@@ -164,7 +166,6 @@ final class PlayerAudioSession {
     /// `.playback`，等于对系统宣称「这个 App 还在占播放位」。通知开着
     /// `.notifyOthersOnDeactivation`，让被打断的别的 app 自己能接回去。
     func restore() {
-        stopPlaybackAnchor()
         let session = AVAudioSession.sharedInstance()
         do {
             try session.setActive(false, options: .notifyOthersOnDeactivation)
@@ -174,7 +175,7 @@ final class PlayerAudioSession {
         do {
             try session.setCategory(
                 .playback,
-                mode: .moviePlayback,
+                mode: .default,
                 options: []
             )
         } catch {
@@ -182,118 +183,6 @@ final class PlayerAudioSession {
         }
         removeObservers()
         wasPlayingBeforeInterruption = false
-    }
-
-    // MARK: - 场景路由凭证（LP 4984 第 2 条，一次性的对照实验）
-
-    /// 一个不出声的 `AVQueuePlayer` 锚点：`volume = 0`，循环播一段内存里生成的
-    /// 静音 WAV（8 kHz 单声道 16 位，1 秒，磁盘上十几 KB）。
-    ///
-    /// 要证的假设只有一个：SpringBoard 给不给这个 App 绑「点灵动岛/锁屏卡片回场景」
-    /// 的路由，也许取决于进程里有没有*真的在 `AVPlayer` 上播放*的管线（前一次用
-    /// `AVSampleBufferAudioRenderer` 挂的空渲染同步器没成，那不是一个 AVPlayer）。
-    /// 苹果文档里没有这条，纯实验：不起作用就把它们删掉，不留冗余代码。
-    ///
-    /// 两条硬约束（Fuck 4986 提的，都是对的）：
-    /// * **退出播放器一定销毁**（`restore()` 里 stop），否则它在后台一直转；
-    /// * **绝不碰 `MPNowPlayingInfoCenter`**——这个类自己一行卡片都不写，否则
-    ///   会把现在这张正常的卡盖掉。
-    private var anchorPlayer: AVQueuePlayer?
-    private var anchorLooper: AVPlayerLooper?
-
-    func startPlaybackAnchor() {
-        guard anchorPlayer == nil else { return }
-        guard let url = Self.silentWAVFile() else {
-            KazumiLogBuffer.player("场景路由凭证：静音 WAV 写不出来，锚点没挂上")
-            return
-        }
-        let player = AVQueuePlayer()
-        let looper = AVPlayerLooper(
-            player: player,
-            templateItem: AVPlayerItem(asset: AVURLAsset(url: url))
-        )
-        player.volume = 0
-        // 不接 AirPlay / 不接小窗：它的全部意义就是「进程里有个在跑的 AVPlayer」。
-        player.allowsExternalPlayback = false
-        player.automaticallyWaitsToMinimizeStalling = false
-        anchorPlayer = player
-        anchorLooper = looper
-        player.play()
-        KazumiLogBuffer.player("场景路由凭证：静音 AVQueuePlayer 锚点起播（音量=0 循环=是）")
-        // 再确认一次它真的在跑：文件坏了 / 循环器拒收时 `timeControlStatus` 会停在
-        // waiting，日志里能直接看出来——否则「锚点根本没跑」会被当成「锚点没用」。
-        Task { [weak player] in
-            try? await Task.sleep(nanoseconds: 800_000_000)
-            guard let player else { return }
-            let control: String
-            switch player.timeControlStatus {
-            case .playing: control = "playing"
-            case .paused: control = "paused"
-            case .waitingToPlayAtSpecifiedRate: control = "waiting"
-            @unknown default: control = "unknown"
-            }
-            let item: String
-            switch player.currentItem?.status {
-            case .readyToPlay: item = "就绪"
-            case .failed: item = "失败"
-            default: item = "未知"
-            }
-            KazumiLogBuffer.player(
-                "场景路由凭证：锚点 0.8 秒后 \(control) 速率=\(player.rate) 条目=\(item)"
-                + " 错误=\(player.currentItem?.error?.localizedDescription ?? "无")"
-            )
-        }
-    }
-
-    func stopPlaybackAnchor() {
-        guard let player = anchorPlayer else { return }
-        player.pause()
-        anchorLooper?.disableLooping()
-        anchorLooper = nil
-        player.removeAllItems()
-        anchorPlayer = nil
-        KazumiLogBuffer.player("场景路由凭证：静音锚点已销毁")
-    }
-
-    /// 生成那份静音 WAV（同尺寸已存在就直接用，不重写）。
-    private static func silentWAVFile() -> URL? {
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("kazumi-silent-anchor.wav")
-        let sampleRate = 8000
-        let frameCount = sampleRate  // 1 秒
-        let dataBytes = frameCount * 2  // 16 位单声道
-        let expected = dataBytes + 44
-        if let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
-           let size = attrs[.size] as? Int, size == expected {
-            return url
-        }
-        var data = Data()
-        func le32(_ value: UInt32) {
-            withUnsafeBytes(of: value.littleEndian) { data.append(contentsOf: $0) }
-        }
-        func le16(_ value: UInt16) {
-            withUnsafeBytes(of: value.littleEndian) { data.append(contentsOf: $0) }
-        }
-        data.append(contentsOf: Array("RIFF".utf8))
-        le32(UInt32(36 + dataBytes))
-        data.append(contentsOf: Array("WAVE".utf8))
-        data.append(contentsOf: Array("fmt ".utf8))
-        le32(16)
-        le16(1)  // PCM
-        le16(1)  // 单声道
-        le32(UInt32(sampleRate))
-        le32(UInt32(sampleRate * 2))  // 字节率
-        le16(2)  // 块对齐
-        le16(16)  // 位深
-        data.append(contentsOf: Array("data".utf8))
-        le32(UInt32(dataBytes))
-        data.append(Data(count: dataBytes))  // 全 0 就是静音
-        do {
-            try data.write(to: url, options: .atomic)
-            return url
-        } catch {
-            return nil
-        }
     }
 
     // MARK: - 系统事件
