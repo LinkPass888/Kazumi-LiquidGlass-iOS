@@ -41,6 +41,12 @@ import UIKit
 import UniformTypeIdentifiers
 
 struct SyncBackupScreen: View {
+    /// 设置备份的两段动作：剪贴板、文件。结果横幅按它就近出现。
+    private enum BackupScope {
+        case clipboard
+        case file
+    }
+
     @Environment(SettingsStore.self) private var settings
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.colorScheme) private var colorScheme
@@ -48,8 +54,12 @@ struct SyncBackupScreen: View {
     /// 是否跳过账号与密码（默认跳过，与主项目一致）。
     @State private var omitCredentials = true
     @State private var backupMessage: String?
-    /// 结果那行是不是失败：失败用系统橙，成功用次要色。
+    /// 结果那行是不是失败：失败用系统橙，成功用应用色。
     @State private var backupMessageIsError = false
+    /// 结果是哪一段动作出来的：横幅就贴在那一段动作下面（LP 5072）。
+    @State private var backupMessageScope: BackupScope?
+    /// 横幅自己收掉的定时器。连点几次时只管最后一次。
+    @State private var backupMessageDismissTask: Task<Void, Never>?
     @State private var pendingPayload: SettingsBackup.Payload?
     @State private var isShowingRestoreConfirm = false
     /// 导出/导入文件用的状态。面板本身由 DocumentPickerBridge 呈现，
@@ -113,6 +123,11 @@ struct SyncBackupScreen: View {
                     }
                 }
                 .listRowBackground(KazumiPalette.groupedRow(for: colorScheme))
+
+                // LP 5072：结果贴着刚点的那两行出现，不再落在段末小字里。
+                if let backupMessage, backupMessageScope == .clipboard {
+                    backupBanner(backupMessage, isError: backupMessageIsError)
+                }
             } header: {
                 Text("剪贴板")
             }
@@ -125,16 +140,12 @@ struct SyncBackupScreen: View {
                     }
                 }
                 .listRowBackground(KazumiPalette.groupedRow(for: colorScheme))
+
+                if let backupMessage, backupMessageScope == .file {
+                    backupBanner(backupMessage, isError: backupMessageIsError)
+                }
             } header: {
                 Text("文件")
-            } footer: {
-                // 结果只在真做过一次之后出现（LP：底下不要那行空话）。
-                // 出现后停在脚注位，不会被撑开顶下去。
-                if let backupMessage {
-                    Text(backupMessage)
-                        .foregroundStyle(backupMessageIsError ? Color.orange : Color.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
             }
         }
         // 这一页今天确实只做账号、WebDAV 备份与设置备份，没有任何自动同步，
@@ -246,14 +257,55 @@ struct SyncBackupScreen: View {
         .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
     }
 
+    /// 一次导入/导出的结果条（LP 5072）。
+    ///
+    /// 以前落在段末脚注：小字、灰色、离刚才点的那一行隔一段，真的容易划过去。
+    /// 现在贴着动作行、带图标、有底色，几秒后自己收掉。
+    private func backupBanner(_ text: String, isError: Bool) -> some View {
+        let tint = isError ? Color.orange : KazumiPalette.accent(for: colorScheme)
+        return HStack(alignment: .top, spacing: 10) {
+            Image(systemName: isError ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(tint)
+                .accessibilityHidden(true)
+            Text(text)
+                .font(.subheadline)
+                .foregroundStyle(.primary)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, 10)
+        .padding(.horizontal, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(tint.opacity(0.12))
+        )
+        .listRowInsets(EdgeInsets(top: 2, leading: 16, bottom: 6, trailing: 16))
+        .listRowBackground(Color.clear)
+        .transition(.opacity.combined(with: .move(edge: .top)))
+    }
+
     /// 结果统一从这里落：成功清掉橙字，失败才染成橙。
     private func setBackupResult(_ text: String, isError: Bool) {
         // 结果行一律不带句号（Camo）：解码器给的失败句末尾那个也去掉。
-        backupMessage = text.hasSuffix("。") ? String(text.dropLast()) : text
-        backupMessageIsError = isError
+        let cleaned = text.hasSuffix("。") ? String(text.dropLast()) : text
+        // 连点几次就只管最后一次：旧的定时器先拆掉，不然先来的会把后来的提前收走。
+        backupMessageDismissTask?.cancel()
+        withAnimation(.easeOut(duration: 0.18)) {
+            backupMessage = cleaned.isEmpty ? nil : cleaned
+            backupMessageIsError = isError
+        }
+        guard !cleaned.isEmpty else { return }
+        backupMessageDismissTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(5))
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeIn(duration: 0.2)) { backupMessage = nil }
+        }
     }
 
     private func exportBackup() {
+        backupMessageScope = .clipboard
         let snapshot = settings.backupSnapshot(omitCredentials: omitCredentials)
         guard !snapshot.isEmpty else {
             setBackupResult("没有可导出的设置", isError: true)
@@ -264,6 +316,7 @@ struct SyncBackupScreen: View {
     }
 
     private func importBackupFromClipboard() {
+        backupMessageScope = .clipboard
         setBackupResult("", isError: false)
         // 直接读 `.string`：真机上这一步会由系统弹出粘贴授权，允许之后这次读取
         // 就拿到内容。以前这里借 `detectValues` 走同一套授权，但那个调用本身
@@ -320,6 +373,7 @@ struct SyncBackupScreen: View {
 
     /// 导出到文件：内容与剪贴板那份完全一样，只是走文件系统。
     func exportBackupToFile() {
+        backupMessageScope = .file
         let snapshot = settings.backupSnapshot(omitCredentials: omitCredentials)
         guard !snapshot.isEmpty else {
             setBackupResult("没有可导出的设置", isError: true)
@@ -354,6 +408,7 @@ struct SyncBackupScreen: View {
 
     /// 从文件恢复：先开面板，选回来再走读取。
     private func pickBackupFile() {
+        backupMessageScope = .file
         guard !isPickingBackupFile else { return }
         isPickingBackupFile = true
         // 备份文件是从别的设备、别的工具拿过来的，扩展名不可控：只认 JSON 与文本

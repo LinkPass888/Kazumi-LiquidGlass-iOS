@@ -959,7 +959,7 @@ struct NetworkSettingsScreen: View {
         Form {
             // 一段三行照原版 NetworkMirrorSettings：番剧条目、规则仓库、图片。
             // 代理那两行 LP 2559 让删了（iOS 上开 VPN 就够），连说明一起不留。
-            Section("访问加速") {
+            Section {
                 Group {
                     Picker("番剧条目加速", selection: bangumiAccelerationBinding) {
                         Text("直连").tag(false)
@@ -981,6 +981,13 @@ struct NetworkSettingsScreen: View {
                     Toggle("使用系统代理", isOn: useSystemProxyBinding)
                 }
                 .listRowBackground(KazumiPalette.groupedRow(for: colorScheme))
+            } header: {
+                Text("访问加速")
+            } footer: {
+                // LP 5083：把「到底读到没有」直接写出来。
+                // 不然用户只能猜：开关开了、片子还是放不出来，是协议没读到，还是源本身不行。
+                Text(systemProxyState)
+                    .foregroundStyle(.secondary)
             }
         }
         .kazumiSettingsDetail("网络设置")
@@ -1009,6 +1016,18 @@ struct NetworkSettingsScreen: View {
             get: { settings.useSystemProxy },
             set: { settings.useSystemProxy = $0 }
         )
+    }
+
+    /// 开关旁边那一句：现在到底读到了什么。
+    /// 开关关着不读系统设置（跟播放页一致），开着了才去读一次。
+    private var systemProxyState: String {
+        guard settings.useSystemProxy else {
+            return "关闭时播放内核直连，不走任何代理"
+        }
+        guard let proxy = SystemProxy.httpProxyURL() else {
+            return "系统里没有 HTTP 代理，播放仍走直连"
+        }
+        return "已读到系统代理 \(proxy)，播放走它"
     }
 }
 
