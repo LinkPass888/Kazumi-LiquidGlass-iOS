@@ -673,6 +673,8 @@ struct PlayerScreen: View {
         .onDisappear {
             // 离开播放器：控制中心不该再挂着这一集。
             NowPlayingCenter.shared.clear()
+            // 场景路由凭证也一起还回去，别把同步器留在播放态（LP 4966）。
+            NowPlayingSceneRouteBridge.shared.setPlaying(false)
             restoreAudioSessionAfterPlayer()
             // 离开播放器：屏幕常亮无论如何都要还回去，不能带出这个页面。
             UIApplication.shared.isIdleTimerDisabled = false
@@ -3253,6 +3255,12 @@ struct PlayerScreen: View {
         PlayerAudioSession.shared.reapplyIfNeeded()
         // 还没拿到片源（时长 0）且没在播时不写：控制中心不该挂一张 00:00 的空卡片。
         guard surface.duration > 0 || surface.isPlaying else { return }
+        // 场景路由凭证（LP 4966）：给系统一条播放态的 AVFoundation 渲染管线。
+        // 只在倍速真的变了的时候写，见 `NowPlayingSceneRouteBridge`。
+        NowPlayingSceneRouteBridge.shared.setPlaying(
+            surface.isPlaying,
+            rate: Float(surface.desiredRate)
+        )
         let meta = nowPlayingMeta(controller)
         NowPlayingCenter.shared.update(
             title: meta.title,
@@ -3264,7 +3272,14 @@ struct PlayerScreen: View {
             isPlaying: surface.isPlaying,
             // 真实倍速（含长按的临时倍速）：系统按这个速率自己往前推进度，
             // 写 1.0 的话 2 倍速下偏差每秒涨 1 秒，纠偏写入会从每 2 秒变成每 1.5 秒。
-            rate: Double(surface.desiredRate)
+            //
+            // 卡住（缓冲）那几秒要归零：`isPlaying` 这时仍然是 true
+            // （`MPVPlayerContainer` 里「没暂停却没走，意图还在就算在播」，界面靠
+            // `isStalled` 转圈），不归零的话系统照倍速自己往前推，恢复后要等一次
+            // 1.5 秒纠偏才拉回来，卡片上就是「跑快了再跳回去」（LP 4925 第 2 条）。
+            // `isPlaying` 不动：它一 false，`playbackState` 跟着变 paused，
+            // 卡片上那颗按钮也变了 —— 那不是我们要的。
+            rate: surface.isStalled ? 0 : Double(surface.desiredRate)
         )
     }
 

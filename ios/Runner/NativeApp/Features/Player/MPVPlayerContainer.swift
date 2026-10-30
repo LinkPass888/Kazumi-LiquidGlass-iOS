@@ -60,6 +60,9 @@ final class PlayerSurfaceModel {
     private(set) var downloadSpeed: Double = 0
     /// 内核正在 seek（拖进度、换集）。
     private(set) var isSeeking = false
+    /// 上一帧内核报的 `pause` / `core-idle`：只在真的变了的时候写一行日志。
+    private var lastCorePaused = false
+    private var lastCoreIdle = false
     /// 这次加载走到哪一步（由 mpv 事件推，见 `MPVLoadPhase`）。
     private(set) var loadPhase: MPVLoadPhase = .idle
 
@@ -145,9 +148,15 @@ final class PlayerSurfaceModel {
     private var lastTrackEnabled = true
 
     func setVideoTrackEnabled(_ enabled: Bool) {
-        if engine === lastTrackEngine, enabled == lastTrackEnabled { return }
+        if engine === lastTrackEngine, enabled == lastTrackEnabled {
+            // 被自己的记忆吞掉也留一行：真机上「回前台画面回不来」要分清的就是
+            // 「这一句没转发」和「转发了但内核不动」。只在真的没转发时写。
+            KazumiLogBuffer.player("视频轨：仍是\(enabled ? "开" : "关")，不重复转发")
+            return
+        }
         lastTrackEngine = engine
         lastTrackEnabled = enabled
+        KazumiLogBuffer.player("视频轨：转发 \(enabled ? "vid=auto" : "vid=no")")
         engine?.setVideoTrackEnabled(enabled)
     }
 
@@ -253,6 +262,17 @@ final class PlayerSurfaceModel {
         // 还没起播。只有第二种才算暂停，第一种要留给界面转加载圈。
         corePaused = snapshot.isPaused
         isSeeking = snapshot.isSeeking
+        // 内核自己停下来（或者自己进 idle）也要留一行：真机上「回前台停着、
+        // 又不转圈」这种，圈不转就说明 `isStalled` 是 false，也就是内核的
+        // `pause` 或 `idle` 为真——而这两件事都不是我们主动做的。
+        // 只在真的变的时候写，不会刷屏。
+        if snapshot.isPaused != lastCorePaused || snapshot.isIdle != lastCoreIdle {
+            KazumiLogBuffer.player(
+                "内核：暂停=\(snapshot.isPaused ? "是" : "否") 空闲=\(snapshot.isIdle ? "是" : "否") t=\(snapshot.time)"
+            )
+            lastCorePaused = snapshot.isPaused
+            lastCoreIdle = snapshot.isIdle
+        }
         if snapshot.loadPhase != loadPhase {
             // 这行留着：加载圈不转 / 一直转、起播该做的事没做，先看相位走到哪一步了。
             KazumiLogBuffer.player("相位 \(loadPhase) → \(snapshot.loadPhase) t=\(snapshot.time)")
