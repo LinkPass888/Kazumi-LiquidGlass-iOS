@@ -106,3 +106,13 @@ extension KazumiAppDelegate {
         OrientationLock.mask
     }
 }
+
+/// 场景代理的占位实现，只为了让 Info.plist 那张场景路由表有条目可指（LP 5025）。
+///
+/// 这个类**不建窗口、不挂 storyboard**：窗口是 SwiftUI 的 `AppSceneDelegate` +
+/// `WindowGroup` 建的，真实 delegateClass 由 SwiftUI 自己填。
+/// 它存在的意义只有一条：SpringBoard 点灵动岛/锁屏卡唤起 App 时要查
+/// `UISceneConfigurations` 里 `UIWindowSceneSessionRoleApplication` 这一条的类名，
+/// 缺了它系统手里就没有可用的场景配置，点了只会展开卡片。
+@objc(KazumiSceneDelegate)
+final class KazumiSceneDelegate: UIResponder, UIWindowSceneDelegate {}
