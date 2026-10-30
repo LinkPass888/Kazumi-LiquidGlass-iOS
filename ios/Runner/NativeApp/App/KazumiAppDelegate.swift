@@ -46,25 +46,29 @@ final class KazumiAppDelegate: NSObject, UIApplicationDelegate {
         NotificationCenter.default.post(name: .kazumiAppDidBecomeActive, object: nil)
     }
 
-    // 场景配置：原样透传系统给我的那份。
+    // ⚠️ 这里**故意不实现** `application(_:configurationForConnecting:options:)`。
     //
-    // 这里踩过一个大坑（LP 5008）：曾经在这里 return 一份新建的空白配置
-    // `UISceneConfiguration(name: "Default Configuration", …)`。系统拿到非 nil 就
-    // **不再用**它自己准备好那份（带 SwiftUI 的 AppSceneDelegate），而
-    // "Default Configuration" 这个名字在 plist 的 scene manifest 里根本没有对应条目
-    // （manifest 只有 UIApplicationSupportsMultipleScenes）。后果是：界面照常起来、
-    // 卡片画得出来、控制中心按钮也能动，但「把 App 带到前台」走的场景激活路由落到
-    // 一份空配置上失败——表现就是点灵动岛/锁屏卡片只展开、不进 App。
+    // 这件事的完整教训（两次都踩在同一处）：
     //
-    // 所以不要再「造一份」，直接还回去；也不删掉这个方法：删了系统重新解析 plist，
-    // 可能拿不到 SwiftUI 运行时注入的 delegate class。
-    func application(
-        _ application: UIApplication,
-        configurationForConnecting connectingSceneSession: UISceneSession,
-        options: UIScene.ConnectionOptions
-    ) -> UISceneConfiguration {
-        return connectingSceneSession.configuration
-    }
+    // 1）LP 4978 那版在这里 return 了一份**新建的空白配置**
+    //    `UISceneConfiguration(name: "Default Configuration", …)`。系统拿到非 nil 就
+    //    不再用它自己准备好那份，而 "Default Configuration" 在 plist 的 scene manifest
+    //    里根本没有对应条目（manifest 只有 UIApplicationSupportsMultipleScenes）。
+    //    界面照常起、卡片画得出来、控制中心键也能用，但「把 App 带到前台」这条
+    //    场景激活路由落到空配置上——表现就是点灵动岛/锁屏卡片只展开、不进 App（LP 5008）。
+    //
+    // 2）于是下一版改成「**原样透传** `connectingSceneSession.configuration`」，
+    //    看着最干净，`8cc5956e` 在我这台 iOS 27.2 模拟器上也真能起。
+    //    但 iOS 27.0.1 真机上**启动必崩**（LP 5019 的崩溃报告）：
+    //    `Thread stack size exceeded due to excessive recursion`，thread 0 栈溢出，
+    //    递归是 `SwiftUI.AppSceneDelegate.responds(to:)` ⇄
+    //    `AppSceneDelegate.scene(_:willConnectTo:options:)` 互为调用，
+    //    入口是 `-[UIScene setDelegate:]` → `_UISceneInspectDelegateSuport`。
+    //    也就是说：从我们这层递出去一份**已经带着 SwiftUI 的 delegateClass** 的配置，
+    //    UIKit 会装一遍 SwiftUI 的场景代理，SwiftUI 自己再装一遍，两边绕死。
+    //
+    // 正解就是**什么都不写**：不实现这个方法，SwiftUI 自己的主代理会给出它要的那份
+    //    配置，场景代理只被装一次。之前「删了会拿不到 delegate class」是没验过的猜测。
 
     func application(
         _ application: UIApplication,
