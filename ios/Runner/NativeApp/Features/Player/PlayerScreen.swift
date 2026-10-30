@@ -795,7 +795,24 @@ struct PlayerScreen: View {
             library: library,
             resumeRoad: resumeRoad,
             resumeFromHistory: resumeFromHistory,
-            resumeRule: resumeRule
+            resumeRule: resumeRule,
+            // 离线播放（Colo 5174）：这集在本地有文件就直接放它。
+            // 按番剧 + 规则名查，不管线路：下的时候是哪条线路、现在进的是哪条，
+            // 对用户来说都是「这集我下过」。
+            localFile: { number in
+                return environment.downloads.localURL(
+                    bangumiID: bangumiID,
+                    pluginName: source?.pluginName ?? resumeRule ?? "",
+                    number: number
+                )
+            },
+            // 在线列表抓不到时退回这份下载记录：只列已下载的集。
+            downloadedNumbers: {
+                environment.downloads.downloadedNumbers(
+                    bangumiID: bangumiID,
+                    pluginName: source?.pluginName ?? resumeRule ?? ""
+                )
+            }
         )
         controller = created
         // 上一集 / 下一集必须在拿到 controller **之后**接：早接一步抓到的是 nil（LP 5042）。
@@ -3839,6 +3856,16 @@ struct PlayerScreen: View {
                 .frame(height: 44)
             }
 
+            // 在线列表没抓到、只剩本地这份时，顶部说一句（Colo v3 第 9 条）。
+            if controller.isOfflineEpisodeList {
+                Text("在线列表没加载出来，只显示已下载的")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 8)
+            }
+
             if case .failed(let message) = controller.phase {
                 episodeFailure(message, controller: controller)
             } else if total == 0 {
@@ -3857,18 +3884,23 @@ struct PlayerScreen: View {
                                 Button {
                                     let number = index + 1
                                     if isChoosingDownloads {
-                                        // 选择态：点一下是勾选，不是切集。已下载 / 排队中的点不动。
+                                        // 选择态：点一下是勾选，不是切集。已下载 / 已加进下载的点不动。
                                         let lite = environment.downloads.liteStatus(
                                             recordKey: downloadRecordKey(controller),
                                             number: number
                                         )
-                                        guard lite != .downloaded && lite != .queued else { return }
+                                        guard lite != .downloaded && !lite.isDownloading else { return }
                                         if downloadSelection.contains(number) {
                                             downloadSelection.remove(number)
                                         } else {
                                             downloadSelection.insert(number)
                                         }
                                     } else {
+                                        // 没下载的那几集没有地址，点了只会报错，直接不动。
+                                        if controller.isOfflineEpisodeList,
+                                           !(controller.episodes.indices.contains(index) && !controller.episodes[index].isEmpty) {
+                                            return
+                                        }
                                         switchEpisode(to: number, controller: controller)
                                     }
                                 } label: {
@@ -3916,7 +3948,11 @@ struct PlayerScreen: View {
         // 选择态里正在播改成描边，不然跟「已选」分不清（Colo 5090）。
         let isSelected = isChoosingDownloads && downloadSelection.contains(number)
         let lite = environment.downloads.liteStatus(recordKey: downloadRecordKey(controller), number: number)
-        let locked = lite == .downloaded || lite == .queued
+        // 已下载 / 已加进下载的格子在选择态里点不动（不重复选），颜色不变浅。
+        let locked = lite == .downloaded || lite == .queued || lite.isDownloading
+        // 在线列表没抓到、退回下载记录时，没下好的集是空格子（Colo v3 第 9 条）。
+        let missing = controller.isOfflineEpisodeList
+            && !(controller.episodes.indices.contains(index) && !controller.episodes[index].isEmpty)
         let solid = isCurrent && !isChoosingDownloads ? true : isSelected
 
         return Text("\(number)")
@@ -3928,19 +3964,32 @@ struct PlayerScreen: View {
                     .fill(solid ? Color.accentColor : Color(.secondarySystemBackground))
             )
             .overlay(alignment: .topTrailing) {
-                // 已下载一颗勾、排队中一颗钟（Colo 5090）。失败不再在格子上常驻：
-                // LP 5115 说那不该一直挂着，改成渲一句提示（见 failureNotice）。
+                // 已下载一颗下箭头、下载中一颗虚线下箭头、排队中一颗钟（Colo 5090 / LP 5187）。
+                // 失败不再在格子上常驻：LP 5115 说那不该一直挂着，改成渲一句提示（见 failureNotice）。
+                // LP 5187：符号颜色跟集数字一致，字号再大一级。
+                let markColor = cellForeground(solid: solid, isCurrent: isCurrent, lite: lite)
                 switch lite {
                 case .downloaded:
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(Color.accentColor.opacity(0.6))
+                    Image(systemName: "arrow.down.circle.fill")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(markColor)
+                        .padding(4)
+                case .downloading:
+                    Image(systemName: "arrow.down.circle.dotted")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(markColor)
                         .padding(4)
                 case .queued:
                     Image(systemName: "clock")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(.tertiary)
-                        .padding(3)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(markColor)
+                        .padding(4)
+                case .failed:
+                    // LP 5194：下载失败给一颗感叹号。
+                    Image(systemName: "exclamationmark.circle")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(markColor)
+                        .padding(4)
                 default:
                     EmptyView()
                 }
@@ -3965,18 +4014,19 @@ struct PlayerScreen: View {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .stroke(cellStroke(solid: solid, isCurrent: isCurrent), lineWidth: isCurrent && isChoosingDownloads ? 1.5 : 0.5)
             )
-            .opacity(locked ? 0.55 : 1)
+            // 已下载 / 排队中的格子不让点，但颜色不变浅（LP 5187）。
+            .opacity(missing ? 0.45 : 1)
             .contentShape(Rectangle())
     }
 
-    /// 格子里的数字颜色：实心时白字，已下载灰字，其余跟着系统。
+    /// 格子里的数字颜色：实心时白字，其余跟着系统。
+    /// LP 5187：已下载不再变浅，数字跟普通集一个色。
     private func cellForeground(
         solid: Bool,
         isCurrent: Bool,
         lite: DownloadLiteStatus
     ) -> Color {
         if solid { return .white }
-        if lite == .downloaded { return Color.secondary }
         if isCurrent { return Color.accentColor }
         return .primary
     }

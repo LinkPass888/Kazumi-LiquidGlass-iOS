@@ -93,12 +93,12 @@ final class DownloadCenter {
     func liteStatus(recordKey: String, number: Int) -> DownloadLiteStatus {
         if let episode = episode(recordKey: recordKey, number: number) {
             if episode.isPlayableOffline { return .downloaded }
-            if episode.status == .downloading || activeNumbers[recordKey]?.contains(number) == true {
-                return .downloading(episode.progress)
-            }
             if episode.status == .failed { return .failed }
+            // LP 5193：只要加进下载就给「在下载」那个符号，不管是在下、排队还是暂停。
+            return .downloading(episode.progress)
         }
-        if queuedNumbers(recordKey: recordKey).contains(number) { return .queued }
+        // 还在队列里没建记录的同理。
+        if queuedNumbers(recordKey: recordKey).contains(number) { return .downloading(0) }
         return .normal
     }
 
@@ -132,6 +132,9 @@ final class DownloadCenter {
                 // 已下完、正在下、已经在排队的，不重复加；失败过的允许重来。
                 if existing.isPlayableOffline || existing.status.isActive { continue }
                 if queuedNumbers(recordKey: key).contains(item.number) { continue }
+                // 暂停/取消过的集重新入队时，要把「取消之后才轮到」的标记清掉：
+                // 不清的话 pump() 出队时会把它当已取消跳过，界面永远停在排队中。
+                cancelledBeforeStart.remove("\(key)#\(item.number)")
                 record.episodes[index].status = .pending
                 record.episodes[index].errorMessage = nil
                 record.episodes[index].progress = 0
@@ -204,17 +207,23 @@ final class DownloadCenter {
 
     /// 删掉某一集。
     func removeEpisode(recordKey: String, number: Int) {
-        guard let record = records.first(where: { $0.id == recordKey }),
-              let episode = record.episodes.first(where: { $0.number == number })
-        else { return }
-        cancel(recordKey: recordKey, numbers: [number])
-        if let file = episode.fileName {
-            let folder = folderURL(for: record)
-            // 分片一起删：本地播放列表指向它们，留下就是垃圾。
-            try? FileManager.default.removeItem(at: folder.appending(path: file))
-            removeSegments(in: folder, prefix: "ep-\(number)")
+        removeEpisodes(recordKey: recordKey, numbers: [number])
+    }
+
+    /// 一次删多集（多选删除用）。
+    func removeEpisodes(recordKey: String, numbers: [Int]) {
+        guard let record = records.first(where: { $0.id == recordKey }), !numbers.isEmpty else { return }
+        let folder = folderURL(for: record)
+        let targets = record.episodes.filter { numbers.contains($0.number) }
+        cancel(recordKey: recordKey, numbers: numbers)
+        for episode in targets {
+            if let file = episode.fileName {
+                // 分片一起删：本地播放列表指向它们，留下就是垃圾。
+                try? FileManager.default.removeItem(at: folder.appending(path: file))
+            }
+            removeSegments(in: folder, prefix: "ep-\(episode.number)")
         }
-        updateMany(recordKey: recordKey, numbers: [number]) { episodes, number in
+        updateMany(recordKey: recordKey, numbers: Set(numbers)) { episodes, number in
             episodes.removeAll { $0.number == number }
         }
         persist()
@@ -228,6 +237,28 @@ final class DownloadCenter {
         else { return nil }
         let url = folderURL(for: record).appending(path: file)
         return FileManager.default.fileExists(atPath: url.path) ? url : nil
+    }
+
+    /// 同上，但只按番剧 + 规则名找，不管线路（Colo 5174）。
+    /// 播放器从详情页、历史、下载管理页都可能进来，线路编号不一定对得上；
+    /// 对用户来说「这集我下过」就是能放。文件不在盘上就返回 nil，退回在线解析。
+    func localURL(bangumiID: Int, pluginName: String, number: Int) -> URL? {
+        for record in records where record.bangumiID == bangumiID && record.pluginName == pluginName {
+            if let url = localURL(recordKey: record.id, number: number) { return url }
+        }
+        return nil
+    }
+
+    /// 按番剧 + 规则名取「已下好、文件还在盘上」的集号，升序。
+    /// 在线列表抓不到时，播放器的选集就退回这一份（Colo v3 第 9 条）。
+    func downloadedNumbers(bangumiID: Int, pluginName: String) -> [Int] {
+        var numbers: Set<Int> = []
+        for record in records where record.bangumiID == bangumiID && record.pluginName == pluginName {
+            for episode in record.episodes where localURL(recordKey: record.id, number: episode.number) != nil {
+                numbers.insert(episode.number)
+            }
+        }
+        return numbers.sorted()
     }
 
     // MARK: - 调度
@@ -485,4 +516,10 @@ enum DownloadLiteStatus: Equatable, Sendable {
     case downloading(Double)
     case downloaded
     case failed
+
+    /// 「已经加进下载」——下载中、排队、暂停都算，只是进度不同。
+    var isDownloading: Bool {
+        if case .downloading = self { return true }
+        return false
+    }
 }

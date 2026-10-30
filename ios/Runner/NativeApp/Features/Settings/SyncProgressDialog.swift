@@ -23,6 +23,10 @@ struct SyncProgressDialog: View {
     var failure: String?
     var onClose: () -> Void
 
+    /// 卡片底色与进度条都跟着系统深浅色走：写死浅色时，深色模式下
+    /// 白卡片配 Color.primary 的白字，阶段和百分比都看不见（LP 5145）。
+    @Environment(\.colorScheme) private var colorScheme
+
     private var percentText: String {
         guard let value else { return "" }
         return "\(Int((min(max(value, 0), 1) * 100).rounded()))%"
@@ -56,7 +60,7 @@ struct SyncProgressDialog: View {
                     HStack(spacing: 8) {
                         ProgressView(value: min(max(value ?? 0, 0), 1))
                             .progressViewStyle(.linear)
-                            .tint(KazumiPalette.accent(for: .light))
+                            .tint(KazumiPalette.accent(for: colorScheme))
                             .frame(height: 6)
                         Text(percentText)
                             .font(.system(size: 13).monospacedDigit())
@@ -81,7 +85,7 @@ struct SyncProgressDialog: View {
             .frame(width: 280, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(KazumiPalette.groupedRow(for: .light))
+                    .fill(KazumiPalette.groupedRow(for: colorScheme))
             )
             .accessibilityElement(children: .combine)
             .accessibilityAddTraits(.isModal)

@@ -516,6 +516,7 @@ struct DanmakuSettingsScreen: View {
 struct DownloadSettingsScreen: View {
     @Environment(AppRouter.self) private var router
     @Environment(DownloadDirectoryStore.self) private var downloadDirectory
+    @Environment(SettingsStore.self) private var settings
     @Environment(\.colorScheme) private var colorScheme
     @State private var message: String?
 
@@ -565,6 +566,28 @@ struct DownloadSettingsScreen: View {
                     Text("选一个文件夹，之后的下载存到那里；没选过就放在应用内。换位置只对之后下载的剧集生效，之前的不会跟着搬。")
                 }
             }
+
+            // 并发两项（LP 5163）：键一直在 SettingsStore 里、默认就是 2 和 3，
+            // 缺的是这一页的控件。改完当场生效：下载中心和引擎每次都现读。
+            Section {
+                Group {
+                    row {
+                        Stepper(value: parallelEpisodesBinding, in: 1...5, step: 1) {
+                            LabeledContent("同时下载", value: "\(settings.downloadParallelEpisodes) 集")
+                        }
+                    }
+                    row {
+                        Stepper(value: parallelSegmentsBinding, in: 1...10, step: 1) {
+                            LabeledContent("每集同时下载", value: "\(settings.downloadParallelSegments) 个分片")
+                        }
+                    }
+                }
+                .listRowBackground(KazumiPalette.groupedRow(for: colorScheme))
+            } header: {
+                Text("并发")
+            } footer: {
+                Text("同时下载几集，和每一集内部同时拉几个分片。改完立刻对之后开始的部分生效，已经在下的一集不会重新排。")
+            }
         }
         .kazumiSettingsDetail("下载设置")
     }
@@ -581,6 +604,29 @@ struct DownloadSettingsScreen: View {
                 message = error.localizedDescription
             }
         }
+    }
+
+    /// 与播放设置页同一层 VStack：Stepper 里的标题与数值一行，不需要额外拆分。
+    private func row<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            content()
+        }
+    }
+
+    /// 1–5 集，默认 2（原版 downloadParallelEpisodes）。
+    private var parallelEpisodesBinding: Binding<Int> {
+        Binding(
+            get: { settings.downloadParallelEpisodes },
+            set: { settings.downloadParallelEpisodes = min(5, max(1, $0)) }
+        )
+    }
+
+    /// 1–10 个分片，默认 3（原版 downloadParallelSegments）。
+    private var parallelSegmentsBinding: Binding<Int> {
+        Binding(
+            get: { settings.downloadParallelSegments },
+            set: { settings.downloadParallelSegments = min(10, max(1, $0)) }
+        )
     }
 }
 

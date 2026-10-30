@@ -123,11 +123,6 @@ struct SyncBackupScreen: View {
                     }
                 }
                 .listRowBackground(KazumiPalette.groupedRow(for: colorScheme))
-
-                // LP 5072：结果贴着刚点的那两行出现，不再落在段末小字里。
-                if let backupMessage, backupMessageScope == .clipboard {
-                    backupBanner(backupMessage, isError: backupMessageIsError)
-                }
             } header: {
                 Text("剪贴板")
             }
@@ -140,10 +135,6 @@ struct SyncBackupScreen: View {
                     }
                 }
                 .listRowBackground(KazumiPalette.groupedRow(for: colorScheme))
-
-                if let backupMessage, backupMessageScope == .file {
-                    backupBanner(backupMessage, isError: backupMessageIsError)
-                }
             } header: {
                 Text("文件")
             }
@@ -153,6 +144,15 @@ struct SyncBackupScreen: View {
         // 「启用 WebDAV」总闸与自动推送三件事都落地后，才改回「同步备份」。
         .navigationTitle("同步设置")
         .navigationBarTitleDisplayMode(.inline)
+        // 导出/恢复的结果不占表单位置（LP 5135/5137/5151）：它浮在页面上层，
+        // 既不进 Form 的行，也不把下面的内容推上推下，自己几秒后收走。
+        .overlay(alignment: .bottom) {
+            if let backupMessage {
+                backupBanner(backupMessage, isError: backupMessageIsError)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 12)
+            }
+        }
         .scrollContentBackground(.hidden)
         // Colo 3532：二级页统一用分组页底。
         .background(KazumiPalette.groupedBackground(for: colorScheme).ignoresSafeArea())
@@ -257,10 +257,11 @@ struct SyncBackupScreen: View {
         .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
     }
 
-    /// 一次导入/导出的结果条（LP 5072）。
+    /// 一次导入/导出的结果条（LP 5072 / 5135 / 5151）。
     ///
     /// 以前落在段末脚注：小字、灰色、离刚才点的那一行隔一段，真的容易划过去。
-    /// 现在贴着动作行、带图标、有底色，几秒后自己收掉。
+    /// 现在它是浮在页面上层的一条提示（不参与排版，不挤任何一行）：
+    /// 实底卡片加阴影，压在内容上也不会跟下面的字绞在一起，几秒后自己收掉。
     private func backupBanner(_ text: String, isError: Bool) -> some View {
         let tint = isError ? Color.orange : KazumiPalette.accent(for: colorScheme)
         return HStack(alignment: .top, spacing: 10) {
@@ -274,16 +275,15 @@ struct SyncBackupScreen: View {
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
         }
-        .padding(.vertical, 10)
-        .padding(.horizontal, 12)
+        .padding(.vertical, 12)
+        .padding(.horizontal, 14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(tint.opacity(0.12))
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(KazumiPalette.groupedRow(for: colorScheme))
+                .shadow(color: .black.opacity(colorScheme == .dark ? 0.5 : 0.14), radius: 12, y: 4)
         )
-        .listRowInsets(EdgeInsets(top: 2, leading: 16, bottom: 6, trailing: 16))
-        .listRowBackground(Color.clear)
-        .transition(.opacity.combined(with: .move(edge: .top)))
+        .transition(.opacity.combined(with: .move(edge: .bottom)))
     }
 
     /// 结果统一从这里落：成功清掉橙字，失败才染成橙。
@@ -312,7 +312,8 @@ struct SyncBackupScreen: View {
             return
         }
         UIPasteboard.general.string = SettingsBackup.encode(snapshot)
-        setBackupResult("已复制 \(snapshot.count) 项设置到剪贴板，建议粘贴到备忘录保存", isError: false)
+        // 提示是一闪而过的浮条：只说结果，不塞建议。长句子会把条子撑成两行、盖住下面的行。
+        setBackupResult("已复制到剪贴板", isError: false)
     }
 
     private func importBackupFromClipboard() {

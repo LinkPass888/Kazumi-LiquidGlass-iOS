@@ -69,6 +69,14 @@ final class PlayerController {
     private var didReleaseWebView = false
     /// 从历史卡片进来时带的那条规则名：重建播放源和取续播位置都按它取。
     let resumeRule: String?
+    /// 离线播放入口（Colo 5174）：按集号取本地文件。有就用本地那份，
+    /// 跳过网页解析；没有就走原流程。章节列表仍然照常抓，
+    /// 所以选集、连播、弹幕、观看历史都还在。
+    private let localFile: ((Int) -> URL?)?
+    /// 本地已下好的集号（升序）。在线列表抓不到时，用它退回「只显示已下载的」。
+    private let downloadedNumbers: (() -> [Int])?
+    /// 这份选集是不是「在线列表没抓到、只剩本地」那一份（Colo v3 第 9 条）。
+    private(set) var isOfflineEpisodeList = false
 
     init(
         bangumiID: Int,
@@ -78,7 +86,9 @@ final class PlayerController {
         library: LibraryStore? = nil,
         resumeRoad: Int? = nil,
         resumeFromHistory: Bool = false,
-        resumeRule: String? = nil
+        resumeRule: String? = nil,
+        localFile: ((Int) -> URL?)? = nil,
+        downloadedNumbers: (() -> [Int])? = nil
     ) {
         self.bangumiID = bangumiID
         self.source = source
@@ -88,6 +98,8 @@ final class PlayerController {
         self.resumeRule = resumeRule
         self.plugins = plugins
         self.library = library
+        self.localFile = localFile
+        self.downloadedNumbers = downloadedNumbers
         webView.onLog = { [weak self] line in
             self?.appendLog(line)
         }
@@ -138,6 +150,27 @@ final class PlayerController {
                     return
                 }
             } catch {
+                // 抓不到章节（片源挂了、地址变了）时，只要本地有这一集的文件，
+                // 照样能放——离线播放不能因为在线那头坏了就跟着废掉。
+                if let local = localFile?(currentEpisode) {
+                    appendLog("解析剧集失败，改用本地文件：\(error.localizedDescription)")
+                    applyHeaders(plugin: plugin)
+                    // 在线列表拿不到：选集退回这份下载记录，已下载的集列出来能点，
+                    // 其余留空格子由界面画灰（Colo v3 第 9 条）。
+                    let numbers = (downloadedNumbers?() ?? []).sorted()
+                    if let last = numbers.last, last > 0 {
+                        var padded = Array(repeating: "", count: last)
+                        for number in numbers where number <= last {
+                            padded[number - 1] = "local://\(number)"
+                        }
+                        episodes = padded
+                        isOfflineEpisodeList = true
+                    }
+                    playbackURL = local.absoluteString
+                    phase = .ready
+                    await loadDanmaku()
+                    return
+                }
                 // 系统给的英文错误串（「The data couldn't be read…」之类）不往用户脸上贴：
                 // 界面上说人话，原始原因写进运行日志。
                 appendLog("解析剧集失败：\(error.localizedDescription)")
@@ -157,6 +190,13 @@ final class PlayerController {
         }
 
         applyHeaders(plugin: plugin)
+        // 本地已经下好了就用本地那份：不解析、不走网页，画质也稳定（Colo 5174）。
+        if let local = localFile?(currentEpisode) {
+            playbackURL = local.absoluteString
+            phase = .ready
+            await loadDanmaku()
+            return
+        }
         phase = .parsingMedia
         await webView.load(url: target, useLegacyParser: plugin.useLegacyParser)
     }

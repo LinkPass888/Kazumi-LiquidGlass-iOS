@@ -184,7 +184,7 @@ final class DownloadEngine: @unchecked Sendable {
             baseURL = variant
         }
 
-        let plan = try HLSPlaylist.localPlan(from: text, baseURL: baseURL)
+        let plan = try HLSPlaylist.localPlan(from: text, baseURL: baseURL, prefix: baseName)
         guard !plan.segmentURLs.isEmpty else { throw DownloadEngineError.emptyPlaylist }
 
         // 初始化段（fMP4 少了它不能播）。
