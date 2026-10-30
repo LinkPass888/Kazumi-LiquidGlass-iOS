@@ -312,6 +312,10 @@ final class NowPlayingCenter {
 
     /// 真正写一次：重建字典 + 赋值。`publish` 判定要写的时候才走到这里。
     private func write(_ info: Info, elapsed: Double, isPlaying: Bool, rate: Double, full: Bool) {
+        // 卡片第一次写进系统的这一刻也补一次远程控制事件声明（LP 4961）：
+        // 启动那一下是在场景还没进前台时调的。只补一次，见 `PlayerAudioSession`。
+        PlayerAudioSession.declareRemoteControlEventsIfNeeded()
+
         var dictionary = full ? [String: Any]() : (MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:])
 
         dictionary[MPMediaItemPropertyTitle] = info.title

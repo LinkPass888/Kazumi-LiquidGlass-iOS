@@ -36,6 +36,23 @@ final class PlayerAudioSession {
 
     // MARK: - 类别与激活
 
+    /// 「我要收远程控制事件」只声明一次。
+    ///
+    /// 启动路径（`KazumiAppDelegate.swift:41`）已经调过一次，但那一刻场景还没进前台、
+    /// 音频会话也还没激活；所以在 `.playback` 真正激活、卡片第一次写进系统的时候
+    /// 再补一次（LP 4961）。
+    ///
+    /// 为什么只补一次：反复 `beginReceivingRemoteControlEvents()` 会让远程控制事件
+    /// 被重复投递，锁屏那颗播放/暂停会一次点两下——那才是真回归。
+    private static var didDeclareRemoteControlEvents = false
+
+    static func declareRemoteControlEventsIfNeeded() {
+        guard !didDeclareRemoteControlEvents else { return }
+        didDeclareRemoteControlEvents = true
+        KazumiLogBuffer.player("声明远程控制事件：beginReceivingRemoteControlEvents（会话已激活）")
+        UIApplication.shared.beginReceivingRemoteControlEvents()
+    }
+
     /// 播放器打开时调用。
     func activate() {
         applyPlaybackCategory()
@@ -65,6 +82,10 @@ final class PlayerAudioSession {
                 options: []
             )
             try session.setActive(true)
+            // 会话真的活了之后再声明一次「我要收远程控制事件」（LP 4961）：
+            // 启动那一下（`KazumiAppDelegate.swift:41`）是在场景还没进前台、
+            // 会话还没激活时调的。只补一次，见 `declareRemoteControlEventsIfNeeded()`。
+            Self.declareRemoteControlEventsIfNeeded()
         } catch {
             // 以前这里用 `try?` 把错误吞掉了。会话正在出声的时候改类别是会失败的，
             // 吞掉就等于「以为改回来了，其实还是 mpv 设的混音」——而混音的会话
