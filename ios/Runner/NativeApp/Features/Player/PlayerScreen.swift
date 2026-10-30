@@ -269,8 +269,6 @@ struct PlayerScreen: View {
     /// 这一集是「因为切到后台才停下的」吗——只有这种暂停才在回前台时自动接上，
     /// 用户自己按的暂停不算（LP 2026-10-29「回到前台自动播放」）。
     @State private var pausedByBackground = false
-    /// 这一集在后台把硬解压掉了。回前台要按这个记号接回来。
-    @State private var hwdecOffInBackground = false
     /// 后台自动画中画。设置关着时一直是 nil：不建图层、不建控制器、不碰软件渲染。
     @State private var pictureInPicture: PictureInPictureController?
     /// 「更多」/ 倍速面板：自己握开关，好让控制层知道菜单还开着。
@@ -829,7 +827,6 @@ struct PlayerScreen: View {
         }
         let pip = PictureInPictureController()
         let backgroundPaused = $pausedByBackground
-        let hwdecOff = $hwdecOffInBackground
         pip.onFailed = { [weak surface] in
             // 小窗没起来，按「后台播放」这个设置收尾，别让设置关着却在后台一直出声。
             // 关着就停下，但标成「因为切后台停的」，回前台那条会按设置接回来
@@ -837,9 +834,7 @@ struct PlayerScreen: View {
             guard let surface else { return }
             KazumiLogBuffer.player("画中画: 启动失败，按后台播放设置收尾")
             if settingsStore.backgroundPlayback {
-                // 开着后台播放：只留声音，硬解压掉、渲染锁上，别在后台碰 GL。
-                hwdecOff.wrappedValue = true
-                surface.setHardwareDecodingEnabled(false)
+                // 开着后台播放：渲染锁上，别在后台碰 GL（硬解不压，见 handleBackground）。
                 surface.setRenderingLocked(true)
             } else if surface.isPlaying {
                 backgroundPaused.wrappedValue = true
@@ -851,8 +846,6 @@ struct PlayerScreen: View {
             // 不开则继续当音频播放器用；开了后台音频也要回到只走声音的老策略。
             guard let surface else { return }
             if settingsStore.backgroundPlayback {
-                hwdecOff.wrappedValue = true
-                surface.setHardwareDecodingEnabled(false)
                 surface.setRenderingLocked(true)
             } else if surface.isPlaying {
                 // 跟上面一条对齐：标成「切后台停的」，回前台照设置接回来。
@@ -886,25 +879,21 @@ struct PlayerScreen: View {
         }
         guard !pipStarted else { return }
 
-        // 小窗没起来：后台就不能再硬解。iOS 在后台不给 GPU / VideoToolbox，
-        // 硬解会话当场失效（真机日志：`h264: Failed to decode frame
-        // (invalid session, -12903)` → `vt decoder cb: output image buffer is
-        // null: -12909`），重则把播放打成 `paused=true idle=true`，回前台还得
-        // 用户手点一下才接着播（LP 4938 第 2 条）。
+        // 小窗没起来：后台就把渲染锁上（LP 4978 第 2 条）。iOS 在后台不给
+        // OpenGL ES 用，真机日志里切后台后一直在报
+        // `libmpv_render: OpenGL error INVALID_ENUM`。锁上以后 mpv 不再被叫去画、
+        // 重绘请求全部丢掉，VideoToolbox 就不会被渲染拉帧，也就不会被系统作废
+        // （这正是当初压 `hwdec` 的原因）。
         //
-        // 只切 `hwdec`，不动 `vid`（LP 4976）：对 HLS 在线流动态切视频轨会让
-        // demuxer 断开分片流、回前台重新拉流寻帧，把音频缓冲抽干。
+        // **不再在后台切 `hwdec`（LP 4984 第 1 条）**：上一版切后台压 `hwdec=no`、
+        // 回前台切回 `videotoolbox-copy`，每次都让 FFmpeg 销毁重建 H.264 解码器，
+        // 在新 IDR 帧之前缺参考帧（真机日志：`co located POCs unavailable`、
+        // `mmco: unref short failure`），mpv 那一秒进 `空闲=是` 等音画同步——就是
+        // LP 报的「切后台/回前台像在加载一秒」。现在只靠渲染锁，解码器全程不重建。
         //
-        // 渲染也一起锁上（LP 4978 第 2 条）：iOS 在后台不给 OpenGL ES 用，
-        // 真机日志里切后台后一直在报 `libmpv_render: OpenGL error INVALID_ENUM`。
         // 画中画真的起来了就走不到这里（上面 `guard !pipStarted` 已经返回），
-        // 它的帧还得靠这条渲染路径出。
-        //
-        // 判据是「这次有没有走成画中画」，跟 `backgroundPlayback` 那个设置无关：
-        // 那个设置管的是「要不要继续出声」，这条管的是「后台本来就不该硬解」。
-        surface.setHardwareDecodingEnabled(false)
+        // 它的帧还得靠这条渲染路径出，所以这时絕不锁。
         surface.setRenderingLocked(true)
-        hwdecOffInBackground = true
         // 没开后台播放：连声音一起停。标成「因为切后台停的」，
         // 回前台那条会按设置接回来，不再出现「回来发现停着、也没接着播」。
         if !settings.backgroundPlayback, surface.isPlaying {
@@ -913,16 +902,12 @@ struct PlayerScreen: View {
         }
     }
 
-    /// 回前台：收回画中画、把后台压掉的硬解接回来、按设置自动续播。
+    /// 回前台：收回画中画、解开渲染锁、按设置自动续播。
     private func handleForeground() {
         // 先收回画中画：内联 GL 在同一时间点接管，不 seek、不重启。
         pictureInPicture?.stop()
-        // 后台把硬解关了：先接回来，再解渲染锁（锁一解会立刻补一次重绘，
-        // 顺序反了就是「先画一帧再切解码器」）。
-        if hwdecOffInBackground {
-            hwdecOffInBackground = false
-            surface.setHardwareDecodingEnabled(true)
-        }
+        // 只解渲染锁（解锁会立刻补一次重绘）。硬解全程没动过，没有要接回来的东西
+        // （LP 4984 第 1 条：不再在后台压 `hwdec`）。
         surface.setRenderingLocked(false)
         // 「回到前台自动播放」：只接回因切后台停下的那一集。
         let shouldResume = settings.resumeOnForeground && pausedByBackground
@@ -932,7 +917,7 @@ struct PlayerScreen: View {
         }
         // 这行留着：真机上「回来停着不接着播」时，先看这条——
         // 续播=否 就是「本来就不该续」（设置关了 / 用户自己暂停的），不是丢了。
-        KazumiLogBuffer.player("回前台：硬解接回，续播=\(shouldResume ? "是" : "否")")
+        KazumiLogBuffer.player("回前台：渲染锁已解，续播=\(shouldResume ? "是" : "否")")
     }
 
     // MARK: - 播放区

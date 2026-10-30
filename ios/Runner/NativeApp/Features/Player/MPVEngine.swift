@@ -271,24 +271,6 @@ final class MPVEngine {
         #endif
     }
 
-    /// 后台只走声音时把硬解压掉，回前台再开。
-    ///
-    /// 进后台 iOS 会作废硬解会话，mpv 的 VideoToolbox 回调拿到的是空帧
-    /// （真机日志：`vt decoder cb: output image buffer is null: -12909`、
-    /// `h264: Failed to decode frame (invalid session, -12903)`）。切软解就没有
-    /// 会话可作废，音频照走。
-    ///
-    /// 这里只动 `hwdec`，不动 `vid`（LP 4976）：对 HLS 在线流动态切 `vid` 会让
-    /// demuxer 断开视频分片流、回前台重新拉流寻帧，把音频缓冲抽干（真机日志：
-    /// `Audio device underrun detected` + `内核：… 空闲=是`）。换 `hwdec` 只重建
-    /// 解码器，视频轨和 demuxer 都留着。
-    func setHardwareDecoding(_ enabled: Bool) {
-        setOptionForPlayback("hwdec", enabled ? Self.hwdecOnForeground : "no")
-        if enabled {
-            requestDisplay()
-        }
-    }
-
     /// 后台渲染锁：iOS 在后台不许碰 OpenGL ES，切后台后真机日志里一直在报
     /// `libmpv_render: OpenGL error INVALID_ENUM`（LP 4978 第 2 条）。
     ///
