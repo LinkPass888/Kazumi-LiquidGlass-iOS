@@ -71,6 +71,8 @@ final class NowPlayingCenter {
         var artworkURL: String
         var duration: Double
         var episode: Int
+        /// 这部一共多少集（0 = 不知道）。给系统写「队列第几项 / 一共几项」用。
+        var episodeCount: Int
     }
 
     private var info: Info?
@@ -214,7 +216,8 @@ final class NowPlayingCenter {
         duration: Double,
         elapsed: Double,
         isPlaying: Bool,
-        rate: Double = 1
+        rate: Double = 1,
+        episodeCount: Int = 0
     ) {
         configureRemoteCommands()
 
@@ -225,7 +228,8 @@ final class NowPlayingCenter {
             albumTitle: "",
             artworkURL: artworkURL ?? "",
             duration: max(duration, 0),
-            episode: episode
+            episode: episode,
+            episodeCount: max(episodeCount, 0)
         )
 
         let isNewItem = info != next
@@ -357,6 +361,17 @@ final class NowPlayingCenter {
             dictionary[MPNowPlayingInfoPropertyMediaType] = MPNowPlayingInfoMediaType.audio.rawValue
             // 集数：系统自带的「第 N 集」字段就是专辑里的音轨号，控制中心会拿出来显示。
             dictionary[MPMediaItemPropertyAlbumTrackNumber] = info.episode
+            // 队列位置（LP 5038）：main 经 audio_service 会写这两个键，我们之前一个字都没写。
+            // 系统靠它们把锁屏/控制中心那两颗箭头当成「在这一摞里的上一个/下一个」，
+            // 不写就只有音乐 App 那种默认语义，遥控键可能不被当成可用的队列操作。
+            if info.episodeCount > 0 {
+                // 系统这两个键都是 0 起的，我们自己的集数是 1 起的。
+                dictionary[MPNowPlayingInfoPropertyPlaybackQueueIndex] = max(0, info.episode - 1)
+                dictionary[MPNowPlayingInfoPropertyPlaybackQueueCount] = info.episodeCount
+            } else {
+                dictionary.removeValue(forKey: MPNowPlayingInfoPropertyPlaybackQueueIndex)
+                dictionary.removeValue(forKey: MPNowPlayingInfoPropertyPlaybackQueueCount)
+            }
         }
 
         if let artwork = artworkCache[info.artworkURL] {

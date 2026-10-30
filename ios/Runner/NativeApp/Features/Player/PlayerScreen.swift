@@ -3283,7 +3283,10 @@ struct PlayerScreen: View {
             // 1.5 秒纠偏才拉回来，卡片上就是「跑快了再跳回去」（LP 4925 第 2 条）。
             // `isPlaying` 不动：它一 false，`playbackState` 跟着变 paused，
             // 卡片上那颗按钮也变了 —— 那不是我们要的。
-            rate: surface.isStalled ? 0 : Double(surface.desiredRate)
+            rate: surface.isStalled ? 0 : Double(surface.desiredRate),
+            // 队列长度（LP 5038）：系统靠「第几项 / 一共几项」把锁屏那两颗箭头
+            // 当队列操作处理（main 经 audio_service 一直带着这个值）。
+            episodeCount: controller.episodes.count
         )
     }
 
