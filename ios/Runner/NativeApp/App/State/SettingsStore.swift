@@ -156,6 +156,9 @@ enum SettingsKey {
     static let hapticFeedbackEnabled = "hapticFeedbackEnabled"
     /// 时间表是否显示评分（Ato 2026-10-24：只管时间表，详情页照旧）。
     static let showRating = "showRating"
+    /// 时间表星期条是否显示每天番剧数量（LP 5039，默认关）。
+    /// 关掉时星期条换成规则编辑页顶部那种分段 tab。
+    static let timelineShowCount = "timelineShowCount"
     /// 上滑时缩小底部标签栏（LP 2586 定稿：名字带「缩小」，默认开）。
     static let tabBarShrinkOnScroll = "tabBarShrinkOnScroll"
     /// 进入播放器时跳到上次播放位置，沿用原版 `SettingsKeys.playResume` 的键名，默认开启。
@@ -323,6 +326,11 @@ final class SettingsStore {
     /// 概览、番剧列表与番剧详情页是否显示评分。
     var showRating: Bool {
         didSet { persist(showRating, SettingsKey.showRating) }
+    }
+
+    /// 时间表星期条是否带每天的番剧数量（LP 5039，默认关）。
+    var timelineShowCount: Bool {
+        didSet { persist(timelineShowCount, SettingsKey.timelineShowCount) }
     }
 
     /// 上滑时缩小底部标签栏。默认开：上滑把标签栏收起。
@@ -737,6 +745,7 @@ final class SettingsStore {
         ) ?? .automatic
         hapticFeedbackEnabled = Self.read(defaults, SettingsKey.hapticFeedbackEnabled, true)
         showRating = Self.read(defaults, SettingsKey.showRating, true)
+        timelineShowCount = Self.read(defaults, SettingsKey.timelineShowCount, false)
         tabBarShrinkOnScroll = Self.read(defaults, SettingsKey.tabBarShrinkOnScroll, true)
         aniSkipLookup = Self.read(defaults, SettingsKey.aniSkipLookup, true)
         danmakuEnabled = Self.read(defaults, SettingsKey.danmakuEnabled, true)

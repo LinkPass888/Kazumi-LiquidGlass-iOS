@@ -291,6 +291,34 @@ struct TimelineScreen: View {
     private static let weekdayGlassInset: CGFloat = 3
 
     private var weekdaySelector: some View {
+        Group {
+            if settings.timelineShowCount {
+                // 开着计数：原来的玻璃滑块（每天带番剧数量）。
+                sliderWeekdaySelector
+            } else {
+                // 关掉计数（LP 5039，默认）：换成规则编辑页顶部那种分段 tab，
+                // 名字只留「周一…周日/今天」，不再写数量。
+                segmentedWeekdaySelector
+            }
+        }
+    }
+
+    /// 分段 tab（对应 `PluginEditorView` 顶部的 `Picker(...).pickerStyle(.segmented)`）。
+    private var segmentedWeekdaySelector: some View {
+        Picker("星期", selection: Binding(
+            get: { selectedWeekday },
+            set: { selectWeekday($0) }
+        )) {
+            ForEach(Array(Self.weekdayTitles.indices), id: \.self) { day in
+                Text(dayTitle(day)).tag(day)
+            }
+        }
+        .pickerStyle(.segmented)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 6)
+    }
+
+    private var sliderWeekdaySelector: some View {
         GeometryReader { proxy in
             let cellWidth = max(proxy.size.width, 1) / 7
             // 跟手：翻页滚动时玻璃直接按滚动偏移算，手指到哪它到哪；

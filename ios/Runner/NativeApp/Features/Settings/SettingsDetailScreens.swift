@@ -863,6 +863,16 @@ struct ThemeSettingsScreen: View {
                                 .foregroundStyle(.secondary)
                         }
                     }
+                    // LP 5039：时间表星期条上的番剧计数。默认关。
+                    // 关掉时星期条换成规则编辑页顶部那种分段 tab（见 `TimelineScreen`）。
+                    Toggle(isOn: timelineShowCountBinding) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("时间表番剧计数")
+                            Text("关闭后时间表的星期换成普通标签栏")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                 }
                 .listRowBackground(KazumiPalette.groupedRow(for: colorScheme))
             }
@@ -905,6 +915,13 @@ struct ThemeSettingsScreen: View {
 
     private var showRatingBinding: Binding<Bool> {
         Binding(get: { settings.showRating }, set: { settings.showRating = $0 })
+    }
+
+    private var timelineShowCountBinding: Binding<Bool> {
+        Binding(
+            get: { settings.timelineShowCount },
+            set: { settings.timelineShowCount = $0 }
+        )
     }
 
     private var tabBarBinding: Binding<Bool> {
