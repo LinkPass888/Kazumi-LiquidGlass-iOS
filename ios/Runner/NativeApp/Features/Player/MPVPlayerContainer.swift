@@ -552,6 +552,8 @@ struct MPVPlayerContainer: UIViewRepresentable {
     let url: URL
     let referer: String?
     let userAgent: String?
+    /// 系统 HTTP 代理（`http://主机:端口`），nil 表示不走（LP 5063/5067）。
+    let systemProxy: String?
     /// 超分着色器的绝对路径，空数组表示关闭（顺序就是挂载顺序）。
     let shaderPaths: [String]
     /// 画面填充方式。
@@ -614,7 +616,8 @@ struct MPVPlayerContainer: UIViewRepresentable {
             referer: referer,
             userAgent: userAgent,
             shaders: shaderPaths,
-            fill: fillMode
+            fill: fillMode,
+            systemProxy: systemProxy
         )
         return host
     }
@@ -633,7 +636,8 @@ struct MPVPlayerContainer: UIViewRepresentable {
             referer: referer,
             userAgent: userAgent,
             shaders: shaderPaths,
-            fill: fillMode
+            fill: fillMode,
+            systemProxy: systemProxy
         )
         context.coordinator.overlay?.apply(
             comments: danmaku,
@@ -663,13 +667,15 @@ struct MPVPlayerContainer: UIViewRepresentable {
         private var lastURL: URL?
         private var lastShaders: [String] = []
         private var lastFill: MPVFillMode?
+        private var lastProxy: String?
 
         func apply(
             url: URL,
             referer: String?,
             userAgent: String?,
             shaders: [String],
-            fill: MPVFillMode
+            fill: MPVFillMode,
+            systemProxy: String?
         ) {
             guard let engine else { return }
             // 换档位时画面要重新出，但不用重新起播：mpv 换着色器当场生效。
@@ -695,6 +701,11 @@ struct MPVPlayerContainer: UIViewRepresentable {
                     engine.setOptionForPlayback("panscan", "0")
                     engine.setOptionForPlayback("keepaspect", "no")
                 }
+            }
+            // 代理变了也要重新交给内核：开关在设置里拨一下，正在放的那一集立刻生效。
+            if systemProxy != lastProxy {
+                lastProxy = systemProxy
+                engine.setProxy(systemProxy)
             }
             guard lastURL != url else { return }
             lastURL = url

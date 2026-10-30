@@ -620,6 +620,21 @@ final class MPVEngine {
 
     // MARK: - 小工具
 
+    /// 系统代理（LP 5063/5067）。`nil` 表示不走代理，把选项清掉。
+    ///
+    /// libmpv 不读 iOS 的系统代理，所以只能由调用方读好交进来。
+    /// 这个选项是运行期可改的，正在放的那一集拨开关也会对后续请求生效。
+    func setProxy(_ url: String?) {
+        guard let handle else { return }
+        let value = url ?? ""
+        let status = mpv_set_property_string(handle, "http-proxy", value)
+        if status < 0 {
+            onLog?("设属性 http-proxy 失败：\(String(cString: mpv_error_string(status)))")
+            return
+        }
+        onLog?(url == nil ? "代理：不走代理" : "代理：走系统代理 \(url!)")
+    }
+
     /// 播放中改的选项（画面填充方式这类）：走属性，当场生效。
     func setOptionForPlayback(_ name: String, _ value: String) {
         guard let handle else { return }

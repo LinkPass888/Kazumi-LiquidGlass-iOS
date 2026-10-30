@@ -112,6 +112,7 @@ extension SettingsStore {
             SettingsKey.defaultStartupPage,
             SettingsKey.enableBangumiProxy,
             SettingsKey.enableGitProxy,
+            SettingsKey.useSystemProxy,
             SettingsKey.imageAcceleration,
             SettingsKey.selectedPluginIndex,
             SettingsKey.autoUpdate,
@@ -366,6 +367,10 @@ extension SettingsStore {
         }
         if let flag = value(SettingsKey.enableGitProxy)?.boolValue {
             enableGitProxy = flag
+            restored += 1
+        }
+        if let flag = value(SettingsKey.useSystemProxy)?.boolValue {
+            useSystemProxy = flag
             restored += 1
         }
         if let text = value(SettingsKey.imageAcceleration)?.stringValue,

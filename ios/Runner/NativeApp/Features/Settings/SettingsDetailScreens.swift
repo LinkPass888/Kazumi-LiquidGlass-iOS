@@ -974,6 +974,11 @@ struct NetworkSettingsScreen: View {
                         Text("镜像").tag(ImageAcceleration.mirror.rawValue)
                     }
                     .pickerStyle(.menu)
+
+                    // LP 5063/5067：播放内核不认 iOS 的系统代理，只能我们自己读出来交给它。
+                    // 代理工具没开 Tun（增强模式）、只设了 Wi-Fi 的 HTTP 代理时，
+                    // 界面能刷但片子放不出来，就是这个原因。
+                    Toggle("使用系统代理", isOn: useSystemProxyBinding)
                 }
                 .listRowBackground(KazumiPalette.groupedRow(for: colorScheme))
             }
@@ -996,6 +1001,13 @@ struct NetworkSettingsScreen: View {
         Binding(
             get: { settings.imageAcceleration },
             set: { settings.imageAcceleration = $0 }
+        )
+    }
+
+    private var useSystemProxyBinding: Binding<Bool> {
+        Binding(
+            get: { settings.useSystemProxy },
+            set: { settings.useSystemProxy = $0 }
         )
     }
 }

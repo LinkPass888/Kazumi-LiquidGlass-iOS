@@ -239,6 +239,10 @@ struct PlayerScreen: View {
 
     @State private var controller: PlayerController?
     @State private var surface = PlayerSurfaceModel()
+    /// 交给播放内核的系统代理（LP 5063/5067）。nil = 不走。
+    /// 不直接用 `SystemProxy.httpProxyURL()` 现取：那个要在主线程读系统设置，
+    /// 而且得在「开关拨了 / 回前台（可能换了网）」时才重读一次。
+    @State private var systemProxyURL: String?
     @State private var danmakuEnabled = true
     /// 横屏底栏那个发弹幕的输入框：草稿、焦点。
     /// 画面量出来的宽度：横屏两行底栏按它判断。
@@ -539,6 +543,8 @@ struct PlayerScreen: View {
         .task {
             // 控制中心那几颗键只接一次：接在画面上，它们才真能暂停、切集、拖进度。
             configureNowPlayingCommands()
+            // 一进页面就把系统代理读一次：开关本来就开着的那次播放不靠别的时机。
+            refreshSystemProxy()
             while !Task.isCancelled {
                 try? await Task.sleep(for: .milliseconds(250))
                 guard !Task.isCancelled else { return }
@@ -583,11 +589,16 @@ struct PlayerScreen: View {
                 handleBackground()
             case .active:
                 handleForeground()
+                // 回前台重新读一次系统代理：用户可能刚把代理工具打开/关掉。
+                refreshSystemProxy()
             default:
                 break
             }
         }
         // 设置被关掉：画中画立刻收掉（连同窗口里那块图层），内联画面恢复。
+        .onChange(of: settings.useSystemProxy) { _, _ in
+            refreshSystemProxy()
+        }
         .onChange(of: settings.backgroundAutoPiP) { _, enabled in
             if enabled {
                 makePictureInPictureController(settingsStore: settings)
@@ -905,6 +916,24 @@ struct PlayerScreen: View {
         if !settings.backgroundPlayback, surface.isPlaying {
             pausedByBackground = true
             surface.pause()
+        }
+    }
+
+    /// 读一次系统代理交给播放内核（LP 5063/5067）。
+    ///
+    /// libmpv 不会自己去读 iOS 的系统代理，界面那一路（URLSession）系统会带，
+    /// 片子那一路不带 —— 代理工具没开 Tun／增强模式时就是「能刷列表、放不出片」。
+    /// 开关关着就不读，免得白走一趟系统设置。
+    private func refreshSystemProxy() {
+        let next = settings.useSystemProxy ? SystemProxy.httpProxyURL() : nil
+        guard next != systemProxyURL else { return }
+        systemProxyURL = next
+        if settings.useSystemProxy {
+            KazumiLogBuffer.player(next == nil
+                ? "代理：系统没设 HTTP 代理，仍然直连"
+                : "代理：读到系统代理 \(next!)")
+        } else {
+            KazumiLogBuffer.player("代理：已关闭，直连")
         }
     }
 
@@ -1975,6 +2004,7 @@ struct PlayerScreen: View {
                     url: url,
                     referer: controller.referer,
                     userAgent: controller.userAgent,
+                    systemProxy: systemProxyURL,
                     shaderPaths: settings.superResolutionMode.shaderPaths,
                     fillMode: aspectRatioMode.fillMode,
                     danmaku: controller.danmakuComments,

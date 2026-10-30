@@ -244,6 +244,8 @@ enum SettingsKey {
     static let proxyEnabled = "proxyEnabled"
     static let proxyHost = "proxyHost"
     static let proxyPort = "proxyPort"
+    /// 播放内核跟随系统代理（LP 5063）：libmpv 不认 iOS 系统代理，只能我们自己读出来交给它。
+    static let useSystemProxy = "useSystemProxy"
     /// 规则仓库镜像（原版 `enableGitProxy`）。
     static let enableGitProxy = "enableGitProxy"
     /// 图片加速方式（原版 `imageAcceleration`，direct / mirror）。
@@ -615,6 +617,14 @@ final class SettingsStore {
         didSet { persist(proxyEnabled, SettingsKey.proxyEnabled) }
     }
 
+    /// 播放内核跟随系统代理（LP 5063/5067）。
+    ///
+    /// iOS 上 App 能拿到的只有系统那份配置（Wi-Fi 里的 HTTP 代理）；
+    /// 默认关：没开代理工具的人打开它只会多一次读系统设置。
+    var useSystemProxy: Bool {
+        didSet { persist(useSystemProxy, SettingsKey.useSystemProxy) }
+    }
+
     /// 规则仓库镜像开关（对应原版 `enableGitProxy`）。
     var enableGitProxy: Bool {
         didSet {
@@ -815,6 +825,7 @@ final class SettingsStore {
         webDavEnableCollect = Self.read(defaults, SettingsKey.webDavEnableCollect, false)
         webDavEnableDanmakuShield = Self.read(defaults, SettingsKey.webDavEnableDanmakuShield, false)
         proxyEnabled = Self.read(defaults, SettingsKey.proxyEnabled, false)
+        useSystemProxy = Self.read(defaults, SettingsKey.useSystemProxy, false)
         proxyHost = Self.read(defaults, SettingsKey.proxyHost, "")
         proxyPort = Self.read(defaults, SettingsKey.proxyPort, 0)
         enableGitProxy = Self.read(defaults, SettingsKey.enableGitProxy, false)
