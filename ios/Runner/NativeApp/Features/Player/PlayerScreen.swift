@@ -788,6 +788,10 @@ struct PlayerScreen: View {
         // 回调等于永远是空的（2026-10-30 模拟器上就是这么一次都没释放）。
         surface.onPlaybackStarted = { [weak created] in
             created?.releaseSourceWebView()
+            // mpv 的 `ao_audiounit` 在音频流初始化那一刻会把会话重设一遍
+            // （真机日志里 `模式=AVAudioSessionModeMoviePlayback` 就是它盖的，LP 4993）。
+            // 所以起播一稳定就立刻掰回 `.default`，不等 2 秒那一次轮询。
+            PlayerAudioSession.shared.reapplyIfNeeded()
         }
         surface.onFinish = { [weak created] surface in
             guard let created else { return }

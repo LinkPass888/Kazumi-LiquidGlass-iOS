@@ -57,6 +57,9 @@ final class PlayerAudioSession {
     func activate() {
         applyPlaybackCategory()
         installObservers()
+        // 基线：此刻会话是什么样。真机上拿它跟后面「切到后台」那行对一下，
+        // 就能分清「我们没设上」和「设上了又被 mpv 盖回去」。
+        logSnapshot("打开播放器")
     }
 
     /// 把会话配成「播放中」并激活，不加 mixWithOthers。
@@ -121,30 +124,42 @@ final class PlayerAudioSession {
         )
     }
 
-    /// 起播后再配一次：mpv 的 audiounit 输出初始化时可能已经把类别重设过。
+    /// 起播后再配一次：mpv 的 audiounit 输出初始化时会把会话重设一遍——
+    /// 它自己设 `mode = .moviePlayback`（真机日志里 `模式=AVAudioSessionModeMoviePlayback`
+    /// 一直在，就是它盖的，LP 4993）。
     ///
     /// 只查不写是错的：会话在出声时改类别可能被系统拒绝，那就得退一次再上。
-    /// 所以这里先就地改，读回还是混音就把会话退掉重配一次，并把结果写进日志——
+    /// 所以这里先就地改，读回还是不对就把会话退掉重配一次，并把结果写进日志——
     /// 成没成都要留证据。
     func reapplyIfNeeded() {
         let session = AVAudioSession.sharedInstance()
-        guard session.categoryOptions.contains(.mixWithOthers) || session.category != .playback else {
-            return
-        }
+        guard isOverridden(session) else { return }
         let before = describe(session)
         applyPlaybackCategory()
-        if session.categoryOptions.contains(.mixWithOthers) || session.category != .playback {
-            // 就地改被拒了：退一次再上。只在真的被盖成混音时才走，不是每 2 秒一次。
+        if isOverridden(session) {
+            // 就地改被拒了：退一次再上。只在真的被盖掉时才走，不是每 2 秒一次。
             try? session.setActive(false, options: .notifyOthersOnDeactivation)
             applyPlaybackCategory()
         }
         let after = describe(session)
-        logSessionChange("音频会话被重设：\(before) → \(after)", state: after)
+        logSessionChange("音频会话被重设（含 mode 纠正）：\(before) → \(after)", state: after)
+    }
+
+    /// 会话被 mpv 盖掉了吗。
+    ///
+    /// **`mode` 必须算进来**（LP 4993）：原来这里只看类别和混音，于是 mpv 把
+    /// `mode` 改成 `.moviePlayback`、类别又刚好是 `.playback`、也没混音时，
+    /// 这里直接 return，我们那个 `.default` 永远没机会写回去——真机日志里
+    /// 那行 `模式=AVAudioSessionModeMoviePlayback` 就是这么留下来的。
+    private func isOverridden(_ session: AVAudioSession) -> Bool {
+        session.categoryOptions.contains(.mixWithOthers)
+            || session.category != .playback
+            || session.mode != .default
     }
 
     private func describe(_ session: AVAudioSession) -> String {
         let mixing = session.categoryOptions.contains(.mixWithOthers) ? "混音" : "独占"
-        return "\(session.category.rawValue)/\(mixing)"
+        return "\(session.category.rawValue)/\(session.mode.rawValue)/\(mixing)"
     }
 
     /// 上一次写进日志的会话描述：同样的状态不重复写，
