@@ -771,6 +771,8 @@ struct PlayerScreen: View {
             resumeRule: resumeRule
         )
         controller = created
+        // 上一集 / 下一集必须在拿到 controller **之后**接：早接一步抓到的是 nil（LP 5042）。
+        bindEpisodeRemoteCommands(created)
         // 默认倍速：就绪 / 重新起播时由画面模型再补一次（AVPlayer 会回到 1.0）。
         let startSpeed = Float(settingsStore.playSpeed)
         surface.setPlaybackRate(startSpeed)
@@ -3300,9 +3302,31 @@ struct PlayerScreen: View {
             surface.pendingResumeTime = nil
             surface.seek(to: position)
         }
+        // 上一集 / 下一集**不在这里接**（LP 5033 / 5042）。
+        //
+        // 这个方法跑在 `.task` 里，启动那一瞬 `controller` 还是 nil（`bootstrapPlaybackIfNeeded`
+        // 之后才创建）。`[weak controller]` 抓到的是「当时这个值」——nil，而且永远是 nil：
+        // 真机日志里就是「遥控：收到下一集」紧接着「遥控：下一集拿不到播放控制器/集列表」，
+        // 点几次都是这两行。播放/暂停那几颗用的是 `surface`，它从页面一出生就在，所以它们好使。
+        // 接在 `controller = created` 之后（`bindEpisodeRemoteCommands`）。
+        // 盒子接好就把指令注册上（Fuck 4881）：注册原来只在 `update()` 里发生，
+        // 而 `update()` 被 `syncNowPlaying()` 的 `duration > 0 || isPlaying` 挡着——
+        // 播放页刚打开、还没起播那一段，那几颗键是没注册的。
+        center.configureRemoteCommands()
+    }
+
+    /// 上一集 / 下一集：**必须在 `controller` 创建之后接**（LP 5042）。
+    /// 那时候 `created` 是个实打实的强引用，弱捕获才拿得到东西。
+    private func bindEpisodeRemoteCommands(_ controller: PlayerController) {
+        let center = NowPlayingCenter.shared
+        let surface = self.surface
         center.onNext = { [weak controller, surface] in
-            guard let controller, !controller.episodes.isEmpty else {
-                KazumiLogBuffer.player("遥控：下一集拿不到播放控制器/集列表")
+            guard let controller else {
+                KazumiLogBuffer.player("遥控：下一集播放控制器已经没了")
+                return
+            }
+            guard !controller.episodes.isEmpty else {
+                KazumiLogBuffer.player("遥控：下一集集列表还是空的")
                 return
             }
             guard controller.currentEpisode < controller.episodes.count else {
@@ -3315,8 +3339,12 @@ struct PlayerScreen: View {
             Task { await controller.selectEpisode(target) }
         }
         center.onPrevious = { [weak controller, surface] in
-            guard let controller, !controller.episodes.isEmpty else {
-                KazumiLogBuffer.player("遥控：上一集拿不到播放控制器/集列表")
+            guard let controller else {
+                KazumiLogBuffer.player("遥控：上一集播放控制器已经没了")
+                return
+            }
+            guard !controller.episodes.isEmpty else {
+                KazumiLogBuffer.player("遥控：上一集集列表还是空的")
                 return
             }
             guard controller.currentEpisode > 1 else {
@@ -3328,10 +3356,6 @@ struct PlayerScreen: View {
             let target = controller.currentEpisode - 1
             Task { await controller.selectEpisode(target) }
         }
-        // 盒子接好就把指令注册上（Fuck 4881）：注册原来只在 `update()` 里发生，
-        // 而 `update()` 被 `syncNowPlaying()` 的 `duration > 0 || isPlaying` 挡着——
-        // 播放页刚打开、还没起播那一段，那几颗键是没注册的。
-        center.configureRemoteCommands()
     }
 
     // MARK: - 上一集 / 下一集
