@@ -147,12 +147,21 @@ final class PlayerSurfaceModel {
     /// mpv 那条会失败（真机上 1080p 要从关键帧重解，也可能直接被拒），
     /// 那时不能让用户拿到空的：屏幕上已经有画了，直接读它。读到的整块视口
     /// 带黑边、是屏幕的比例，所以按同一套 `videoRect` 裁成画面本身（LP 要的是
-    /// 画面比例，不是屏幕比例）。分辨率是屏幕的，比 mpv 原生出图低，但
-    /// 「有一张、比例对」比「没有」重要得多。
+    /// 画面比例，不是屏幕比例）。
+    ///
+    /// 这是**退路**，不是主路：它只有屏幕分辨率的像素，永远不是「片源那一帧」。
+    /// mpv 自己出图失败时，失败原因会拼进提示里，不再默默降级（LP 5002）。
     ///
     /// 返回 `(文件, 给用户看的那句话)`：文件在就交给相册那条路存。
     func captureFrame() async -> (url: URL?, note: String) {
-        if let url = await engine?.captureFrameToFile().url { return (url, "") }
+        // 先让 mpv 自己出图（片源分辨率、完整一帧）；它失败时才退到下面那条，
+        // 那条只有屏幕分辨率，所以失败原因要一路带进提示里，不能默默降级（LP 5002）。
+        var mpvFailure = ""
+        if let engine {
+            let result = await engine.captureFrameToFile()
+            if let url = result.url { return (url, result.note) }
+            mpvFailure = result.note
+        }
         guard let image = hostView?.snapshotOfVideo(),
               let data = image.pngData()
         else {
@@ -165,7 +174,11 @@ final class PlayerSurfaceModel {
         } catch {
             return (nil, "截图失败：临时文件写不出去")
         }
-        let note = "截图：mpv 没出图，改用屏幕那一帧 \(Int(image.size.width))×\(Int(image.size.height))"
+        // 像素尺寸，不是点尺寸：以前这里报的是 `image.size`（点），跟真实存下来的
+        // 图对不上，排查时白绕一圈（LP 5002）。
+        let pixels = image.cgImage.map { "\($0.width)×\($0.height)" } ?? "尺寸读不到"
+        let reason = mpvFailure.isEmpty ? "" : "（\(mpvFailure)）"
+        let note = "截图：mpv 没出图\(reason)，改用屏幕那一帧 \(pixels) 像素"
         KazumiLogBuffer.player(note)
         return (url, note)
     }
@@ -463,20 +476,27 @@ final class MPVHostView: UIView {
             ? currentVideoRect
             : fillMode.videoRect(in: glView.bounds, videoSize: videoSize)
 
-        // snapshot 是像素，rect 是 points，换算过去再裁。
-        let sx = snapshot.size.width / boundsSize.width
-        let sy = snapshot.size.height / boundsSize.height
+        // 缩放拿 `cgImage` 的像素宽高算，不能用 `snapshot.size`（点是点尺寸）。
+        //
+        // 这里踩过：`GLKView.snapshot` 返回的 UIImage 带屏幕缩放倍率，`size` 是点、
+        // 只有 `cgImage` 才是像素。以前用 `snapshot.size / bounds` 算比例，3 倍屏上
+        // 得出来是 1，于是把一块点尺寸的矩形裁到像素缓冲上——存下来只有 402×226 像素
+        // （整帧是 1206×678），看着就是「裁过的一块」；横屏更明显：矩形从 x=79 开始，
+        // 左边的黑边被一起切进图里（LP 5002）。
+        guard let cgImage = snapshot.cgImage else { return snapshot }
+        let sx = CGFloat(cgImage.width) / boundsSize.width
+        let sy = CGFloat(cgImage.height) / boundsSize.height
         let crop = CGRect(
             x: rect.minX * sx,
             y: rect.minY * sy,
             width: rect.width * sx,
             height: rect.height * sy
-        ).integral.intersection(CGRect(origin: .zero, size: snapshot.size))
+        ).integral.intersection(CGRect(origin: .zero, size: CGSize(width: cgImage.width, height: cgImage.height)))
 
         guard crop.width >= 1, crop.height >= 1,
-              let cgImage = snapshot.cgImage?.cropping(to: crop)
+              let cropped = cgImage.cropping(to: crop)
         else { return snapshot }
-        return UIImage(cgImage: cgImage, scale: snapshot.scale, orientation: .up)
+        return UIImage(cgImage: cropped, scale: snapshot.scale, orientation: .up)
     }
 
     /// 更新视频矩形所需的三样东西；真正的尺寸在 layoutSubviews 里按当前 bounds 算。

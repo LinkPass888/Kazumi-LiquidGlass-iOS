@@ -166,6 +166,13 @@ final class MPVEngine {
         setOption("cscale", "spline36")
         setOption("deband", "no")
         setOption("dither-depth", "no")
+        // 截图一律走 mpv 的软件那条路（LP 5002）。
+        //
+        // 我们的 VO 是 `libmpv`（渲染 API），真机上 `screenshot-to-file … video`
+        // 那条走 VO 的路一直回失败，于是每次都退到「读屏幕那一帧」：只有屏幕分辨率、
+        // 还被我们按画面矩形裁过一刀，存下来根本不是完整视频帧。软件那条直接拿解码后的
+        // 整帧，尺寸是片源分辨率，也不受 fit/crop/stretch 这些填充方式影响。
+        setOption("screenshot-sw", "yes")
 
         let initStatus = mpv_initialize(mpv)
         guard initStatus >= 0 else {
@@ -450,7 +457,12 @@ final class MPVEngine {
         }
         let size = Self.pixelSize(of: path)
         let sizeText = size.map { "\(Int($0.width))×\(Int($0.height))" } ?? "尺寸读不到"
-        let note = "截图成功：\(sizeText)，\(Int(Date().timeIntervalSince(started) * 1000)) 毫秒"
+        // 片源尺寸一起写进这行：两个数一样才是「完整的一帧」，比片源小就说明还是被
+        // 渲染层按窗口裁过（LP 5002 就是靠这一行定性的）。
+        let sourceText = lastSnapshot.videoWidth > 0 && lastSnapshot.videoHeight > 0
+            ? "，片源 \(Int(lastSnapshot.videoWidth))×\(Int(lastSnapshot.videoHeight))"
+            : ""
+        let note = "截图成功：\(sizeText)\(sourceText)，\(Int(Date().timeIntervalSince(started) * 1000)) 毫秒"
         onLog?(note)
         return (path, note)
     }
