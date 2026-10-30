@@ -41,6 +41,18 @@ struct DownloadScreen: View {
         .background(KazumiPalette.groupedBackground(for: colorScheme).ignoresSafeArea())
         .navigationTitle("下载管理")
         .navigationBarTitleDisplayMode(.inline)
+        // LP 5198：多选不再靠长按，右上角给一颗「编辑」。
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button(isSelecting ? "完成" : "编辑") {
+                    withAnimation(.easeOut(duration: 0.15)) {
+                        isSelecting.toggle()
+                        selection.removeAll()
+                    }
+                }
+                .disabled(downloads.records.isEmpty)
+            }
+        }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if isSelecting { selectionBar }
         }
@@ -134,7 +146,8 @@ struct DownloadScreen: View {
                     .padding(.vertical, 7)
                     .background(
                         Capsule(style: .continuous)
-                            .fill(Color.red.opacity(selection.isEmpty ? 0.35 : 1))
+                            // 没选中时灰底，别用浅红：白字在浅红上看不清。
+                            .fill(selection.isEmpty ? Color(.tertiarySystemFill) : Color.red)
                     )
             }
             .buttonStyle(.plain)

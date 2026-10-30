@@ -210,6 +210,42 @@ final class DownloadCenter {
         removeEpisodes(recordKey: recordKey, numbers: [number])
     }
 
+    /// 清掉全部离线下载（设置页那颗红色按钮用）：记录和文件一起删。
+    func removeAllRecords() {
+        let keys = records.map(\.id)
+        for key in keys {
+            if let record = records.first(where: { $0.id == key }) {
+                removeRecord(record)
+            }
+        }
+        records.removeAll()
+        activeNumbers.removeAll()
+        cancelledBeforeStart.removeAll()
+        persist()
+    }
+
+    /// 离线下载总共占了多少字节（文件真的在盘上的才算）。
+    func totalBytes() -> Int64 {
+        records.reduce(Int64(0)) { total, record in
+            let folder = folderURL(for: record)
+            let url = URL(filePath: folder.path)
+            guard let values = try? url.resourceValues(forKeys: [.isDirectoryKey]),
+                  values.isDirectory == true,
+                  let files = try? FileManager.default.contentsOfDirectory(
+                    at: url,
+                    includingPropertiesForKeys: [.fileSizeKey],
+                    options: [.skipsHiddenFiles]
+                  )
+            else { return total }
+            var sum: Int64 = 0
+            for file in files {
+                guard let size = try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize else { continue }
+                sum += Int64(size)
+            }
+            return total + sum
+        }
+    }
+
     /// 一次删多集（多选删除用）。
     func removeEpisodes(recordKey: String, numbers: [Int]) {
         guard let record = records.first(where: { $0.id == recordKey }), !numbers.isEmpty else { return }

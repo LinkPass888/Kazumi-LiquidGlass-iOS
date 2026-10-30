@@ -14,13 +14,18 @@ import SwiftUI
 
 struct StorageScreen: View {
     @Environment(AppRouter.self) private var router
+    @Environment(AppEnvironment.self) private var environment
     @Environment(\.colorScheme) private var colorScheme
 
     @State private var cacheBytes: Int?
+    /// 离线下载占用与集数（设置页那颗红色清除按钮用）。
+    @State private var offlineBytes: Int64 = 0
+    @State private var offlineEpisodes: Int = 0
     /// 更新时间缓存（放送时刻按季度缓存）。
     @State private var airTimeCache: (directory: String, fileCount: Int, bytes: Int) = ("", 0, 0)
     @State private var isClearing = false
     @State private var isConfirmingClear = false
+    @State private var isConfirmingClearOffline = false
     @State private var message: String?
 
     var body: some View {
@@ -45,6 +50,30 @@ struct StorageScreen: View {
                 Text("图片缓存")
             } footer: {
                 Text("图片会在下次加载时重新下载。视频、记录与设置不会删除。")
+            }
+
+            Section {
+                Group {
+                    // LP 5200：红字危险动作，问一句再删。
+                    Button(role: .destructive) {
+                        isConfirmingClearOffline = true
+                    } label: {
+                        HStack(spacing: 12) {
+                            Label("清除所有离线下载", systemImage: "trash")
+                                .foregroundStyle(.red)
+                            Spacer()
+                            Text(offlineDescription)
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .disabled(offlineEpisodes == 0)
+                }
+                .listRowBackground(KazumiPalette.groupedRow(for: colorScheme))
+            } header: {
+                Text("离线下载")
+            } footer: {
+                Text("删掉下载记录和已经下好的视频文件，不能恢复。")
             }
 
             Section {
@@ -108,12 +137,39 @@ struct StorageScreen: View {
         } message: {
             Text("图片会在下次加载时重新下载。视频、记录和设置不会删除。")
         }
+        .confirmationDialog(
+            "清除所有离线下载？",
+            isPresented: $isConfirmingClearOffline,
+            titleVisibility: .visible
+        ) {
+            Button("清除所有离线下载", role: .destructive) {
+                Task { await clearOffline() }
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("已经下好的视频文件和下载记录会一起删掉，不能恢复。")
+        }
     }
 
     private var cacheDescription: String {
         if isClearing { return "正在清除…" }
         guard let cacheBytes else { return "正在统计…" }
         return String(format: "%.2f MB", Double(cacheBytes) / (1024 * 1024))
+    }
+
+    /// 离线下载那一行右侧的占用与集数，比如「509.5 MB · 3 集」。
+    private var offlineDescription: String {
+        let bytes = Double(offlineBytes)
+        let size: String
+        if bytes >= 1024 * 1024 {
+            size = String(format: "%.1f MB", bytes / (1024 * 1024))
+        } else if bytes > 0 {
+            size = String(format: "%.0f KB", bytes / 1024)
+        } else {
+            size = "—"
+        }
+        guard offlineEpisodes > 0 else { return size }
+        return "\(size) · \(offlineEpisodes) 集"
     }
 
     /// 更新时间缓存只显示占用大小。原来的「N 个季度」读起来像在数番剧季度，
@@ -130,6 +186,22 @@ struct StorageScreen: View {
     private func refreshSize() async {
         cacheBytes = await KazumiImageLoader.shared.diskSizeInBytes()
         airTimeCache = BangumiAirTimeService.shared.cacheDiagnostics()
+        offlineBytes = environment.downloads.totalBytes()
+        offlineEpisodes = environment.downloads.records.reduce(0) {
+            $0 + $1.episodes.filter(\.isPlayableOffline).count
+        }
+    }
+
+    /// 清掉全部离线下载：记录和文件一起走（DownloadCenter.removeAllRecords）。
+    private func clearOffline() async {
+        isClearing = true
+        defer { isClearing = false }
+        await MainActor.run {
+            environment.downloads.removeAllRecords()
+        }
+        try? await Task.sleep(for: .milliseconds(300))
+        await refreshSize()
+        message = "已清除全部离线下载。"
     }
 
     private func clear() async {
