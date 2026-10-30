@@ -293,13 +293,14 @@ struct DownloadScreen: View {
     private func statusIcon(_ episode: DownloadEpisode) -> some View {
         // LP 5196：下载中、排队、暂停都是「加进下载但没下完」，统一用虚线下箭头；
         // 下完的实心，失败一颗感叹号。行下方那行小字仍然写清具体状态。
+        // LP 5213：符号不用主题色，跟文字一个色。
         switch episode.status {
         case .downloading, .resolving, .paused, .pending:
             Image(systemName: "arrow.down.circle.dotted")
-                .foregroundStyle(KazumiPalette.accent(for: colorScheme))
+                .foregroundStyle(.primary)
         case .completed:
             Image(systemName: "arrow.down.circle.fill")
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.primary)
         case .failed:
             Image(systemName: "exclamationmark.circle")
                 .foregroundStyle(.red)
