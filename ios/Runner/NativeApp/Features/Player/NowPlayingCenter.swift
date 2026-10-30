@@ -160,14 +160,28 @@ final class NowPlayingCenter {
         }
 
         // 上一集 / 下一集：控制中心那两颗箭头。
+        //
+        // 这两颗「点了没反应」最难查的是分不出「系统没送到」还是「送到了没做」（LP 5033）。
+        // 所以每条路都留一行日志，日志类别用「播放」：
+        //   - 什么都没有 → 系统根本没投递（就不是这段代码的问题）
+        //   - 「收到下一集」但没有下一行 → 回调没接上
+        //   - 「没有下一集」 → 集数/边界判据挡了
         center.nextTrackCommand.addTarget { _ in
-            guard box.onNext != nil else { return .commandFailed }
+            KazumiLogBuffer.player("遥控：收到下一集")
+            guard box.onNext != nil else {
+                KazumiLogBuffer.player("遥控：下一集没有回调（播放页没接上）")
+                return .commandFailed
+            }
             Task { @MainActor in box.onNext?() }
             return .success
         }
 
         center.previousTrackCommand.addTarget { _ in
-            guard box.onPrevious != nil else { return .commandFailed }
+            KazumiLogBuffer.player("遥控：收到上一集")
+            guard box.onPrevious != nil else {
+                KazumiLogBuffer.player("遥控：上一集没有回调（播放页没接上）")
+                return .commandFailed
+            }
             Task { @MainActor in box.onPrevious?() }
             return .success
         }

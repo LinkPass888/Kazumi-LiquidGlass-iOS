@@ -99,6 +99,7 @@ final class DanmakuOverlayView: UIView {
 
     private var lastNow: Double = 0
 
+
     private var displayLink: CADisplayLink?
 
     override init(frame: CGRect) {
@@ -240,7 +241,13 @@ final class DanmakuOverlayView: UIView {
         // 没在播就不出新弹幕：暂停停在 0 秒时，0 秒附近那些照样会被发出来，
         // 看上去就是「还没播弹幕先飘了」（LP 3626）。已经在飞的照旧停着不动，
         // 因为位置是按播放时间算的。
-        if let clock, !clock.isPlayingNow {
+        //
+        // 再加一道「真起播」门（LP 5033）：只判 `isPlayingNow` 不够——它只表示内核没暂停，
+        // 播放页刚打开、片源还在加载时它就是 true，而进度还是 0，于是 0 秒那批弹幕先飘出来，
+        // 看着就是「还没开始播、进度都没出来就冒 0:00 的弹幕」。
+        // 所以改用 `hasStartedPlayback`（首帧到了且进度过 0.15，见 `MPVPlayerContainer`），
+        // 换集/停止时它自己复位，这里不用再管。
+        guard let clock, clock.hasStartedPlayback else {
             layoutLabels(at: now)
             return
         }

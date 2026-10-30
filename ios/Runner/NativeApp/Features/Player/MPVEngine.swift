@@ -27,6 +27,10 @@ import UIKit
 protocol PlayerClockProvider: AnyObject {
     var currentPlaybackTime: Double { get }
     var isPlayingNow: Bool { get }
+    /// 画面真的走起来了（首帧 + 进度过 0.15）。换集/停止时由 `PlayerSurfaceModel` 自己复位。
+    /// 弹幕层拿它当「起播」判据（LP 5033）：`isPlayingNow` 只表示内核没暂停，
+    /// 加载阶段也为 true，用它放行会提前放 0 秒那批弹幕。
+    var hasStartedPlayback: Bool { get }
 }
 
 /// 当前文件的编码规格，给「播放信息」半屏页用。

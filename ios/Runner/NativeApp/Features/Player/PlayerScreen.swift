@@ -3298,15 +3298,29 @@ struct PlayerScreen: View {
             surface.seek(to: position)
         }
         center.onNext = { [weak controller, surface] in
-            guard let controller, !controller.episodes.isEmpty else { return }
-            guard controller.currentEpisode < controller.episodes.count else { return }
+            guard let controller, !controller.episodes.isEmpty else {
+                KazumiLogBuffer.player("遥控：下一集拿不到播放控制器/集列表")
+                return
+            }
+            guard controller.currentEpisode < controller.episodes.count else {
+                KazumiLogBuffer.player("遥控：已经是最后一集（\(controller.currentEpisode)/\(controller.episodes.count)）")
+                return
+            }
+            KazumiLogBuffer.player("遥控：切到第 \(controller.currentEpisode + 1) 集")
             surface.prepareForNewEpisode()
             let target = controller.currentEpisode + 1
             Task { await controller.selectEpisode(target) }
         }
         center.onPrevious = { [weak controller, surface] in
-            guard let controller, !controller.episodes.isEmpty else { return }
-            guard controller.currentEpisode > 1 else { return }
+            guard let controller, !controller.episodes.isEmpty else {
+                KazumiLogBuffer.player("遥控：上一集拿不到播放控制器/集列表")
+                return
+            }
+            guard controller.currentEpisode > 1 else {
+                KazumiLogBuffer.player("遥控：已经是第一集")
+                return
+            }
+            KazumiLogBuffer.player("遥控：切回第 \(controller.currentEpisode - 1) 集")
             surface.prepareForNewEpisode()
             let target = controller.currentEpisode - 1
             Task { await controller.selectEpisode(target) }
