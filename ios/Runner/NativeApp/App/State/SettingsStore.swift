@@ -818,7 +818,7 @@ final class SettingsStore {
         proxyHost = Self.read(defaults, SettingsKey.proxyHost, "")
         proxyPort = Self.read(defaults, SettingsKey.proxyPort, 0)
         enableGitProxy = Self.read(defaults, SettingsKey.enableGitProxy, false)
-        imageAcceleration = Self.read(defaults, SettingsKey.imageAcceleration, ImageAcceleration.direct.rawValue)
+        imageAcceleration = Self.read(defaults, SettingsKey.imageAcceleration, ImageAcceleration.mirror.rawValue)
         meteredNetworkLimit = Self.read(defaults, SettingsKey.meteredNetworkLimit, false)
         // LP 2530：提醒范围默认关，用户自己打开时才申请通知权限。
         updateNotificationEnabled = Self.read(defaults, SettingsKey.updateNotificationEnabled, false)
@@ -826,7 +826,9 @@ final class SettingsStore {
         downloadDanmaku = Self.read(defaults, SettingsKey.downloadDanmaku, true)
         defaultStartupPage = Self.read(defaults, SettingsKey.defaultStartupPage, "/tab/popular/")
         librarySort = Self.read(defaults, SettingsKey.librarySort, "updateTime")
-        enableBangumiProxy = Self.read(defaults, SettingsKey.enableBangumiProxy, false)
+        // LP 5063：番剧条目和图片两处默认都改走镜像。只有全新安装会用到这个默认值，
+        // 已经存在机器上的设置不会被改（用户自己选过就尊重他的选择）。
+        enableBangumiProxy = Self.read(defaults, SettingsKey.enableBangumiProxy, true)
         autoUpdateCheck = Self.read(defaults, SettingsKey.autoUpdate, true)
         checkPluginUpdateOnStartup = Self.read(defaults, SettingsKey.checkPluginUpdateOnStartup, true)
         syncPlayEndPoint = Self.read(defaults, SettingsKey.syncPlayEndPoint, "")

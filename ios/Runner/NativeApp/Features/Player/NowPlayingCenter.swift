@@ -234,6 +234,15 @@ final class NowPlayingCenter {
 
         let isNewItem = info != next
         info = next
+
+        // 上一集 / 下一集到两端要灰掉（LP 5060）：main 那边由 audio_service 按队列位置
+        // 置灰，我们这边一直写死 `isEnabled = true`，所以第一集会点着「上一集」没反应。
+        // 只拿 `episodeCount` 判：集列表还没拉回来（0）时不动，免得加载那两秒两颗键先灰一下。
+        if episodeCount > 0 {
+            let center = MPRemoteCommandCenter.shared()
+            center.previousTrackCommand.isEnabled = episode > 1
+            center.nextTrackCommand.isEnabled = episode < episodeCount
+        }
         let effectiveRate = isPlaying ? max(rate, 0) : 0
         lastRate = effectiveRate
         lastElapsed = elapsed
@@ -271,6 +280,11 @@ final class NowPlayingCenter {
         commands.onPrevious = nil
         commands.onSeek = nil
         commands.isPlaying = false
+        // 遥控键回到「都可用」的默认态：`configureRemoteCommands()` 只会跑一次，
+        // 这里若把两颗键留在灰的状态，下一轮播放要等第一次 `update()` 才恢复。
+        let center = MPRemoteCommandCenter.shared()
+        center.previousTrackCommand.isEnabled = true
+        center.nextTrackCommand.isEnabled = true
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
         MPNowPlayingInfoCenter.default().playbackState = .stopped
     }
