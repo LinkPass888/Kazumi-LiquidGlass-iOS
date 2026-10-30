@@ -812,6 +812,14 @@ struct PlayerScreen: View {
                     bangumiID: bangumiID,
                     pluginName: source?.pluginName ?? resumeRule ?? ""
                 )
+            },
+            // 本集加进了下载但还没下完：走在线解析时画面要说一句（Camo 5208）。
+            episodeIncomplete: { number in
+                environment.downloads.isEpisodeIncomplete(
+                    bangumiID: bangumiID,
+                    pluginName: source?.pluginName ?? resumeRule ?? "",
+                    number: number
+                )
             }
         )
         controller = created
@@ -2848,6 +2856,13 @@ struct PlayerScreen: View {
                     Text("正在加载第 \(controller.currentEpisode) 集")
                         .font(.caption)
                         .foregroundStyle(.white.opacity(0.7))
+                }
+                // Camo 5208：本集还没下完、这轮要走在线解析，说一句。
+                // 位置跟上面那行同处；起播成功或失败（phase 变化）就收。
+                if controller.isEpisodeIncomplete {
+                    Text("本集下载未完成，正在尝试在线播放")
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.85))
                 }
                 // 原来这儿挂着内核日志的最后一行。LP 4810：屏蔽掉，
                 // 画面上只留圈（+ 网速），日志照旧进 KazumiLogBuffer 给排查用。

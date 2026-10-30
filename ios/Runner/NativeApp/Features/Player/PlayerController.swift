@@ -77,6 +77,10 @@ final class PlayerController {
     private let downloadedNumbers: (() -> [Int])?
     /// 这份选集是不是「在线列表没抓到、只剩本地」那一份（Colo v3 第 9 条）。
     private(set) var isOfflineEpisodeList = false
+    /// 本集加进了下载但还没下完（Camo 5208）：这时走在线解析，画面要说一句
+    /// 「本集下载未完成，正在尝试在线播放」。起播成功或失败就收。
+    private(set) var isEpisodeIncomplete = false
+    private let episodeIncomplete: ((Int) -> Bool)?
 
     init(
         bangumiID: Int,
@@ -88,7 +92,8 @@ final class PlayerController {
         resumeFromHistory: Bool = false,
         resumeRule: String? = nil,
         localFile: ((Int) -> URL?)? = nil,
-        downloadedNumbers: (() -> [Int])? = nil
+        downloadedNumbers: (() -> [Int])? = nil,
+        episodeIncomplete: ((Int) -> Bool)? = nil
     ) {
         self.bangumiID = bangumiID
         self.source = source
@@ -100,6 +105,7 @@ final class PlayerController {
         self.library = library
         self.localFile = localFile
         self.downloadedNumbers = downloadedNumbers
+        self.episodeIncomplete = episodeIncomplete
         webView.onLog = { [weak self] line in
             self?.appendLog(line)
         }
@@ -126,6 +132,12 @@ final class PlayerController {
             return
         }
 
+        // 本集加进了下载但还没下完（Camo 5208）：这一轮要走在线解析，
+        // 画面得说一句。本地文件能用时下面会把它收掉。
+        // 放在这里是因为「列表本来就有」和「要现去抓列表」两条路都要它。
+        isEpisodeIncomplete = (episodeIncomplete?(currentEpisode) ?? false)
+            && localFile?(currentEpisode) == nil
+
         if let direct = source.directMediaURL, !direct.isEmpty {
             applyHeaders(plugin: plugin)
             playbackURL = direct
@@ -146,6 +158,7 @@ final class PlayerController {
                 roads = trace.roads
                 applyStartPoint(roads: trace.roads)
                 if episodes.isEmpty {
+                    isEpisodeIncomplete = false
                     phase = .failed("该播放源没有解析到剧集")
                     return
                 }
@@ -192,6 +205,7 @@ final class PlayerController {
         applyHeaders(plugin: plugin)
         // 本地已经下好了就用本地那份：不解析、不走网页，画质也稳定（Colo 5174）。
         if let local = localFile?(currentEpisode) {
+            isEpisodeIncomplete = false
             playbackURL = local.absoluteString
             phase = .ready
             await loadDanmaku()
@@ -369,6 +383,7 @@ final class PlayerController {
 
     private func handleParsedMedia(_ event: VideoParserEvent) {
         guard !event.url.isEmpty else { return }
+        isEpisodeIncomplete = false
         playbackURL = event.url
         phase = .ready
         KazumiLogBuffer.player("解析到媒体地址（\(event.format)）")

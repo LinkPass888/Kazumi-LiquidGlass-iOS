@@ -291,23 +291,18 @@ struct DownloadScreen: View {
 
     @ViewBuilder
     private func statusIcon(_ episode: DownloadEpisode) -> some View {
-        // LP 5187：下载中虚线下箭头、已下载实心下箭头，跟播放器格子那套对齐。
+        // LP 5196：下载中、排队、暂停都是「加进下载但没下完」，统一用虚线下箭头；
+        // 下完的实心，失败一颗感叹号。行下方那行小字仍然写清具体状态。
         switch episode.status {
-        case .downloading, .resolving:
+        case .downloading, .resolving, .paused, .pending:
             Image(systemName: "arrow.down.circle.dotted")
                 .foregroundStyle(KazumiPalette.accent(for: colorScheme))
         case .completed:
             Image(systemName: "arrow.down.circle.fill")
                 .foregroundStyle(.secondary)
-        case .paused:
-            Image(systemName: "pause.circle")
-                .foregroundStyle(.secondary)
         case .failed:
             Image(systemName: "exclamationmark.circle")
                 .foregroundStyle(.red)
-        case .pending:
-            Image(systemName: "clock")
-                .foregroundStyle(.tertiary)
         }
     }
 

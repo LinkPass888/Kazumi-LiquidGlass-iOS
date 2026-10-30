@@ -297,6 +297,15 @@ final class DownloadCenter {
         return numbers.sorted()
     }
 
+    /// 这一集加进了下载但还没下完（Camo 5208）：播放时走在线解析，画面要说一句。
+    func isEpisodeIncomplete(bangumiID: Int, pluginName: String, number: Int) -> Bool {
+        for record in records where record.bangumiID == bangumiID && record.pluginName == pluginName {
+            guard let episode = record.episodes.first(where: { $0.number == number }) else { continue }
+            if !episode.isPlayableOffline { return true }
+        }
+        return false
+    }
+
     // MARK: - 调度
 
     /// 按设置里的「同时下载集数」把队列推起来。
