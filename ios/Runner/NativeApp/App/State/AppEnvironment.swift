@@ -38,10 +38,13 @@ final class AppEnvironment {
     let bangumiSync: BangumiSyncEngine
     /// 「自动标记看过」的消费端，播放器把进度喂给它。
     let bangumiProgress: BangumiProgressService
+    /// 离线缓存：解析、排队、落盘、记录一份，播放页与下载页共用。
+    @MainActor let downloads: DownloadCenter
 
     private init(settings: SettingsStore, library: LibraryStore, router: AppRouter) {
         self.settings = settings
-        self.downloadDirectory = DownloadDirectoryStore(defaults: .standard)
+        let downloadDirectory = DownloadDirectoryStore(defaults: .standard)
+        self.downloadDirectory = downloadDirectory
         self.library = library
         self.router = router
         let plugins = PluginsController()
@@ -51,6 +54,11 @@ final class AppEnvironment {
         self.updates = AppUpdateService()
         self.bangumiSync = BangumiSyncEngine(settings: settings, library: library)
         self.bangumiProgress = BangumiProgressService(settings: settings)
+        // 用局部变量传参：闭包里读 self 的成员会被判成「初始化完成前捕获 self」。
+        let store = downloadDirectory
+        self.downloads = MainActor.assumeIsolated {
+            DownloadCenter(directory: store, plugins: plugins, settings: settings)
+        }
     }
 
     /// 与原 main.dart 一致：先确保存储目录可用，失败时返回错误页而不是崩溃。

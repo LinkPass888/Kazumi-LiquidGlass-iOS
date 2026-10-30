@@ -40,6 +40,10 @@ final class VideoSourceWebView: NSObject {
     var onLog: ((String) -> Void)?
     var onVideoLoading: ((Bool) -> Void)?
     var onVideoURLParser: ((VideoParserEvent) -> Void)?
+    /// 网页真的加载完了一次（`didFinish`，含它自己那次重试）。
+    /// 下载解析靠它判断「完了却没有地址」——`load(url:)` 那个 await 在请求
+    /// 刚发出时就返回了，拿它当「加载完」会让解析秒退（无地址就直接判失败）。
+    var onPageLoaded: (() -> Void)?
 
     private var webView: WKWebView?
     private var hasInjectedScripts = false
@@ -341,6 +345,7 @@ extension VideoSourceWebView: WKNavigationDelegate {
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         emit("loading completed: \(webView.url?.absoluteString ?? "")")
+        onPageLoaded?()
         guard isLoading, !isVideoSourceLoaded else { return }
         // 与原实现一致：加载完成仍无结果时重试一次，避免 iframe 延迟注入。
         guard retryCount < 1 else { return }

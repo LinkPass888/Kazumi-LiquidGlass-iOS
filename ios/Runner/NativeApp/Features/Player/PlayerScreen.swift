@@ -348,6 +348,11 @@ struct PlayerScreen: View {
     @State private var commentEpisode: Int?
     /// 100 集以上时，快速跳到某一块（每 100 集一块）。
     @State private var episodeGridPage = 0
+    /// 下载选择态（LP 5084 / Colo 5090）：true 时面板顶行换成 取消 / 全选 / 下载 N 集，
+    /// 格子点一下是勾选而不是切集。不弹窗，面板原地变。
+    @State private var isChoosingDownloads = false
+    /// 选择态里勾中的集数。
+    @State private var downloadSelection: Set<Int> = []
     /// 更多菜单里几个「开个页面」的入口。收到一个枚举里，
     /// 一次只可能有一张：几个布尔各自为真时后弹的那张会被系统吞掉。
     @State private var activeSheet: PlayerSheet?
@@ -490,6 +495,19 @@ struct PlayerScreen: View {
         .onChange(of: environment.bangumiProgress.markedNotice) { _, message in
             if let message, !message.isEmpty {
                 surface.hudToastMessage = message
+            }
+        }
+        // 下载失败说一句带原因的（LP 5115）：格子上不再挂红点，改成弹一下。
+        .onChange(of: environment.downloads.failureNotice) { _, message in
+            guard let message, !message.isEmpty else { return }
+            surface.hudToastMessage = message
+            environment.downloads.failureNotice = nil
+        }
+        // 进页面 / 切线路把剧集列表重新拉一遍时，上一轮的失败痕迹一并清掉，
+        // 格子回到「没下过」（LP 5115）。
+        .onChange(of: controller?.currentEpisode) { _, _ in
+            if let controller {
+                environment.downloads.clearFailures(recordKey: downloadRecordKey(controller))
             }
         }
         .onChange(of: controller?.danmakuMessage) { _, message in
@@ -651,7 +669,6 @@ struct PlayerScreen: View {
                 guard !Task.isCancelled, canHideControls else { return }
                 // 系统菜单（`Menu`）开着就停在原地：它不报开合，只能看它在不在。
                 if SystemMenuProbe.isPresented {
-                    NSLog("[controls] 探测到菜单，先不收")
                     sawMenu = true
                     remaining = 0.4
                     continue
@@ -662,7 +679,6 @@ struct PlayerScreen: View {
                     remaining = seconds
                     continue
                 }
-                NSLog("[controls] 收层（菜单没探测到）")
                 withAnimation(.easeOut(duration: 0.2)) {
                     controlsVisible = false
                 }
@@ -1668,7 +1684,6 @@ struct PlayerScreen: View {
         if isFullscreen {
             exitFullscreen()
         } else {
-            NSLog("[player] 进全屏")
             isFullscreen = true
             enterLandscape()
         }
@@ -1701,7 +1716,6 @@ struct PlayerScreen: View {
 
     private func exitFullscreen() {
         guard isFullscreen else { return }
-        NSLog("[player] 退全屏")
         isFullscreen = false
         sawLandscape = false
         requestOrientation(.portrait)
@@ -1754,7 +1768,6 @@ struct PlayerScreen: View {
                     let failure = orientationFailure
                     scene.requestGeometryUpdate(.iOS(interfaceOrientations: mask)) { @Sendable error in
                         let message = "系统拒绝：\(error.localizedDescription)"
-                        NSLog("[player] 转屏被拒：\(message)")
                         failure.record(generation: generation, message: message)
                     }
                 }
@@ -1765,7 +1778,6 @@ struct PlayerScreen: View {
                 // 已经到了就收工，别再多发。
                 if scene.interfaceOrientation.isLandscape == wantsLandscape {
                     if attempt > 0 {
-                        NSLog("[player] 转屏已生效（第 \(attempt) 次检查）")
                     }
                     lastOrientationResult = "已转过去"
                     return
@@ -1781,7 +1793,6 @@ struct PlayerScreen: View {
             if !lastOrientationResult.hasPrefix("系统拒绝") {
                 lastOrientationResult = "请求了但系统没转（等满 3 秒）"
             }
-            NSLog("[player] 三秒都没转过去：退回竖屏内联")
             if isFullscreen {
                 isFullscreen = false
                 sawLandscape = false
@@ -3778,15 +3789,23 @@ struct PlayerScreen: View {
 
         VStack(spacing: 0) {
             // 线路选择器只在 2 条以上线路时才画，季选择器只在 2 季以上时才画，
-            // 两个都不满足就整行不画、集数网格直接从面板顶部开始排
-            // （LP 2026-10-28「只有一个线路时不要显示第1季」「剧集上移，别让那里空一块」，
-            //  Colo：两者都不满足时不留那一行高度）。
-            if controller.roads.count > 1 || pages > 1 {
+            // 顶行：线路 / 页码在左，下载入口在最右。
+            // 从前这两个都没有就整行不画；现在只要有集数就画，不然单线路的番
+            // 就没有下载入口（Colo 5090）。
+            if total > 0 || controller.roads.count > 1 || pages > 1 {
                 HStack(spacing: 8) {
-                    if controller.roads.count > 1 {
+                    // 线路菜单：两条以上线路当然要给；只有一条但**没拿到线路名**时也给，
+                    // 左边不能空着——顶行现在右边固定有下载按钮，空着看起来就是缺了块
+                    // （LP 5127）。只有一条且有名字的番才不画（Colo 3371 的口径）。
+                    if controller.roads.count > 1 || Self.selectedRoadHasNoName(controller) {
                         roadMenu(controller)
+                            .onChange(of: controller.selectedRoad) {
+                                // 换线路集数就换了对象，留着勾会下错集（LP 5100 之后的口径）。
+                                downloadSelection.removeAll()
+                            }
                     }
-                    if pages > 1 {
+                    // 页码菜单在选择态里收起：顶行这时候要给三颗按钮腾位置（Colo 5090）。
+                    if pages > 1 && !isChoosingDownloads {
                         SystemMenuButton(
                             selection: .init(options: (0 ..< pages).map { page in
                                 let a = page * pageSize + 1
@@ -3810,6 +3829,11 @@ struct PlayerScreen: View {
                         .frame(height: 44)
                     }
                     Spacer(minLength: 0)
+                    if isChoosingDownloads {
+                        downloadSelectionActions(controller)
+                    } else if total > 0 {
+                        downloadEntryButton(controller)
+                    }
                 }
                 .padding(.horizontal, 16)
                 .frame(height: 44)
@@ -3831,7 +3855,22 @@ struct PlayerScreen: View {
                         ) {
                             ForEach(lo ..< hi, id: \.self) { index in
                                 Button {
-                                    switchEpisode(to: index + 1, controller: controller)
+                                    let number = index + 1
+                                    if isChoosingDownloads {
+                                        // 选择态：点一下是勾选，不是切集。已下载 / 排队中的点不动。
+                                        let lite = environment.downloads.liteStatus(
+                                            recordKey: downloadRecordKey(controller),
+                                            number: number
+                                        )
+                                        guard lite != .downloaded && lite != .queued else { return }
+                                        if downloadSelection.contains(number) {
+                                            downloadSelection.remove(number)
+                                        } else {
+                                            downloadSelection.insert(number)
+                                        }
+                                    } else {
+                                        switchEpisode(to: number, controller: controller)
+                                    }
                                 } label: {
                                     episodeGridCell(controller, index: index)
                                 }
@@ -3874,19 +3913,198 @@ struct PlayerScreen: View {
     private func episodeGridCell(_ controller: PlayerController, index: Int) -> some View {
         let number = index + 1
         let isCurrent = number == controller.currentEpisode
+        // 选择态里正在播改成描边，不然跟「已选」分不清（Colo 5090）。
+        let isSelected = isChoosingDownloads && downloadSelection.contains(number)
+        let lite = environment.downloads.liteStatus(recordKey: downloadRecordKey(controller), number: number)
+        let locked = lite == .downloaded || lite == .queued
+        let solid = isCurrent && !isChoosingDownloads ? true : isSelected
+
         return Text("\(number)")
-            .font(.subheadline.monospacedDigit().weight(isCurrent ? .semibold : .regular))
-            .foregroundStyle(isCurrent ? Color.white : Color.primary)
+            .font(.subheadline.monospacedDigit().weight(solid || (isCurrent && isChoosingDownloads) ? .semibold : .regular))
+            .foregroundStyle(cellForeground(solid: solid, isCurrent: isCurrent, lite: lite))
             .frame(maxWidth: .infinity, minHeight: 44)
             .background(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(isCurrent ? Color.accentColor : Color(.secondarySystemBackground))
+                    .fill(solid ? Color.accentColor : Color(.secondarySystemBackground))
             )
+            .overlay(alignment: .topTrailing) {
+                // 已下载一颗勾、排队中一颗钟（Colo 5090）。失败不再在格子上常驻：
+                // LP 5115 说那不该一直挂着，改成渲一句提示（见 failureNotice）。
+                switch lite {
+                case .downloaded:
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(Color.accentColor.opacity(0.6))
+                        .padding(4)
+                case .queued:
+                    Image(systemName: "clock")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.tertiary)
+                        .padding(3)
+                default:
+                    EmptyView()
+                }
+            }
+            .overlay(alignment: .bottom) {
+                // 真的在下才给进度条，排队中只有钟（Colo 5090 特意分开的两条）。
+                if case .downloading(let progress) = lite {
+                    GeometryReader { proxy in
+                        ZStack(alignment: .leading) {
+                            Color.clear
+                            Rectangle()
+                                .fill(Color.accentColor)
+                                .frame(width: proxy.size.width * max(0.02, min(1, progress)))
+                        }
+                    }
+                    .frame(height: 2)
+                    .padding(.horizontal, 1)
+                    .padding(.bottom, 1)
+                }
+            }
             .overlay(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .stroke(isCurrent ? Color.clear : Color(.separator), lineWidth: 0.5)
+                    .stroke(cellStroke(solid: solid, isCurrent: isCurrent), lineWidth: isCurrent && isChoosingDownloads ? 1.5 : 0.5)
             )
+            .opacity(locked ? 0.55 : 1)
             .contentShape(Rectangle())
+    }
+
+    /// 格子里的数字颜色：实心时白字，已下载灰字，其余跟着系统。
+    private func cellForeground(
+        solid: Bool,
+        isCurrent: Bool,
+        lite: DownloadLiteStatus
+    ) -> Color {
+        if solid { return .white }
+        if lite == .downloaded { return Color.secondary }
+        if isCurrent { return Color.accentColor }
+        return .primary
+    }
+
+    /// 描边：实心时不描；选择态里正在播描主题色，其余跟系统分隔线。
+    private func cellStroke(solid: Bool, isCurrent: Bool) -> Color {
+        if solid { return .clear }
+        if isCurrent && isChoosingDownloads { return Color.accentColor }
+        return Color(.separator)
+    }
+
+    // MARK: - 下载（LP 5084 / Colo 5090）
+
+    /// 面板顶行最右端的下载入口：32 高的胶囊，点击区域给到 44。
+    private func downloadEntryButton(_ controller: PlayerController) -> some View {
+        Button {
+            withAnimation(.easeOut(duration: 0.18)) {
+                isChoosingDownloads = true
+                downloadSelection.removeAll()
+            }
+        } label: {
+            Image(systemName: "arrow.down.circle")
+                .font(.system(size: 18, weight: .medium))
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 44, height: 32)
+                .background(
+                    Capsule(style: .continuous)
+                        .fill(Color(.secondarySystemBackground))
+                )
+                // 胶囊只有 32 高，但手指该点得中 44（Colo 5090）。
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(PlayerPressStyle())
+        .accessibilityLabel("下载剧集")
+    }
+
+    /// 选择态的三颗按钮：取消 / 全选（取消全选）/ 下载 N 集。
+    /// 线路菜单还在左边，这里不占它的位置（LP 5100）。
+    private func downloadSelectionActions(_ controller: PlayerController) -> some View {
+        let recordKey = downloadRecordKey(controller)
+        let downloaded = environment.downloads.downloadedNumbers(recordKey: recordKey)
+        let selectable = max(0, controller.episodes.count - downloaded.count)
+        let allSelected = selectable > 0 && downloadSelection.count >= selectable
+
+        return HStack(spacing: 4) {
+            Button("取消") {
+                withAnimation(.easeOut(duration: 0.18)) {
+                    isChoosingDownloads = false
+                    downloadSelection.removeAll()
+                }
+            }
+            .buttonStyle(PlayerPressStyle())
+            .font(.system(size: 14))
+            .foregroundStyle(.primary)
+            .frame(height: 44)
+
+            Button(allSelected ? "取消全选" : "全选") {
+                // 两个词都占位，按钮不跳（Colo 5090）。
+                if allSelected {
+                    downloadSelection.removeAll()
+                } else {
+                    downloadSelection = Set(1 ... max(1, controller.episodes.count))
+                        .subtracting(downloaded)
+                }
+            }
+            .buttonStyle(PlayerPressStyle())
+            .font(.system(size: 14))
+            .foregroundStyle(Color.accentColor)
+            .frame(minWidth: 56, minHeight: 44)
+            .disabled(selectable == 0)
+
+            Button {
+                startSelectedDownloads(controller)
+            } label: {
+                Text(downloadSelection.isEmpty ? "下载" : "下载 \(downloadSelection.count) 集")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 12)
+                    .frame(height: 32)
+                    .background(
+                        Capsule(style: .continuous)
+                            .fill(Color.accentColor)
+                    )
+                    .frame(height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(PlayerPressStyle())
+            .disabled(downloadSelection.isEmpty)
+            .opacity(downloadSelection.isEmpty ? 0.4 : 1)
+            .accessibilityLabel("下载选中的 \(downloadSelection.count) 集")
+        }
+    }
+
+    /// 这份记录的身份：同一部番 + 同一条规则 + 同一条线路一份。
+    private func downloadRecordKey(_ controller: PlayerController) -> String {
+        DownloadRecord.key(
+            bangumiID: controller.bangumiID,
+            pluginName: controller.source?.pluginName ?? "",
+            road: controller.selectedRoad
+        )
+    }
+
+    /// 把勾中的集数交给下载中心。
+    private func startSelectedDownloads(_ controller: PlayerController) {
+        let roadIndex = controller.selectedRoad
+        guard controller.roads.indices.contains(roadIndex) else { return }
+        let pages = controller.roads[roadIndex].data
+        let items: [(number: Int, title: String, pageURL: String)] = downloadSelection.sorted().compactMap { number in
+            let index = number - 1
+            guard pages.indices.contains(index) else { return nil }
+            let title = controller.episodes.indices.contains(index) ? controller.episodes[index] : ""
+            return (number, title, pages[index])
+        }
+        guard !items.isEmpty else { return }
+
+        environment.downloads.enqueue(
+            bangumiID: controller.bangumiID,
+            title: controller.source?.itemName ?? "",
+            coverURL: "",
+            pluginName: controller.source?.pluginName ?? "",
+            road: roadIndex,
+            episodes: items
+        )
+        withAnimation(.easeOut(duration: 0.18)) {
+            isChoosingDownloads = false
+            downloadSelection.removeAll()
+        }
     }
 
     /// 评论页：默认当集（无整部番），条数居中只读；左右两颗都是 44 高的按钮。
@@ -4145,6 +4363,14 @@ struct PlayerScreen: View {
             menuTint: .accentColor
         )
         .frame(height: 44)
+    }
+
+    /// 当前这条线路有没有名字：没名字时左边要写「线路」占位（LP 5127）。
+    private static func selectedRoadHasNoName(_ controller: PlayerController) -> Bool {
+        guard controller.roads.indices.contains(controller.selectedRoad) else { return true }
+        return controller.roads[controller.selectedRoad].name
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .isEmpty
     }
 
     /// 线路名照抄来源给的；来源没给名字就只写「线路」，不编号。

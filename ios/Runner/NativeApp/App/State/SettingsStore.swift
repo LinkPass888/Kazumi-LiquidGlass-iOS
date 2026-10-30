@@ -254,6 +254,8 @@ enum SettingsKey {
     static let updateNotificationEnabled = "updateNotificationEnabled"
     /// 下载并发数，沿用原版 `SettingsKeys.downloadParallelEpisodes` 的键名。
     static let downloadParallelEpisodes = "downloadParallelEpisodes"
+    /// 每集分片并发数（原版 `downloadParallelSegments`），HLS 一集内部同时拉几个分片。
+    static let downloadParallelSegments = "downloadParallelSegments"
     /// 是否随下载一起缓存弹幕，沿用原版 `SettingsKeys.downloadDanmaku` 的键名。
     static let downloadDanmaku = "downloadDanmaku"
     /// 启动页，沿用原版 `SettingsKeys.defaultStartupPage` 的键名。
@@ -664,6 +666,11 @@ final class SettingsStore {
         didSet { persist(downloadParallelEpisodes, SettingsKey.downloadParallelEpisodes) }
     }
 
+    /// 每集分片并发数（对应原版 `downloadParallelSegments`，1–10）。
+    var downloadParallelSegments: Int {
+        didSet { persist(downloadParallelSegments, SettingsKey.downloadParallelSegments) }
+    }
+
     /// 是否随下载一起缓存弹幕（对应原版 `downloadDanmaku`）。
     var downloadDanmaku: Bool {
         didSet { persist(downloadDanmaku, SettingsKey.downloadDanmaku) }
@@ -834,6 +841,11 @@ final class SettingsStore {
         // LP 2530：提醒范围默认关，用户自己打开时才申请通知权限。
         updateNotificationEnabled = Self.read(defaults, SettingsKey.updateNotificationEnabled, false)
         downloadParallelEpisodes = Self.read(defaults, SettingsKey.downloadParallelEpisodes, 2)
+        // 与原版滑杆一致（1–10，默认 3）；越界值夹回范围内。
+        downloadParallelSegments = min(
+            10,
+            max(1, Self.read(defaults, SettingsKey.downloadParallelSegments, 3))
+        )
         downloadDanmaku = Self.read(defaults, SettingsKey.downloadDanmaku, true)
         defaultStartupPage = Self.read(defaults, SettingsKey.defaultStartupPage, "/tab/popular/")
         librarySort = Self.read(defaults, SettingsKey.librarySort, "updateTime")
