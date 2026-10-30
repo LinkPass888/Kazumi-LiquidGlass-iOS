@@ -478,8 +478,9 @@ struct TimelineScreen: View {
     @ViewBuilder
     private var content: some View {
         if controller.isLoading && controller.bangumiCalendar.allSatisfy({ $0.isEmpty }) {
-            ProgressView()
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // 没有缓存可铺时（第一次装、或缓存被清）才走这里。
+            // 不再是灰底一个转圈（LP 5051）：画几条卡片占位，让页面一出来就有形状。
+            TimelineSkeletonList()
         } else if controller.isTimeOut {
             VStack(spacing: 10) {
                 Image(systemName: "exclamationmark.triangle")

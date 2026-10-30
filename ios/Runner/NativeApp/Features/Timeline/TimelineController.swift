@@ -47,6 +47,9 @@ final class TimelineController {
     /// 每次合并都从它重新开始，改掉星期的番才能从原来那一天挪走。
     private(set) var baseCalendar: [[BangumiItem]] = []
     private(set) var selectedDate = Date()
+    /// 屏幕上这片列表属于哪个季度（`seasonKey(of:)`）。
+    /// 换季度时得先清空，不然新季度加载期里看到的是上一季那些番（LP 5050 那次改动引入的坑）。
+    private var loadedSeasonKey: Int?
     private(set) var isLoading = false
     private(set) var isTimeOut = false
     var sort: TimelineSort = .defaultOrder
@@ -160,14 +163,45 @@ final class TimelineController {
         isLoading = true
         isTimeOut = false
         selectedDate = date
-        bangumiCalendar = []
         defer { isLoading = false }
+
+        // 先用上次那份垫上（LP 5050 / 5051）：
+        // 原来这里一进来就把 `bangumiCalendar` 清空，接着等网络 —— 结果每次冷启动
+        // 都是一块灰底 + 一个转圈。这份日历一天最多变几条，缓存足够先用。
+        let isCurrent = AnimeSeason.isSameSeason(date, Date())
+        let seasonKey = Self.seasonKey(for: date)
+        // 换季度了：屏幕上的东西属于上一季，必须清掉，
+        // 不然新季加载期里看到的是上一季那些番。同季刷新则保留，等网络回来盖。
+        if loadedSeasonKey != seasonKey {
+            bangumiCalendar = []
+            baseCalendar = []
+            loadedSeasonKey = seasonKey
+        }
+        let cached: [[BangumiItem]]?
+        if isCurrent {
+            cached = await BangumiAPI.cachedCalendar()
+        } else {
+            cached = await TimelineCache.shared.seasonRawDays(start: AnimeSeason.seasonRange(for: date).start)
+                .map { days in
+                    days.map { day in
+                        guard case let .array(list) = day else { return [] }
+                        return list.compactMap { entry in
+                            guard !entry["subject"].isNull else { return nil }
+                            return BangumiItem.fromJSON(entry["subject"])
+                        }
+                    }
+                }
+        }
+        if bangumiCalendar.allSatisfy(\.isEmpty), let cached, !cached.allSatisfy(\.isEmpty) {
+            // 有缓存：先画出来，用户这时已经能看了。
+            await adopt(cached, date: date, collectTypes: collectTypes)
+        }
 
         // 冷缓存时这一步要够到季度文件，比日历接口贵，必须跟它并行。
         async let airTime: Void = BangumiAirTimeService.shared.ensureLoaded(forSeasonOf: date)
 
         var calendar: [[BangumiItem]]
-        if AnimeSeason.isSameSeason(date, Date()) {
+        if isCurrent {
             calendar = await BangumiAPI.calendar()
         } else {
             let range = AnimeSeason.seasonRange(for: date)
@@ -177,6 +211,13 @@ final class TimelineController {
         await airTime
         // 这期间用户可能已经点了别的季度，那一轮的结果不能再盖上去。
         guard selectedDate == date else { return }
+
+        // 网络回来是空的（断网、接口挂了），就保留屏幕上那份，不拿空表去盖。
+        // 否则用户刚才已经看到缓存那版，转眼变成错误页（LP 5056）。
+        if calendar.allSatisfy(\.isEmpty), !baseCalendar.allSatisfy(\.isEmpty) {
+            isTimeOut = false
+            return
+        }
 
         // 先铺列表：AniList 那一步慢的时候要好几秒，等它回来才上屏等于白等。
         baseCalendar = calendar
@@ -191,6 +232,31 @@ final class TimelineController {
         // 默认顺序按当天时刻从早到晚，所以时刻到了要重排一次；
         // 其余排序不依赖时刻，重算一遍结果不变。
         bangumiCalendar = applySort(merged)
+    }
+
+    /// 把缓存那份先铺上去（`baseCalendar` 随后会被网络那轮盖掉）。
+    private func adopt(
+        _ calendar: [[BangumiItem]],
+        date: Date,
+        collectTypes: [Int: CollectType]
+    ) async {
+        guard selectedDate == date else { return }
+        baseCalendar = calendar
+        let merged = await mergeCustomEntries(into: groupedBaseCalendar(), collectTypes: collectTypes)
+        guard selectedDate == date else { return }
+        // 网络那轮回来之前，这份就是屏幕上要显示的。
+        if bangumiCalendar.allSatisfy(\.isEmpty) {
+            bangumiCalendar = applySort(merged)
+        }
+    }
+
+    /// 季度身份：年 × 4 + 季（同一年同一季才算同一份数据）。
+    private static func seasonKey(for date: Date) -> Int {
+        let calendar = Calendar(identifier: .gregorian)
+        let comps = calendar.dateComponents([.year, .month], from: date)
+        let year = comps.year ?? 0
+        let month = comps.month ?? 1
+        return year * 4 + (month - 1) / 3
     }
 
     /// 对应 refreshCustomTimelineEntries：详情页改完星期 / 开关展示后立刻生效。

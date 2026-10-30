@@ -105,12 +105,16 @@ enum BangumiAPI {
     // MARK: - 每日放送
 
     /// 对应 getCalendar：返回 7 天的番剧，下标 0 为周一。
+    /// 成功后把原始 JSON 落盘（`TimelineCache`），冷启动时先用它铺。
     static func calendar() async -> [[BangumiItem]] {
         var result: [[BangumiItem]] = []
         do {
             let json = try await get(BangumiEndpoints.apiNextDomain + BangumiEndpoints.calendar)
+            var rawDays: [JSONValue] = []
             for day in 1...7 {
                 let list = json["\(day)"].arrayValue ?? []
+                // 存原始条目（含 `subject` 那一层），读回来走同一套解析。
+                rawDays.append(.array(list))
                 result.append(list.compactMap { entry in
                     guard !entry["subject"].isNull else { return nil }
                     return BangumiItem.fromJSON(entry["subject"])
@@ -119,6 +123,10 @@ enum BangumiAPI {
             // 列表里已经拿到的条目记进缓存：点进详情页时先有内容可画。
             let flat = result.flatMap { $0 }
             await BangumiSubjectCache.shared.remember(flat)
+            await TimelineCache.shared.storeCurrent(
+                rawDays: rawDays,
+                seasonStart: AnimeSeason.seasonRange(for: Date()).start
+            )
         } catch {
             KazumiLog.network.error("Resolve calendar failed: \(error.localizedDescription, privacy: .public)")
             if result.isEmpty {
@@ -126,6 +134,20 @@ enum BangumiAPI {
             }
         }
         return result
+    }
+
+    /// 上周缓存的那份日历（不发请求）。冷启动先用它铺，网络回来再盖。
+    /// 返回 nil 表示没有可用缓存（从没成功拉过，或缓存是空的）。
+    static func cachedCalendar() async -> [[BangumiItem]]? {
+        let seasonStart = AnimeSeason.seasonRange(for: Date()).start
+        guard let rawDays = await TimelineCache.shared.currentRawDays(seasonStart: seasonStart) else { return nil }
+        return rawDays.map { day in
+            guard case let .array(list) = day else { return [] }
+            return list.compactMap { entry in
+                guard !entry["subject"].isNull else { return nil }
+                return BangumiItem.fromJSON(entry["subject"])
+            }
+        }
     }
 
     // MARK: - 推荐列表
