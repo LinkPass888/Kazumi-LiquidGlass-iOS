@@ -46,6 +46,23 @@ final class KazumiAppDelegate: NSObject, UIApplicationDelegate {
         NotificationCenter.default.post(name: .kazumiAppDidBecomeActive, object: nil)
     }
 
+    // 显式给系统一份场景配置（LP 4978 第 3 条）。
+    //
+    // 已核实两件事：① 这个方法确实会被调到（拿 `fatalError` 试过，App 起不来）；
+    // ② 返回一份不带 delegate 的具名配置不会把 SwiftUI 的树挂不上（同一台模拟器上
+    // 界面照常起来）。SwiftUI 自己的场景代理配置仍由 SwiftUI 给。
+    // 真机上灵动岛/锁屏卡片点不点得进 App，得由 LP 验。
+    func application(
+        _ application: UIApplication,
+        configurationForConnecting connectingSceneSession: UISceneSession,
+        options: UIScene.ConnectionOptions
+    ) -> UISceneConfiguration {
+        return UISceneConfiguration(
+            name: "Default Configuration",
+            sessionRole: connectingSceneSession.role
+        )
+    }
+
     func application(
         _ application: UIApplication,
         handleEventsForBackgroundURLSession identifier: String,

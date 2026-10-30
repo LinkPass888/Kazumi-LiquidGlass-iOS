@@ -146,6 +146,12 @@ final class PlayerSurfaceModel {
     private weak var lastHwdecEngine: MPVEngine?
     private var lastHwdecEnabled = true
 
+    /// 后台渲染锁（原因见 `MPVEngine.setRenderingLocked`）。
+    /// 画中画在跑的时候不要上锁：它的帧正是靠这条渲染路径出的。
+    func setRenderingLocked(_ locked: Bool) {
+        engine?.setRenderingLocked(locked)
+    }
+
     func setHardwareDecodingEnabled(_ enabled: Bool) {
         if engine === lastHwdecEngine, enabled == lastHwdecEnabled {
             // 被自己的记忆吞掉也留一行：真机上「回前台画面回不来」要分清的就是
@@ -410,7 +416,9 @@ final class MPVGLView: GLKView {
     weak var engine: MPVEngine?
 
     override func draw(_ rect: CGRect) {
-        guard let engine else { return }
+        // 后台锁着就什么都不画：连 glClear 也不做——iOS 在后台不给 OpenGL ES 用
+        // （LP 4978 第 2 条）。
+        guard let engine, !engine.renderingLocked else { return }
         glClearColor(0, 0, 0, 1)
         glClear(UInt32(GL_COLOR_BUFFER_BIT))
         engine.render(in: self)

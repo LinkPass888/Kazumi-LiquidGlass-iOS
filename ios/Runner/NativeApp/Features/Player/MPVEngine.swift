@@ -285,13 +285,35 @@ final class MPVEngine {
     func setHardwareDecoding(_ enabled: Bool) {
         setOptionForPlayback("hwdec", enabled ? Self.hwdecOnForeground : "no")
         if enabled {
+            requestDisplay()
+        }
+    }
+
+    /// 后台渲染锁：iOS 在后台不许碰 OpenGL ES，切后台后真机日志里一直在报
+    /// `libmpv_render: OpenGL error INVALID_ENUM`（LP 4978 第 2 条）。
+    ///
+    /// 锁上以后一律不叫 mpv 画、也不排重绘；回前台解开时补一次重绘，画面
+    /// 当场接上。画中画在跑的时候不上锁——它的帧正是靠这条渲染路径出的。
+    private(set) var renderingLocked = false
+
+    func setRenderingLocked(_ locked: Bool) {
+        guard locked != renderingLocked else { return }
+        renderingLocked = locked
+        onLog?(locked ? "画面：后台渲染锁已上" : "画面：后台渲染锁已解")
+        if !locked {
             glView?.setNeedsDisplay()
         }
     }
 
+    /// 叫 GL 视图重画一帧；锁着的时候直接丢掉（别在后台碰 GL）。
+    fileprivate func requestDisplay() {
+        guard !renderingLocked else { return }
+        glView?.setNeedsDisplay()
+    }
+
     /// 让 GLKView 立刻重画当前帧（回前台接回内联画面时用）。
     func requestRender() {
-        glView?.setNeedsDisplay()
+        requestDisplay()
     }
 
     /// 画中画需要自己驱动出帧时调（后台 UIKit 不会自动给 GLKView 发 draw）。
@@ -590,7 +612,8 @@ final class MPVEngine {
 
     /// 渲染时把画面画进当前 FBO。
     func render(in view: GLKView) {
-        guard let renderContext else { return }
+        // 后台一律不碰 GL（LP 4978 第 2 条）。
+        guard let renderContext, !renderingLocked else { return }
         var fbo: GLint = 0
         glGetIntegerv(GLenum(GL_FRAMEBUFFER_BINDING), &fbo)
         var viewport = [GLint](repeating: 0, count: 4)
@@ -933,6 +956,6 @@ private func kazumiMPVRenderUpdate(_ ctx: UnsafeMutableRawPointer?) {
     guard let ctx else { return }
     let engine = Unmanaged<MPVEngine>.fromOpaque(ctx).takeUnretainedValue()
     Task { @MainActor in
-        engine.glView?.setNeedsDisplay()
+        engine.requestDisplay()
     }
 }
