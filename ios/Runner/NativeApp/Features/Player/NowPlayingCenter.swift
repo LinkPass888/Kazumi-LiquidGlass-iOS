@@ -122,6 +122,14 @@ final class NowPlayingCenter {
         center.previousTrackCommand.isEnabled = true
         center.changePlaybackPositionCommand.isEnabled = true
 
+        // 快进/快退那几颗**必须显式关掉**（LP 5031）：控制中心/锁屏那排只有两个格子，
+        // 系统默认会把 `skipForwardCommand` / `skipBackwardCommand`（±15 秒）摆上去，
+        // 上一集/下一集就被挤没了。我们不做 15 秒跳，所以直接关。
+        center.skipForwardCommand.isEnabled = false
+        center.skipBackwardCommand.isEnabled = false
+        center.seekForwardCommand.isEnabled = false
+        center.seekBackwardCommand.isEnabled = false
+
         Self.registerCommandHandlers(commands)
     }
 

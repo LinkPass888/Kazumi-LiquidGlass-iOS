@@ -95,22 +95,11 @@ targets:
         LSRequiresIPhoneOS: true
         UILaunchStoryboardName: LaunchScreen
         UIApplicationSupportsIndirectInputEvents: true
-        # 单场景 + 完整的场景路由表。
-        #
-        # `UISceneConfigurations` 这一段是 SpringBoard 点击灵动岛/锁屏卡唤醒 App 时
-        # 查的那张表（LP 5025）：main 分支有完整的 FlutterSceneDelegate 声明，同一台
-        # 手机上点一下就跳；我们这边只有 SupportsMultipleScenes，系统手里没有可用
-        # 的场景配置，点了就只会展开卡片。
-        #
-        # **不要写 UISceneStoryboardFile**：窗口由 SwiftUI 的 WindowGroup 建，写个
-        # storyboard 反而会多出来一个空窗口。
+        # 单场景。以前这里没有这一段，生成的包里压根不带场景清单
+        # （源码 Info.plist 里那份是空配置，xcodegen 合并时被丢了）。
+        # 点锁屏卡片让系统拉起 app 走的就是场景激活这条路（LP 4626）。
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
-          UISceneConfigurations:
-            UIWindowSceneSessionRoleApplication:
-              - UISceneConfigurationName: Default Configuration
-                UISceneClassName: UIWindowScene
-                UISceneDelegateClassName: KazumiSceneDelegate
         UIStatusBarHidden: false
         UIViewControllerBasedStatusBarAppearance: true
         CADisableMinimumFrameDurationOnPhone: true
