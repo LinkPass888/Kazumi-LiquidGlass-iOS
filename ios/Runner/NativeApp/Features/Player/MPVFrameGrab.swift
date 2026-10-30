@@ -69,11 +69,11 @@ struct MPVRawFrame: Sendable {
         }
 
         guard width > 0, height > 0, !pixels.isEmpty else { return nil }
-        // stride 没给就按最紧的排法算；给了也得夹住，避免读到缓冲外。
-        let bytesPerPixel = stride > 0 ? stride / max(width, 1) : 0
+        // stride 没给就按最紧的排法算（一个像素 3 字节还是 4 字节由格式决定）。
+        let bytesPerPixel = Self.layout(of: format)?.bytesPerPixel ?? 4
         self.width = width
         self.height = height
-        self.stride = stride > 0 ? stride : width * max(bytesPerPixel, 4)
+        self.stride = stride > 0 ? stride : width * bytesPerPixel
         self.format = format
         self.pixels = pixels
     }
@@ -83,8 +83,12 @@ struct MPVRawFrame: Sendable {
 
     /// 转成 CGImage。mpv 给的是打包好的 RGB 变体，这里统一还原成 RGBA 再建图。
     func makeCGImage() -> CGImage? {
-        guard let channels = Self.channels(of: format) else { return nil }
-        let bytesPerPixel = channels.count
+        guard let layout = Self.layout(of: format) else { return nil }
+        // 一个像素占几个字节要按格式算，**不能拿 `map.count`**：那张表永远是四项
+        // （源里没有的通道填 -1），`rgb24`/`bgr24` 只占 3 字节却会被当成 4 字节，
+        // 整个图就斜着花了（Fuck 5017）。
+        let bytesPerPixel = layout.bytesPerPixel
+        let channels = layout.map
         guard bytesPerPixel > 0, pixels.count >= stride * height || pixels.count >= width * bytesPerPixel * height
         else { return nil }
 
@@ -137,22 +141,28 @@ struct MPVRawFrame: Sendable {
         )
     }
 
-    /// mpv 的格式名 → 「RGBA 四个字节分别取源里的第几个字节」。-1 表示源里没有这个通道。
-    ///
-    /// 名字的读法跟 mpv 文档一致：`bgr0` 是 B,G,R,X（第 4 个字节没用），
-    /// `0bgr` 是 X,B,G,R，`bgra` / `rgba` 就是字面顺序。
-    private static func channels(of format: String) -> [Int]? {
+    /// 一种打包像素格式的读法。
+    private struct PixelLayout {
+        /// 一个像素占几个字节：`rgb24`/`bgr24` 是 3，其余打包格式是 4。
+        let bytesPerPixel: Int
+        /// RGBA 四个字节分别取源里的第几位，-1 表示源里没有这个通道。
+        let map: [Int]
+    }
+
+    /// mpv 的格式名 → 读法。名字的读法跟 mpv 文档一致：`bgr0` 是 B,G,R,X（第 4 个
+    /// 字节没用），`0bgr` 是 X,B,G,R，`bgra` / `rgba` 就是字面顺序。
+    private static func layout(of format: String) -> PixelLayout? {
         switch format.lowercased() {
-        case "rgb0", "rgbx": return [0, 1, 2, -1]
-        case "bgr0", "bgrx": return [2, 1, 0, -1]
-        case "0rgb", "xrgb": return [1, 2, 3, -1]
-        case "0bgr", "xbgr": return [3, 2, 1, -1]
-        case "rgba": return [0, 1, 2, 3]
-        case "bgra": return [2, 1, 0, 3]
-        case "argb": return [1, 2, 3, 0]
-        case "abgr": return [3, 2, 1, 0]
-        case "rgb24": return [0, 1, 2, -1]
-        case "bgr24": return [2, 1, 0, -1]
+        case "rgb0", "rgbx": return PixelLayout(bytesPerPixel: 4, map: [0, 1, 2, -1])
+        case "bgr0", "bgrx": return PixelLayout(bytesPerPixel: 4, map: [2, 1, 0, -1])
+        case "0rgb", "xrgb": return PixelLayout(bytesPerPixel: 4, map: [1, 2, 3, -1])
+        case "0bgr", "xbgr": return PixelLayout(bytesPerPixel: 4, map: [3, 2, 1, -1])
+        case "rgba": return PixelLayout(bytesPerPixel: 4, map: [0, 1, 2, 3])
+        case "bgra": return PixelLayout(bytesPerPixel: 4, map: [2, 1, 0, 3])
+        case "argb": return PixelLayout(bytesPerPixel: 4, map: [1, 2, 3, 0])
+        case "abgr": return PixelLayout(bytesPerPixel: 4, map: [3, 2, 1, 0])
+        case "rgb24": return PixelLayout(bytesPerPixel: 3, map: [0, 1, 2, -1])
+        case "bgr24": return PixelLayout(bytesPerPixel: 3, map: [2, 1, 0, -1])
         default: return nil
         }
     }

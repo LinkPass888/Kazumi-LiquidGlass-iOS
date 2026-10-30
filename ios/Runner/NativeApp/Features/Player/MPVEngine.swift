@@ -114,9 +114,12 @@ final class MPVEngine {
 
     /// 已下发、还没回执的异步命令。
     private var pendingCommands: [UInt64: CommandRequest] = [:]
-    /// 正在等的 `screenshot-raw`：回执回来时把原始帧交给对应的等待者。
-    /// 同一刻只可能有一次截图，所以一个槽就够。
-    private var rawShotWaiter: (id: UInt64, cont: CheckedContinuation<MPVRawFrame?, Never>)?
+    /// 正在等的 `screenshot-raw`：回执回来时按命令号把原始帧交给对应的等待者。
+    ///
+    /// 用字典而不是单个槽：连点两下截图时第二下会把第一下的等待者挤掉，
+    /// 被挤掉那条 `withCheckedContinuation` 再也没人 resume（它的超时兜底
+    /// 拿的也是自己的 id，比不中），那条 task 就永久挂在那儿（Fuck 5017）。
+    private var rawShotWaiters: [UInt64: CheckedContinuation<MPVRawFrame?, Never>] = [:]
     private var nextCommandID: UInt64 = 1
     /// 截图回执的超时。mpv 要从关键帧重解，网络流上慢；但这是单条命令、
     /// 回执到了才算，不用像原来那样两条路各等一轮，也不用给到几十秒。
@@ -502,7 +505,7 @@ final class MPVEngine {
         }
 
         return await withCheckedContinuation { (continuation: CheckedContinuation<MPVRawFrame?, Never>) in
-            rawShotWaiter = (id, continuation)
+            rawShotWaiters[id] = continuation
             var status: Int32 = -1
             values.withUnsafeMutableBufferPointer { buffer in
                 // 参数表：node 数组。`mpv_command_node_async` 会在返回前把参数拷走，
@@ -679,9 +682,8 @@ final class MPVEngine {
 
     /// 取帧回执落地：把原始帧交给等待者（没拿到就是 nil）。
     private func finishRawShot(id: UInt64, frame: MPVRawFrame?) {
-        guard let waiter = rawShotWaiter, waiter.id == id else { return }
-        rawShotWaiter = nil
-        waiter.cont.resume(returning: frame)
+        guard let waiter = rawShotWaiters.removeValue(forKey: id) else { return }
+        waiter.resume(returning: frame)
     }
 
     /// 收尾：把还在等的命令全放走，避免有 task 永远挂着。
@@ -692,7 +694,11 @@ final class MPVEngine {
             for pointer in request.strings { free(pointer) }
             request.waiter.resume(error)
         }
-        finishRawShot(id: rawShotWaiter?.id ?? 0, frame: nil)
+        let shots = rawShotWaiters
+        rawShotWaiters.removeAll()
+        for waiter in shots.values {
+            waiter.resume(returning: nil)
+        }
     }
 
     private func command(_ name: String, _ args: [String?] = []) {
