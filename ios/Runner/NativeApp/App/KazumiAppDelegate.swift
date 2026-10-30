@@ -46,21 +46,24 @@ final class KazumiAppDelegate: NSObject, UIApplicationDelegate {
         NotificationCenter.default.post(name: .kazumiAppDidBecomeActive, object: nil)
     }
 
-    // 显式给系统一份场景配置（LP 4978 第 3 条）。
+    // 场景配置：原样透传系统给我的那份。
     //
-    // 已核实两件事：① 这个方法确实会被调到（拿 `fatalError` 试过，App 起不来）；
-    // ② 返回一份不带 delegate 的具名配置不会把 SwiftUI 的树挂不上（同一台模拟器上
-    // 界面照常起来）。SwiftUI 自己的场景代理配置仍由 SwiftUI 给。
-    // 真机上灵动岛/锁屏卡片点不点得进 App，得由 LP 验。
+    // 这里踩过一个大坑（LP 5008）：曾经在这里 return 一份新建的空白配置
+    // `UISceneConfiguration(name: "Default Configuration", …)`。系统拿到非 nil 就
+    // **不再用**它自己准备好那份（带 SwiftUI 的 AppSceneDelegate），而
+    // "Default Configuration" 这个名字在 plist 的 scene manifest 里根本没有对应条目
+    // （manifest 只有 UIApplicationSupportsMultipleScenes）。后果是：界面照常起来、
+    // 卡片画得出来、控制中心按钮也能动，但「把 App 带到前台」走的场景激活路由落到
+    // 一份空配置上失败——表现就是点灵动岛/锁屏卡片只展开、不进 App。
+    //
+    // 所以不要再「造一份」，直接还回去；也不删掉这个方法：删了系统重新解析 plist，
+    // 可能拿不到 SwiftUI 运行时注入的 delegate class。
     func application(
         _ application: UIApplication,
         configurationForConnecting connectingSceneSession: UISceneSession,
         options: UIScene.ConnectionOptions
     ) -> UISceneConfiguration {
-        return UISceneConfiguration(
-            name: "Default Configuration",
-            sessionRole: connectingSceneSession.role
-        )
+        return connectingSceneSession.configuration
     }
 
     func application(

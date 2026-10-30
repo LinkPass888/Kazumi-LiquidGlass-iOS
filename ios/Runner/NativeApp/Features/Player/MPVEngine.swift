@@ -114,6 +114,9 @@ final class MPVEngine {
 
     /// 已下发、还没回执的异步命令。
     private var pendingCommands: [UInt64: CommandRequest] = [:]
+    /// 正在等的 `screenshot-raw`：回执回来时把原始帧交给对应的等待者。
+    /// 同一刻只可能有一次截图，所以一个槽就够。
+    private var rawShotWaiter: (id: UInt64, cont: CheckedContinuation<MPVRawFrame?, Never>)?
     private var nextCommandID: UInt64 = 1
     /// 截图回执的超时。mpv 要从关键帧重解，网络流上慢；但这是单条命令、
     /// 回执到了才算，不用像原来那样两条路各等一轮，也不用给到几十秒。
@@ -229,8 +232,11 @@ final class MPVEngine {
         } log: { [weak self] message in
             Task { @MainActor in self?.onLog?(message) }
         }
-        pump.onCommandReply = { [weak self] id, error in
-            Task { @MainActor in self?.finishCommand(id: id, error: error) }
+        pump.onCommandReply = { [weak self] id, error, rawFrame in
+            Task { @MainActor in
+                self?.finishCommand(id: id, error: error)
+                self?.finishRawShot(id: id, frame: error >= 0 ? rawFrame : nil)
+            }
         }
         self.pump = pump
         pump.start()
@@ -433,7 +439,101 @@ final class MPVEngine {
     ///  2) 主线程只发命令、只等回执，mpv 重解码那几秒不在主线程上卡着（Fuck 4696）。
     ///  3) `video` 标志：只要视频画面，不含字幕、不含 OSD，分辨率是片源的原始分辨率。
     ///     失败就报错，不退回不带标志那条（见下面那段注释）。
+    /// 截图主路（LP 5012，参考 main）：`screenshot-raw` 取**解码后的原始帧**。
+    ///
+    /// 这条路不经过窗口/渲染层，所以尺寸永远是片源分辨率，跟横竖屏、跟
+    /// 适应/裁切/拉伸都无关。main 用的是 media_kit 那层原生取帧，底层就是这条命令。
     func captureFrameToFile() async -> (url: URL?, note: String) {
+        let raw = await captureRawFrame()
+        if let url = raw.url { return (url, raw.note) }
+        onLog?(raw.note)
+
+        // 原始帧那条不成再退一步：试 VO 出图（真机上以前一直失败，留着当第二选择）。
+        let viaVO = await captureFrameViaVO()
+        if let url = viaVO.url { return (url, viaVO.note) }
+        onLog?(viaVO.note)
+        return (nil, "\(raw.note)；\(viaVO.note)")
+    }
+
+    /// `screenshot-raw` → CGImage → PNG 临时文件。
+    private func captureRawFrame() async -> (url: URL?, note: String) {
+        let started = Date()
+        guard let frame = await rawScreenshot() else {
+            return (nil, "取帧失败：screenshot-raw 没回帧")
+        }
+        guard let image = frame.makeCGImage() else {
+            return (nil, "取帧失败：像素格式认不得（\(frame.format)，\(frame.width)×\(frame.height)）")
+        }
+        let path = FileManager.default.temporaryDirectory
+            .appendingPathComponent("kazumi-shot-\(UUID().uuidString).png")
+        guard let data = UIImage(cgImage: image).pngData() else {
+            return (nil, "取帧失败：PNG 编不出来")
+        }
+        do {
+            try data.write(to: path)
+        } catch {
+            return (nil, "取帧失败：临时文件写不出去")
+        }
+        let sourceText = lastSnapshot.videoWidth > 0 && lastSnapshot.videoHeight > 0
+            ? "，片源 \(Int(lastSnapshot.videoWidth))×\(Int(lastSnapshot.videoHeight))"
+            : ""
+        let note = "截图成功（原始帧）：\(frame.width)×\(frame.height)\(sourceText)，\(frame.format)，\(Int(Date().timeIntervalSince(started) * 1000)) 毫秒"
+        onLog?(note)
+        return (path, note)
+    }
+
+    /// 下发 `screenshot-raw video`，等回执里的那块帧。
+    private func rawScreenshot() async -> MPVRawFrame? {
+        guard let handle else { return nil }
+        let id = nextCommandID
+        nextCommandID += 1
+
+        // 参数是 node 数组：["screenshot-raw", "video"]。mpv 只在调用期间用这些字符串
+        // 和 node，所以调用完就能放。
+        let commandName = strdup("screenshot-raw")!
+        let modeName = strdup("video")!
+        let strings: [UnsafeMutablePointer<CChar>] = [commandName, modeName]
+        defer { for item in strings { free(item) } }
+        var values = strings.map { pointer -> mpv_node in
+            var node = mpv_node()
+            node.format = MPV_FORMAT_STRING
+            node.u.string = pointer
+            return node
+        }
+
+        return await withCheckedContinuation { (continuation: CheckedContinuation<MPVRawFrame?, Never>) in
+            rawShotWaiter = (id, continuation)
+            var status: Int32 = -1
+            values.withUnsafeMutableBufferPointer { buffer in
+                // 参数表：node 数组。`mpv_command_node_async` 会在返回前把参数拷走，
+                // 所以这块栈上的东西出了作用域也能放。
+                var list = mpv_node_list(
+                    num: Int32(buffer.count),
+                    values: buffer.baseAddress,
+                    keys: nil
+                )
+                withUnsafeMutablePointer(to: &list) { listStorage in
+                    var args = mpv_node()
+                    args.format = MPV_FORMAT_NODE_ARRAY
+                    args.u.list = listStorage
+                    status = mpv_command_node_async(handle, id, &args)
+                }
+            }
+            if status < 0 {
+                onLog?("取帧命令下发失败：\(String(cString: mpv_error_string(status)))")
+                finishRawShot(id: id, frame: nil)
+                return
+            }
+            // 跟其他异步命令一样的超时：放走等待者，不让截图那条任务挂死。
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(20))
+                finishRawShot(id: id, frame: nil)
+            }
+        }
+    }
+
+    /// 第二选择：让 VO 出图（`screenshot-to-file … video`）。
+    private func captureFrameViaVO() async -> (url: URL?, note: String) {
         let started = Date()
         let path = FileManager.default.temporaryDirectory
             .appendingPathComponent("kazumi-shot-\(UUID().uuidString).png")
@@ -577,6 +677,13 @@ final class MPVEngine {
         request.waiter.resume(error)
     }
 
+    /// 取帧回执落地：把原始帧交给等待者（没拿到就是 nil）。
+    private func finishRawShot(id: UInt64, frame: MPVRawFrame?) {
+        guard let waiter = rawShotWaiter, waiter.id == id else { return }
+        rawShotWaiter = nil
+        waiter.cont.resume(returning: frame)
+    }
+
     /// 收尾：把还在等的命令全放走，避免有 task 永远挂着。
     private func failPendingCommands(_ error: Int32) {
         let requests = pendingCommands
@@ -585,6 +692,7 @@ final class MPVEngine {
             for pointer in request.strings { free(pointer) }
             request.waiter.resume(error)
         }
+        finishRawShot(id: rawShotWaiter?.id ?? 0, frame: nil)
     }
 
     private func command(_ name: String, _ args: [String?] = []) {
@@ -709,7 +817,7 @@ final class MPVEventPump: @unchecked Sendable {
     private let onLog: @Sendable (String) -> Void
     /// 异步命令的回执：`(reply_userdata, 错误码)`，错误码 >= 0 就是成了。
     /// 走 mpv 自己的线程，进来先跳回主线程再唤醒等待者。
-    var onCommandReply: (@Sendable (UInt64, Int32) -> Void)?
+    var onCommandReply: (@Sendable (UInt64, Int32, MPVRawFrame?) -> Void)?
     private var running = false
     private var ticker: DispatchSourceTimer?
     /// 最近一次加载失败的原因；成功起播后清掉。
@@ -849,9 +957,16 @@ final class MPVEventPump: @unchecked Sendable {
             }
             if id == MPV_EVENT_COMMAND_REPLY {
                 // 异步命令做完了。`reply_userdata` 就是发命令时给的那个号，
-                // 错误码在 event.error 上（>= 0 成功）。截图靠这条判断文件写没写成，
-                // 不再用「每 50 毫秒看一眼文件在不在」那种固定延时去猜（LP 4695 第 4 条）。
-                onCommandReply?(event.pointee.reply_userdata, event.pointee.error)
+                // 错误码在 event.error 上（>= 0 成功）。
+                //
+                // 回执里还可能带一个 node（`screenshot-raw` 的原始帧就在里面）。
+                // 这个 node 只在处理事件这一刻有效，所以当场拷成 `MPVRawFrame`。
+                var rawFrame: MPVRawFrame?
+                if event.pointee.error >= 0, let dataPointer = event.pointee.data {
+                    let reply = UnsafeMutablePointer<mpv_event_command>(OpaquePointer(dataPointer))
+                    rawFrame = MPVRawFrame(node: reply.pointee.result)
+                }
+                onCommandReply?(event.pointee.reply_userdata, event.pointee.error, rawFrame)
             }
         }
         var snap = snapshot()
