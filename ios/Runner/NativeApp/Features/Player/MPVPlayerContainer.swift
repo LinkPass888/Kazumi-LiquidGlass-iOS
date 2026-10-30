@@ -133,31 +133,30 @@ final class PlayerSurfaceModel {
         isPlaying = false
     }
 
-    /// 后台播放时把画面通道关掉，回前台再打开（原因见 `MPVEngine.setVideoTrackEnabled`）。
+    /// 后台只走声音时把硬解压掉，回前台再开（原因见 `MPVEngine.setHardwareDecoding`）。
     ///
-    /// 回前台那条每次都会调 `true`，如果无脑转给 mpv，等于每次回来都让 mpv
-    /// 重新选一遍视频轨——回来那一下会顿（LP：返回 app 时会暂停一会）。
-    /// 所以同一个内核、同一个值就不重复转发。
+    /// 回前台那条每次都会调 `true`，如果无脑转给 mpv，等于每次回来都重建一次
+    /// 解码器。所以同一个内核、同一个值就不重复转发。
     ///
     /// 上一次真的转发给 mpv 的那一对：发给哪个内核、开还是关。
     ///
     /// 只记「我想要的状态」不够——记忆里说开着、mpv 其实关着的时候，
-    /// 那一句「开」会被吞掉，画面就再也回不来了（有声音、画面一直转圈）。
-    /// 所以拿当前内核比：内核换了就一定要转发一次。
-    private weak var lastTrackEngine: MPVEngine?
-    private var lastTrackEnabled = true
+    /// 那一句「开」会被吞掉，解码器就再也回不来了。所以拿当前内核比：
+    /// 内核换了就一定要转发一次。
+    private weak var lastHwdecEngine: MPVEngine?
+    private var lastHwdecEnabled = true
 
-    func setVideoTrackEnabled(_ enabled: Bool) {
-        if engine === lastTrackEngine, enabled == lastTrackEnabled {
+    func setHardwareDecodingEnabled(_ enabled: Bool) {
+        if engine === lastHwdecEngine, enabled == lastHwdecEnabled {
             // 被自己的记忆吞掉也留一行：真机上「回前台画面回不来」要分清的就是
             // 「这一句没转发」和「转发了但内核不动」。只在真的没转发时写。
-            KazumiLogBuffer.player("视频轨：仍是\(enabled ? "开" : "关")，不重复转发")
+            KazumiLogBuffer.player("硬件解码：仍是\(enabled ? "硬解" : "软解")，不重复转发")
             return
         }
-        lastTrackEngine = engine
-        lastTrackEnabled = enabled
-        KazumiLogBuffer.player("视频轨：转发 \(enabled ? "vid=auto" : "vid=no")")
-        engine?.setVideoTrackEnabled(enabled)
+        lastHwdecEngine = engine
+        lastHwdecEnabled = enabled
+        KazumiLogBuffer.player("硬件解码：转发 hwdec=\(enabled ? MPVEngine.hwdecOnForeground : "no")")
+        engine?.setHardwareDecoding(enabled)
     }
 
     /// 屏幕这块视图。mpv 自己出图失败时，从它兜底。

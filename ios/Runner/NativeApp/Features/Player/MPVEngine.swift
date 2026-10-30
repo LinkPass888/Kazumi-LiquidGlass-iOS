@@ -151,18 +151,11 @@ final class MPVEngine {
         // 控制中心 / 锁屏那张卡就永远不出来。开了这个，它不再加 mixWithOthers。
         setOption("audio-exclusive", "yes")
         // 模拟器没有硬解，强行开 videotoolbox 会黑屏（MPVKit demo 同样的判断）。
-        // 真机用 auto-safe，跟 main 的 `hardwareDecoder` 默认值一致：它是「只在
-        // 确认安全时才开零拷贝互操作」的那一档，比硬写 videotoolbox 稳——
-        // 互操作一旦对不上（10bit、双平面这些），出来的就是花屏和发绿发紫。
-        #if targetEnvironment(simulator)
-        setOption("hwdec", "no")
-        #else
-        // 用 copy-back 这一档，不走零拷贝互操作：互操作一旦和硬解出来的
+        // 真机用 copy-back 这一档，不走零拷贝互操作：互操作一旦和硬解出来的
         // 帧格式对不上（10bit、双平面），屏幕上的表现就是花屏、发绿发紫、
         // 或者只剩红绿两色（LP 2026-10-28 第 1 条）。copy-back 多一次拷贝，
         // 1080p 这点开销换来画面颜色一定是对的。
-        setOption("hwdec", "videotoolbox-copy")
-        #endif
+        setOption("hwdec", Self.hwdecOnForeground)
         // 逐帧交给我们的 GL 视图，不走独立窗口。渲染 API 在
         // `mpv_render_context_create` 里指定，不用再设 gpu-api（设了会被拒）。
         // 不用 gpu-hq：它的 ewa_lanczos + 去色带很吃 GPU，会掉帧；
@@ -269,15 +262,28 @@ final class MPVEngine {
         setFlag("pause", true)
     }
 
-    /// 后台播放时把画面通道关掉、回前台再打开。
+    /// 前台该用的硬解档位（模拟器没有硬解，真机用 copy-back，原因见 `start()`）。
+    static var hwdecOnForeground: String {
+        #if targetEnvironment(simulator)
+        return "no"
+        #else
+        return "videotoolbox-copy"
+        #endif
+    }
+
+    /// 后台只走声音时把硬解压掉，回前台再开。
     ///
-    /// 进后台 iOS 不再给画面算渲染周期（GLKView 的 draw 不会发生），但音频时钟
-    /// 因为有 `UIBackgroundModes: audio` 会一直走——画面就停在被冻结的那一帧，
-    /// 声音已经跑远了，回前台就是音画不同步。关掉 `vid` 让 mpv 只走声音；
-    /// 回来打开 `vid` 时，mpv 会在当前音频位置重新选视频轨，画面自己追上声音，
-    /// 不需要 seek，也就不会有一声破音。
-    func setVideoTrackEnabled(_ enabled: Bool) {
-        setOptionForPlayback("vid", enabled ? "auto" : "no")
+    /// 进后台 iOS 会作废硬解会话，mpv 的 VideoToolbox 回调拿到的是空帧
+    /// （真机日志：`vt decoder cb: output image buffer is null: -12909`、
+    /// `h264: Failed to decode frame (invalid session, -12903)`）。切软解就没有
+    /// 会话可作废，音频照走。
+    ///
+    /// 这里只动 `hwdec`，不动 `vid`（LP 4976）：对 HLS 在线流动态切 `vid` 会让
+    /// demuxer 断开视频分片流、回前台重新拉流寻帧，把音频缓冲抽干（真机日志：
+    /// `Audio device underrun detected` + `内核：… 空闲=是`）。换 `hwdec` 只重建
+    /// 解码器，视频轨和 demuxer 都留着。
+    func setHardwareDecoding(_ enabled: Bool) {
+        setOptionForPlayback("hwdec", enabled ? Self.hwdecOnForeground : "no")
         if enabled {
             glView?.setNeedsDisplay()
         }

@@ -264,11 +264,13 @@ struct PlayerScreen: View {
     @State private var controlsVisible = true
     /// 「正在播放」的节拍计数：250 毫秒一轮，凑到 8 轮（2 秒）同步一次。
     @State private var nowPlayingTick = 0
+    /// 上一次看到的「别的 App 占着音频会话吗」。只在变了的时候写一行日志（LP 4976）。
+    @State private var lastOtherAudioPlaying: Bool?
     /// 这一集是「因为切到后台才停下的」吗——只有这种暂停才在回前台时自动接上，
     /// 用户自己按的暂停不算（LP 2026-10-29「回到前台自动播放」）。
     @State private var pausedByBackground = false
-    /// 这一集在后台把视频轨关掉了（`vid=no`）。回前台要按这个记号接回来。
-    @State private var videoTrackOffInBackground = false
+    /// 这一集在后台把硬解压掉了。回前台要按这个记号接回来。
+    @State private var hwdecOffInBackground = false
     /// 后台自动画中画。设置关着时一直是 nil：不建图层、不建控制器、不碰软件渲染。
     @State private var pictureInPicture: PictureInPictureController?
     /// 「更多」/ 倍速面板：自己握开关，好让控制层知道菜单还开着。
@@ -673,8 +675,6 @@ struct PlayerScreen: View {
         .onDisappear {
             // 离开播放器：控制中心不该再挂着这一集。
             NowPlayingCenter.shared.clear()
-            // 场景路由凭证也一起还回去，别把同步器留在播放态（LP 4966）。
-            NowPlayingSceneRouteBridge.shared.setPlaying(false)
             restoreAudioSessionAfterPlayer()
             // 离开播放器：屏幕常亮无论如何都要还回去，不能带出这个页面。
             UIApplication.shared.isIdleTimerDisabled = false
@@ -829,6 +829,7 @@ struct PlayerScreen: View {
         }
         let pip = PictureInPictureController()
         let backgroundPaused = $pausedByBackground
+        let hwdecOff = $hwdecOffInBackground
         pip.onFailed = { [weak surface] in
             // 小窗没起来，按「后台播放」这个设置收尾，别让设置关着却在后台一直出声。
             // 关着就停下，但标成「因为切后台停的」，回前台那条会按设置接回来
@@ -836,8 +837,9 @@ struct PlayerScreen: View {
             guard let surface else { return }
             KazumiLogBuffer.player("画中画: 启动失败，按后台播放设置收尾")
             if settingsStore.backgroundPlayback {
-                // 开着后台播放：只留声音，视频轨关掉，别在后台白解码。
-                surface.setVideoTrackEnabled(false)
+                // 开着后台播放：只留声音，硬解压掉，别在后台白解码。
+                hwdecOff.wrappedValue = true
+                surface.setHardwareDecodingEnabled(false)
             } else if surface.isPlaying {
                 backgroundPaused.wrappedValue = true
                 surface.pause()
@@ -848,7 +850,8 @@ struct PlayerScreen: View {
             // 不开则继续当音频播放器用；开了后台音频也要回到只走声音的老策略。
             guard let surface else { return }
             if settingsStore.backgroundPlayback {
-                surface.setVideoTrackEnabled(false)
+                hwdecOff.wrappedValue = true
+                surface.setHardwareDecodingEnabled(false)
             } else if surface.isPlaying {
                 // 跟上面一条对齐：标成「切后台停的」，回前台照设置接回来。
                 backgroundPaused.wrappedValue = true
@@ -881,18 +884,19 @@ struct PlayerScreen: View {
         }
         guard !pipStarted else { return }
 
-        // 小窗没起来：后台就不能再解视频。iOS 在后台不给 GPU / VideoToolbox，
+        // 小窗没起来：后台就不能再硬解。iOS 在后台不给 GPU / VideoToolbox，
         // 硬解会话当场失效（真机日志：`h264: Failed to decode frame
         // (invalid session, -12903)` → `vt decoder cb: output image buffer is
         // null: -12909`），重则把播放打成 `paused=true idle=true`，回前台还得
         // 用户手点一下才接着播（LP 4938 第 2 条）。
         //
+        // 只切 `hwdec`，不动 `vid`（LP 4976）：对 HLS 在线流动态切视频轨会让
+        // demuxer 断开分片流、回前台重新拉流寻帧，把音频缓冲抽干。
+        //
         // 判据是「这次有没有走成画中画」，跟 `backgroundPlayback` 那个设置无关：
-        // 那个设置管的是「要不要继续出声」，这条管的是「后台本来就不该解码」。
-        // 以前只在开着后台播放时才关视频轨，没开的那条路只 `pause()`、视频轨
-        // 还留着，正是真机上那次崩溃的来路。
-        surface.setVideoTrackEnabled(false)
-        videoTrackOffInBackground = true
+        // 那个设置管的是「要不要继续出声」，这条管的是「后台本来就不该硬解」。
+        surface.setHardwareDecodingEnabled(false)
+        hwdecOffInBackground = true
         // 没开后台播放：连声音一起停。标成「因为切后台停的」，
         // 回前台那条会按设置接回来，不再出现「回来发现停着、也没接着播」。
         if !settings.backgroundPlayback, surface.isPlaying {
@@ -901,15 +905,15 @@ struct PlayerScreen: View {
         }
     }
 
-    /// 回前台：收回画中画、把后台关掉的视频轨接回来、按设置自动续播。
+    /// 回前台：收回画中画、把后台压掉的硬解接回来、按设置自动续播。
     private func handleForeground() {
         // 先收回画中画：内联 GL 在同一时间点接管，不 seek、不重启。
         pictureInPicture?.stop()
-        // 后台把视频轨关了：接回来。放在 `play()` 之前，这样自动续播的那一下
+        // 后台把硬解关了：接回来。放在 `play()` 之前，这样自动续播的那一下
         // 画面已经在了，不会出现「先出声、画面晚一拍」。
-        if videoTrackOffInBackground {
-            videoTrackOffInBackground = false
-            surface.setVideoTrackEnabled(true)
+        if hwdecOffInBackground {
+            hwdecOffInBackground = false
+            surface.setHardwareDecodingEnabled(true)
         }
         // 「回到前台自动播放」：只接回因切后台停下的那一集。
         let shouldResume = settings.resumeOnForeground && pausedByBackground
@@ -919,7 +923,7 @@ struct PlayerScreen: View {
         }
         // 这行留着：真机上「回来停着不接着播」时，先看这条——
         // 续播=否 就是「本来就不该续」（设置关了 / 用户自己暂停的），不是丢了。
-        KazumiLogBuffer.player("回前台：视频轨接回，续播=\(shouldResume ? "是" : "否")")
+        KazumiLogBuffer.player("回前台：硬解接回，续播=\(shouldResume ? "是" : "否")")
     }
 
     // MARK: - 播放区
@@ -3255,12 +3259,14 @@ struct PlayerScreen: View {
         PlayerAudioSession.shared.reapplyIfNeeded()
         // 还没拿到片源（时长 0）且没在播时不写：控制中心不该挂一张 00:00 的空卡片。
         guard surface.duration > 0 || surface.isPlaying else { return }
-        // 场景路由凭证（LP 4966）：给系统一条播放态的 AVFoundation 渲染管线。
-        // 只在倍速真的变了的时候写，见 `NowPlayingSceneRouteBridge`。
-        NowPlayingSceneRouteBridge.shared.setPlaying(
-            surface.isPlaying,
-            rate: Float(surface.desiredRate)
-        )
+        // 「正在播放」这个位置是不是我们的？`isOtherAudioPlaying` 为 true 就说明
+        // 会话还攥在别的 App 手里：卡能画出来，但点它不会回到这个 App
+        // （LP 4976 第 2 条要查的就是这个）。只在变了的时候写，不每 2 秒刷一行。
+        let otherAudioPlaying = AVAudioSession.sharedInstance().isOtherAudioPlaying
+        if lastOtherAudioPlaying != otherAudioPlaying {
+            lastOtherAudioPlaying = otherAudioPlaying
+            KazumiLogBuffer.player("音频会话：别的 App 占着=\(otherAudioPlaying ? "是" : "否")")
+        }
         let meta = nowPlayingMeta(controller)
         NowPlayingCenter.shared.update(
             title: meta.title,
