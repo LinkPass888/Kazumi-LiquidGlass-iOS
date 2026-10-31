@@ -14,7 +14,6 @@ struct PluginListView: View {
     @Environment(AppRouter.self) private var router
     @Environment(\.colorScheme) private var colorScheme
 
-    @State private var isShowingImporter = false
     @State private var isShowingImportSheet = false
     @State private var isShowingShop = false
     /// 新建规则：推入编辑器并带上模板。
@@ -210,9 +209,9 @@ struct PluginListView: View {
                 await applyImport(summary)
             }
         }
-        .fileImporter(isPresented: $isShowingImporter, allowedContentTypes: [.json, .plainText]) { result in
-            handleFileImport(result)
-        }
+        // 规则导入不再用 .fileImporter：LP 5216 报的「备份能选文件、规则不行」
+        // 就是这两条路不一样——.fileImporter 在侧载包上点文件不响应，
+        // 只有直接呈现 UIDocumentPickerViewController 才点得动。
         .alert("提示", isPresented: Binding(
             get: { updateSummary != nil },
             set: { if !$0 { updateSummary = nil } }
@@ -389,7 +388,7 @@ struct PluginListView: View {
             Label("从剪贴板导入", systemImage: "doc.on.clipboard")
         }
         Button {
-            isShowingImporter = true
+            pickRuleFileFromDisk()
         } label: {
             Label("从文件导入", systemImage: "folder.badge.plus")
         }
@@ -565,6 +564,33 @@ struct PluginListView: View {
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    /// 从文件面板选规则文件。走 DocumentPickerBridge（跟设置备份导入同一条路），
+    /// 不用 .fileImporter——侧载包上后者点文件不响应（LP 5216）。
+    private func pickRuleFileFromDisk() {
+        // 规则是从外部文件来的，扩展名不可控：只认 JSON 与文本，
+        // 否则侧载环境里那一份会被直接筛掉、在面板里根本看不见。
+        DocumentPickerBridge.open(types: [.json, .plainText, .data]) { result in
+            switch result {
+            case .success(let urls):
+                guard let url = urls.first else { return }
+                // 面板还在退场，这一刻读文件会读到一半被杀；等它退干净。
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
+                    handleFileImport(.success(url))
+                }
+            case .failure(let error):
+                guard !Self.isCancelled(error) else { return }
+                errorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    private static func isCancelled(_ error: Error) -> Bool {
+        if let picker = error as? DocumentPickerBridge.PickerError {
+            if case .cancelled = picker { return true }
+        }
+        return (error as NSError).code == NSUserCancelledError
     }
 
     private func handleFileImport(_ result: Result<URL, Error>) {
