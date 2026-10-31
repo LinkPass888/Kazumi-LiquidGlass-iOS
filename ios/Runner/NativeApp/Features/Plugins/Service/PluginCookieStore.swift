@@ -87,7 +87,9 @@ final class PluginCookieStore: @unchecked Sendable {
             if !trimmed.isEmpty { userAgents[pluginName] = trimmed }
         }
         var jar = jars[pluginName] ?? []
-        for cookie in cookies {
+        for raw in cookies {
+            var cookie = raw
+            cookie.domain = Self.normalizedDomain(cookie.domain)
             if let index = jar.firstIndex(where: {
                 $0.name == cookie.name && $0.domain == cookie.domain && $0.path == cookie.path
             }) {
@@ -139,6 +141,13 @@ final class PluginCookieStore: @unchecked Sendable {
     }
 
     /// 与 CookieJar.loadForRequest 对齐：域名匹配（含父域）且路径前缀匹配。
+    /// 这条规则有没有存着登录 Cookie（失败提示要据此多一句「可能登录过期了」）。
+    func hasCookies(pluginName: String) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return !(jars[pluginName]?.isEmpty ?? true)
+    }
+
     func cookies(pluginName: String, url: String) -> [Cookie] {
         guard let components = URLComponents(string: url) else { return [] }
         let host = (components.host ?? "").lowercased()
@@ -147,10 +156,19 @@ final class PluginCookieStore: @unchecked Sendable {
         defer { lock.unlock() }
         guard let jar = jars[pluginName] else { return [] }
         return jar.filter { cookie in
-            let domainMatches = !host.isEmpty &&
-                (host == cookie.domain.lowercased() || host.hasSuffix(".\(cookie.domain.lowercased())"))
+            // 域级 Cookie 存下来是带前导点的（`.cycani.org`）：不去点永远筛不上，
+            // 整条被静默丢掉（Fuck 5469）。
+            let domain = Self.normalizedDomain(cookie.domain)
+            let domainMatches = !host.isEmpty && (host == domain || host.hasSuffix(".\(domain)"))
             return domainMatches && pathMatches(requestPath: requestPath, cookiePath: cookie.path)
         }
+    }
+
+    /// 去掉前导点、转小写：存的时候和比的时候用同一套。
+    static func normalizedDomain(_ raw: String) -> String {
+        var value = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        while value.hasPrefix(".") { value.removeFirst() }
+        return value
     }
 
     private func pathMatches(requestPath: String, cookiePath: String) -> Bool {

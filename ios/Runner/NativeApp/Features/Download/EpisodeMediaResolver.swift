@@ -36,6 +36,7 @@ final class EpisodeMediaResolver {
     func resolve(
         pageURL: String,
         useLegacyParser: Bool,
+        pluginName: String,
         timeout: Duration = .seconds(45),
         cancellation: CancellationFlag
     ) async throws -> Result {
@@ -56,6 +57,10 @@ final class EpisodeMediaResolver {
         // 拿它当加载完会让每一集都秒判「没有地址」（LP 5112 那个红叹号就是这个）。
         sniffer.onPageLoaded = { box.markLoadFinished() }
 
+        // 下载取的也是播放页里那份地址：规则要登录，这里同样得带上（Fuck 5469 第 2 条）。
+        await MainActor.run {
+            sniffer.configureSession(pluginName: pluginName, url: pageURL)
+        }
         let loadTask = Task { @MainActor in
             await sniffer.load(url: pageURL, useLegacyParser: useLegacyParser)
         }

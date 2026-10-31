@@ -61,6 +61,8 @@ final class PlayerController {
     private let engine = RuleEngine()
     private let webView = VideoSourceWebView()
     private var cancelToken = RuleCancelToken()
+    /// 解析的看门狗：页面加载完却一直没拿到地址时，别让圈一直转（LP 5465）。
+    private var parseWatchdog: Task<Void, Never>?
 
     /// 上次走的线路（历史里记的），以及这次进播放器是不是「接着看」。
     private var resumeRoad: Int?
@@ -159,7 +161,7 @@ final class PlayerController {
                 applyStartPoint(roads: trace.roads)
                 if episodes.isEmpty {
                     isEpisodeIncomplete = false
-                    phase = .failed("该播放源没有解析到剧集")
+                    failed("该播放源没有解析到剧集")
                     return
                 }
             } catch {
@@ -187,7 +189,7 @@ final class PlayerController {
                 // 系统给的英文错误串（「The data couldn't be read…」之类）不往用户脸上贴：
                 // 界面上说人话，原始原因写进运行日志。
                 appendLog("解析剧集失败：\(error.localizedDescription)")
-                phase = .failed("解析剧集失败，换条线路或换个源试试")
+                failed("解析剧集失败，换条线路或换个源试试")
                 return
             }
         }
@@ -198,7 +200,7 @@ final class PlayerController {
         }
         let target = episodes[currentEpisode - 1]
         guard !target.isEmpty else {
-            phase = .failed("该集没有播放地址")
+            failed("该集没有播放地址")
             return
         }
 
@@ -212,6 +214,7 @@ final class PlayerController {
             return
         }
         phase = .parsingMedia
+        startParseWatchdog()
         // 登录态交给解析页（LP 5450）：页面里那一步拿地址要登录，
         // 这个 WebView 原先是一次性会话，Cookie 到不了，就一直卡在解析。
         webView.configureSession(pluginName: plugin.name, url: target)
@@ -268,6 +271,8 @@ final class PlayerController {
     }
 
     func retry() async {
+        parseWatchdog?.cancel()
+        parseWatchdog = nil
         phase = .idle
         playbackURL = nil
         resetDanmaku()
@@ -309,6 +314,8 @@ final class PlayerController {
     }
 
     func stop() {
+        parseWatchdog?.cancel()
+        parseWatchdog = nil
         cancelToken.cancel()
         webView.dispose()
     }
@@ -392,6 +399,17 @@ final class PlayerController {
         referer = refererValue.isEmpty ? nil : refererValue
     }
 
+    /// 失败提示统一走这里（LP 5465）：带登录 Cookie 的规则，Cookie 会过期，
+    /// 出问题时把人往「网络 / 规则 / 登录」三处引，别只说「解析失败」。
+    private func failed(_ reason: String) {
+        var text = reason
+        if let pluginName = source?.pluginName,
+           PluginCookieStore.shared.hasCookies(pluginName: pluginName) {
+            text += "\n请检查网络、规则或 Cookie。"
+        }
+        phase = .failed(text)
+    }
+
     /// 媒体地址要带的 Cookie 头：这条规则登录过才有，按媒体地址的域和路径筛。
     func playbackCookieHeader(for urlString: String) -> String? {
         guard let pluginName = source?.pluginName else { return nil }
@@ -399,8 +417,22 @@ final class PlayerController {
         return header.isEmpty ? nil : header
     }
 
+    /// 解析最多等 15 秒（LP 5473：25 秒太久）。地址一直不来，多半是站点那边没放行：网络、规则本身，
+    /// 或者这条规则存的登录过期了——把三处都写进提示里，别让人对着转圈猜（LP 5465）。
+    private func startParseWatchdog() {
+        parseWatchdog?.cancel()
+        parseWatchdog = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(15))
+            guard !Task.isCancelled, let self else { return }
+            guard case .parsingMedia = self.phase else { return }
+            self.failed("没解析到播放地址：请检查网络、规则或 Cookie。")
+        }
+    }
+
     private func handleParsedMedia(_ event: VideoParserEvent) {
         guard !event.url.isEmpty else { return }
+        parseWatchdog?.cancel()
+        parseWatchdog = nil
         isEpisodeIncomplete = false
         playbackURL = event.url
         phase = .ready

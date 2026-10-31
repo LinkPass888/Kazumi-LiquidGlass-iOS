@@ -96,7 +96,12 @@ private struct RuleLoginWebView: UIViewRepresentable {
     @Binding var savedCount: Int
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(pluginName: pluginName, isLoading: $isLoading, savedCount: $savedCount)
+        Coordinator(
+            pluginName: pluginName,
+            host: url.host ?? "",
+            isLoading: $isLoading,
+            savedCount: $savedCount
+        )
     }
 
     func makeUIView(context: Context) -> WKWebView {
@@ -110,6 +115,9 @@ private struct RuleLoginWebView: UIViewRepresentable {
         }
         webView.navigationDelegate = context.coordinator
         webView.allowsBackForwardNavigationGestures = true
+        // 先拍一份「进来之前」的 Cookie 作基线：只有这次真的变了（登录了）
+        // 才往下存，光点开看看不存（LP 5463）。
+        context.coordinator.captureBaseline(from: webView)
         webView.load(URLRequest(url: url))
         return webView
     }
@@ -123,11 +131,16 @@ private struct RuleLoginWebView: UIViewRepresentable {
 
     final class Coordinator: NSObject, WKNavigationDelegate {
         private let pluginName: String
+        private let host: String
         private let isLoading: Binding<Bool>
         private let savedCount: Binding<Int>
+        /// 进来那一眼的 Cookie：键是「名字|域|路径」，值是当时的 Cookie 值。
+        private var baseline: [String: String]?
+        private var isHarvesting = false
 
-        init(pluginName: String, isLoading: Binding<Bool>, savedCount: Binding<Int>) {
+        init(pluginName: String, host: String, isLoading: Binding<Bool>, savedCount: Binding<Int>) {
             self.pluginName = pluginName
+            self.host = host
             self.isLoading = isLoading
             self.savedCount = savedCount
         }
@@ -145,11 +158,47 @@ private struct RuleLoginWebView: UIViewRepresentable {
             isLoading.wrappedValue = false
         }
 
-        /// 把 WebView 的 Cookie 交给规则网络层。
+        /// 拍基线：只认第一次，后面页面自己跳转刷出来的不算。
+        func captureBaseline(from webView: WKWebView) {
+            guard baseline == nil else { return }
+            webView.configuration.websiteDataStore.httpCookieStore.getAllCookies { cookies in
+                guard self.baseline == nil else { return }
+                self.baseline = Dictionary(
+                    self.commonCookies(cookies).map { (Self.key($0), $0.value) },
+                    uniquingKeysWith: { first, _ in first }
+                )
+            }
+        }
+
+        /// 把这次真的登上的 Cookie 交给规则网络层。
         func harvest(from webView: WKWebView) {
+            guard !isHarvesting else { return }
+            isHarvesting = true
             let store = webView.configuration.websiteDataStore.httpCookieStore
             store.getAllCookies { cookies in
-                let mapped = cookies.map {
+                defer { self.isHarvesting = false }
+                // 这个 WebView 用的是 App 共用的持久仓库，里面还有别的站点的 Cookie：
+                // 只留这条规则自己站点的那几个，别把别家的也记到它名下。
+                let mine = self.commonCookies(cookies)
+                guard let baseline = self.baseline else {
+                    // 基线还没回来：至少把这份当基线，别把「还没登录」当登录存下去。
+                    self.baseline = Dictionary(
+                        mine.map { (Self.key($0), $0.value) },
+                        uniquingKeysWith: { first, _ in first }
+                    )
+                    return
+                }
+                // 只存和进来时不一样的（新出现的、或者值变了）：这是「登录过」的痕迹。
+                let changed = mine.filter { cookie in
+                    baseline[Self.key(cookie)] != cookie.value
+                }
+                guard !changed.isEmpty else {
+                    KazumiLog.plugin.info(
+                        "[RuleLogin] No cookie changed for \(self.pluginName, privacy: .public), skip saving"
+                    )
+                    return
+                }
+                let mapped = changed.map {
                     PluginCookieStore.Cookie(
                         name: $0.name,
                         value: $0.value,
@@ -165,8 +214,32 @@ private struct RuleLoginWebView: UIViewRepresentable {
                     userAgent: ua.isEmpty ? nil : ua
                 )
                 DispatchQueue.main.async {
-                    if !mapped.isEmpty { self.savedCount.wrappedValue = mapped.count }
+                    self.savedCount.wrappedValue = PluginCookieStore.shared
+                        .cookies(pluginName: self.pluginName, url: self.urlString)
+                        .count
                 }
+            }
+        }
+
+        private var urlString: String {
+            host.isEmpty ? "" : "https://\(host)/"
+        }
+
+        private static func key(_ cookie: HTTPCookie) -> String {
+            "\(cookie.name)|\(cookie.domain)|\(cookie.path)"
+        }
+
+        /// 只留这条规则站点的 Cookie：同域、子域，或者站点自己就是它的子域
+        /// （Cookie 写 .example.com 时 www.example.com 也要认）。
+        private func commonCookies(_ cookies: [HTTPCookie]) -> [HTTPCookie] {
+            guard !host.isEmpty else { return cookies }
+            let site = host.lowercased()
+            return cookies.filter { cookie in
+                let domain = cookie.domain.lowercased()
+                let trimmed = domain.hasPrefix(".") ? String(domain.dropFirst()) : domain
+                return site == trimmed
+                    || site.hasSuffix("." + trimmed)
+                    || trimmed.hasSuffix("." + site)
             }
         }
     }

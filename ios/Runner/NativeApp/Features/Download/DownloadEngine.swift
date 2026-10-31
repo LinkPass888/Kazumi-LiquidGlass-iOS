@@ -66,6 +66,15 @@ final class DownloadEngine: @unchecked Sendable {
     /// 单个文件失败后重试几次（原版也是三次）。
     private let maxRetries = 3
 
+    /// 取某个地址该带的 Cookie：规则登录过才有，按地址的域和路径筛（Fuck 5469 第 2 条）。
+    /// 下载取的是播放页里那份媒体，规则要登录时这份请求同样得带。
+    var cookieForURL: (@Sendable (URL) -> String?)?
+
+    private func applyCookie(to request: inout URLRequest, url: URL) {
+        guard let cookie = cookieForURL?(url), !cookie.isEmpty else { return }
+        request.setValue(cookie, forHTTPHeaderField: "Cookie")
+    }
+
     /// 下一集到 `directory`，返回能播的那个本地文件。
     ///
     /// - Parameters:
@@ -135,6 +144,7 @@ final class DownloadEngine: @unchecked Sendable {
         apply(headers: request, referer: referer, userAgent: userAgent)
         if let referer, !referer.isEmpty { request.setValue(referer, forHTTPHeaderField: "Referer") }
         if let userAgent, !userAgent.isEmpty { request.setValue(userAgent, forHTTPHeaderField: "User-Agent") }
+        applyCookie(to: &request, url: url)
 
         // 用流式请求只读开头：有的服务器不理 Range，直接回整个文件，
         // 用 data(for:) 会把几百 MB 全塞进内存。
@@ -332,6 +342,7 @@ final class DownloadEngine: @unchecked Sendable {
         apply(headers: request, referer: referer, userAgent: userAgent)
         if let referer, !referer.isEmpty { request.setValue(referer, forHTTPHeaderField: "Referer") }
         if let userAgent, !userAgent.isEmpty { request.setValue(userAgent, forHTTPHeaderField: "User-Agent") }
+        applyCookie(to: &request, url: url)
 
         let progressSink = ProgressSink(
             expectedBytes: expectedBytes,
@@ -391,6 +402,7 @@ final class DownloadEngine: @unchecked Sendable {
         apply(headers: request, referer: referer, userAgent: userAgent)
         if let referer, !referer.isEmpty { request.setValue(referer, forHTTPHeaderField: "Referer") }
         if let userAgent, !userAgent.isEmpty { request.setValue(userAgent, forHTTPHeaderField: "User-Agent") }
+        applyCookie(to: &request, url: url)
         let (data, response) = try await session.data(for: request)
         if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
             throw DownloadEngineError.badStatus(http.statusCode)

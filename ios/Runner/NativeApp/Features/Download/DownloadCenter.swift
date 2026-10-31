@@ -394,6 +394,7 @@ final class DownloadCenter {
             let resolved = try await resolver.resolve(
                 pageURL: episode.pageURL,
                 useLegacyParser: plugin.useLegacyParser,
+                pluginName: record.pluginName,
                 cancellation: cancellation
             )
             mediaURL = resolved.url
@@ -407,7 +408,15 @@ final class DownloadCenter {
         // 第二步：落盘。
         let folder = folderURL(for: record)
         let referer = plugin.referer.isEmpty ? plugin.baseUrl : plugin.referer
-        let userAgent = plugin.userAgent
+        // 规则的会话跟着规则走：登录过就用登录那个 UA，媒体请求也带上它的 Cookie。
+        let loginUA = PluginCookieStore.shared.userAgent(for: record.pluginName)
+        let userAgent = (loginUA?.isEmpty == false ? loginUA! : plugin.userAgent)
+        let pluginName = record.pluginName
+        engine.cookieForURL = { url in
+            let header = PluginCookieStore.shared.cookieHeader(pluginName: pluginName, url: url.absoluteString)
+            return header.isEmpty ? nil : header
+        }
+        defer { engine.cookieForURL = nil }
         let target = try await engine.download(
             mediaURL: mediaURL,
             referer: referer,
