@@ -4018,10 +4018,12 @@ struct PlayerScreen: View {
                 // 两头戳出弧线以外，跟胶囊的 R 对不上。
                 if case .downloading(let progress) = lite {
                     let fraction = max(0.02, min(1, progress))
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .trim(from: 0, to: fraction)
+                    // 从左边正中起画、顺着边框顺时针走（LP 5499）；颜色跟格子里的数字同一个，
+                    // 不用主题色——主题色在这块底上会跟集数打架。
+                    let ringColor = cellForeground(solid: solid, isCurrent: isCurrent, lite: lite)
+                    EdgeProgressRing(fraction: fraction, cornerRadius: 10)
                         .stroke(
-                            Color.accentColor,
+                            ringColor,
                             style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round)
                         )
                         .padding(1)
@@ -4732,5 +4734,88 @@ private final class OrientationFailure: @unchecked Sendable {
         guard let stored, stored.generation == generation else { return nil }
         self.stored = nil
         return stored.message
+    }
+}
+
+
+/// 沿着圆角矩形边框走一圈的进度线，起点是左边正中、方向顺时针（LP 5499）。
+///
+/// 不用 `RoundedRectangle().trim`：`trim` 的起点由路径自己决定（落在上边一带），
+/// 换不了，只能自己按段的长度铺。
+private struct EdgeProgressRing: Shape {
+    /// 0…1，画满整圈的多少。
+    var fraction: Double
+    var cornerRadius: CGFloat
+
+    func path(in rect: CGRect) -> Path {
+        let r = min(cornerRadius, min(rect.width, rect.height) / 2)
+        let arc = CGFloat.pi * r / 2
+        let straightV = max(0, rect.height - 2 * r) / 2   // 单侧竖直线（上下一半）
+        let straightH = max(0, rect.width - 2 * r)        // 单侧水平线
+        // 九段都在这里排好：从左边正中往上，绕一圈回到左边正中。
+        let lengths: [CGFloat] = [straightV, arc, straightH, arc, 2 * straightV, arc, straightH, arc, straightV]
+        let total = lengths.reduce(0, +)
+        guard total > 0 else { return Path() }
+        var remaining = total * max(0, min(1, fraction))
+
+        let midY = rect.midY
+        var cursor = CGPoint(x: rect.minX, y: midY)
+        var path = Path()
+        path.move(to: cursor)
+
+        for (index, length) in lengths.enumerated() where remaining > 0 {
+            let take = min(length, remaining)
+            remaining -= take
+            switch index {
+            case 0: // 左中 → 左上角起点
+                cursor.y -= take
+                path.addLine(to: cursor)
+            case 1: // 左上角
+                let center = CGPoint(x: rect.minX + r, y: rect.minY + r)
+                path.addArc(center: center, radius: r,
+                            startAngle: .radians(.pi),
+                            endAngle: .radians(.pi + (take / max(arc, 0.0001)) * (.pi / 2)),
+                            clockwise: false)
+                cursor = Self.point(center: center, r: r, angle: .pi + (take / max(arc, 0.0001)) * (.pi / 2))
+            case 2: // 上边
+                cursor.x += take
+                path.addLine(to: cursor)
+            case 3: // 右上角
+                let center = CGPoint(x: rect.maxX - r, y: rect.minY + r)
+                path.addArc(center: center, radius: r,
+                            startAngle: .radians(.pi * 1.5),
+                            endAngle: .radians(.pi * 1.5 + (take / max(arc, 0.0001)) * (.pi / 2)),
+                            clockwise: false)
+                cursor = Self.point(center: center, r: r, angle: .pi * 1.5 + (take / max(arc, 0.0001)) * (.pi / 2))
+            case 4: // 右边
+                cursor.y += take
+                path.addLine(to: cursor)
+            case 5: // 右下角
+                let center = CGPoint(x: rect.maxX - r, y: rect.maxY - r)
+                path.addArc(center: center, radius: r,
+                            startAngle: .radians(0),
+                            endAngle: .radians((take / max(arc, 0.0001)) * (.pi / 2)),
+                            clockwise: false)
+                cursor = Self.point(center: center, r: r, angle: (take / max(arc, 0.0001)) * (.pi / 2))
+            case 6: // 下边
+                cursor.x -= take
+                path.addLine(to: cursor)
+            case 7: // 左下角
+                let center = CGPoint(x: rect.minX + r, y: rect.maxY - r)
+                path.addArc(center: center, radius: r,
+                            startAngle: .radians(.pi / 2),
+                            endAngle: .radians(.pi / 2 + (take / max(arc, 0.0001)) * (.pi / 2)),
+                            clockwise: false)
+                cursor = Self.point(center: center, r: r, angle: .pi / 2 + (take / max(arc, 0.0001)) * (.pi / 2))
+            default: // 左边 → 回到正中
+                cursor.y -= take
+                path.addLine(to: cursor)
+            }
+        }
+        return path
+    }
+
+    private static func point(center: CGPoint, r: CGFloat, angle: CGFloat) -> CGPoint {
+        CGPoint(x: center.x + r * cos(angle), y: center.y + r * sin(angle))
     }
 }

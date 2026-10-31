@@ -425,7 +425,7 @@ final class PlayerController {
     private func startParseWatchdog() {
         parseWatchdog?.cancel()
         parseWatchdog = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(15))
+            try? await Task.sleep(for: .seconds(10))
             guard !Task.isCancelled, let self else { return }
             guard case .parsingMedia = self.phase else { return }
             self.failed("没解析到播放地址")

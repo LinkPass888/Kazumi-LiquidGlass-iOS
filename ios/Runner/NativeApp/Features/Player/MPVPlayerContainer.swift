@@ -710,7 +710,9 @@ struct MPVPlayerContainer: UIViewRepresentable {
             // 代理变了也要重新交给内核：设置里拨一下，正在放的那一集立刻生效。
             if proxyURL != lastProxy {
                 lastProxy = proxyURL
-                engine.setProxy(proxyURL)
+                // 设置里没填代理就用系统的那个：libmpv 不认 iOS 系统代理，
+                // 不补这一下，内核跟浏览器不是一个出口（LP 5498 的 400）。
+                engine.setProxy(proxyURL ?? ProxyURL.systemHTTPProxy())
             }
             guard lastURL != url else { return }
             lastURL = url
