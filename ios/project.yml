@@ -98,8 +98,18 @@ targets:
         # 单场景。以前这里没有这一段，生成的包里压根不带场景清单
         # （源码 Info.plist 里那份是空配置，xcodegen 合并时被丢了）。
         # 点锁屏卡片让系统拉起 app 走的就是场景激活这条路（LP 4626）。
+        # 场景路由表：SpringBoard / mediaremoted 是跨进程读静态 Info.plist 来判断
+        # 「点灵动岛、锁屏卡片能不能把 App 唤到前台」的，只有 SupportsMultipleScenes
+        # 时它们认不出可唤醒的窗口场景，点了没反应（LP 5008/5025 的老问题）。
+        # 这里只声明配置名与 UISceneClassName，**不写 UISceneDelegateClassName**：
+        # 写了就会顶掉 SwiftUI 的 AppSceneDelegate —— 指向空壳类黑屏（86fecd3/LP 5031），
+        # 指向自己又会让它转发回自己、栈溢出（d8a69b3/LP 5019）。
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
+          UISceneConfigurations:
+            UIWindowSceneSessionRoleApplication:
+              - UISceneConfigurationName: Default Configuration
+                UISceneClassName: UIWindowScene
         UIStatusBarHidden: false
         UIViewControllerBasedStatusBarAppearance: true
         CADisableMinimumFrameDurationOnPhone: true

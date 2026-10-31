@@ -259,13 +259,18 @@ final class MPVEngine {
     /// 换集 / 首次起播。UA 与 Referer 规则站点校验，缺一不可。
     func load(url: URL, referer: String?, userAgent: String?, cookie: String? = nil) {
         guard handle != nil else { return }
-        var headers: [String] = []
-        if let userAgent, !userAgent.isEmpty { headers.append("User-Agent: \(userAgent)") }
-        if let referer, !referer.isEmpty { headers.append("Referer: \(referer)") }
-        // 有的源「链接公开、播放要登录」（LP 5450）：内核对媒体地址也得带登录态。
-        if let cookie, !cookie.isEmpty { headers.append("Cookie: \(cookie)") }
-        // init 之后只能用属性接口改，`mpv_set_option_string` 这时候会被拒。
-        setOptionForPlayback("http-header-fields", headers.joined(separator: "\n"))
+        // UA 和 Referer 走 mpv 自己的选项，不拼进 `http-header-fields`（LP 5504/5506）：
+        // 那个选项是一串字段，拼字符串再交给 ffmpeg 时容易整条塞成一个带换行的头，
+        // 服务器见到畸形请求就回 400——本地 curl 同样的头 200，手机内核 400 的差别
+        // 就在这儿。UA / Referer 有专门选项，让库自己去拼。
+        setOptionForPlayback("user-agent", userAgent ?? "")
+        setOptionForPlayback("referrer", referer ?? "")
+        // 只有 Cookie 非空时才用 header 字段（没有专门选项可替）。
+        if let cookie, !cookie.isEmpty {
+            setOptionForPlayback("http-header-fields", "Cookie: \(cookie)")
+        } else {
+            setOptionForPlayback("http-header-fields", "")
+        }
         // 内核起播前把这次带过去的头记一行（Fuck 5487）：登录态有没有送到，
         // 看一眼运行日志就知道，不用在界面上猜是站点限了还是 Cookie 没带上。
         // 只记名字和个数，值不落盘。

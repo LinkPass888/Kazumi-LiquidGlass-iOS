@@ -13,7 +13,6 @@
 //
 
 import Foundation
-import CFNetwork
 
 enum ProxyURL {
     /// 解析用户贴进来的那一串，返回主机和端口；空串或写错了返回 nil。
@@ -46,20 +45,6 @@ enum ProxyURL {
     static func hostPort(_ text: String) -> String? {
         guard let parsed = parse(text) else { return nil }
         return "\(parsed.host):\(parsed.port)"
-    }
-
-    /// 系统代理（VPN 类软件或「Wi-Fi 里手填的 HTTP 代理」）拼成 `http://host:port`。
-    ///
-    /// libmpv 不认 iOS 的系统代理，浏览器认：同一个地址浏览器能播、内核 400 的差别
-    /// 往往就在这儿（LP 5493/5498：签名地址按出口 IP 校验）。设置里没填代理时，
-    /// 用这个兜底，让内核跟浏览器走同一条出口。
-    static func systemHTTPProxy() -> String? {
-        guard let settings = CFNetworkCopySystemProxySettings()?.takeRetainedValue() as? [String: Any],
-              let enabled = settings[kCFNetworkProxiesHTTPEnable as String] as? Int, enabled == 1,
-              let host = settings[kCFNetworkProxiesHTTPProxy as String] as? String, !host.isEmpty,
-              let port = settings[kCFNetworkProxiesHTTPPort as String] as? Int, port > 0
-        else { return nil }
-        return "http://\(host):\(port)"
     }
 
     /// 拿这个代理去请求一次 `target`，通不通。
