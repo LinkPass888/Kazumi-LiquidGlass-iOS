@@ -98,6 +98,13 @@ final class DanmakuOverlayView: UIView {
     private var playbackRate: Double = 1
 
     private var lastNow: Double = 0
+    /// 内核时间上一次采样的值和拿到的时刻（本机时钟，秒）。
+    /// 内核的播放时间每 250 ms 才更新一次（`MPVEngine` 的属性泵），
+    /// 弹幕位置却是每帧按它算的——直接用采样值，弹幕一秒只挪四下，
+    /// 看上去就是一顿一顿、带拖影（LP 5546）。两次采样之间用本机时钟补上。
+    private var sampleTime: Double = 0
+    private var sampleStamp: CFTimeInterval = 0
+    private var sampleFilled = false
 
 
     private var displayLink: CADisplayLink?
@@ -182,7 +189,19 @@ final class DanmakuOverlayView: UIView {
     /// 直接读播放时钟：内核的进度回调只有每秒几次，靠插值仍然会抖。
     private func clockNow() -> Double {
         guard let clock else { return lastNow }
-        return max(0, clock.currentPlaybackTime)
+        let sample = max(0, clock.currentPlaybackTime)
+        let stamp = CACurrentMediaTime()
+        // 采样变了、第一次、或者没在播：重新锚定，别在暂停/拖进度时自己往前跑。
+        if !sampleFilled || sample != sampleTime || !clock.isPlayingNow {
+            sampleTime = sample
+            sampleStamp = stamp
+            sampleFilled = true
+            return sample
+        }
+        // 两次采样之间按本机时间补；超过 0.5 秒说明内核那边没在动（缓冲、卡住），
+        // 就别再往外推，等下一个采样把它拽回来。
+        let elapsed = min(max(0, stamp - sampleStamp), 0.5)
+        return sample + elapsed * playbackRate
     }
 
     private func lowerBound(_ time: Double) -> Int {
