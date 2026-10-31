@@ -552,8 +552,8 @@ struct MPVPlayerContainer: UIViewRepresentable {
     let url: URL
     let referer: String?
     let userAgent: String?
-    /// 系统 HTTP 代理（`http://主机:端口`），nil 表示不走（LP 5063/5067）。
-    let systemProxy: String?
+    /// 代理地址（`http://主机:端口`），nil 表示不走（LP 5331：用户在设置里手填）。
+    let proxyURL: String?
     /// 超分着色器的绝对路径，空数组表示关闭（顺序就是挂载顺序）。
     let shaderPaths: [String]
     /// 画面填充方式。
@@ -617,7 +617,7 @@ struct MPVPlayerContainer: UIViewRepresentable {
             userAgent: userAgent,
             shaders: shaderPaths,
             fill: fillMode,
-            systemProxy: systemProxy
+            proxyURL: proxyURL
         )
         return host
     }
@@ -637,7 +637,7 @@ struct MPVPlayerContainer: UIViewRepresentable {
             userAgent: userAgent,
             shaders: shaderPaths,
             fill: fillMode,
-            systemProxy: systemProxy
+            proxyURL: proxyURL
         )
         context.coordinator.overlay?.apply(
             comments: danmaku,
@@ -675,7 +675,7 @@ struct MPVPlayerContainer: UIViewRepresentable {
             userAgent: String?,
             shaders: [String],
             fill: MPVFillMode,
-            systemProxy: String?
+            proxyURL: String?
         ) {
             guard let engine else { return }
             // 换档位时画面要重新出，但不用重新起播：mpv 换着色器当场生效。
@@ -702,10 +702,10 @@ struct MPVPlayerContainer: UIViewRepresentable {
                     engine.setOptionForPlayback("keepaspect", "no")
                 }
             }
-            // 代理变了也要重新交给内核：开关在设置里拨一下，正在放的那一集立刻生效。
-            if systemProxy != lastProxy {
-                lastProxy = systemProxy
-                engine.setProxy(systemProxy)
+            // 代理变了也要重新交给内核：设置里拨一下，正在放的那一集立刻生效。
+            if proxyURL != lastProxy {
+                lastProxy = proxyURL
+                engine.setProxy(proxyURL)
             }
             guard lastURL != url else { return }
             lastURL = url

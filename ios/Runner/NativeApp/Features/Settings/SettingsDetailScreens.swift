@@ -1010,7 +1010,7 @@ struct NetworkSettingsScreen: View {
     var body: some View {
         Form {
             // 一段三行照原版 NetworkMirrorSettings：番剧条目、规则仓库、图片。
-            // 代理那两行 LP 2559 让删了（iOS 上开 VPN 就够），连说明一起不留。
+            // 代理那两行 LP 2559 让删了（iOS 上开 VPN 就够），LP 5331 又加回来。
             Section {
                 Group {
                     Picker("番剧条目加速", selection: bangumiAccelerationBinding) {
@@ -1026,19 +1026,38 @@ struct NetworkSettingsScreen: View {
                         Text("镜像").tag(ImageAcceleration.mirror.rawValue)
                     }
                     .pickerStyle(.menu)
-
-                    // LP 5063/5067：播放内核不认 iOS 的系统代理，只能我们自己读出来交给它。
-                    // 代理工具没开 Tun（增强模式）、只设了 Wi-Fi 的 HTTP 代理时，
-                    // 界面能刷但片子放不出来，就是这个原因。
-                    Toggle("使用系统代理", isOn: useSystemProxyBinding)
                 }
                 .listRowBackground(KazumiPalette.groupedRow(for: colorScheme))
             } header: {
                 Text("访问加速")
             } footer: {
-                // LP 5083：把「到底读到没有」直接写出来。
-                // 不然用户只能猜：开关开了、片子还是放不出来，是协议没读到，还是源本身不行。
-                Text(systemProxyState)
+                Text("代理只交给播放内核：界面这一路（URLSession）iOS 会自己看系统代理。")
+                    .foregroundStyle(.secondary)
+            }
+
+            // LP 5331：代理改回手动填。
+            // iOS 上 App 读不到代理软件（Surge 之类）在 HTTP 模式下监听的那个端口，
+            // 读系统那份（Wi-Fi 里的 HTTP 代理）对不上，只能让用户自己填。
+            Section {
+                Group {
+                    Toggle("使用代理", isOn: proxyEnabledBinding)
+
+                    TextField("代理地址", text: proxyHostBinding)
+                        .keyboardType(.URL)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .disabled(!settings.proxyEnabled)
+
+                    TextField("代理端口", text: proxyPortBinding)
+                        .keyboardType(.numberPad)
+                        .disabled(!settings.proxyEnabled)
+                }
+                .listRowBackground(KazumiPalette.groupedRow(for: colorScheme))
+            } header: {
+                Text("代理")
+            } footer: {
+                // LP 5083：把「到底用上没有」直接写出来，不然用户只能猜。
+                Text(proxyState)
                     .foregroundStyle(.secondary)
             }
         }
@@ -1063,23 +1082,28 @@ struct NetworkSettingsScreen: View {
         )
     }
 
-    private var useSystemProxyBinding: Binding<Bool> {
+    private var proxyEnabledBinding: Binding<Bool> {
+        Binding(get: { settings.proxyEnabled }, set: { settings.proxyEnabled = $0 })
+    }
+
+    private var proxyHostBinding: Binding<String> {
+        Binding(get: { settings.proxyHost }, set: { settings.proxyHost = $0 })
+    }
+
+    /// 端口在存储里是 Int，输入框只认字符串；只收数字，空着就当 0（没填）。
+    private var proxyPortBinding: Binding<String> {
         Binding(
-            get: { settings.useSystemProxy },
-            set: { settings.useSystemProxy = $0 }
+            get: { settings.proxyPort > 0 ? String(settings.proxyPort) : "" },
+            set: { settings.proxyPort = Int($0) ?? 0 }
         )
     }
 
-    /// 开关旁边那一句：现在到底读到了什么。
-    /// 开关关着不读系统设置（跟播放页一致），开着了才去读一次。
-    private var systemProxyState: String {
-        guard settings.useSystemProxy else {
-            return "关闭时播放内核直连，不走任何代理"
+    /// 开关旁边那一句：现在到底走不走。
+    private var proxyState: String {
+        guard let url = settings.playerProxyURL else {
+            return "关闭或地址端口没填全时，播放内核直连，不走代理"
         }
-        guard let proxy = SystemProxy.httpProxyURL() else {
-            return "系统里没有 HTTP 代理，播放仍走直连"
-        }
-        return "已读到系统代理 \(proxy)，播放走它"
+        return "播放走 \(url)"
     }
 }
 

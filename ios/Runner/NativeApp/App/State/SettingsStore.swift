@@ -244,7 +244,9 @@ enum SettingsKey {
     static let proxyEnabled = "proxyEnabled"
     static let proxyHost = "proxyHost"
     static let proxyPort = "proxyPort"
-    /// 播放内核跟随系统代理（LP 5063）：libmpv 不认 iOS 系统代理，只能我们自己读出来交给它。
+    /// 播放内核跟随系统代理（LP 5063 加，LP 5331 把设置里那行拿掉）。
+    ///
+    /// 现在没有界面用它，存储留着：旧备份里带着这个键，恢复时不丢。
     static let useSystemProxy = "useSystemProxy"
     /// 规则仓库镜像（原版 `enableGitProxy`）。
     static let enableGitProxy = "enableGitProxy"
@@ -613,16 +615,23 @@ final class SettingsStore {
         didSet { persist(webDavEnableDanmakuShield, SettingsKey.webDavEnableDanmakuShield) }
     }
 
-    /// 代理开关：网络设置里那两行 LP 2559 让删了（iOS 上开 VPN 就够），
-    /// 只剩存储——原版设置备份里带着它，恢复时不至于丢。
+    /// 代理开关（LP 5331：改回手动填地址端口，交给播放内核）。
     var proxyEnabled: Bool {
         didSet { persist(proxyEnabled, SettingsKey.proxyEnabled) }
     }
 
-    /// 播放内核跟随系统代理（LP 5063/5067）。
+    /// 播放内核要用的代理，形如 `http://127.0.0.1:6152`；开关关着或没填全就是 nil。
     ///
-    /// iOS 上 App 能拿到的只有系统那份配置（Wi-Fi 里的 HTTP 代理）；
-    /// 默认关：没开代理工具的人打开它只会多一次读系统设置。
+    /// iOS 上 App 拿不到代理软件（Surge 之类）在 HTTP 模式下监听的那个端口，
+    /// 读系统那份（Wi-Fi 代理）对不上，所以只认用户自己填的（LP 5331）。
+    var playerProxyURL: String? {
+        guard proxyEnabled, !proxyHost.isEmpty, proxyPort > 0 else { return nil }
+        return "http://\(proxyHost):\(proxyPort)"
+    }
+
+    /// 播放内核跟随系统代理（LP 5063/5067 加，LP 5331 把设置里那行拿掉了）。
+    ///
+    /// 现在没有界面用它，存储留着：旧备份里带着这个键，恢复时不丢。
     var useSystemProxy: Bool {
         didSet { persist(useSystemProxy, SettingsKey.useSystemProxy) }
     }
