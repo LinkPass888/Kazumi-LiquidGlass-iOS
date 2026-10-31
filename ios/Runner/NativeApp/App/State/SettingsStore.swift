@@ -625,8 +625,36 @@ final class SettingsStore {
     /// iOS 上 App 拿不到代理软件（Surge 之类）在 HTTP 模式下监听的那个端口，
     /// 读系统那份（Wi-Fi 代理）对不上，所以只认用户自己填的（LP 5331）。
     var playerProxyURL: String? {
-        guard proxyEnabled, !proxyHost.isEmpty, proxyPort > 0 else { return nil }
-        return "http://\(proxyHost):\(proxyPort)"
+        guard proxyEnabled, proxyPort > 0 else { return nil }
+        let host = normalizedProxyHost
+        guard !host.isEmpty else { return nil }
+        return "http://\(host):\(proxyPort)"
+    }
+
+    /// 地址栏里顺手粘来的东西可能已经带壳：`http://127.0.0.1`、`127.0.0.1:6152`、
+    /// 后面还跟个路径。剥干净再拼，不然给 mpv 的就是 `http://http://...` 这种
+    /// 自相矛盾的地址——设属性失败，片子照旧放不出来（Fuck 5335）。
+    private var normalizedProxyHost: String {
+        var host = proxyHost.trimmingCharacters(in: .whitespacesAndNewlines)
+        for prefix in ["http://", "https://"] where host.lowercased().hasPrefix(prefix) {
+            host.removeFirst(prefix.count)
+        }
+        // `[::1]:6152` 这种 IPv6 写法：方括号里那截整个保住。
+        if host.hasPrefix("["), let close = host.firstIndex(of: "]") {
+            return String(host[...close])
+        }
+        if let slash = host.lastIndex(of: "/") {
+            host = String(host[..<slash])
+        }
+        // 只在「看起来就是 host:port」时才剥端口：前面得有个点或是 localhost，
+        // 不然 `::1` 这种裸 IPv6 会被削成半截。
+        if let colon = host.lastIndex(of: ":") {
+            let name = String(host[..<colon])
+            if name.contains(".") || name == "localhost" {
+                host = name
+            }
+        }
+        return host
     }
 
     /// 播放内核跟随系统代理（LP 5063/5067 加，LP 5331 把设置里那行拿掉了）。
