@@ -124,50 +124,6 @@ struct DownloadRecord: Codable, Identifiable, Sendable {
         "\(bangumiID)|\(pluginName)|\(road)"
     }
 
-    /// 逐成员初始化器：自定义 `init(from:)` 会把编译器白送的那个顶掉，
-    /// 别处 `DownloadRecord(bangumiID:…)` 就编不过了，这里补回来。
-    init(
-        bangumiID: Int,
-        title: String,
-        coverURL: String,
-        pluginName: String,
-        road: Int,
-        episodes: [DownloadEpisode],
-        createdAt: Date,
-        itemSource: String = ""
-    ) {
-        self.bangumiID = bangumiID
-        self.title = title
-        self.coverURL = coverURL
-        self.pluginName = pluginName
-        self.road = road
-        self.episodes = episodes
-        self.createdAt = createdAt
-        self.itemSource = itemSource
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case bangumiID, title, coverURL, pluginName, road, episodes, createdAt, itemSource
-    }
-
-    /// 自己写解码：`itemSource` 是后加的字段，老文件里没有这个键。
-    ///
-    /// 编译器合成的 `init(from:)` **不认属性默认值**，缺键会抛 `keyNotFound`；
-    /// `DownloadCenter.load()` 是 `try?` 一把梭，一抛就整份记录读不出来，
-    /// 再入队一次就把 downloads.json 覆盖成空的——升级即丢下载列表（Fuck 5522）。
-    /// 所以这里逐个 `decodeIfPresent`，缺的字段按默认补。
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        bangumiID = try container.decode(Int.self, forKey: .bangumiID)
-        title = try container.decodeIfPresent(String.self, forKey: .title) ?? ""
-        coverURL = try container.decodeIfPresent(String.self, forKey: .coverURL) ?? ""
-        pluginName = try container.decodeIfPresent(String.self, forKey: .pluginName) ?? ""
-        road = try container.decodeIfPresent(Int.self, forKey: .road) ?? 0
-        episodes = try container.decodeIfPresent([DownloadEpisode].self, forKey: .episodes) ?? []
-        createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
-        itemSource = try container.decodeIfPresent(String.self, forKey: .itemSource) ?? ""
-    }
-
     /// 这份记录里已经下完的集数，升序。
     var completedNumbers: [Int] {
         episodes.filter(\.isPlayableOffline).map(\.number).sorted()
