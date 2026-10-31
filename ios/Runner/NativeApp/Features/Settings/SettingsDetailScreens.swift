@@ -560,6 +560,9 @@ struct DownloadSettingsScreen: View {
             } footer: {
                 if let message {
                     Text(message)
+                } else if downloadDirectory.customUnavailable {
+                    // 以前这里是静默回退：右边写着选的文件夹名，实际却写去应用内。
+                    Text("这个文件夹现在打不开，下载仍存在应用内。把 App 完全关掉重开一次，或重新选一次文件夹。")
                 } else {
                     // main 两处都强调「只对之后下载的生效」（download_settings.dart:148）：
                     // 换目录的人最容易以为旧文件会跟着搬过去，这句不能省。

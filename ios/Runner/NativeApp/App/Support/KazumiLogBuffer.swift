@@ -17,6 +17,7 @@ final class KazumiLogBuffer: Sendable {
         case plugin
         case network
         case player
+        case storage
 
         var id: String { rawValue }
 
@@ -25,6 +26,7 @@ final class KazumiLogBuffer: Sendable {
             case .plugin: "规则"
             case .network: "网络"
             case .player: "播放"
+            case .storage: "存储"
             }
         }
     }
@@ -79,5 +81,10 @@ extension KazumiLogBuffer {
     static func player(_ message: String) {
         KazumiLog.player.info("\(message, privacy: .public)")
         shared.append(message, category: .player)
+    }
+
+    static func storage(_ message: String) {
+        KazumiLog.storage.info("\(message, privacy: .public)")
+        shared.append(message, category: .storage)
     }
 }

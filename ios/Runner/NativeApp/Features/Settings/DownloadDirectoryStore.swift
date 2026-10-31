@@ -40,6 +40,12 @@ final class DownloadDirectoryStore {
         restoreAccess()
     }
 
+    @MainActor
+    deinit {
+        // 访问权是常驻的（下载、写入都靠它），实例销毁时得放掉。
+        scopedURL?.stopAccessingSecurityScopedResource()
+    }
+
     // MARK: - 当前位置
 
     /// 现在真正会写进去的目录：外部目录拿到访问权就是它，否则回应用内。
@@ -57,6 +63,13 @@ final class DownloadDirectoryStore {
 
     /// 选过一个外部目录（不管这次解析成功没有）。
     var hasCustomSelection: Bool { !savedPath.isEmpty }
+
+    /// 选了目录、但这次没拿到访问权。
+    ///
+    /// 以前这种情况是静默的：`directoryURL` 悄悄回退到应用内目录，页面右侧还写着
+    /// 用户选的那个文件夹名——看上去就是「自定义下载目录不好使」（LP 5218）。
+    /// 现在把这个状态摆到页面上，不再默默写去别的地方。
+    var customUnavailable: Bool { !savedPath.isEmpty && !hasAccess }
 
     /// 应用内目录。下载列表、播放器落盘都从这里取默认值。
     static var defaultDirectory: URL {
@@ -102,16 +115,17 @@ final class DownloadDirectoryStore {
         var stale = false
         guard let url = try? URL(
             resolvingBookmarkData: data,
+            // iOS 上安全域是书签自带的，不能传 .withSecurityScope（那个选项 macOS 才有）。
             options: [],
             relativeTo: nil,
             bookmarkDataIsStale: &stale
         ) else {
-            KazumiLog.storage.warning("下载目录：书签换不回地址，退回应用内")
+            log("下载目录：书签换不回地址，退回应用内")
             reset()
             return
         }
         guard url.startAccessingSecurityScopedResource() else {
-            KazumiLog.storage.warning("下载目录：书签解析到了但拿不到访问权，退回应用内")
+            log("下载目录：书签解析到了但拿不到访问权，退回应用内")
             reset()
             return
         }
@@ -121,6 +135,7 @@ final class DownloadDirectoryStore {
         hasAccess = true
         savedPath = url.path(percentEncoded: false)
         defaults.set(savedPath, forKey: Self.pathKey)
+        log("下载目录：书签已接回访问权 \(savedPath)")
         // 书签过期就趁这次有访问权重新做一份，下次启动还能用。
         if stale { persistBookmark(for: url) }
     }
@@ -128,29 +143,46 @@ final class DownloadDirectoryStore {
     // MARK: - 内部
 
     private func adopt(_ url: URL) -> Result<Void, Error> {
+        // 之前已经持有这个目录的访问权就别重复开：重复开又不关会漏。
+        let alreadyOpen = isAccessing && scopedURL == url
         // 选择器给的是临时授权：先开，开完才能读书签、也才能判断真能不能写。
-        let opened = url.startAccessingSecurityScopedResource()
-        defer { if opened { url.stopAccessingSecurityScopedResource() } }
-
+        // 成功时不当场放掉，由下面接管成常驻。
+        let opened = alreadyOpen || url.startAccessingSecurityScopedResource()
         guard opened else {
             return .failure(DirectoryError.noAccess)
         }
+        func bail(_ error: DirectoryError) -> Result<Void, Error> {
+            if !alreadyOpen { url.stopAccessingSecurityScopedResource() }
+            return .failure(error)
+        }
+
         guard persistBookmark(for: url) else {
-            return .failure(DirectoryError.bookmarkFailed)
+            return bail(.bookmarkFailed)
         }
         guard FileManager.default.isWritableFile(atPath: url.path(percentEncoded: false)) else {
-            return .failure(DirectoryError.notWritable)
+            return bail(.notWritable)
         }
-        stopAccessing()
+
+        // 访问权直接接管成常驻，不再「先放掉、再靠书签重开」：
+        // 刚 stopAccessing 立刻 startAccessing 有拿不回来的情况，
+        // 那时表现就是选了文件夹点打开、位置还停在应用内（LP 5218）。
+        if !alreadyOpen {
+            stopAccessing()
+        }
+        scopedURL = url
+        isAccessing = true
+        hasAccess = true
         savedPath = url.path(percentEncoded: false)
         defaults.set(savedPath, forKey: Self.pathKey)
-        // 书签已经存好：从现在起走 restoreAccess 那条路拿常驻访问权。
-        restoreAccess()
+        // 书签刚由选择器给的新地址生成，趁现在有访问权重做一份，下次冷启动能直接接上。
+        persistBookmark(for: url)
+        KazumiLogBuffer.storage("下载目录：已接管访问权 \(savedPath)")
         return .success(())
     }
 
     @discardableResult
     private func persistBookmark(for url: URL) -> Bool {
+        // iOS 上从安全域 URL 生成的书签自带安全域，不用（也不能）加 .withSecurityScope。
         guard let data = try? url.bookmarkData(
             options: .minimalBookmark,
             includingResourceValuesForKeys: nil,
@@ -158,6 +190,13 @@ final class DownloadDirectoryStore {
         ) else { return false }
         defaults.set(data.base64EncodedString(), forKey: Self.bookmarkKey)
         return true
+    }
+
+    /// 写进「运行日志 → 存储」一栏：这条路径失败时 os.Logger 是看不见的，
+    /// 而这正是用户能自己翻出来看的地方。
+    private func log(_ message: String) {
+        KazumiLog.storage.warning("\(message, privacy: .public)")
+        KazumiLogBuffer.storage(message)
     }
 
     private func stopAccessing() {

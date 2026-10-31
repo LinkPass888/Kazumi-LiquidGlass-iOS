@@ -91,10 +91,12 @@ final class DocumentPickerBridge: NSObject, UIDocumentPickerDelegate {
     // MARK: - UIDocumentPickerDelegate
 
     func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+        KazumiLogBuffer.storage("文件面板：选中 \(urls.map(\.lastPathComponent).joined(separator: ", "))")
         finish(.success(urls))
     }
 
     func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+        KazumiLogBuffer.storage("文件面板：已取消")
         finish(.failure(PickerError.cancelled))
     }
 
