@@ -87,7 +87,15 @@ final class DownloadDirectoryStore {
 
     /// 打开系统的文件夹选择器。选完存路径与书签；取消则什么都不改。
     func choose(completion: ((Result<Void, Error>) -> Void)? = nil) {
-        DocumentPickerBridge.open(types: [.folder], asCopy: false) { [weak self] result in
+        // 面板的起点：App 自己的「文稿」目录（在「文件」App 里就是「我的 iPhone > Kazumi」）。
+        // 不给起点就会落在空的「Recents」，那里的「打开」是灰的，点了没反应。
+        let start = (try? FileManager.default.url(
+            for: .documentDirectory,
+            in: .userDomainMask,
+            appropriateFor: nil,
+            create: true
+        ))
+        DocumentPickerBridge.open(types: [.folder], asCopy: false, startingDirectory: start) { [weak self] result in
             guard let self else { return }
             switch result {
             case .success(let urls):
@@ -155,6 +163,7 @@ final class DownloadDirectoryStore {
         // 选择器给的是临时授权：先开，开完才能读书签、也才能判断真能不能写。
         // 成功时不当场放掉，由下面接管成常驻。
         let opened = alreadyOpen || url.startAccessingSecurityScopedResource()
+        KazumiLogBuffer.storage("下载目录：拿到临时授权=\(opened)，路径 \(url.path(percentEncoded: false))")
         guard opened else {
             return .failure(DirectoryError.noAccess)
         }
@@ -163,10 +172,14 @@ final class DownloadDirectoryStore {
             return .failure(error)
         }
 
-        guard persistBookmark(for: url) else {
+        let bookmarked = persistBookmark(for: url)
+        KazumiLogBuffer.storage("下载目录：书签=\(bookmarked ? "成" : "败")")
+        guard bookmarked else {
             return bail(.bookmarkFailed)
         }
-        guard FileManager.default.isWritableFile(atPath: url.path(percentEncoded: false)) else {
+        let writable = FileManager.default.isWritableFile(atPath: url.path(percentEncoded: false))
+        KazumiLogBuffer.storage("下载目录：可写=\(writable ? "是" : "否")")
+        guard writable else {
             return bail(.notWritable)
         }
 

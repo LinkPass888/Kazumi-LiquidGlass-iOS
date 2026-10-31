@@ -38,11 +38,16 @@ final class DocumentPickerBridge: NSObject, UIDocumentPickerDelegate {
     static func open(
         types: [UTType],
         asCopy: Bool = true,
+        startingDirectory: URL? = nil,
         from host: UIViewController? = nil,
         completion: @escaping Completion
     ) {
         let picker = UIDocumentPickerViewController(forOpeningContentTypes: types, asCopy: asCopy)
-        present(picker, from: host, completion: completion)
+        // 不给起点时，面板会开在「Recents」；那页是空的，「打开」就是灰的——
+        // 点下去什么都不发生、面板也不关（LP 5226/5242）。给一个真实文件夹，
+        // 「打开」一开局就是蓝的。
+        picker.directoryURL = startingDirectory
+        present(picker, from: host, mode: asCopy ? "拷贝" : "原地", completion: completion)
     }
 
     /// 存文件（导出）。调用方先把内容写成临时文件，这里只负责让用户挑位置。
@@ -52,7 +57,7 @@ final class DocumentPickerBridge: NSObject, UIDocumentPickerDelegate {
         completion: @escaping Completion
     ) {
         let picker = UIDocumentPickerViewController(forExporting: [url], asCopy: true)
-        present(picker, from: host, completion: completion)
+        present(picker, from: host, mode: "存储", completion: completion)
     }
 
     // MARK: - 呈现
@@ -60,8 +65,13 @@ final class DocumentPickerBridge: NSObject, UIDocumentPickerDelegate {
     private static func present(
         _ picker: UIDocumentPickerViewController,
         from host: UIViewController?,
+        mode: String,
         completion: @escaping Completion
     ) {
+        // 真机取证：侧载重签有可能把 Info.plist 里的开关抹掉，光看源码猜不出来
+        // （LP 5242：装的是最新版，但「我的 iPhone」里没有 Kazumi 文件夹）。
+        logCapabilities()
+        KazumiLogBuffer.storage("文件面板：已打开（\(mode)模式）")
         guard let host = host ?? topViewController() else {
             completion(.failure(PickerError.noHost))
             return
@@ -72,6 +82,19 @@ final class DocumentPickerBridge: NSObject, UIDocumentPickerDelegate {
         picker.allowsMultipleSelection = false
         picker.shouldShowFileExtensions = true
         host.present(picker, animated: true)
+    }
+
+    /// 把 App 自己看到的文件能力写进运行日志。装完之后一看就知道：是重签抹掉了，
+    /// 还是系统不认。
+    private static func logCapabilities() {
+        let info = Bundle.main.infoDictionary ?? [:]
+        func flag(_ key: String) -> String {
+            (info[key] as? Bool) == true ? "是" : "否"
+        }
+        let types = (info["CFBundleDocumentTypes"] as? [[String: Any]])?.count ?? 0
+        KazumiLogBuffer.storage(
+            "文件面板：iOS \(UIDevice.current.systemVersion)，允许原地打开=\(flag("LSSupportsOpeningDocumentsInPlace"))，文件 App 可见=\(flag("UIFileSharingEnabled"))，声明可打开类型=\(types) 条"
+        )
     }
 
     private static func topViewController() -> UIViewController? {
