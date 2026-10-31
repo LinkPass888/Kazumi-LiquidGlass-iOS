@@ -94,6 +94,8 @@ final class DownloadCenter {
         if let episode = episode(recordKey: recordKey, number: number) {
             if episode.isPlayableOffline { return .downloaded }
             if episode.status == .failed { return .failed }
+            // 记录说下完、文件却不在：当没下过，让格子回到初始样子、允许重下。
+            if episode.status == .completed && episode.fileName == nil { return .normal }
             // LP 5193：只要加进下载就给「在下载」那个符号，不管是在下、排队还是暂停。
             return .downloading(episode.progress)
         }
@@ -533,6 +535,40 @@ final class DownloadCenter {
             }
             return mutable
         }
+        // 记录说下完、盘上却没有文件的：把文件名清掉，当这集没下过。
+        //
+        // 不清的话是一套自相矛盾的状态：下载管理页按 `isPlayableOffline` 算它已下完
+        // （勾还在、存储页数着它），点进去 `localURL` 查了文件返回 nil、退回在线解析，
+        // 想重下又被 `enqueue` 的同一个判据挡住——勾还在、放不了、也重下不了
+        // （Fuck 5263）。清掉文件名之后，勾、计数、重下三处一起回到真话。
+        dropMissingFiles()
+    }
+
+    /// 把「记录说下完、文件却不在」的集清成没下过。返回清掉了多少集。
+    @discardableResult
+    private func dropMissingFiles() -> Int {
+        var dropped = 0
+        for recordIndex in records.indices {
+            let folder = folderURL(for: records[recordIndex])
+            for index in records[recordIndex].episodes.indices {
+                let episode = records[recordIndex].episodes[index]
+                guard episode.status == .completed,
+                      let fileName = episode.fileName,
+                      !FileManager.default.fileExists(
+                        atPath: folder.appending(path: fileName).path
+                      )
+                else { continue }
+                records[recordIndex].episodes[index].fileName = nil
+                records[recordIndex].episodes[index].downloadedBytes = 0
+                records[recordIndex].episodes[index].updatedAt = Date()
+                dropped += 1
+            }
+        }
+        if dropped > 0 {
+            KazumiLogBuffer.storage("下载记录：\(dropped) 集的文件不在，按未下载处理")
+            persist()
+        }
+        return dropped
     }
 
     private var saveTask: Task<Void, Never>?

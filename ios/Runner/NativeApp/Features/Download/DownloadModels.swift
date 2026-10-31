@@ -63,6 +63,12 @@ struct DownloadEpisode: Codable, Identifiable, Sendable, Hashable {
     }
 
     /// 下完并且文件还在才算「可离线播」。
+    ///
+    /// 只看记录不够：换过目录、或者文件被清掉之后，记录还停在「下完」，
+    /// 但盘上什么都没有。那时下载管理页会算它已下完（勾还在）、点进去放不了
+    /// （`localURL` 查了文件，返回 nil，退回在线解析）、想重下又被这里挡住。
+    /// 所以加载记录时就把文件不在的集清成「没下过」（见 `DownloadCenter.load`），
+    /// 让这里重新变成真话。
     var isPlayableOffline: Bool {
         status == .completed && fileName != nil
     }
@@ -117,8 +123,10 @@ struct DownloadRecord: Codable, Identifiable, Sendable {
         episodes.filter(\.isPlayableOffline).map(\.number).sorted()
     }
 
-    /// 总占用空间。
+    /// 总占用空间。只算文件还在的：记录说下完、文件却不在的集不占地方，
+    /// 算进去只会让存储页显示一个永远清不掉的数。
     var totalBytes: Int64 {
-        episodes.filter { $0.status == .completed }.reduce(0) { $0 + $1.totalBytes }
+        episodes.filter { $0.status == .completed && $0.fileName != nil }
+            .reduce(0) { $0 + $1.totalBytes }
     }
 }

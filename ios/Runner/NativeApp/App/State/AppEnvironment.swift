@@ -104,7 +104,9 @@ final class AppEnvironment {
             root.appending(path: "cache", directoryHint: .isDirectory),
             root.appending(path: "images", directoryHint: .isDirectory),
             root.appending(path: "snapshots", directoryHint: .isDirectory),
-            root.appending(path: "downloads", directoryHint: .isDirectory),
+            // 下载目录不再开在 Application Support：「文件」App 看不见那里。
+            // 老位置（root/downloads）由 DownloadDirectoryStore 启动时搬进 Documents/Download。
+            downloadRoot,
         ]
         for directory in directories where !manager.fileExists(atPath: directory.path(percentEncoded: false)) {
             try manager.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -148,6 +150,27 @@ final class AppEnvironment {
     /// 图片缓存目录。
     static var imageCacheRoot: URL {
         storageRoot.appending(path: "images", directoryHint: .isDirectory)
+    }
+
+    /// 下载目录。
+    ///
+    /// 必须放在 Documents 里，不能放 Application Support：「文件」App 只能看见
+    /// Documents，「我的 iPhone」里才会出现以 App 命名的那个文件夹，下完的东西
+    /// 用户才拿得到（LP 5262）。Application Support 下的目录它永远看不见。
+    static var downloadRoot: URL {
+        let docs = (try? FileManager.default.url(
+            for: .documentDirectory,
+            in: .userDomainMask,
+            appropriateFor: nil,
+            create: true
+        )) ?? storageRoot
+        return docs.appending(path: "Download", directoryHint: .isDirectory)
+    }
+
+    /// 老版本的下载目录（Application Support/Kazumi/downloads）。
+    /// 换目录不会自动搬文件，启动时把这里的东西整个搬进 `downloadRoot`。
+    static var legacyDownloadRoot: URL {
+        storageRoot.appending(path: "downloads", directoryHint: .isDirectory)
     }
 
     /// 规则目录（内置规则与订阅规则）。
