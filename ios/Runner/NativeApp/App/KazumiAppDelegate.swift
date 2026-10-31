@@ -16,8 +16,22 @@
 //  要不要出声由会话决定。
 //
 
+import SwiftUI
 import UIKit
 
+/// 应用入口挂在 AppDelegate 上，而不是 SwiftUI 的 `App`。
+///
+/// 原因只有一个：锁屏 / 灵动岛 / 控制中心那张卡被点之后，SpringBoard 要按
+/// `Info.plist` 里的 `UISceneConfigurations` 找一个**真的场景代理**来激活场景。
+/// 用 `@main struct … : App` 时那个代理是 SwiftUI 私有的 `AppSceneDelegate`，
+/// 系统那边拿不到能用的入口，点卡片就只展开、不回 App（LP 5008/5534）。
+///
+/// 之前两次尝试都失败在这条路上，教训写在这里，别再重走：
+///   * `configurationForConnecting` 里返回空白配置 → 路由落到没有对应条目的名字上；
+///   * 原样透传 SwiftUI 的配置 → 真机递归崩（`SwiftUI.AppSceneDelegate` 互调）。
+/// 所以现在什么都不实现，让系统直接读 plist 里那张静态表，
+/// 由 `KazumiSceneDelegate` 自己建窗口（与 main 分支的 FlutterSceneDelegate 等价）。
+@main
 final class KazumiAppDelegate: NSObject, UIApplicationDelegate {
     func application(
         _ application: UIApplication,
@@ -107,3 +121,38 @@ extension KazumiAppDelegate {
     }
 }
 
+
+// MARK: - 场景
+
+/// 场景代理：真正拿 `UIWindow` 把 SwiftUI 视图挂上去的那一层。
+///
+/// 之前 `86fecd3` 那一版里这个类是空壳，于是 `Info.plist` 一旦指向它，
+/// UIKit 就不再走 SwiftUI 的 `WindowGroup`，而空壳又不建窗口——黑屏。
+/// 现在窗口由它自己建、自己 `makeKeyAndVisible()`，两条路都通。
+///
+/// `@objc(KazumiSceneDelegate)` 是给 `Info.plist` 里的类名用的：
+/// 那张表是按 Objective-C 运行时按名字找类的，不加这个注解就找不到。
+@objc(KazumiSceneDelegate)
+final class KazumiSceneDelegate: UIResponder, UIWindowSceneDelegate {
+    var window: UIWindow?
+
+    func scene(
+        _ scene: UIScene,
+        willConnectTo session: UISceneSession,
+        options connectionOptions: UIScene.ConnectionOptions
+    ) {
+        guard let windowScene = scene as? UIWindowScene else { return }
+        let window = UIWindow(windowScene: windowScene)
+        let host = UIHostingController(rootView: KazumiRootView())
+        // 画面自己铺满；背景交给 SwiftUI 的主题色，别让窗口底色在转场时闪一下白。
+        host.view.backgroundColor = .clear
+        window.rootViewController = host
+        self.window = window
+        window.makeKeyAndVisible()
+    }
+
+    func sceneDidBecomeActive(_ scene: UIScene) {
+        // 与 AppDelegate 那条一样：进前台时刷新设置、续上被系统掐掉的东西。
+        NotificationCenter.default.post(name: .kazumiAppDidBecomeActive, object: nil)
+    }
+}

@@ -59,6 +59,24 @@
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
 		<false/>
+		<!-- SpringBoard 响应灵动岛 / 锁屏 / 控制中心那张卡的点击时，要按这张表
+		     找一个真正的场景代理来激活场景。只写名字和类、不写 delegate 类名，
+		     系统判定为残缺配置直接放弃激活——表现就是点卡片只展开、不回 App
+		     （LP 5008 / 5534）。类名与 `KazumiSceneDelegate` 对应。 -->
+		<key>UISceneConfigurations</key>
+		<dict>
+			<key>UIWindowSceneSessionRoleApplication</key>
+			<array>
+				<dict>
+					<key>UISceneConfigurationName</key>
+					<string>Default Configuration</string>
+					<key>UISceneClassName</key>
+					<string>UIWindowScene</string>
+					<key>UISceneDelegateClassName</key>
+					<string>KazumiSceneDelegate</string>
+				</dict>
+			</array>
+		</dict>
 	</dict>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>

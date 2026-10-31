@@ -110,6 +110,10 @@ targets:
             UIWindowSceneSessionRoleApplication:
               - UISceneConfigurationName: Default Configuration
                 UISceneClassName: UIWindowScene
+                # 必须有这一行：SpringBoard 响应灵动岛/锁屏卡片点击时，配置里既没有
+                # delegate 类也没有 storyboard，就判定为残缺配置、直接放弃激活场景，
+                # 表现就是点卡片只展开、不进 App（LP 5008/5534）。
+                UISceneDelegateClassName: KazumiSceneDelegate
         UIStatusBarHidden: false
         UIViewControllerBasedStatusBarAppearance: true
         CADisableMinimumFrameDurationOnPhone: true
