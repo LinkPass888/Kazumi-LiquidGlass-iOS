@@ -84,38 +84,55 @@ struct WebDAVScreen: View {
 
             // 存过了就整组收起来：账密、输入框、按钮全在折区里（LP 2026-10-28）。
             if isCredentialsExpanded {
-                TextField("地址", text: webDAVURLBinding)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .keyboardType(.URL)
-                    .frame(minHeight: 44)
-
-                TextField("用户名", text: webDAVUserBinding)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .frame(minHeight: 44)
+                // LP 5375/5377：每行左边有标题，框里同义的灰字删掉。
+                HStack(spacing: 8) {
+                    Text("服务器地址")
+                        .frame(width: 88, alignment: .leading)
+                    Spacer(minLength: 8)
+                    TextField("", text: webDAVURLBinding)
+                        .multilineTextAlignment(.trailing)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .keyboardType(.URL)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                }
 
                 HStack(spacing: 8) {
+                    Text("用户名")
+                        .frame(width: 88, alignment: .leading)
+                    Spacer(minLength: 8)
+                    TextField("", text: webDAVUserBinding)
+                        .multilineTextAlignment(.trailing)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                }
+
+                HStack(spacing: 8) {
+                    Text("密码")
+                        .frame(width: 88, alignment: .leading)
+                    Spacer(minLength: 8)
                     Group {
                         if isPasswordVisible {
-                            TextField("密码", text: webDAVPasswordBinding)
+                            TextField("", text: webDAVPasswordBinding)
                         } else {
-                            SecureField("密码", text: webDAVPasswordBinding)
+                            SecureField("", text: webDAVPasswordBinding)
                         }
                     }
+                    .multilineTextAlignment(.trailing)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
+                    .frame(maxWidth: .infinity, alignment: .trailing)
 
                     Button {
                         isPasswordVisible.toggle()
                     } label: {
                         Image(systemName: isPasswordVisible ? "eye.slash" : "eye")
-                            .frame(width: 44, height: 44)
+                            .frame(width: 44)
                     }
                     .buttonStyle(.borderless)
                     .accessibilityLabel(isPasswordVisible ? "隐藏密码" : "显示密码")
                 }
-                .frame(minHeight: 44)
 
                 // 按钮样式跟 Bangumi 那颗一模一样（LP 2026-10-28）：高 36、胶囊、15 号。
                 Button {
@@ -123,7 +140,7 @@ struct WebDAVScreen: View {
                 } label: {
                     Text("保存并测试")
                         .font(.system(size: 15))
-                        .frame(maxWidth: .infinity, minHeight: 36)
+                        .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(isBusy || !hasCredentials)
@@ -174,16 +191,18 @@ struct WebDAVScreen: View {
                     Text("WebDAV")
                         .foregroundStyle(Color.primary)
                     Spacer(minLength: 8)
-                    Text(serverSummary)
-                        .foregroundStyle(Color.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
+                    // 展开时不显示摘要，下面框里就是内容（LP 5396）。
+                    if !isCredentialsExpanded {
+                        Text(serverSummary)
+                            .foregroundStyle(Color.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
                     Image(systemName: "chevron.down")
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(Color.secondary)
                         .rotationEffect(.degrees(isCredentialsExpanded ? 180 : 0))
                 }
-                .frame(minHeight: 44)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)

@@ -98,67 +98,67 @@ struct BangumiSyncScreen: View {
     private var accountSection: some View {
         Section {
             Group {
-                VStack(alignment: .leading, spacing: 0) {
-                    Button {
-                        isTokenExpanded.toggle()
-                    } label: {
-                        HStack(spacing: 8) {
-                            Text("Access Token")
-                                .foregroundStyle(Color.primary)
-                            Spacer(minLength: 8)
+                // 折叠钮自己是一行，展开的框和按钮是它下面的兄弟行——跟 WebDAV 一样，
+                // Form 才会在行与行之间画那根灰线（LP 5402 / 5407）。
+                Button {
+                    isTokenExpanded.toggle()
+                } label: {
+                    HStack(spacing: 8) {
+                        Text("Access Token")
+                            .foregroundStyle(Color.primary)
+                        Spacer(minLength: 8)
+                        // 展开时不显示摘要，下面框里就是内容（LP 5396）。
+                        if !isTokenExpanded {
                             Text(tokenSummary)
                                 .foregroundStyle(Color.secondary)
                                 .lineLimit(1)
                                 .truncationMode(.middle)
-                            Image(systemName: "chevron.down")
-                                .font(.system(size: 13, weight: .semibold))
-                                .foregroundStyle(Color.secondary)
-                                .rotationEffect(.degrees(isTokenExpanded ? 180 : 0))
                         }
-                        .frame(minHeight: 44)
-                        .contentShape(Rectangle())
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(Color.secondary)
+                            .rotationEffect(.degrees(isTokenExpanded ? 180 : 0))
                     }
-                    .buttonStyle(.plain)
-                    .disabled(busy)
-                    .accessibilityLabel("Access Token")
-                    .accessibilityValue(tokenSummary)
-                    .accessibilityHint(isTokenExpanded ? "收起令牌" : "展开令牌")
-
-                    if isTokenExpanded {
-                        HStack(spacing: 8) {
-                            Group {
-                                if isTokenVisible {
-                                    TextField("Access Token", text: $tokenText)
-                                } else {
-                                    SecureField("Access Token", text: $tokenText)
-                                }
-                            }
-                            .autocorrectionDisabled()
-                            .textInputAutocapitalization(.never)
-                            .disabled(busy)
-                            .onChange(of: tokenText) {
-                                tokenError = nil
-                                tokenStatus = nil
-                            }
-
-                            Button {
-                                isTokenVisible.toggle()
-                            } label: {
-                                Image(systemName: isTokenVisible ? "eye.slash" : "eye")
-                                    .frame(width: 44, height: 44)
-                            }
-                            .buttonStyle(.borderless)
-                            .disabled(busy)
-                            .accessibilityLabel(isTokenVisible ? "隐藏访问令牌" : "显示访问令牌")
-                        }
-                        .frame(minHeight: 44)
-                    }
+                    .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
+                .disabled(busy)
+                .accessibilityLabel("Access Token")
+                .accessibilityValue(tokenSummary)
+                .accessibilityHint(isTokenExpanded ? "收起令牌" : "展开令牌")
 
-                // 存过令牌就整组收起，两颗按钮也一起收进去（LP 2026-10-28）：
-                // 平时只留上面那一行摘要，不摆着按钮。
                 if isTokenExpanded {
-                    // 两颗按钮同一行、一样大：左「获取授权码」，右「保存并测试」（LP 2026-10-28）。
+                    // 框自己一行：这一行不加标签，上面那行已经是「Access Token」。
+                    HStack(spacing: 8) {
+                        Group {
+                            if isTokenVisible {
+                                TextField("", text: $tokenText)
+                            } else {
+                                SecureField("", text: $tokenText)
+                            }
+                        }
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+                        .disabled(busy)
+                        // 空的时候框会被挤成 0 宽，眼睛就掉到下一行去了。
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .onChange(of: tokenText) {
+                            tokenError = nil
+                            tokenStatus = nil
+                        }
+
+                        Button {
+                            isTokenVisible.toggle()
+                        } label: {
+                            Image(systemName: isTokenVisible ? "eye.slash" : "eye")
+                                .frame(width: 44)
+                        }
+                        .buttonStyle(.borderless)
+                        .disabled(busy)
+                        .accessibilityLabel(isTokenVisible ? "隐藏访问令牌" : "显示访问令牌")
+                    }
+
+                    // 两颗按钮同一行、一样大：左「获取授权码」，右「保存并测试」。
                     HStack(spacing: 12) {
                         Button {
                             openTokenPage()
@@ -168,7 +168,7 @@ struct BangumiSyncScreen: View {
                                 Image(systemName: "arrow.up.right")
                                     .font(.system(size: 13, weight: .semibold))
                             }
-                            .frame(maxWidth: .infinity, minHeight: 36)
+                            .frame(maxWidth: .infinity)
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.bordered)
@@ -178,12 +178,11 @@ struct BangumiSyncScreen: View {
                             saveToken()
                         } label: {
                             Text(action == .verify ? "正在测试…" : "保存并测试")
-                                .frame(maxWidth: .infinity, minHeight: 36)
+                                .frame(maxWidth: .infinity)
                         }
                         .buttonStyle(.borderedProminent)
                     }
                     .disabled(busy)
-                    .frame(minHeight: 36)
                 }
             }
             // Colo 3532：Form 行底色显式取 groupedRow，不依赖系统动态色。

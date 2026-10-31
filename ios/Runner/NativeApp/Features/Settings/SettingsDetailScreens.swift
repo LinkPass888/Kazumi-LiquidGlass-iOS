@@ -1043,70 +1043,69 @@ struct NetworkSettingsScreen: View {
             }
 
             // 代理这一段照 main（LP 5342）：开关一行，地址一整串。
-            // 不单开一页（LP 5354）——跟 Bangumi 同步那个 Access Token 一样
-            // 折在原地，默认折着，折着时右边露一行当前地址。
+            // 不单开一页（LP 5354）。折叠照 WebDAV 那个 credentialsRow：
+            // 折叠行只装按钮，展开的字段是同一组的兄弟行——拿 VStack 把
+            // 「按钮 + 展开内容」包在一起，在 Form 里就是同一个行，又高又窄又抖（Colo 5365）。
             Section {
                 Group {
                     Toggle("启用代理", isOn: proxyEnabledBinding)
 
-                    VStack(alignment: .leading, spacing: 0) {
-                        Button {
-                            withAnimation { isProxyConfigExpanded.toggle() }
-                        } label: {
-                            HStack(spacing: 8) {
-                                Text("代理配置")
-                                    .foregroundStyle(Color.primary)
-                                Spacer(minLength: 8)
-                                Text(proxyConfigSummary)
+                    proxyConfigRow
+
+                    if isProxyConfigExpanded {
+                        // LP 5372 / 5384：左边标题，值靠左；提示跟在同一行里，
+                        // 跟在 http 右边，不再单独占一行（单独一行会把下面的行顶下去）。
+                        HStack(spacing: 8) {
+                            Text("代理地址")
+                                .frame(width: 72, alignment: .leading)
+
+                            // `http://` 就摆在框里（LP 5355），靠左；提示跟在它右边、
+                            // 同一行里，不单独占一行（LP 5384 / 5391）。
+                            TextField("请填入代理地址", text: $proxyAddressText)
+                                .multilineTextAlignment(.leading)
+                                .keyboardType(.URL)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+
+                            if let proxyAddressError {
+                                Text(proxyAddressError)
                                     .font(.footnote)
-                                    .foregroundStyle(Color.secondary)
-                                    .lineLimit(1)
-                                    .truncationMode(.middle)
-                                Image(systemName: "chevron.down")
-                                    .font(.system(size: 13, weight: .semibold))
-                                    .foregroundStyle(Color.secondary)
-                                    .rotationEffect(.degrees(isProxyConfigExpanded ? 180 : 0))
+                                    .foregroundStyle(.red)
+                                    .layoutPriority(1)
                             }
-                            .frame(minHeight: 44)
-                            .contentShape(Rectangle())
                         }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("代理配置")
-                        .accessibilityValue(proxyConfigSummary)
-                        .accessibilityHint(isProxyConfigExpanded ? "收起代理配置" : "展开代理配置")
 
-                        if isProxyConfigExpanded {
-                            VStack(alignment: .leading, spacing: 4) {
-                                TextField("代理地址", text: $proxyAddressText)
-                                    .keyboardType(.URL)
-                                    .textInputAutocapitalization(.never)
-                                    .autocorrectionDisabled()
-                                if let proxyAddressError {
-                                    Text(proxyAddressError)
-                                        .font(.footnote)
-                                        .foregroundStyle(.red)
-                                }
-                                TextField("测试地址", text: $proxyTestText)
-                                    .keyboardType(.URL)
-                                    .textInputAutocapitalization(.never)
-                                    .autocorrectionDisabled()
-                            }
-                            .padding(.top, 4)
-                            .padding(.bottom, 8)
+                        HStack(spacing: 8) {
+                            Text("测试地址")
+                                .frame(width: 72, alignment: .leading)
 
-                            Button {
-                                saveAndTestProxy()
-                            } label: {
-                                HStack {
-                                    Text("保存并测试")
-                                        .frame(maxWidth: .infinity)
-                                    if isProxyTesting {
-                                        ProgressView()
-                                    }
-                                }
+                            TextField("https://www.google.com", text: $proxyTestText)
+                                .multilineTextAlignment(.leading)
+                                .keyboardType(.URL)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+                        }
+
+                        // LP 5370：测试钮也在折区里，跟两个框一起收，折着时只留那一行摘要。
+                        Button {
+                            saveAndTestProxy()
+                        } label: {
+                            Text("保存并测试")
+                                .font(.system(size: 15))
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(isProxyTesting)
+
+                        if isProxyTesting {
+                            HStack(spacing: 6) {
+                                ProgressView()
+                                    .controlSize(.small)
+                                Text("测试中…")
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                                Spacer(minLength: 0)
                             }
-                            .disabled(isProxyTesting)
-                            .padding(.bottom, 4)
                         }
                     }
                 }
@@ -1118,6 +1117,9 @@ struct NetworkSettingsScreen: View {
                 Text(proxyState)
                     .foregroundStyle(.secondary)
             }
+            // 折起来、摊开只换高度，别给高度加隐式动画——那一行位置没动，
+            // 抖是动画抖的（WebDAV 那段同款）。
+            .animation(nil, value: isProxyConfigExpanded)
         }
         .kazumiSettingsDetail("网络设置")
         .onAppear { prefillProxyFields() }
@@ -1188,11 +1190,47 @@ struct NetworkSettingsScreen: View {
         return "播放内核和 App 内请求都走 \(url)"
     }
 
-    /// 折着时右边那一句：存过就写地址，没存过写「未设置」。
+    /// 折叠行本身：左边「代理配置」，右边当前地址，一颗会转的箭头。
+    /// 这个 VStack 里只装按钮——展开的字段是外面的兄弟行（照 WebDAV 的 credentialsRow）。
+    private var proxyConfigRow: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Button {
+                isProxyConfigExpanded.toggle()
+            } label: {
+                HStack(spacing: 8) {
+                    Text("代理配置")
+                        .foregroundStyle(Color.primary)
+                    Spacer(minLength: 8)
+                    // 展开时不显示摘要：下面框里就是内容，这行只留箭头（LP 5396）。
+                    if !isProxyConfigExpanded {
+                        Text(proxyConfigSummary)
+                            .foregroundStyle(Color.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            // 大字号或窄屏时让摘要先拿到要的宽度，别第一个被截。
+                            .layoutPriority(1)
+                    }
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Color.secondary)
+                        .rotationEffect(.degrees(isProxyConfigExpanded ? 180 : 0))
+                }
+                // 44 要留着：Form 一行本来就 44，这是给整行做的点击区（Colo 5365）。
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("代理配置")
+            .accessibilityValue(proxyConfigSummary)
+            .accessibilityHint(isProxyConfigExpanded ? "收起代理地址" : "展开代理地址")
+        }
+    }
+
+    /// 折着时右边那一句：存过就写 `host:port`，没存过写「未填写」（LP 5395）。
+    /// 不带 `http://`——这个代理只支持 http，scheme 是常数（Colo 5368）。
     private var proxyConfigSummary: String {
         settings.proxyUrl.isEmpty
-            ? "未设置"
-            : (ProxyURL.formatted(settings.proxyUrl) ?? settings.proxyUrl)
+            ? "未填写"
+            : (ProxyURL.hostPort(settings.proxyUrl) ?? settings.proxyUrl)
     }
 
     /// 输入框默认值（LP 5355 / 5358）：代理地址先摆上 `http://`，测试地址先摆上
@@ -1214,19 +1252,19 @@ struct NetworkSettingsScreen: View {
     /// 照 main 的 `saveAndTest`：校验 → 存地址与测试地址 → 清「已配置」→
     /// 开开关 → 真发一次请求；通了才把「已配置」置回去，不通就把开关关回去。
     private func saveAndTestProxy() {
-        let url = proxyAddressText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let typed = proxyAddressText.trimmingCharacters(in: .whitespacesAndNewlines)
         proxyAddressError = nil
-        // 地址框默认就摆着 `http://`（LP 5355），只留着这个壳的时候不该报
-        // 「格式错误」——那会让人以为自己填错了，实际是还没填。
-        var bare = url
+        // 框里默认摆着 `http://`（LP 5355），只留着这个壳时不该报「格式错误」
+        // ——那会让人以为自己填错了，实际是还没填。
+        var bare = typed
         for prefix in ["http://", "https://"] where bare.lowercased().hasPrefix(prefix) {
             bare.removeFirst(prefix.count)
         }
         if bare.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            proxyAddressError = "请输入代理地址"
+            proxyAddressError = "请填入代理地址"
             return
         }
-        guard ProxyURL.parse(url) != nil else {
+        guard let url = ProxyURL.formatted(typed) else {
             proxyAddressError = "格式错误，请使用 http://host:port 格式"
             return
         }

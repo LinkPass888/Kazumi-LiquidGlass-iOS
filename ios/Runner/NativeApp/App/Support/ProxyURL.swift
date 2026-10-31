@@ -40,6 +40,13 @@ enum ProxyURL {
         return "http://\(parsed.host):\(parsed.port)"
     }
 
+    /// 只出 `host:port`，给设置里折着时右边那一句摘要用。
+    /// 这个代理只支持 http，scheme 永远是同一个，写出来不携带信息（Colo 5368）。
+    static func hostPort(_ text: String) -> String? {
+        guard let parsed = parse(text) else { return nil }
+        return "\(parsed.host):\(parsed.port)"
+    }
+
     /// 拿这个代理去请求一次 `target`，通不通。
     ///
     /// 照 main 的 `saveAndTest`：用一份走代理的请求去 GET 测试地址，
