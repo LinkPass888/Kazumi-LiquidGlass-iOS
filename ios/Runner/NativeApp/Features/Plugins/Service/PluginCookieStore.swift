@@ -15,16 +15,28 @@ import Foundation
 final class PluginCookieStore: @unchecked Sendable {
     static let shared = PluginCookieStore()
 
-    struct Cookie: Sendable, Equatable {
+    struct Cookie: Sendable, Equatable, Codable {
         var name: String
         var value: String
         var domain: String
         var path: String
     }
 
+    /// 落盘用：Cookie 与 UA 一起存，重启后登录态还在。
+    private struct Snapshot: Codable {
+        var jars: [String: [Cookie]]
+        var userAgents: [String: String]
+    }
+
+    private static let storageKey = "kazumi.rule.cookies.v1"
+
     private let lock = NSLock()
     private var jars: [String: [Cookie]] = [:]
     private var userAgents: [String: String] = [:]
+
+    private init() {
+        restore()
+    }
 
     /// 与 cookie_jar 的 saveFromResponse 对齐：同名同域的 Cookie 覆盖旧值。
     func saveFromWebView(pluginName: String, pageUrl: String, cookieString: String, userAgent: String?) {
@@ -54,10 +66,61 @@ final class PluginCookieStore: @unchecked Sendable {
         }
         jars[pluginName] = jar
         lock.unlock()
+        persist()
 
         KazumiLog.plugin.info(
             "[PluginCookieStore] Saved \(parsed.count) cookies for \(pluginName, privacy: .public)"
         )
+    }
+
+    /// 登录 WebView 用完把整份 Cookie 交给这里：网络层的 Cookie 对象带真实的 domain/path，
+    /// 比从 document.cookie 里拼更准，登录态才认得出来（LP 5427）。
+    func saveFromLoginWebView(
+        pluginName: String,
+        cookies: [Cookie],
+        userAgent: String?
+    ) {
+        guard !cookies.isEmpty || userAgent != nil else { return }
+        lock.lock()
+        if let userAgent {
+            let trimmed = userAgent.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty { userAgents[pluginName] = trimmed }
+        }
+        var jar = jars[pluginName] ?? []
+        for cookie in cookies {
+            if let index = jar.firstIndex(where: {
+                $0.name == cookie.name && $0.domain == cookie.domain && $0.path == cookie.path
+            }) {
+                jar[index] = cookie
+            } else {
+                jar.append(cookie)
+            }
+        }
+        jars[pluginName] = jar
+        lock.unlock()
+        persist()
+        KazumiLog.plugin.info(
+            "[PluginCookieStore] Login saved \(cookies.count) cookies for \(pluginName, privacy: .public)"
+        )
+    }
+
+    // MARK: - 落盘
+
+    /// 登录态要跨重启（LP 5427「解决部分规则需要登录才能播放」）：
+    /// 每条规则的 Cookie 与 UA 一起写进 UserDefaults，启动时读回来。
+    private func persist() {
+        lock.lock()
+        let snapshot = Snapshot(jars: jars, userAgents: userAgents)
+        lock.unlock()
+        guard let data = try? JSONEncoder().encode(snapshot) else { return }
+        UserDefaults.standard.set(data, forKey: Self.storageKey)
+    }
+
+    private func restore() {
+        guard let data = UserDefaults.standard.data(forKey: Self.storageKey),
+              let snapshot = try? JSONDecoder().decode(Snapshot.self, from: data) else { return }
+        jars = snapshot.jars
+        userAgents = snapshot.userAgents
     }
 
     /// 解析 `a=b; c=d` 形式的字符串（document.cookie 的格式）。
@@ -115,6 +178,7 @@ final class PluginCookieStore: @unchecked Sendable {
         jars[pluginName] = nil
         userAgents[pluginName] = nil
         lock.unlock()
+        persist()
     }
 
     func clearAll() {
@@ -122,5 +186,6 @@ final class PluginCookieStore: @unchecked Sendable {
         jars.removeAll()
         userAgents.removeAll()
         lock.unlock()
+        persist()
     }
 }

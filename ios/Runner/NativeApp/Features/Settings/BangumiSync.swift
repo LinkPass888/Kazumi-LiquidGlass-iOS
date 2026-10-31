@@ -78,11 +78,20 @@ final class BangumiSyncEngine {
     init(settings: SettingsStore, library: LibraryStore) {
         self.settings = settings
         self.library = library
+        // 启动时把存下来的用户名接回来（LP 5429）：它跟令牌一样属于账号的一部分，
+        // 不能在重启后退回「已保存」——那等于让用户以为登录没了。
+        self.username = settings.bangumiUsername.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// 是否已经验证过连接。
+    /// 这次运行里服务器认过这个令牌。还是「连没连上」的唯一判据，
+    /// 只是界面不再拿它决定要不要显示用户名（见 `hasSavedAccount`）。
     var initialized: Bool {
         verifiedToken != nil && !username.isEmpty
+    }
+
+    /// 存着令牌、也存着用户名：算已经登录过的账号，界面照用户名显示（LP 5429）。
+    var hasSavedAccount: Bool {
+        configured && !username.isEmpty
     }
 
     /// 配置里有没有令牌（没验证过也算配置过）。
@@ -107,7 +116,8 @@ final class BangumiSyncEngine {
             lastError = nil
         } catch {
             verifiedToken = nil
-            username = ""
+            // 名字是账号的一部分，验证失败不清掉它：清了界面就退回「已保存」。
+            username = settings.bangumiUsername.trimmingCharacters(in: .whitespacesAndNewlines)
             lastError = Self.describeError(error)
         }
     }
@@ -130,7 +140,7 @@ final class BangumiSyncEngine {
         } catch {
             if token == settings.bangumiAccessToken {
                 verifiedToken = nil
-                username = ""
+                username = settings.bangumiUsername.trimmingCharacters(in: .whitespacesAndNewlines)
                 lastError = Self.describeError(error)
             }
             throw error

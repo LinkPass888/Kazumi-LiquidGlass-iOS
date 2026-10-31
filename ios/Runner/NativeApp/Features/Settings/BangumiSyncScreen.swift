@@ -197,13 +197,16 @@ struct BangumiSyncScreen: View {
 
     /// 折起来那一行右边写什么：连着就写用户名，存过就写「已保存」，没存过写「未填写」。
     private var tokenSummary: String {
-        if engine.initialized { return engine.username.isEmpty ? "已连接" : engine.username }
+        // 用户名存下来就一直显示（LP 5429），只有真没登录过才说「已保存」。
+        if engine.initialized || engine.hasSavedAccount { return engine.username }
         if configured { return "已保存" }
         return "未填写"
     }
 
     private var accountHint: String {
         if engine.initialized { return "已连接 · \(engine.username)" }
+        // 重启后还没验证过，但用户名存着：照账号显示，不说「尚未验证」（LP 5429）。
+        if engine.hasSavedAccount { return "已登录 · \(engine.username)" }
         if configured { return "令牌已保存，尚未验证" }
         return "使用 Access Token 授权，令牌只存在本机"
     }

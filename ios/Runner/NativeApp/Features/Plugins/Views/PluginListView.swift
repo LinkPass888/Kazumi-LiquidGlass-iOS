@@ -19,6 +19,8 @@ struct PluginListView: View {
     /// 新建规则：推入编辑器并带上模板。
     @State private var isShowingNewRule = false
     @State private var selectedRule: Plugin?
+    /// 正在登录站点的规则（LP 5427）。
+    @State private var loginRule: Plugin?
     @State private var pendingDeletion: Plugin?
     /// 批量删除的二次确认：确认前一条都不删，底下的计数也不跟着跳。
     @State private var pendingBatchDeletion = false
@@ -204,6 +206,9 @@ struct PluginListView: View {
         .navigationDestination(isPresented: $isShowingNewRule) {
             PluginEditorView(original: Plugin.template(apiLevel: KazumiAppInfo.ruleAPILevel))
         }
+        .sheet(item: $loginRule) { plugin in
+            RuleLoginScreen(plugin: plugin)
+        }
         .sheet(isPresented: $isShowingImportSheet) {
             PluginImportSheet { summary in
                 await applyImport(summary)
@@ -311,20 +316,17 @@ struct PluginListView: View {
             } label: {
                 Label("分享规则", systemImage: "square.and.arrow.up")
             }
+            // 上移/下移去掉了（LP 5427）：规则顺序在列表里直接拖动就有，菜单里重复。
             Divider()
-            Button {
-                moveUp(plugin)
-            } label: {
-                Label("上移", systemImage: "arrow.up")
+            // 需要登录才能播的规则：在 App 里打开站点登录，Cookie 留给规则用（LP 5427）。
+            if !plugin.baseUrl.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Button {
+                    loginRule = plugin
+                } label: {
+                    Label("登录", systemImage: "person.crop.circle")
+                }
+                Divider()
             }
-            .disabled(index(of: plugin) == 0)
-            Button {
-                moveDown(plugin)
-            } label: {
-                Label("下移", systemImage: "arrow.down")
-            }
-            .disabled(index(of: plugin) == plugins.pluginList.count - 1)
-            Divider()
             Button(role: .destructive) {
                 pendingDeletion = plugin
             } label: {
@@ -341,23 +343,7 @@ struct PluginListView: View {
 
     private var footerText: String {
         let updatable = plugins.updatablePluginCount
-        return "共 \(plugins.pluginList.count) 条规则\(updatable > 0 ? "，\(updatable) 条可更新" : "")。行内菜单的「上移 / 下移」可以调整优先级。"
-    }
-
-    private func index(of plugin: Plugin) -> Int {
-        plugins.pluginList.firstIndex { $0.id == plugin.id } ?? 0
-    }
-
-    private func moveUp(_ plugin: Plugin) {
-        let current = index(of: plugin)
-        guard current > 0 else { return }
-        move(from: IndexSet(integer: current), to: current - 1)
-    }
-
-    private func moveDown(_ plugin: Plugin) {
-        let current = index(of: plugin)
-        guard current < plugins.pluginList.count - 1 else { return }
-        move(from: IndexSet(integer: current), to: current + 2)
+        return "共 \(plugins.pluginList.count) 条规则\(updatable > 0 ? "，\(updatable) 条可更新" : "")。"
     }
 
     /// 单条规则检查更新。
