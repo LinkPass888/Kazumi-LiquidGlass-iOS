@@ -37,9 +37,16 @@ final class PlayerSurfaceModel {
     private(set) var wantsPlaying = false
     /// 内核最后一次报的 pause。系统中断、退后台这些外部暂停走它，不是用户按的。
     private(set) var corePaused = false
+    /// 内核最后一次报的 idle：没暂停却没在走，就是缓冲被打空（underrun）。
+    private(set) var coreIdle = false
     /// 正在缓冲 / 卡住：想播、没在播、内核也没被暂停。界面用它显示加载符号，
     /// 而不是暂停图标和控制栏。
-    var isStalled: Bool { wantsPlaying && !isPlaying && !corePaused }
+    /// 缓冲/等数据：想播、没暂停、内核却在 idle。
+    ///
+    /// 原来写成 `wantsPlaying && !isPlaying && !corePaused`，但「没暂停却没走」那档会把
+    /// `isPlaying` 设成 true，条件永远不成立——登录源播到一半一顿一顿、加载圈却从不出来
+    /// （LP 5536 的日志里「暂停=否 空闲=是」反复出现）。改用 `coreIdle` 判断（Fuck 5538）。
+    var isStalled: Bool { wantsPlaying && !corePaused && coreIdle }
     var isReady = false
     /// 这一集的第一帧是不是已经画上屏了。
     var hasFirstFrame = false
@@ -310,9 +317,13 @@ final class PlayerSurfaceModel {
         } else if snapshot.isPaused {
             isPlaying = false
         } else {
-            // 没暂停却没走：意图还在就仍然算「在播」，界面看 isStalled 转圈。
+            // 没暂停却没走：意图还在就仍然算「在播」（画中画、正在播放都用这个口径）。
+            // 缓冲那一下由 `coreIdle` + `isStalled` 单独表达，不改 `isPlaying`（Fuck 5538）。
             isPlaying = wantsPlaying
         }
+        // 内核「没暂停但也没在走」= 缓冲/等数据。`isStalled` 靠它算，
+        // 不能靠 `isPlaying`：上面那一档会把缓冲态的 isPlaying 也设成 true。
+        coreIdle = snapshot.isIdle
         if snapshot.videoWidth > 0, snapshot.videoHeight > 0 {
             let size = CGSize(width: snapshot.videoWidth, height: snapshot.videoHeight)
             if videoSize != size { videoSize = size }
@@ -565,7 +576,20 @@ struct MPVPlayerContainer: UIViewRepresentable {
     let danmakuPlaybackRate: Double
     /// 弹幕顶部留白：横屏时让开顶栏，竖屏为 0。
     let danmakuTopInset: CGFloat
+    /// 低内存模式的档位（设置页选的那一档，LP 5547 / main 的 `LowMemoryMode`）。
+    let lowMemoryMode: LowMemoryMode
+    /// 硬件解码开关（LP 5549）。
+    let hardwareDecodeEnabled: Bool
     let surface: PlayerSurfaceModel
+
+    /// 按档位和当前网络算出这一集该给的缓存字节数。
+    private func cacheSizeForPolicy() -> Int {
+        PlaybackCachePolicy.bytes(
+            mode: lowMemoryMode,
+            isMetered: MeteredNetworkMonitor.shared.isMetered,
+            isLocalPlayback: url.isFileURL
+        )
+    }
 
     /// 画面填充方式（对应原版 PlayerAspectRatio 的 BoxFit）。
     enum MPVFillMode {
@@ -580,6 +604,21 @@ struct MPVPlayerContainer: UIViewRepresentable {
     func makeUIView(context: Context) -> MPVHostView {
         let host = MPVHostView()
         let engine = MPVEngine()
+        // 缓存大小在 `start()` 之前定下来：低内存模式开着就 2 MiB，否则 1500 MiB。
+        // 本地文件不按流量算（main 的 `isLocalPlayback`），所以文件播放永远走完整缓存。
+        engine.applyCacheSize(cacheSizeForPolicy())
+        engine.hardwareDecodeEnabled = hardwareDecodeEnabled
+        // 播到一半 Wi-Fi 换成移动数据（或反过来）时，缓存档位要跟着换，不用重开这一集。
+        // 「跟随网络」这一档在两种网络下取的值不一样，靠这个回调补上。
+        MeteredNetworkMonitor.shared.onChange = { [engine, mode = lowMemoryMode, isLocal = url.isFileURL] in
+            engine.applyCacheSize(
+                PlaybackCachePolicy.bytes(
+                    mode: mode,
+                    isMetered: MeteredNetworkMonitor.shared.isMetered,
+                    isLocalPlayback: isLocal
+                )
+            )
+        }
         surface.hostView = host
         engine.glView = host.glView
         host.glView.engine = engine
@@ -628,6 +667,9 @@ struct MPVPlayerContainer: UIViewRepresentable {
     func updateUIView(_ uiView: MPVHostView, context: Context) {
         context.coordinator.surface = surface
         surface.engine = context.coordinator.engine
+        // 设置页改了档位、或者网络在 Wi-Fi 和移动数据之间换了，这一集当场换缓存大小，
+        // 不用重开（main 的 `_onChanged` 也是立刻 apply）。
+        context.coordinator.engine?.applyCacheSize(cacheSizeForPolicy())
         // 视频尺寸 / 填充方式 / 顶部留白变了，弹幕矩形跟着重算。
         uiView.updateVideoLayout(
             videoSize: surface.videoSize,
@@ -660,6 +702,8 @@ struct MPVPlayerContainer: UIViewRepresentable {
         uiView.glView.engine = nil
         coordinator.engine?.stop()
         coordinator.engine = nil
+        // 播放器没了就别再把回调挂在单例上。
+        MeteredNetworkMonitor.shared.onChange = nil
     }
 
     @MainActor

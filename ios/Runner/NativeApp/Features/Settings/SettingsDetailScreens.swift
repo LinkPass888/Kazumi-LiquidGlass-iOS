@@ -134,6 +134,16 @@ struct PlayerSettingsScreen: View {
                             }
                         }
                     }
+                    Toggle("硬件解码", isOn: hardwareDecodeBinding)
+                    row {
+                        // main 的「低内存模式」三档（LP 5547）。开着就把解复用缓存从
+                        // 1500 MiB 降到 2 MiB，省内存和流量，代价是慢速源更容易缓冲。
+                        Picker("低内存模式", selection: lowMemoryModeBinding) {
+                            ForEach(LowMemoryMode.allCases) { mode in
+                                Text(mode.label).tag(mode)
+                            }
+                        }
+                    }
                 }
                 .listRowBackground(KazumiPalette.groupedRow(for: colorScheme))
             }
@@ -236,6 +246,20 @@ struct PlayerSettingsScreen: View {
         Binding(
             get: { settings.brightnessVolumeGesture },
             set: { settings.brightnessVolumeGesture = $0 }
+        )
+    }
+
+    private var hardwareDecodeBinding: Binding<Bool> {
+        Binding(
+            get: { settings.hardwareDecodeEnabled },
+            set: { settings.hardwareDecodeEnabled = $0 }
+        )
+    }
+
+    private var lowMemoryModeBinding: Binding<LowMemoryMode> {
+        Binding(
+            get: { settings.lowMemoryMode },
+            set: { settings.lowMemoryMode = $0 }
         )
     }
 

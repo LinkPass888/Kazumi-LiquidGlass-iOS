@@ -173,6 +173,10 @@ enum SettingsKey {
     static let brightnessVolumeGesture = "brightnessVolumeGesture"
     /// 隐身模式（不保留观看记录），沿用原版 `SettingsKeys.privateMode` 的键名，默认关闭。
     static let privateMode = "privateMode"
+    /// 低内存模式三档（跟随网络 / 始终开启 / 始终关闭），沿用 main 的 `lowMemoryPolicy`。
+    static let lowMemoryPolicy = "lowMemoryPolicy"
+    /// 硬件解码开关（LP 5549）。main 那边存的是解码器名字，我们只做开关，存布尔。
+    static let hardwareDecodeEnabled = "hardwareDecodeEnabled"
     /// AniSkip 片头片尾时间轴，沿用原版 `SettingsKeys.aniSkipLookup` 的键名，默认开启。
     static let aniSkipLookup = "aniSkipLookup"
     /// 控制栏自动隐藏前的停留时长（毫秒），沿用原版
@@ -477,6 +481,19 @@ final class SettingsStore {
     /// 隐身模式：不写入观看记录（对应原版「隐身模式」开关，默认关闭）。
     var privateMode: Bool {
         didSet { persist(privateMode, SettingsKey.privateMode) }
+    }
+
+    /// 硬件解码开关。开 = `auto-safe`（与 main 的默认档一致，LP 5549/5551），
+    /// 关 = 纯软解。花屏那种情况只出现在更早的直通链路，先跟 main 走。
+    var hardwareDecodeEnabled: Bool {
+        didSet { persist(hardwareDecodeEnabled, SettingsKey.hardwareDecodeEnabled) }
+    }
+
+    /// 低内存模式：决定解复用缓存是 1500 MiB 还是 2 MiB（对齐 main，LP 5547）。
+    ///
+    /// 「跟随网络」是默认档，只在按流量计费的网络下开；本地文件永远不降。
+    var lowMemoryMode: LowMemoryMode {
+        didSet { persist(lowMemoryMode.rawValue, SettingsKey.lowMemoryPolicy) }
     }
 
     /// 顶部快进按钮的跳转秒数（对应原版 `buttonSkipTime`，默认 80 秒）。
@@ -829,6 +846,12 @@ final class SettingsStore {
         resumeOnForeground = Self.read(defaults, SettingsKey.resumeOnForeground, true)
         brightnessVolumeGesture = Self.read(defaults, SettingsKey.brightnessVolumeGesture, true)
         privateMode = Self.read(defaults, SettingsKey.privateMode, false)
+        hardwareDecodeEnabled = Self.read(defaults, SettingsKey.hardwareDecodeEnabled, true)
+        // 老版本只写过 `lowMemoryMode` 那个布尔。它不是这里的三档键，读不到就回默认档，
+        // 与 main「旧值留着、新键没写过就当自动」的做法一致。
+        lowMemoryMode = LowMemoryMode(
+            rawValue: Self.read(defaults, SettingsKey.lowMemoryPolicy, LowMemoryMode.auto.rawValue)
+        ) ?? .auto
         // 秒数必须为正：备份或旧数据里若写进了 0 / 负数，快进按钮会变成空操作。
         buttonSkipTime = max(1, Self.read(defaults, SettingsKey.buttonSkipTime, 80))
         // 老数据里存过 5 / 20 这种没有对应符号的档，读出来就落到最近的一档
@@ -923,6 +946,8 @@ final class SettingsStore {
         resumeOnForeground = true
         brightnessVolumeGesture = true
         privateMode = false
+        hardwareDecodeEnabled = true
+        lowMemoryMode = .auto
         playSpeed = 1.0
         buttonSkipTime = 80
         doubleTapSkipTime = 15

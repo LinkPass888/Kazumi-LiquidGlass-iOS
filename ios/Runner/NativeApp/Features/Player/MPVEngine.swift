@@ -105,6 +105,26 @@ final class MPVEngine {
     private var reportedFirstFrame = false
     var onLog: ((String) -> Void)?
 
+    /// 硬件解码开不开：容器按设置页那颗开关传进来，只在建内核时读一次
+    /// （`hwdec` 对已经打开的文件不生效，换集才换得过来）。
+    var hardwareDecodeEnabled = true
+
+    /// 解复用缓存大小（字节）。进来之前由容器按低内存模式的档位算好；
+    /// 之后档位或网络变了就调 `applyCacheSize(_:)` 立刻改，不用重建内核。
+    private var cacheBytes = PlaybackCachePolicy.fullBytes
+
+    /// 换解复用缓存大小：启动前设属性，启动后改属性都走这里。
+    ///
+    /// 内核已经在跑的时候改这一项不会重开文件，只影响后面还要读多少——
+    /// 缓冲被打空的当下改小也会立刻生效，所以「移动数据→低内存」不用重开这一集。
+    func applyCacheSize(_ bytes: Int) {
+        cacheBytes = bytes
+        guard let mpv = handle else { return }
+        let value = String(bytes)
+        mpv_set_property_string(mpv, "demuxer-max-bytes", value)
+        mpv_set_property_string(mpv, "demuxer-max-back-bytes", value)
+    }
+
     /// 内联画面刚画完时同步回调（主线程、GL 上下文 current）。
     /// 画中画拿这一帧去 `glBlitFramebuffer` 到 CVPixelBuffer，不需要第二个 mpv 上下文。
     var onFrameRendered: (@MainActor (GLint, Int, Int, Double, Double) -> Void)?
@@ -165,7 +185,7 @@ final class MPVEngine {
         // 帧格式对不上（10bit、双平面），屏幕上的表现就是花屏、发绿发紫、
         // 或者只剩红绿两色（LP 2026-10-28 第 1 条）。copy-back 多一次拷贝，
         // 1080p 这点开销换来画面颜色一定是对的。
-        setOption("hwdec", Self.hwdecOnForeground)
+        setOption("hwdec", Self.hwdec(enabled: hardwareDecodeEnabled))
         // 逐帧交给我们的 GL 视图，不走独立窗口。渲染 API 在
         // `mpv_render_context_create` 里指定，不用再设 gpu-api（设了会被拒）。
         // 不用 gpu-hq：它的 ewa_lanczos + 去色带很吃 GPU，会掉帧；
@@ -183,6 +203,11 @@ final class MPVEngine {
         // 还被我们按画面矩形裁过一刀，存下来根本不是完整视频帧。软件那条直接拿解码后的
         // 整帧，尺寸是片源分辨率，也不受 fit/crop/stretch 这些填充方式影响。
         setOption("screenshot-sw", "yes")
+        // 解复用缓存对齐 main（`playback_cache_policy.dart`）：常规 1500 MiB，
+        // 低内存模式降到 2 MiB（LP 5547）。取多少由 `PlaybackCachePolicy` 按档位和
+        // 当前网络算，之后设置或网络变了走 `applyCacheSize()` 立刻改。
+        setOption("demuxer-max-bytes", String(cacheBytes))
+        setOption("demuxer-max-back-bytes", String(cacheBytes))
 
         let initStatus = mpv_initialize(mpv)
         guard initStatus >= 0 else {
@@ -300,12 +325,19 @@ final class MPVEngine {
         setFlag("pause", true)
     }
 
-    /// 前台该用的硬解档位（模拟器没有硬解，真机用 copy-back，原因见 `start()`）。
-    static var hwdecOnForeground: String {
+    /// 前台该用的硬解档位。
+    ///
+    /// 开关关掉就纯软解。开着用 `auto-safe`——与 main 的默认档一致（LP 5549/5551：
+    /// 他在 main 上一直用这一档，没出过问题）。更早一轮为花屏换过
+    /// `videotoolbox-copy`（零拷贝互操作和 10bit / 双平面帧对不上），那批报告在
+    /// 直通链路上；现在跟 main 对齐，真机再出现花屏就把这里换回 copy 那一档。
+    ///
+    /// 模拟器没有硬解，开与关都是 `no`。
+    static func hwdec(enabled: Bool) -> String {
         #if targetEnvironment(simulator)
         return "no"
         #else
-        return "videotoolbox-copy"
+        return enabled ? "auto-safe" : "no"
         #endif
     }
 
