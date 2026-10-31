@@ -6,9 +6,14 @@
 //
 //  为什么不用 SwiftUI 的 .fileImporter / .fileExporter：
 //  侧载包上点文件、点目录都不响应（面板开着，点下去什么也不发生）。改成直接
-//  呈现系统的 UIDocumentPickerViewController，并且一律 asCopy——选中的文件
-//  先拷进 App 自己的临时目录再交给我们，读的时候不依赖安全作用域，也不依赖
-//  文件提供器把 URL 传过来的那条路。
+//  呈现系统的 UIDocumentPickerViewController。
+//
+//  asCopy 两种模式都要用，选哪个看调用方要什么：
+//  - 文件（导入规则、备份）用 asCopy: true——拷进 App 自己的临时目录再交给我们，
+//    读的时候不依赖安全作用域，也不依赖文件提供器把 URL 传过来那条路；
+//  - 目录（下载位置）必须 asCopy: false——拷贝模式只对文件成立，对文件夹要么
+//    不给选、要么整个复制一份，两种都不对；这时拿到的 URL 得自己开安全作用域
+//    （见 DownloadDirectoryStore）。
 //
 //  「等面板退干净再继续」也放在这里：delegate 回调时面板还在退场动画里，
 //  上层拿到的结果由调用方延后一拍再弹窗/改状态。
