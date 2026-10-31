@@ -1215,7 +1215,14 @@ struct NetworkSettingsScreen: View {
     /// 开开关 → 真发一次请求；通了才把「已配置」置回去，不通就把开关关回去。
     private func saveAndTestProxy() {
         let url = proxyAddressText.trimmingCharacters(in: .whitespacesAndNewlines)
-        if url.isEmpty {
+        proxyAddressError = nil
+        // 地址框默认就摆着 `http://`（LP 5355），只留着这个壳的时候不该报
+        // 「格式错误」——那会让人以为自己填错了，实际是还没填。
+        var bare = url
+        for prefix in ["http://", "https://"] where bare.lowercased().hasPrefix(prefix) {
+            bare.removeFirst(prefix.count)
+        }
+        if bare.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             proxyAddressError = "请输入代理地址"
             return
         }
@@ -1223,7 +1230,6 @@ struct NetworkSettingsScreen: View {
             proxyAddressError = "格式错误，请使用 http://host:port 格式"
             return
         }
-        proxyAddressError = nil
 
         let target = proxyTestText.trimmingCharacters(in: .whitespacesAndNewlines)
         let testURL = target.isEmpty ? "https://www.google.com" : target
