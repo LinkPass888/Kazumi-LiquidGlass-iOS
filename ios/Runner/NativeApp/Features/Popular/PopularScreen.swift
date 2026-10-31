@@ -1,0 +1,133 @@
+import SwiftUI
+
+/// 推荐页：封面上半屏 + 下面几行横向海报架。
+///
+/// 封面在滚动内容里（LP 2846）：上滑跟着内容一起滚走；下拉到顶时不拉伸、不放大、
+/// 不回弹——下拉出来的那段往回补（Colo 2847），视觉上封面钉在屏幕顶端不动；
+/// 同时封面自己从中心往四周放大（LP 2869 / Colo 2870）。
+/// 这页没有下拉刷新（LP 2823 / Colo 2824）：各行照旧按各自的过期时间自己换新。
+struct PopularScreen: View {
+    /// 卡片 → 详情页缩放转场所属的命名空间（由所在导航栈提供）。
+    var zoomNamespace: Namespace.ID?
+
+    @State private var controller = PopularController()
+    @Environment(AppRouter.self) private var router
+
+    /// 滚动内容上沿在滚动空间里的 y：0 是原位，负数是上拉过界（下拉出来的那段）。
+    @State private var scrollY: CGFloat = 0
+    /// 顶部那条模糊开没开：只有真的上滑才开，回弹和手抖不算（LP 3145 / 3147）。
+    @State private var showsTopBlur = false
+
+    var body: some View {
+        ScrollView {
+            LazyVStack(spacing: 0) {
+                PopularHero(
+                    items: controller.heroItems,
+                    zoomNamespace: zoomNamespace,
+                    // 封面整块滚出屏幕就停掉自动切换（Colo 3047）。
+                    isOnScreen: scrollY < PopularHero.coverHeight,
+                    pullScale: pullScale,
+                    pullOffset: overPull
+                )
+                // 上拉过界时往回补，视觉上封面钉在屏幕顶端不动（Colo 2847 / LP 2887）；
+                // 上滑时补偿是 0，封面跟着内容一起滚走（LP 2846）。
+                .offset(y: -overPull)
+
+                // 封面底边下面留 24 就够：渐隐到封面底边 600 已经是页面底色，底下不用再留一层
+                // 让它化开（LP 2912 / Colo 2913：本周热门回到封面底边下 24，即 624）。
+                shelves
+                    .padding(.top, 8)
+            }
+            .padding(.bottom, 40)
+        }
+        .scrollIndicators(.hidden)
+        // 顶部那条模糊改成上滑才出现（LP 3125 / 3126 / 3132）：在顶部时没有，内容滚上来才有，
+        // 跟番剧详情页同一条。顶栏照旧跟着封面滚（LP 2865），不钉住。
+        .scrollEdgeEffectStyle(.soft, for: .top)
+        // 不上滑就不显示（LP 3139 / 3145）。这页的滚动区忽略了顶部安全区，内容正好压在那条边上，
+        // 系统就当成「已经滚上来了」，一进页就挂着一条模糊、往下拉才消失。
+        // 关掉之后由上面那条 style 管上滑时出现，回到顶部就没有。
+        .scrollEdgeEffectHidden(!showsTopBlur, for: .top)
+        // 下拉位移用 onScrollGeometryChange 量（LP 2887）：PreferenceKey 在橡皮筋
+        // 回弹那段不更新，补偿算出来一直是 0，封面就跟着内容一起下来。
+        .onScrollGeometryChange(for: CGFloat.self) { geometry in
+            geometry.contentOffset.y
+        } action: { _, newValue in
+            scrollY = newValue
+            // 真的滚上去一段才开、回落到很浅才关（LP 3147）：中间留出这一段差，
+            // 系统自己回弹、手抖出来的那几点的位移就不算数了。
+            if newValue > 12, !showsTopBlur {
+                showsTopBlur = true
+            } else if newValue < 4, showsTopBlur {
+                showsTopBlur = false
+            }
+        }
+        // 封面要铺到状态栏，所以滚动区从屏幕最上方开始算。
+        .ignoresSafeArea(edges: .top)
+        // 一行都没拉到（缓存空 + 网络也失败）时给个能重试的页；否则就是顶层一个顶栏的空页。
+        .overlay {
+            if !controller.isLoading, controller.rows.isEmpty, controller.isFailed {
+                failureView
+            }
+        }
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar(.hidden, for: .navigationBar)
+        .onAppear {
+            // 先把缓存画出来，再后台刷新（LP 2733 / Ato 2734）：
+            // 冷启动不该对着空页等网。
+            controller.paintFromCache()
+            Task { await controller.load() }
+        }
+    }
+
+    /// 四行全空时的错误态：跟列表页那份同一个形状（那里也是「更多」点进去的第一屏）。
+    private var failureView: some View {
+        VStack(spacing: 14) {
+            Image(systemName: "wifi.exclamationmark")
+                .font(.system(size: 40, weight: .semibold))
+                .foregroundStyle(.secondary)
+            Text("推荐没能加载")
+                .font(.headline)
+            Text("网络好像不太顺，点一下重新加载。")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+            Button("重新加载") {
+                Task { await controller.load() }
+            }
+            .buttonStyle(.borderedProminent)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 32)
+        .padding(.top, 160)
+    }
+
+    /// 下拉出来的那段：只在过界时为正，上滑时是 0（Colo 2847）。
+    private var overPull: CGFloat {
+        max(0, -scrollY)
+    }
+
+    /// 下拉过界时封面的放大倍数：下拉 d 放大 1 + d/550，封顶 1.22（LP 2938 / Colo 2939）。
+    /// 只放大封面那张图，块和文字都不动。
+    private var pullScale: CGFloat {
+        1 + min(overPull, 120) / 550
+    }
+
+
+    /// 下面那几行横向海报架。
+    private var shelves: some View {
+        LazyVStack(spacing: 24) {
+            ForEach(controller.rows) { row in
+                PopularShelf(
+                    row: row,
+                    zoomNamespace: zoomNamespace,
+                    onMore: { router.push(.popularList($0)) },
+                    // 第一行「热门番组」标题点开选标签（LP 3044：菜单从封面大标题挪到这儿）。
+                    tagOptions: row.list == .trending ? heroTags : [],
+                    onPickTag: row.list == .trending ? { router.push(.popularList(.tag($0))) } : nil
+                )
+                .padding(.top, 8)
+            }
+        }
+    }
+}

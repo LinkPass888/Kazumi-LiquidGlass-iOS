@@ -1,0 +1,859 @@
+//
+//  PopularHero.swift
+//  Kazumi
+//
+//  推荐页焦点区（Colo 竖版规格 v3，LP 2782 定的方向）。
+//
+//  封面通栏铺满上半屏：600 高、顶边钉在屏幕顶端（LP 2843 / Colo 2844；550 → 600 见 LP 2901 / Colo 2902）。
+//  封面在滚动内容里（LP 2846）：上滑跟着内容一起滚走；下拉到顶时不拉伸、不放大、
+//  不回弹——下拉出来的那段由外层往回补（Colo 2847），所以视觉上封面钉在屏幕顶端不动；
+//  同时封面自己从中心往四周放大（LP 2869 / Colo 2870），看起来就是封面被拽大。
+//
+//  层级自下而上，越上面越先响应自己（Ato 2852 / Colo 2842）：
+//  1. 封面图 ＋ 底边渐隐：点击只挂这一层，整块 600 都是命中区，点哪儿都进详情；
+//  2. 顶上 100 高的渐变遮罩：压住封面图，让顶栏那颗大标题读得清；跟着封面一起滚走
+//     （Colo 2856，封面一走它就走，不会在货架第一行上糊一条色带），不吃点击；
+//  3. 圆点、名称、元信息：`allowsHitTesting(false)`，不吃点击；
+//  4. 开始观看、收藏圆钮：各自先响应自己，点它们不进详情；
+//  5. 顶栏：封面块最上面那一层 overlay（LP 2865 / Colo 2866）——跟着封面一起滚走，
+//     上滑一起消失、滚回来再出现；自己不带底色，标题和两颗圆钮压在顶上那层遮罩上。
+//
+//  竖版封面塞进 550 高会上下裁掉一截，所以按偏上对齐裁，顶部保留 8%，别把人脸裁掉。
+//
+
+import SwiftUI
+import UIKit
+
+/// 第一行「热门番组」标题点开选的那排标签：与搜索页、constants.dart 的清单一致。
+let heroTags: [String] = [
+    "日常", "原创", "校园", "搞笑", "奇幻", "百合", "恋爱", "悬疑",
+    "热血", "后宫", "机战", "轻改", "偶像", "治愈", "异世界",
+]
+
+struct PopularHero: View {
+    let items: [PopularPoster]
+    var zoomNamespace: Namespace.ID?
+    /// 封面是不是还在屏幕上：滚过去了就停掉自动切换（Colo 3047），不在看不见的地方空转。
+    var isOnScreen: Bool = true
+    /// 下拉过界时封面的放大倍数（LP 2938 / Colo 2939 / LP 2944）：外层按位移算好传进来，上滑时是 1。
+    /// 图从顶边放大，左右下三个方向一起长。
+    var pullScale: CGFloat = 1
+    /// 下拉位移（LP 2963）：名称、元信息、开始观看、收藏跟着手指往下走这么多，尺寸不变。
+    var pullOffset: CGFloat = 0
+    /// 渐隐的位移：文字块那截照手走，再补上「图放大后比文字块多长出来的那截」，
+    /// 下沿才能一直贴着图的新底边。
+    private var fadeOffset: CGFloat {
+        // 渐隐下沿永远贴封面底边：封面放大后底边往下长多少，它就跟多少（LP 3152）。
+        // 原来这里是 `pullOffset + 补出来的那截`，下拉得深一点时它会被推到底边下面，
+        // 于是「满底色」那一点落到封面底边以下，底边那一截就透出封面、收成一条硬边。
+        Self.coverHeight * (pullScale - 1)
+    }
+
+    @Environment(AppRouter.self) private var router
+    @Environment(LibraryStore.self) private var library
+    @Environment(SettingsStore.self) private var settings
+    @Environment(AppEnvironment.self) private var environment
+    @Environment(\.colorScheme) private var colorScheme
+
+    /// 封面块高度（LP 2843 / Colo 2844：400 → 480 → 500 → 550；LP 2901 / Colo 2902：550 → 600）。
+    /// 加高是为了把封面底边推到「开始观看」和第一行货架中间，文字块本身不动（见 `textBottomInset`）。
+    static let coverHeight: CGFloat = 600
+    /// 文字块离块底的留白（LP 2901 / Colo 2902）：封面加高 50，文字块原地不动，
+    /// 所以「开始观看」那排仍在原来的位置，封面底边落到它下面、货架上面。
+    static let textBottomInset: CGFloat = 50
+    /// 文字块（名称、元信息、按钮、滚动点，含块底那 50）的高度：标题行数一变它就变，
+    /// 所以整块量出来（`textBlockHeight`）。1 行标题时是 164，块顶落在 436。
+    static let textBlockDefaultHeight: CGFloat = 164
+    /// 提前到离封面底边 40 就满页面底色：560 往下的 40 点一直是满底色（Colo 2922），
+    /// 最后这一段已经是纯底色，封面底边那条线就露不出来。
+    static let fadeFullInset: CGFloat = 40
+    /// 下拉时块往下长的封顶位移：再往下拽块也不再变高（原先是放大封顶 1.22）。
+    static let maxPullDistance: CGFloat = 120
+    /// 下拉放大的封顶比例（Colo 2953）：550 点下拉到 1.22，再往下不再放大。
+    static let maxPullScale: CGFloat = 1.22
+    /// 还没取到当前条目时给转场源用的兜底 ID（命名空间里没有同 ID 的目标，系统按默认转场走）。
+    static let posterSourceFallbackID: Int = -1
+    /// 竖版封面偏上对齐时顶部保留的比例。
+    static let topReserve: CGFloat = 0.08
+
+    @State private var currentID: Int?
+    @State private var isToggling = false
+    /// 顶栏本体的实际高度：提示语要落在它下面。
+    @State private var topBarHeight: CGFloat = 59
+    @State private var toastMessage: String?
+    /// 选源面板的载体：与番剧详情页同一套（LP 2903 / Colo 2907）。
+    @State private var sourceController: InfoController?
+    /// 刚才是从选源面板点进播放页的：返回时把面板放回来（Colo 3275）。
+    @State private var returnToSourcesAfterPlayer = false
+    @State private var depthBeforePlayer = 0
+    /// 从空规则的空状态点「去规则仓库添加」：关面板、等关完再推页（LP 2026-10-28）。
+    @State private var goToRuleShopAfterDismiss = false
+    /// 刚从规则仓库回来：把面板重开一次，别再停在空状态（Colo 3974）。
+    @State private var returnFromRuleShop = false
+    @State private var depthBeforeRuleShop = 0
+
+    private var navigationDepth: Int {
+        router.popularPath.count + router.timelinePath.count
+            + router.collectPath.count + router.myPath.count
+    }
+    /// 第一次点「开始观看」要先把条目备齐（缓存优先，没有才请求），期间不再接第二次点。
+    /// 顶栏本体的实际高度：提示语要落在它下面。
+    /// 文字块整块的实际高度（含块底那 50 的留白），渐隐由它推出来。
+    /// 用 `onGeometryChange` 量（`PreferenceKey` 那条路在这版没吃到值）。单行标题是 164。
+    @State private var textBlockHeight: CGFloat = PopularHero.textBlockDefaultHeight
+    /// 圆钮按下时弹一下：缩到 0.8 再回弹，120 毫秒（Colo 2803）。
+    @State private var followScale: CGFloat = 1
+    /// 轮播停在第几页（含两头的克隆页）。滚动位置绑它，绕回不往回翻（LP 3064）。
+    @State private var pageIndex: Int?
+    /// 这一页在不在前台（切走 tab 会走 onDisappear）：切走就停掉自动切换（Colo 3047）。
+    @State private var isPageVisible = true
+    /// 手指正按着／还在滑：这时候不切，松手后重新起算（Colo 3067）。
+    @State private var isScrolling = false
+    @Environment(\.scenePhase) private var scenePhase
+
+    /// 自动切换的三个前提：不止一张、这一页在前台、封面没被滚出屏幕。
+    private var canAutoAdvance: Bool {
+        items.count > 1 && isPageVisible && isOnScreen && !isScrolling && scenePhase == .active
+    }
+
+    /// 封面的解码档位：和 `BangumiRemoteImage` 在封面这个尺寸上算出来的那一档一致，
+    /// 不然预取的图和视图要的不是同一份，等于白取。
+    private var coverPixelSize: Int {
+        KazumiImageLoader.pixelSize(for: CGSize(width: 402, height: Self.coverHeight))
+    }
+
+    /// 自动翻页的下一张（可能落在尾部那页克隆上，画的是第一张）。
+    private var nextPoster: PopularPoster? {
+        let from = pageIndex ?? firstRealPage
+        let next = from + 1
+        guard pages.indices.contains(next) else { return nil }
+        return pages[next].poster
+    }
+
+    /// 下一张的封面已经在内存里了才翻（Colo 3067）。
+    private var isNextCoverReady: Bool {
+        guard let next = nextPoster else { return false }
+        return KazumiImageLoader.shared.cachedImage(for: next.imageURL, pixelSize: coverPixelSize) != nil
+    }
+
+    private func prefetchNextCover() {
+        guard let next = nextPoster else { return }
+        KazumiImageLoader.shared.prefetch([next.imageURL], pixelSize: coverPixelSize)
+    }
+
+    /// 从当前页往后取两张（到尾部就绕回开头），保证下一次自动翻页时图已经就绪。
+    private func prefetchAhead() {
+        guard items.count > 1 else { return }
+        let from = pageIndex ?? firstRealPage
+        var urls: [String] = []
+        for step in 1...2 {
+            let index = from + step
+            guard pages.indices.contains(index) else { continue }
+            urls.append(pages[index].poster.imageURL)
+        }
+        guard !urls.isEmpty else { return }
+        KazumiImageLoader.shared.prefetch(urls, pixelSize: coverPixelSize)
+    }
+
+    /// 计时任务的身份：任何一个前提变了，或者换了一张，旧计时就作废重来。
+    private var autoAdvanceKey: String {
+        "\(pageIndex ?? -1)|\(isPageVisible)|\(isOnScreen)|\(isScrolling)|\(scenePhase == .active)"
+    }
+
+    /// 换到下一张：永远往右翻一页。翻到最后一张时下一页就是尾部那页克隆，
+    /// 画的是第一张；落定后再悄悄挪回第一张真页（LP 3064）。
+    private func advanceCover() {
+        guard items.count > 1 else { return }
+        let from = pageIndex ?? firstRealPage
+        // 还停在两头的克隆页上（快速连滑时常见）：先无声挪回对应的真页。
+        // 克隆页画的本来就是同一张，挪这一下看不见。原来这里直接 return，
+        // 于是停在克隆页之后再也翻不动，得往回滑一次才行（LP 3106）。
+        if let real = realPageIndex(for: from) {
+            withTransaction(silentScrollTransaction) { pageIndex = real }
+            return
+        }
+        let next = from + 1
+        guard pages.indices.contains(next) else { return }
+        withAnimation(.easeInOut(duration: 0.55)) {
+            pageIndex = next
+        }
+    }
+
+    /// 无声挪页用的事务：关掉动画，并保住滚动速度（Colo 3114）——
+    /// 不然挪回去之后系统会按旧的惯性再弹一下，等于白挪。
+    private var silentScrollTransaction: Transaction {
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        if #available(iOS 18.0, *) {
+            transaction.scrollPositionUpdatePreservesVelocity = true
+        }
+        return transaction
+    }
+
+    /// 停在克隆页上就无声挪回真页；不然下一次翻页会因为没有下一页而卡住。
+    private func settleIfOnClone() {
+        guard let index = pageIndex, let real = realPageIndex(for: index) else { return }
+        withTransaction(silentScrollTransaction) { pageIndex = real }
+    }
+
+    /// 克隆页下标 → 对应的真页下标；本来就是真页时返回 nil。
+    private func realPageIndex(for index: Int) -> Int? {
+        guard items.count > 1 else { return nil }
+        if index == 0 { return items.count }
+        if index == pages.count - 1 { return 1 }
+        return nil
+    }
+
+    /// 落在两头的克隆页时，等翻页动画走完再无声无息地挪到对应的真页。
+    private func recenterIfNeeded(landed: Int) {
+        guard items.count > 1 else { return }
+        let target: Int?
+        if landed == 0 {
+            target = items.count
+        } else if landed == pages.count - 1 {
+            target = 1
+        } else {
+            target = nil
+        }
+        guard let target else { return }
+        Task {
+            // 等这一页真的停稳再挪（LP 3075）：翻页动画还没走完就改滚动位置，
+            // 系统会把这次改动丢掉，于是「绕回第一张后的第一次翻页」不动一下。
+            // 手指还按着就一直等，别一看到在滑就放弃——快速连滑时那正是常态，
+            // 放弃了就永远停在克隆页上（LP 3106）。
+            for _ in 0..<40 {
+                if pageIndex != landed { return }
+                if !isScrolling { break }
+                try? await Task.sleep(for: .milliseconds(100))
+            }
+            guard pageIndex == landed, !isScrolling else { return }
+            try? await Task.sleep(for: .milliseconds(120))
+            guard pageIndex == landed, !isScrolling else { return }
+            withTransaction(silentScrollTransaction) { pageIndex = target }
+        }
+    }
+
+    /// 轮播里的一页。两头各多一页克隆（最后一张、第一张各复制一份），
+    /// 这样「最后一张 → 第一张」是继续往右翻过去，不是往回倒（LP 3064）。
+    private struct CarouselPage: Identifiable {
+        let index: Int
+        let poster: PopularPoster
+        var id: Int { index }
+    }
+
+    /// 只有一张时没有克隆页，也不用绕。
+    private var pages: [CarouselPage] {
+        guard items.count > 1 else {
+            return items.enumerated().map { CarouselPage(index: $0.offset, poster: $0.element) }
+        }
+        var result: [CarouselPage] = [CarouselPage(index: 0, poster: items[items.count - 1])]
+        for (offset, item) in items.enumerated() {
+            result.append(CarouselPage(index: offset + 1, poster: item))
+        }
+        result.append(CarouselPage(index: items.count + 1, poster: items[0]))
+        return result
+    }
+
+    /// 第一张真页的下标（有克隆页时是 1）。
+    private var firstRealPage: Int { items.count > 1 ? 1 : 0 }
+
+    private var current: PopularPoster? {
+        items.first { $0.id == (currentID ?? items.first?.id) }
+    }
+
+    private var collectType: CollectType {
+        guard let id = current?.id else { return .none }
+        return library.entry(for: id)?.collectType ?? .none
+    }
+
+    var body: some View {
+    ZStack(alignment: .bottom) {
+            // 下拉时只有那张图从顶边放大（LP 2963 / Colo 2939）：横向钉死页宽 402，
+            // 纵向往下长，多出来的露在下面。可视宽度不跟着放大，隔壁才不会挤进来（Colo 2959）。
+            pager
+                .scaleEffect(pullScale, anchor: .top)
+                .mask(alignment: .top) {
+                    Rectangle()
+                        .frame(maxWidth: .infinity)
+                        .frame(height: Self.coverHeight * Self.maxPullScale)
+                }
+
+            // 底边渐隐挂在封面这一整个 600 高的盒子上，不挂在图里（Colo 2922）：
+            // 挂在图上时，它的下沿跟着图片自己的高度走（图只有 582 高），
+            // 渐隐就提前 18 点结束，封面底边那条线就露出来了。
+            fade
+                .offset(y: fadeOffset)
+
+            // 文字块不参与放大，只跟着手指往下移（LP 2963）。
+            textBlock
+                .offset(y: pullOffset)
+        }
+        .frame(height: Self.coverHeight)
+        .onPreferenceChange(TopBarHeightKey.self) { topBarHeight = $0 }
+        // 封面块不做缩放转场，走默认的横向翻页（LP 2976）：缩放转场返回时只飞回一张快照，
+        // 渐隐和按钮要等动画结束才出现，看着就是「图先落回、底下一闪」。
+        // 不登记源视图，详情页那边会自动回落到系统默认转场。
+        // 这里不裁：下拉过界时封面放大，底边要真的往下长出来（LP 2942）。
+        // 平时图正好 600 高，没有东西溢出去。
+
+        // 选源面板不再挂在这一页上（2026-10-28 计时：点下去到面板开始画 3.6 秒，
+        // 全耗在「弹之前先把这一页重排一遍」）。现在交给根层去弹，
+        // 这一页只负责交出控制器和两个回调。
+        .onChange(of: SourceSheetCoordinator.shared.isPresented) { _, presented in
+            guard !presented else { return }
+            // 面板关完了：该进规则仓库就进（等关闭动画收完，两个动画不抢）。
+            if goToRuleShopAfterDismiss {
+                goToRuleShopAfterDismiss = false
+                returnFromRuleShop = true
+                depthBeforeRuleShop = navigationDepth
+                router.push(.pluginShop)
+            }
+            SourceSheetCoordinator.shared.clearIfNeeded()
+        }
+        // 从播放页返回：把面板放回来。
+        .onChange(of: navigationDepth) { _, newDepth in
+            guard returnToSourcesAfterPlayer, newDepth <= depthBeforePlayer else { return }
+            returnToSourcesAfterPlayer = false
+            if let controller = sourceController { presentSources(controller) }
+        }
+        // 从规则仓库回来：规则装上了就把面板重开一次；还是空的就留在原地。
+        .onChange(of: navigationDepth) { _, newDepth in
+            guard returnFromRuleShop, newDepth <= depthBeforeRuleShop else { return }
+            returnFromRuleShop = false
+            guard !environment.plugins.pluginList.isEmpty else { return }
+            guard let controller = sourceController else { return }
+            presentSources(controller)
+        }
+        // 分页一变就更新「当前是哪部」，落到克隆页则等动画走完再悄悄挪回真页：
+        // 两页画的是同一张图，挪过去看不出接缝。
+        .onChange(of: isScrolling) { _, scrolling in
+            // 兜底：手一松，只要还停在两头的克隆页上就挪回真页。
+            // 自动切换那条路已经管了，这条管「滑到克隆页就停手」的情况（LP 3106）。
+            guard !scrolling else { return }
+            settleIfOnClone()
+        }
+        .onChange(of: pageIndex) { _, newValue in
+            guard let newValue, pages.indices.contains(newValue) else { return }
+            currentID = pages[newValue].poster.id
+            recenterIfNeeded(landed: newValue)
+            // 每换一页就把后面两张补取进来（Colo 3076）：只在进页时取一次的话，
+            // 隔一张就没图了。
+            prefetchAhead()
+        }
+        // 大封面自己走：停 5 秒换下一张，到头绕回第一张（LP 3044 / 3064）。
+        // 只在看得见、在前台时走（Colo 3047）：切走 tab、退后台、封面滚出屏幕都停。
+        // 计时挂在 currentID 上：手指翻页也会重新起算，不会刚滑完就被换走。
+        .task(id: autoAdvanceKey) {
+            // 等 5 秒；到点了下一张封面还没解码好就先不翻——旧封面留在原地，
+            // 再过 5 秒看一次（Colo 3067：宁可晚一点，也不许翻出一片白）。
+            while canAutoAdvance, !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(5))
+                if Task.isCancelled || !canAutoAdvance { return }
+                if isNextCoverReady {
+                    advanceCover()
+                    return
+                }
+                prefetchNextCover()
+            }
+        }
+        .onAppear { isPageVisible = true }
+        .onDisappear { isPageVisible = false }
+        // 条目换成 5 张以内时把圆点状态收敛回第一张。
+        .onAppear {
+            if currentID == nil { currentID = items.first?.id }
+            if pageIndex == nil, !items.isEmpty { pageIndex = firstRealPage }
+            // 只补取「当前往后两张」，不把五张全取进来（LP 3077 要省内存）：
+            // 翻页前下一张一定已经就绪，再往后的一张有 5 秒慢慢来。
+            prefetchAhead()
+        }
+        .onChange(of: items.first?.id) { _, _ in
+            if let first = items.first?.id, !items.contains(where: { $0.id == currentID }) {
+                currentID = first
+                pageIndex = firstRealPage
+            }
+        }
+        // 顶栏是封面块最上面那一层（LP 2865 / Colo 2866）：压在封面顶边，
+        // 跟着封面、跟着内容一起滚。LP 3132 说了照旧滚动，只把固定那条模糊改成上滑才出现。
+        .overlay(alignment: .top) {
+            topBar
+                .padding(.top, Self.statusBarHeight)
+        }
+        // 提示语摆在顶栏下沿再让 12，不然会压住状态栏的时钟和顶栏那三十四点的大标题。
+        .overlay(alignment: .top) {
+            if let toastMessage {
+                Text(toastMessage)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(Capsule().fill(.black.opacity(0.78)))
+                    .padding(.top, toastOffset)
+                    .transition(.opacity)
+            }
+        }
+    }
+
+    // MARK: - 封面
+
+    private var pager: some View {
+        ScrollView(.horizontal) {
+            // 这里用 HStack 而不是 LazyHStack（LP 3074）：只有 5 张加两页克隆，
+            // 全部先摆好；懒加载会在自动翻页滚过去的半路上才建下一页，那一下就是白片。
+            HStack(spacing: 0) {
+                ForEach(pages) { page in
+                    cover(page.poster)
+                        .containerRelativeFrame(.horizontal)
+                }
+            }
+            .scrollTargetLayout()
+        }
+        .scrollTargetBehavior(.paging)
+        .scrollPosition(id: $pageIndex)
+
+        // 手指按住、还在滑都不切，松手（回到 idle）后计时重新起算（Colo 3067）。
+        .onScrollPhaseChange { _, phase in
+            isScrolling = phase != .idle
+        }
+        .scrollIndicators(.hidden)
+        // 横向裁在翻页容器这一层：外面那层不能裁（下拉时封面要往下长出来），
+        // 但隔壁那张页就在右边，不裁的话它会被一起画出来（LP 2958）。
+        .clipped()
+    }
+
+    /// 封面图 ＋ 底边渐隐：点击只挂在这一层（Ato 2852），整块都是命中区。
+    private func cover(_ poster: PopularPoster) -> some View {
+        Button {
+            // 大封面点开走系统默认的横向翻页，不做缩放转场（LP 2976 / 2985）。
+            router.push(.bangumiInfo(bangumiID: poster.id, zoom: false))
+        } label: {
+            ZStack(alignment: .bottom) {
+                // 竖图铺满整块：宽度钉在页宽上（`containerRelativeFrame`），高度超出 600 的裁掉。
+                //
+                // 宽度必须钉：横向 ScrollView 给内容的宽度提议是无穷大，光靠
+                // `frame(maxWidth: .infinity)` 撑不开，图会按自己的比例算出一个比页宽更宽的
+                // 尺寸（实测 440 对 402），左右各溢出 19 点——左右滑时隔壁那张就从这条缝里
+                // 露出来（LP 2899 / Colo 2900）。
+                BangumiRemoteImage(url: poster.imageURL)
+                    .containerRelativeFrame(.horizontal)
+                    // 高度必须钉死 600（Colo 3165）：不钉的话这一层的高度是按海报自己的
+                    // 比例算出来的（同一页宽 402，矮的 568、高的 611），底边就不在 600 上。
+                    // 渐隐的底边是按 600 算的，高海报的底边会落到渐隐下面，露出一条——
+                    // 换一张海报露的多少还不一样，这就是「一直漏」。
+                    .frame(height: Self.coverHeight)
+                    // 放大由整块那层统一做（Colo 2953）：图自己再放一次会变成 1.22 的平方。
+                    // 这里只管裁：显示尺寸永远等于页宽 402、页高 600。
+                    .clipped()
+            }
+        }
+        .buttonStyle(.plain)
+        // 转场源登记在整块封面上，不挂在图那一层（LP 2970 / 2972）：
+        // 只挂图的话，返回时系统只把图那一张快照飞回来，渐隐和按钮要等动画结束才出现，
+        // 看着就是「图先落回、底下一闪」。
+        .accessibilityLabel(poster.displayName)
+        .accessibilityHint("打开详情")
+    }
+
+    /// 底边渐隐：从圆点那行底下开始往下，把封面渐成页面底色，满底色落在 560，
+    /// 再往下 40 点一直是满底色（Colo 2922）。
+    ///
+    /// 第一档必须是 0（LP 2925 / 2926 / Colo 2930）：之前起手就给 20%，圆点那行以上是原图、
+    /// 以下一层白纱，那条台阶看着就像在封面上贴了一张透明白图。
+    private var fade: some View {
+        // 下沿＝封面底边（放大后也跟着走），上沿压在文字块顶上。
+        // 用块高而不是量绝对位置：下拉时文字块整体位移，绝对位置会带着位移走，块高不会。
+        let coverBottom = Self.coverHeight * pullScale
+        let textTop = Self.coverHeight - textBlockHeight + pullOffset
+        let height = max(1, coverBottom - textTop)
+        // 满底色永远落在封面底边往上 40：这样底边那一截是纯底色，
+        // 封面图的下边缘不会透出来成一条硬边（LP 3152）。
+        let full = min(1, max(0.01, (height - Self.fadeFullInset) / height))
+        // 七档等分在渐隐的顶…560 上（Colo 2930），第一档是 0——
+        // 顶部那一档要是直接给 20%，圆点那行就会成一条台阶（LP 2925 / 2926）。
+        let steps: [CGFloat] = [0, 0.20, 0.40, 0.60, 0.80, 0.90, 0.95]
+        var stops = steps.enumerated().map { index, opacity in
+            Gradient.Stop(
+                color: pageBackground.opacity(opacity),
+                location: full * CGFloat(index) / CGFloat(steps.count)
+            )
+        }
+        // 满底色落在 560，600 往上这 40 点一直是满底色（Colo 2922）。
+        stops.append(.init(color: pageBackground, location: full))
+        stops.append(.init(color: pageBackground, location: 1))
+        return LinearGradient(
+            stops: stops,
+            startPoint: .top,
+            endPoint: .bottom
+        )
+        .frame(maxWidth: .infinity)
+        .frame(height: height)
+        .allowsHitTesting(false)
+    }
+
+    /// 页面真正的底色：封面块下面那块没有自己刷底色，用的是系统背景
+    /// （浅色纯白、深色纯黑）。渐隐收尾必须用它，用 `KazumiPalette.background`
+    /// （浅色是 0.98）在 600 处会差 5 级，正好显出一条线。
+    private var pageBackground: Color { Color(uiColor: .systemBackground) }
+
+    // MARK: - 文字
+
+    private var textBlock: some View {
+        VStack(spacing: 0) {
+            // 名称、元信息不吃点击（Ato 2852）：点击只挂封面图那一层，
+            // 文字压在上面也不会把按钮的点击吃掉。
+            VStack(spacing: 0) {
+                Text(current?.displayName ?? "")
+                    .font(.system(size: 22, weight: .bold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 24)
+
+                if let meta = current?.metaLine {
+                    Text(meta)
+                        .font(.system(size: 13))
+                        .foregroundStyle(KazumiPalette.secondaryText(for: colorScheme))
+                        .padding(.top, 6)
+                }
+            }
+            .allowsHitTesting(false)
+
+            actions
+                .padding(.top, 14)
+
+            // 滚动点挪到「开始观看」下面（LP 3127）：上面那排（含右侧收藏）整体上移 28 让出位置，
+            // 点落在原来那排占的地方。
+            dots
+                .padding(.top, 12)
+        }
+        // 文字块贴块底：开始观看那排压在块底上，名称落在块底往上 78（Colo 2853 / 2868）。
+        // 1 行标题时正好是 78，2 行会更高——78 说的是单行那个位置。
+        // 块底从 550 抬到 600 之后文字块跟着留出这 50，屏上位置一点不变（LP 2901 / Colo 2902）。
+        .padding(.bottom, Self.textBottomInset)
+        // 量整块（含块底那 50）：渐隐的高度直接用它，块里再多一行点也不会露出封面。
+        // 之前这条量在了圆点那行上，量到的是圆点胶囊的 14，渐隐就只剩十几点、
+        // 看着像整条没了（Colo 2922 那一版起就一直在犯）。
+        .onGeometryChange(for: CGFloat.self) { proxy in
+            proxy.size.height
+        } action: { textBlockHeight = $0 }
+    }
+
+    private var actions: some View {
+        ZStack {
+            playButton
+
+            HStack {
+                Spacer()
+                followButton
+                    .padding(.trailing, 16)
+            }
+        }
+        .frame(height: 40)
+    }
+
+    private var playButton: some View {
+        Button {
+            guard let poster = current else { return }
+            openSources(poster)
+        } label: {
+            Label(playTitle, systemImage: "play.fill")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 22)
+                .frame(height: 40)
+                .background(Capsule().fill(KazumiPalette.accent(for: colorScheme)))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(playTitle)
+        .accessibilityHint("选择播放源")
+    }
+
+    /// 三个名字全 App 统一（Camo 2950）：没记录「开始观看」、看了一半「继续观看」、
+    /// 看完了「重新观看」——最后一档原来也叫「开始观看」，跟历史页的「重新观看」撞了。
+    private var playTitle: String {
+        guard let id = current?.id, let record = library.record(for: id) else { return "开始观看" }
+        return record.isFinished ? "重新观看" : "继续观看"
+    }
+
+    /// 收藏圆钮：玻璃底 ＋ 一层轻投影（Colo 2864 / 2866），压在封面上也要托得出来。
+    private var followButton: some View {
+        Button {
+            guard let poster = current else { return }
+            bounceFollow()
+            Task { await toggleFollow(poster) }
+        } label: {
+            Image(systemName: collectType == .none ? "plus" : collectType.statusSymbol)
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(KazumiPalette.accent(for: colorScheme))
+                .frame(width: 36, height: 36)
+                .kazumiGlassCapsule(interactive: true)
+                .shadow(color: .black.opacity(0.18), radius: 4, y: 1)
+        }
+        .buttonStyle(.plain)
+        .scaleEffect(followScale)
+        .disabled(isToggling)
+        .accessibilityLabel(collectType == .none ? "收藏" : "已\(collectType.title)")
+        .accessibilityValue(collectType.title)
+        .accessibilityHint("切换追番状态")
+    }
+
+    // MARK: - 圆点
+
+    private var dots: some View {
+        HStack(spacing: 6) {
+            ForEach(items) { poster in
+                let selected = poster.id == (currentID ?? items.first?.id)
+                Capsule(style: .continuous)
+                    // LP 3503／Colo 3505：未选中的点跟页面底色对着来——
+                    // 浅色页面白底，用黑 50%；深色页面深灰，用白 50%。
+                    // 原来写死黑 55%，深色下等于看不见。
+                    .fill(selected ? KazumiPalette.accent(for: colorScheme)
+                                   : (colorScheme == .dark ? Color.white.opacity(0.50)
+                                                           : Color.black.opacity(0.50)))
+                    .frame(width: selected ? 18 : 6, height: 6)
+            }
+        }
+        // LP 3503：圆点底下那条胶囊底删掉，点直接压在封面上。
+        .frame(height: 14)
+        .animation(.easeOut(duration: 0.2), value: currentID)
+    }
+
+    // MARK: - 顶栏
+
+    /// 顶栏：左边的大标题点开选标签（原版就是它），右边搜索和观看历史。
+    /// 它是封面块最上面那一层 overlay，跟着封面一起滚（LP 2865 / Colo 2866）。
+    @ViewBuilder
+    private var topBar: some View {
+        HStack(alignment: .center, spacing: 10) {
+            // LP 3044：首页几页大标题都收成两个字，这页就是「推荐」。
+            // 原来挂在标题上的「热门番组」标签菜单挪到了下面第一行货架（见 PopularScreen）。
+            Text("推荐")
+                .font(.system(size: 34, weight: .semibold))
+                // 34 半粗、字距 −0.4（Colo 3032）。
+                .tracking(-0.4)
+                // 压在封面上的字得有一层才读得清（Colo 2864）：就这一层，别更重。
+                .shadow(color: .black.opacity(0.30), radius: 8, y: 1)
+                .foregroundStyle(.primary)
+                .accessibilityAddTraits(.isHeader)
+
+            Spacer()
+
+            circleButton(symbol: "magnifyingglass", label: "搜索") {
+                router.push(.search(keyword: ""))
+            }
+            circleButton(symbol: "clock", label: "观看历史") {
+                router.push(.history)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.bottom, 10)
+        .background(
+            GeometryReader { proxy in
+                Color.clear.preference(key: TopBarHeightKey.self, value: proxy.size.height)
+            }
+        )
+    }
+
+    /// 顶栏那两颗圆钮：36 玻璃正圆、命中区给到 44（Colo 2864 / 2866）。
+    /// 玻璃就是全 App 那一套 `kazumiGlassCapsule`（iOS 26 上只有系统 `glassEffect`），
+    /// 跟详情页返回 / 更多同一副面孔，不在这儿另立一份。
+    ///
+    /// 不压 tint、不加投影（LP 2897 / Colo 2898）：上一版为了让它透出封面压了一层
+    /// 黑 tint，结果看着是两颗黑圆；发亮的根子在垫底那层材质上，已经在 `LiquidGlass`
+    /// 里按系统版本分开了，这里不用再补任何颜色。
+    private func circleButton(symbol: String, label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                // 跟时间表那颗统一到 40 正圆、图标 20（Colo 3061 的「统一 40」）。
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundStyle(.primary)
+                .frame(width: 40, height: 40)
+                .kazumiGlassCapsule(interactive: true)
+        }
+        .buttonStyle(.plain)
+        // 画 36，点按区域给到 44。
+        .hitTarget44()
+        .accessibilityLabel(label)
+    }
+
+    // MARK: - 动作
+
+    /// 「开始观看」：与番剧详情页那颗按钮同一条路（LP 2903 / 2904 / Colo 2907）——
+    /// 弹同一张「选择播放源」面板（`SourceSheet`），在那里选源、进去开播；
+    /// 播哪一话、用哪条规则全由播放器自己按观看记录接上，与详情页一致。
+    ///
+    /// 面板要一个 `InfoController`，所以先把条目备齐：缓存优先（从列表/以前进过
+    /// 详情页都有），没有才请求一次。同一部番点第二次直接用已经建好的那份。
+    private func openSources(_ poster: PopularPoster) {
+        if let controller = sourceController, controller.item.id == poster.id {
+            presentSources(controller)
+            return
+        }
+        // 点这颗钮不需要网络，也就不能等网络（LP 3665）：有缓存就用缓存，
+        // 没有就先用列表里那份名称把面板打开。面板里的检索本来就要联网，
+        // 没网时在那儿失败、在那儿提示，不挡面板弹出来。
+        // 详情信息由面板自己按需补（`loadDetailIfNeeded`），补回来会换上。
+        // 启动后第一次点这颗钮，白屏的账几乎全在「读盘」上：`item(for:)` 和
+        // `applyCachedEpisodes()` 都会去 Application Support 里读文件，读的时候
+        // 主线程停着，面板就一直是白的（LP 2026-10-28「第一次启动点推荐页的
+        // 开始观看会白几秒」）。所以这一下只碰内存：有就用，没有就拿列表里那份
+        // 名称先把面板弹出来，磁盘里的两份放到面板出来之后补（都是一样的字段，
+        // 补回来面板自己会重画）。
+        SheetTiming.tap = SheetTiming.now
+        SheetTiming.bodyFirst = 0
+        SheetTiming.listFirst = 0
+        SheetTiming.appear = 0
+        SheetTiming.ready = 0
+        let item = BangumiSubjectCache.shared.memoryItem(for: poster.id)
+            ?? BangumiItem(id: poster.id, name: poster.name, nameCn: poster.nameCn)
+        let controller = InfoController(item: item, plugins: environment.plugins)
+        if let cachedEpisodes = BangumiSubjectCache.shared.memoryEpisodes(for: poster.id),
+           controller.episodes.isEmpty {
+            controller.replaceEpisodes(cachedEpisodes)
+        }
+        sourceController = controller
+        SheetTiming.ready = SheetTiming.now
+        presentSources(controller)
+        // 这里不能顺手读盘：`Task { @MainActor }` 会在这一拍结束时立刻跑，
+        // 读的还是主线程、还是赶在面板上屏之前——量出来「点下去→面板开始画」
+        // 就是这 4 秒（2026-10-28 计时：b4035ms）。剧集和条目由面板自己按需补
+        // （`loadDetailIfNeeded` 和检索结果），这条路上一次磁盘读都不做。
+    }
+
+    /// 把面板交给根层去弹：这里只给控制器和两个回调，不动这一页的布局。
+    private func presentSources(_ controller: InfoController) {
+        SourceSheetCoordinator.shared.present(
+            controller: controller,
+            onPlay: { pluginName, result in
+                SourceSheetCoordinator.shared.dismiss()
+                returnToSourcesAfterPlayer = true
+                depthBeforePlayer = navigationDepth
+                // 跟详情页「开始观看」一个口径：这部剧在这条规则上看到哪就从哪起。
+                let point = library.resumePoint(for: controller.item.id, pluginName: pluginName)
+                router.push(
+                    .player(
+                        bangumiID: controller.item.id,
+                        episode: point?.episode ?? 1,
+                        source: PlaybackSource(
+                            pluginName: pluginName,
+                            itemName: result.name,
+                            // 原样传 src：接口模式要的是 vod_id，拼成网址就查不到剧集。
+                            detailURL: result.src,
+                            directMediaURL: MediaUtility.isMediaURL(result.src) ? result.src : nil
+                        ),
+                        resumeRoad: point?.road,
+                        resumeFromHistory: true,
+                        resumeRule: nil
+                    )
+                )
+            },
+            onOpenRuleShop: {
+                // 面板自己关，这里只记下来，等它关完再推页。
+                goToRuleShopAfterDismiss = true
+                SourceSheetCoordinator.shared.dismiss()
+            }
+        )
+    }
+
+    /// 收藏圆钮：轻点是「在看 ↔ 未收藏」两态切换。
+    ///
+    /// 口径与详情页那颗钮一致（`BangumiInfoScreen.collect`）：自动同步开着就推
+    /// Bangumi，推不成功整次作废。其余状态（想看 / 搁置 / 看过 / 抛弃）在详情页的
+    /// 状态菜单里选——这里只留一个「快速」入口，不铺一整排。
+    private func toggleFollow(_ poster: PopularPoster) async {
+        guard !isToggling else { return }
+        isToggling = true
+        defer { isToggling = false }
+
+        let next: CollectType = collectType == .none ? .watching : .none
+        let syncEnabled = settings.bangumiSyncEnable
+        guard syncEnabled else {
+            applyCollect(poster, next)
+            withAnimation { toastMessage = toastText(for: next) }
+            scheduleToastClear()
+            return
+        }
+        let pushed = await environment.bangumiSync.pushCollectible(bangumiID: poster.id, type: next)
+        guard pushed else {
+            withAnimation { toastMessage = "同步到 Bangumi 失败，已取消本次状态修改" }
+            scheduleToastClear()
+            return
+        }
+        applyCollect(poster, next)
+        withAnimation { toastMessage = toastText(for: next) }
+        scheduleToastClear()
+    }
+
+    /// 按下去弹一下：缩到 0.8 再回弹，120 毫秒（Colo 2803）。
+    private func bounceFollow() {
+        withAnimation(.easeInOut(duration: 0.12)) { followScale = 0.8 }
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.55).delay(0.12)) { followScale = 1 }
+    }
+
+    /// 报一句状态：加的那下说状态名（在看），取消的那下用菜单里那一项的字（Camo 2805）。
+    private func toastText(for type: CollectType) -> String {
+        type == .none ? "已取消追番" : "已标为\(type.title)"
+    }
+
+    private func applyCollect(_ poster: PopularPoster, _ type: CollectType) {
+        if type == .none {
+            library.remove(bangumiID: poster.id)
+            BangumiTimelineStore.shared.dropIfNotWatching(poster.id, collectType: .none)
+            return
+        }
+        library.upsert(
+            LibraryEntry(
+                id: poster.id,
+                type: type.rawValue,
+                name: poster.name,
+                nameCn: poster.nameCn,
+                summary: poster.summary,
+                airDate: poster.airDate,
+                imageURL: poster.imageURL,
+                rating: poster.rating,
+                rank: 0,
+                tags: [],
+                totalEpisodes: poster.totalEpisodes,
+                currentEpisode: 0,
+                addedAt: library.entry(for: poster.id)?.addedAt ?? Date(),
+                updatedAt: Date()
+            )
+        )
+        BangumiTimelineStore.shared.dropIfNotWatching(poster.id, collectType: type)
+    }
+
+    private func scheduleToastClear() {
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            withAnimation { toastMessage = nil }
+        }
+    }
+
+    /// 提示语摆在顶栏下沿再让 12：顶栏自己跟着封面滚，所以它的高度得量出来。
+    private var toastOffset: CGFloat {
+        Self.statusBarHeight + topBarHeight + 12
+    }
+
+    /// 状态栏那一截的高度：顶栏要压在它下面。
+    ///
+    /// 这里不用 GeometryReader 读 `safeAreaInsets`：封面为了铺到屏幕顶，给滚动区加了
+    /// `ignoresSafeArea(edges: .top)`，加完之后在里面读到的顶部内边距是 0。
+    /// 直接问窗口的状态栏拿，与列表页读屏宽是同一套写法。
+    private static var statusBarHeight: CGFloat {
+        UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .first?.statusBarManager?.statusBarFrame.height ?? 44
+    }
+
+    private var background: Color {
+        KazumiPalette.background(for: colorScheme)
+    }
+}
+
+/// 顶栏本体的实际高度：提示语要落在它下面，所以量一下。
+private struct TopBarHeightKey: PreferenceKey {
+    // 必须是 `let`：`var` 在严格并发下是非隔离的全局可变状态，编译不过。
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
