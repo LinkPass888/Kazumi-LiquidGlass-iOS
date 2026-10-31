@@ -56,6 +56,10 @@ final class KazumiAppDelegate: UIResponder, UIApplicationDelegate {
     }
 
     func applicationDidBecomeActive(_ application: UIApplication) {
+        // 定位「点卡片不回 App」用的判据（Fuck 5597）：这条来自 UIApplication，
+        // 不管播放页在不在都会打。点完卡片它要是没出现，就是系统压根没把激活
+        // 送进 App；出现了而下面场景那条也有，才是 App 被叫起来了。
+        KazumiLogBuffer.player("App 代理：applicationDidBecomeActive")
         NotificationCenter.default.post(name: .kazumiAppDidBecomeActive, object: nil)
     }
 
@@ -178,6 +182,9 @@ final class KazumiSceneDelegate: UIResponder, UIWindowSceneDelegate {
         // 启动那一刻还没有窗口，那时调用等于空转（LP 5584 那份意见）。
         Self.declareRemoteControlEvents(on: host)
         KazumiLogBuffer.player("场景窗口已就绪：已声明 beginReceivingRemoteControlEvents")
+        // 走到 willConnectTo 就是「新建了一个场景」，也就是进程刚起来（冷启动）。
+        // 点卡片之后日志里出现这句，说明 App 之前已经被系统回收掉了（Fuck 5597）。
+        KazumiLogBuffer.player("场景：willConnectTo（新建场景，说明进程是刚起来的）")
     }
 
     /// 把宿主控制器顶成 FirstResponder，再向系统声明「这个 App 要收远程控制事件」。
@@ -192,6 +199,9 @@ final class KazumiSceneDelegate: UIResponder, UIWindowSceneDelegate {
     }
 
     func sceneDidBecomeActive(_ scene: UIScene) {
+        // 场景层的判据（Fuck 5597）：这条有、播放页那条「回前台」没有，
+        // 说明 App 起来了但播放页不在——那就是被整个杀掉过后的冷启动。
+        KazumiLogBuffer.player("场景：sceneDidBecomeActive")
         // 与 AppDelegate 那条一样：进前台时刷新设置、续上被系统掐掉的东西。
         NotificationCenter.default.post(name: .kazumiAppDidBecomeActive, object: nil)
     }
