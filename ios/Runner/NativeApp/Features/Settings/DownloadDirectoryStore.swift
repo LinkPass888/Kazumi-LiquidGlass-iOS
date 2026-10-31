@@ -13,7 +13,9 @@
 //  默认目录为什么在 Documents 而不是 Application Support：「文件」App 只能看见
 //  Documents，「我的 iPhone」里才会出现以 App 命名的那个文件夹，下完的东西用户
 //  才拿得到（LP 5262）。Application Support 下的目录它永远看不见。
-//  老版本下在 Application Support，启动时把那里整个搬过来（见 `migrateLegacyDirectories`）。
+//  老版本下在 Application Support（原版还少一层 Kazumi），不搬了：两个版本的
+//  落盘形状和记录都对不上，搬过来也认不成「已下载」。旧位置里有东西时，
+//  存储页会多一行「清除旧位置的下载」（LP 5280）。
 //
 
 import Foundation
@@ -27,8 +29,6 @@ final class DownloadDirectoryStore {
     /// downloadDirectoryBookmark），这样两版的设置备份里这两个键的口径一致。
     private static let pathKey = "downloadDirectory"
     private static let bookmarkKey = "downloadDirectoryBookmark"
-    /// 老目录已经搬过了。只搬一次：搬完会把老目录删掉，第二次再搬也没东西了。
-    private static let migratedKey = "downloadDirectoryMigratedToDocuments"
 
     private let defaults: UserDefaults
     /// 选过的目录路径。书签这次没解析成功时也留着，页面不会在启动那一瞬
@@ -44,9 +44,6 @@ final class DownloadDirectoryStore {
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         self.savedPath = defaults.string(forKey: Self.pathKey) ?? ""
-        // 必须在 DownloadCenter 读记录之前跑：记录里的文件名是相对下载目录的，
-        // 目录还没搬就校验文件，会把好端端的下载全判成「文件不在」。
-        migrateLegacyDirectories(defaults: defaults)
         restoreAccess()
     }
 
@@ -90,67 +87,9 @@ final class DownloadDirectoryStore {
 
     /// 应用内目录。下载列表、播放器落盘都从这里取默认值。
     ///
-    /// 固定在 Documents/Download：「文件」App 只能看见 Documents，
+    /// 固定在 Documents/下载：「文件」App 只能看见 Documents，
     /// 下完的东西要在「我的 iPhone」里拿得到（LP 5262）。
     static var defaultDirectory: URL { AppEnvironment.downloadRoot }
-
-    /// 把老目录里的下载整个搬进现在的下载目录，只搬一次。
-    ///
-    /// 只改默认目录不会搬文件——文件留在 Application Support 里，「文件」App
-    /// 看不见，下载管理页还按记录算它已下完：勾还在、点进去放不了、想重下又被
-    /// 同一个判据挡住（Fuck 5263）。所以这里搬一次。
-    ///
-    /// 搬手的外部目录（以前自己选过的那个）也一并并进来，并进完才丢掉那个选择：
-    /// 留着一个指向已经搬空的文件夹的选择，只会让页面右边写着一个不存在的目录。
-    /// 一件搬不动就整轮不算成功，老文件原样留着，下次启动再试。
-    private func migrateLegacyDirectories(defaults: UserDefaults) {
-        guard !defaults.bool(forKey: Self.migratedKey) else { return }
-        let target = Self.defaultDirectory
-        let legacy = [AppEnvironment.legacyDownloadRoot]
-            + (savedPath.isEmpty ? [] : [URL(fileURLWithPath: savedPath)])
-        var movedAny = false
-        var failed = false
-        for source in legacy {
-            guard !source.path.isEmpty,
-                  source.path != target.path,
-                  FileManager.default.fileExists(atPath: source.path)
-            else { continue }
-            do {
-                try Self.merge(source: source, into: target)
-                movedAny = true
-                KazumiLogBuffer.storage(
-                    "下载目录：已把 \(source.lastPathComponent) 搬进 \(target.lastPathComponent)"
-                )
-            } catch {
-                failed = true
-                KazumiLogBuffer.storage(
-                    "下载目录：\(source.lastPathComponent) 搬不动：\(error.localizedDescription)"
-                )
-            }
-        }
-        guard !failed else { return }
-        defaults.set(true, forKey: Self.migratedKey)
-        if movedAny && !savedPath.isEmpty {
-            reset()
-        }
-    }
-
-    /// 把 source 整个并进 target；target 里已有的同名项跳过。搬不动就抛，由调用方当失败处理。
-    private static func merge(source: URL, into target: URL) throws {
-        let fileManager = FileManager.default
-        try fileManager.createDirectory(at: target, withIntermediateDirectories: true)
-        guard let items = try? fileManager.contentsOfDirectory(
-            at: source,
-            includingPropertiesForKeys: nil
-        ) else { return }
-        for item in items {
-            let destination = target.appendingPathComponent(item.lastPathComponent)
-            guard !fileManager.fileExists(atPath: destination.path) else { continue }
-            try fileManager.moveItem(at: item, to: destination)
-        }
-        // 源目录空了就删掉；还有东西就留着，下次启动再搬。
-        try? fileManager.removeItem(at: source)
-    }
 
     // MARK: - 选目录
 

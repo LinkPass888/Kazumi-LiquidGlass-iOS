@@ -26,6 +26,8 @@ struct StorageScreen: View {
     @State private var isClearing = false
     @State private var isConfirmingClear = false
     @State private var isConfirmingClearOffline = false
+    /// 旧版本留下的下载占多少。没检测到东西就是 nil，那一行不出现。
+    @State private var legacyBytes: Int64?
     @State private var message: String?
 
     var body: some View {
@@ -74,6 +76,34 @@ struct StorageScreen: View {
                 Text("离线下载")
             } footer: {
                 Text("删掉下载记录和已经下好的视频文件，不能恢复。")
+            }
+
+            // LP 5280：旧位置里留的东西不搬（两个版本的落盘形状和记录都对不上），
+            // 检测到才给一行清除。
+            if let legacyBytes {
+                Section {
+                    Group {
+                        // LP 5284：旧格式本来就不能播，删它们不用再问一句。
+                        Button(role: .destructive) {
+                            Task { await clearLegacy() }
+                        } label: {
+                            HStack(spacing: 12) {
+                                Label("清除旧版本离线下载", systemImage: "trash")
+                                    .foregroundStyle(.red)
+                                Spacer()
+                                Text(formattedSize(legacyBytes))
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .disabled(isClearing)
+                    }
+                    .listRowBackground(KazumiPalette.groupedRow(for: colorScheme))
+                } header: {
+                    Text("旧版本")
+                } footer: {
+                    Text("旧版本下载的格式无法兼容。")
+                }
             }
 
             Section {
@@ -157,19 +187,23 @@ struct StorageScreen: View {
         return String(format: "%.2f MB", Double(cacheBytes) / (1024 * 1024))
     }
 
-    /// 离线下载那一行右侧的占用与集数，比如「509.5 MB · 3 集」。
+    /// 离线下载那一行右侧的占用与集数，比如「518.3 MB · 2 集」。
     private var offlineDescription: String {
-        let bytes = Double(offlineBytes)
-        let size: String
+        guard offlineEpisodes > 0 else { return formattedSize(offlineBytes) }
+        return "\(formattedSize(offlineBytes)) · \(offlineEpisodes) 集"
+    }
+
+    /// 旧版本下载那一行右侧只写占用（Camo 5289）：跟「更新时间缓存」那行一个样子。
+
+    private func formattedSize(_ raw: Int64) -> String {
+        let bytes = Double(raw)
         if bytes >= 1024 * 1024 {
-            size = String(format: "%.1f MB", bytes / (1024 * 1024))
-        } else if bytes > 0 {
-            size = String(format: "%.0f KB", bytes / 1024)
-        } else {
-            size = "—"
+            return String(format: "%.1f MB", bytes / (1024 * 1024))
         }
-        guard offlineEpisodes > 0 else { return size }
-        return "\(size) · \(offlineEpisodes) 集"
+        if bytes > 0 {
+            return String(format: "%.0f KB", bytes / 1024)
+        }
+        return "—"
     }
 
     /// 更新时间缓存只显示占用大小。原来的「N 个季度」读起来像在数番剧季度，
@@ -190,6 +224,21 @@ struct StorageScreen: View {
         offlineEpisodes = environment.downloads.records.reduce(0) {
             $0 + $1.episodes.filter(\.isPlayableOffline).count
         }
+        // 旧目录可能几百 MB，别在主线程上扫。
+        legacyBytes = await Task.detached(priority: .utility) {
+            AppEnvironment.legacyDownloadUsage()
+        }.value
+    }
+
+    /// 删掉旧版本留在旧目录里的下载。现在的下载和记录都不动。
+    private func clearLegacy() async {
+        isClearing = true
+        defer { isClearing = false }
+        await Task.detached(priority: .userInitiated) {
+            AppEnvironment.clearLegacyDownloads()
+        }.value
+        await refreshSize()
+        message = "已清除旧版本离线下载。"
     }
 
     /// 清掉全部离线下载：记录和文件一起走（DownloadCenter.removeAllRecords）。
