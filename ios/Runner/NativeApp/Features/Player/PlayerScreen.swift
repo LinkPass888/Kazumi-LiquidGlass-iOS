@@ -373,7 +373,15 @@ struct PlayerScreen: View {
     /// 主题色分深浅两档，菜单跟着走（Colo 3344）。
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.scenePhase) private var scenePhase
+    /// 场景是不是在前台。
+    ///
+    /// 以前直接用 `@Environment(\.scenePhase)`。入口换成 UIKit 的
+    /// `@main KazumiAppDelegate` + `UIHostingController` 之后（4ef8aab5），
+    /// SwiftUI 那个环境值不再跟着真实场景走——LP 5563 的日志里切过后台，
+    /// 但 `[会话] 切到后台` 和 `mpv: 画面：后台渲染锁已上` 一行都没有，
+    /// 也就是 `handleBackground()` 根本没执行、后台渲染锁没上。
+    /// 改成自己听 UIScene 的通知，这个值就一定跟系统一致（Fuck 5583 核过）。
+    @State private var sceneIsActive = true
 
     /// 画面那一半（body 的前半截）。
     ///
@@ -536,7 +544,7 @@ struct PlayerScreen: View {
                 // 切后台那一拍我们刚 pause()，内核还会有一两个快照报「还在走」，
                 // 那不是用户的意思：只有在前台真的播起来，才算「用户亲手按的暂停」
                 // 作废。不然这一拍会把 pausedByBackground 洗掉，回前台就不续播了。
-                if scenePhase == .active { pausedByBackground = false }
+                if sceneIsActive { pausedByBackground = false }
                 // 起播那一刻立即写一次：不然要等到下一个 2 秒节拍，
                 // 万一这期间出事，控制中心一次都没写出去过。
                 syncNowPlaying()
@@ -594,23 +602,24 @@ struct PlayerScreen: View {
         // 熄屏 / 切出去继续出声（LP 清单「后台播放」，默认关）。
         // 具体做什么拆到下面两个方法里：这个闭包自己已经很长，再往里塞
         // 编译器的类型检查会超时（「unable to type-check in reasonable time」）。
-        .onChange(of: scenePhase) { _, phase in
-            // 进后台 / 锁屏一律放弃常亮；回前台且还在播就接回来。
+        // 前后台走 UIScene 的通知，不再用 `scenePhase`（原因见上面 sceneIsActive）。
+        // 两条通知表示「事件」，重复发也只是多一次幂等调用。
+        .onReceive(NotificationCenter.default.publisher(for: UIScene.didEnterBackgroundNotification)) { _ in
+            sceneIsActive = false
+            // 进后台 / 锁屏一律放弃常亮；回前台且还在播再重新判断。
             updateIdleTimer()
-            switch phase {
-            case .background:
-                // 真机上「卡片为什么不出」只能靠这一行判：切后台那一刻把音频会话的
-                // 真实类别/选项和卡片字段数写进「播放」日志（设置 → 日志 → 播放）。
-                // 混音的会话不会被 iOS 当成正在播放，日志里有 mixWithOthers 就是它。
-                PlayerAudioSession.shared.logSnapshot("切到后台")
-                handleBackground()
-            case .active:
-                handleForeground()
-                // 回前台重新读一次代理：用户可能刚把代理工具打开/关掉。
-                refreshProxy()
-            default:
-                break
-            }
+            // 真机上「卡片为什么不出」只能靠这一行判：切后台那一刻把音频会话的
+            // 真实类别/选项和卡片字段数写进「播放」日志（设置 → 日志 → 播放）。
+            // 混音的会话不会被 iOS 当成正在播放，日志里有 mixWithOthers 就是它。
+            PlayerAudioSession.shared.logSnapshot("切到后台")
+            handleBackground()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIScene.didActivateNotification)) { _ in
+            sceneIsActive = true
+            updateIdleTimer()
+            handleForeground()
+            // 回前台重新读一次代理：用户可能刚把代理工具打开/关掉。
+            refreshProxy()
         }
         // 手填的代理改了也要重读：开关或地址任何一个变了都算。
         .onChange(of: settings.proxyEnabled) { _, _ in
@@ -1974,7 +1983,7 @@ struct PlayerScreen: View {
     /// 屏幕常亮：只在「真的在播」且 App 在前台时开；暂停、缓冲、播完、退后台、离开播放器全部恢复默认，
     /// 免得暂停一晚上屏幕还亮着。锁手势不影响——那时内核照样在播，就照样常亮。
     private func updateIdleTimer() {
-        let keepAwake = surface.isPlaying && scenePhase == .active
+        let keepAwake = surface.isPlaying && sceneIsActive
         if UIApplication.shared.isIdleTimerDisabled != keepAwake {
             UIApplication.shared.isIdleTimerDisabled = keepAwake
         }

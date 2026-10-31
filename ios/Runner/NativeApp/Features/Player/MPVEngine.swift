@@ -220,7 +220,7 @@ final class MPVEngine {
         // ffmpeg 这一路放开到 debug：它会把真实发出去的请求行和每一个头逐条打出来，
         // 400 那种「本地能取、内核不行」只能靠这个看（Fuck 5523）。别的一律 warn，
         // 免得日志被刷满。看一眼就把这行改回 "warn"。
-        mpv_request_log_messages(mpv, "warn,ffmpeg=debug")
+        mpv_request_log_messages(mpv, "warn,ffmpeg=debug,hwdec=debug")
 
         setupRenderContext(mpv)
         setupEvents(mpv)
@@ -327,21 +327,19 @@ final class MPVEngine {
 
     /// 前台该用的硬解档位。
     ///
-    /// 开关关掉就纯软解；开着走 `videotoolbox-copy`（copy-back）。
+    /// 开关关掉就纯软解；开着用 `auto-safe`——与 main 一致（LP 5549/5551/5577：
+    /// main 上一直是这一档，颜色正常）。
     ///
-    /// 不用 `auto-safe`：它在这台机器上落到 `videotoolbox`，日志里 `px=videotoolbox`，
-    /// 也就是零拷贝直通帧。我们的画面是自己用 GL 画的（渲染 API + FBO），
-    /// 直通帧进来后颜色对不上——表现就是刚起播偏色、切后台再回来才正常
-    /// （LP 5563：切前后台会让渲染上下文重建一次，颜色被纠回来）。同一类问题在
-    /// LP 2026-10-28 也报过（花屏、发绿发紫、只剩红绿两色），当时的解法就是 copy-back。
-    /// copy-back 多一次拷贝，1080p 这点开销换颜色一定是对的。
+    /// 之前直通（`px=videotoolbox`）发绿的根因不在这一档，在我们交给 mpv 的
+    /// `internal_format`：以前传 `GL_RGBA`，mpv 就按「目标就是这个格式」挑输出路径，
+    /// 硬解直通正好走那条路，色度平面被处理错。现在跟 main 一样传 0。
     ///
     /// 模拟器没有硬解，开与关都是 `no`。
     static func hwdec(enabled: Bool) -> String {
         #if targetEnvironment(simulator)
         return "no"
         #else
-        return enabled ? "videotoolbox-copy" : "no"
+        return enabled ? "auto-safe" : "no"
         #endif
     }
 
@@ -807,9 +805,15 @@ final class MPVEngine {
             fbo: Int32(fbo),
             w: Int32(viewport[2]),
             h: Int32(viewport[3]),
-            // 这里要的是 internal format 常量，不是 sized enum。
-            // 传错会让 mpv 按错误格式写 FBO，画中画 blit 也会跟着错。
-            internal_format: GLint(GL_RGBA)
+            // 传 0，跟 main 的 media_kit_video（TextureHW.swift）一致：让 mpv 用
+            // 自己的默认值，不去假设目标缓冲是什么格式。
+            //
+            // 之前传的是 GL_RGBA。mpv 拿到这个值会认为它清楚 FBO 的格式，于是按
+            // 「目标就是这个格式」挑输出路径；硬解直通（px=videotoolbox）走的正是
+            // 这条按目标格式优化的路径，结果色度平面被处理错，画面发绿——而
+            // copy-back 的帧走的是完整 YUV→RGB 转换，不受这句影响，所以以前没暴露。
+            // main 传 0 一直是对的，这就是两边唯一的实质差别（LP 5577）。
+            internal_format: 0
         )
         var flip: CInt = 1
         withUnsafeMutablePointer(to: &flip) { flipPtr in

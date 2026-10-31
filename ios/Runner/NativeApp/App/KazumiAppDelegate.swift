@@ -29,10 +29,15 @@ import UIKit
 /// 之前两次尝试都失败在这条路上，教训写在这里，别再重走：
 ///   * `configurationForConnecting` 里返回空白配置 → 路由落到没有对应条目的名字上；
 ///   * 原样透传 SwiftUI 的配置 → 真机递归崩（`SwiftUI.AppSceneDelegate` 互调）。
-/// 所以现在什么都不实现，让系统直接读 plist 里那张静态表，
-/// 由 `KazumiSceneDelegate` 自己建窗口（与 main 分支的 FlutterSceneDelegate 等价）。
+/// 现在的写法（LP 5584/5585）：`configurationForConnecting` 显式返回一份指名
+/// `KazumiSceneDelegate` 的配置（纯 UIKit 入口，没有 SwiftUI 场景代理可互调），
+/// 场景代理自己建窗口，窗口挂好之后才成为 FirstResponder 并声明收远程控制事件。
 @main
-final class KazumiAppDelegate: NSObject, UIApplicationDelegate {
+final class KazumiAppDelegate: UIResponder, UIApplicationDelegate {
+    /// 响应者链的最末端。LP 5584/5585 要求照那份意见把这一处补齐：
+    /// App 代理进响应者链、窗口建好之后成为 FirstResponder，再声明收远程控制事件。
+    override var canBecomeFirstResponder: Bool { true }
+
     func application(
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
@@ -44,15 +49,9 @@ final class KazumiAppDelegate: NSObject, UIApplicationDelegate {
         UITabBar.appearance().isHidden = false
         UITableView.appearance().backgroundColor = .clear
         // 锁屏 / 灵动岛那张卡要认到「是这个 App 在放」，得显式声明一句
-        // 「我要收远程控制事件」（LP 4738）。没有这一句，系统只当我们放了一段
-        // 普通音频流：卡能出来，但点它不回这个 App，退到后台时也不按我们的
-        // 进程收（LP 4715：别的 App 点一下进 App、长按才展开，我们反过来）。
-        // 现代 iOS 真正的按钮回调走 MPRemoteCommandCenter（NowPlayingCenter），
-        // 这行是老接口，但它就是那个「显式声明」，两样都要有。
-        //
-        // 这行跟音频会话无关，不抢播放位，所以留在启动路径上；`AVAudioSession`
-        // 那一整套配置按 LP 4938 已经挪走（见文件头）。
-        UIApplication.shared.beginReceivingRemoteControlEvents()
+        // 「我要收远程控制事件」（LP 4738）。**这句现在挪到场景窗口建好之后**
+        // （见 KazumiSceneDelegate.scene(_:willConnectTo:)）：启动这一刻整个 App
+        // 还没有 UIWindow、也没有活跃的响应者，早叫一次没有意义（LP 5584 那份意见）。
         return true
     }
 
@@ -60,9 +59,10 @@ final class KazumiAppDelegate: NSObject, UIApplicationDelegate {
         NotificationCenter.default.post(name: .kazumiAppDidBecomeActive, object: nil)
     }
 
-    // ⚠️ 这里**故意不实现** `application(_:configurationForConnecting:options:)`。
+    // ⚠️ 这一段是历史，留给孩子看：`configurationForConnecting` 曾经两次翻车，
+    // 现在的实现见下面那个方法（LP 5584：翻车是别的地方没改对）。
     //
-    // 这件事的完整教训（两次都踩在同一处）：
+    // 两次都踩在同一处：
     //
     // 1）LP 4978 那版在这里 return 了一份**新建的空白配置**
     //    `UISceneConfiguration(name: "Default Configuration", …)`。系统拿到非 nil 就
@@ -81,8 +81,32 @@ final class KazumiAppDelegate: NSObject, UIApplicationDelegate {
     //    也就是说：从我们这层递出去一份**已经带着 SwiftUI 的 delegateClass** 的配置，
     //    UIKit 会装一遍 SwiftUI 的场景代理，SwiftUI 自己再装一遍，两边绕死。
     //
-    // 正解就是**什么都不写**：不实现这个方法，SwiftUI 自己的主代理会给出它要的那份
-    //    配置，场景代理只被装一次。之前「删了会拿不到 delegate class」是没验过的猜测。
+    // 当时的结论是「什么都不写」。现在的结论：入口换成纯 UIKit 之后，
+    //    返回一份指名 `KazumiSceneDelegate` 的配置是标准写法，也不会再有 SwiftUI
+    //    那层代理跟它互调（LP 5584）。
+
+    /// 显式给出场景配置（LP 5584/5585：照那份意见补齐）。
+    ///
+    /// 之前两次翻车都记在上面：一次返回**空白**配置导致点卡片不进 App；一次**原样
+    /// 透传** `connectingSceneSession.configuration`，那份里带着 SwiftUI 的
+    /// `AppSceneDelegate`，UIKit 装一遍、SwiftUI 再装一遍，真机栈溢出递归崩。
+    ///
+    /// 现在入口已经是纯 UIKit 的 `@main KazumiAppDelegate`，进程里没有 SwiftUI 的
+    /// 场景代理可绕，这里返回一份**指名 KazumiSceneDelegate** 的配置就是 Apple 的
+    /// 标准写法（LP 5584：之前翻车是别的地方没改对）。
+    func application(
+        _ application: UIApplication,
+        configurationForConnecting connectingSceneSession: UISceneSession,
+        options: UIScene.ConnectionOptions
+    ) -> UISceneConfiguration {
+        let config = UISceneConfiguration(
+            name: "Default Configuration",
+            sessionRole: connectingSceneSession.role
+        )
+        config.sceneClass = UIWindowScene.self
+        config.delegateClass = KazumiSceneDelegate.self
+        return config
+    }
 
     func application(
         _ application: UIApplication,
@@ -143,16 +167,40 @@ final class KazumiSceneDelegate: UIResponder, UIWindowSceneDelegate {
     ) {
         guard let windowScene = scene as? UIWindowScene else { return }
         let window = UIWindow(windowScene: windowScene)
-        let host = UIHostingController(rootView: KazumiRootView())
+        let host = RemoteControlHostingController(rootView: KazumiRootView())
         // 画面自己铺满；背景交给 SwiftUI 的主题色，别让窗口底色在转场时闪一下白。
         host.view.backgroundColor = .clear
         window.rootViewController = host
         self.window = window
         window.makeKeyAndVisible()
+
+        // 窗口挂上去之后才成为 FirstResponder、才声明收远程控制事件：
+        // 启动那一刻还没有窗口，那时调用等于空转（LP 5584 那份意见）。
+        Self.declareRemoteControlEvents(on: host)
+        KazumiLogBuffer.player("场景窗口已就绪：已声明 beginReceivingRemoteControlEvents")
+    }
+
+    /// 把宿主控制器顶成 FirstResponder，再向系统声明「这个 App 要收远程控制事件」。
+    ///
+    /// `UIHostingController` 的 `canBecomeFirstResponder` 默认是 false、而且是只读的，
+    /// 所以用下面那个子类把它打开。拿不到第一响应者也照样要调
+    /// `beginReceivingRemoteControlEvents()`——后者是 App 级声明，不依赖响应者链。
+    @MainActor
+    private static func declareRemoteControlEvents(on host: UIViewController) {
+        _ = host.becomeFirstResponder()
+        UIApplication.shared.beginReceivingRemoteControlEvents()
     }
 
     func sceneDidBecomeActive(_ scene: UIScene) {
         // 与 AppDelegate 那条一样：进前台时刷新设置、续上被系统掐掉的东西。
         NotificationCenter.default.post(name: .kazumiAppDidBecomeActive, object: nil)
     }
+}
+
+/// 能成为第一响应者的宿主控制器。
+///
+/// `canBecomeFirstResponder` 在 `UIViewController` 上是只读属性，只能靠子类重写打开；
+/// 打开之后 `becomeFirstResponder()` 才会成功，远程控制事件才有响应者可投递。
+private final class RemoteControlHostingController<Content: View>: UIHostingController<Content> {
+    override var canBecomeFirstResponder: Bool { true }
 }
