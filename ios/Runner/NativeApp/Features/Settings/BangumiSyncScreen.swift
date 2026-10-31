@@ -127,11 +127,13 @@ struct BangumiSyncScreen: View {
                 if isTokenExpanded {
                     // 框自己一行：这一行不加标签，上面那行已经是「Access Token」。
                     HStack(spacing: 8) {
+                        // 框里那句照 main 的 labelText: 'Access Token' 带回来（LP「原来有就加回去」）：
+                        // 空着的时候框里看得见字，不是只剩右边一只眼睛。
                         Group {
                             if isTokenVisible {
-                                TextField("", text: $tokenText)
+                                TextField("Access Token", text: $tokenText)
                             } else {
-                                SecureField("", text: $tokenText)
+                                SecureField("Access Token", text: $tokenText)
                             }
                         }
                         .autocorrectionDisabled()
