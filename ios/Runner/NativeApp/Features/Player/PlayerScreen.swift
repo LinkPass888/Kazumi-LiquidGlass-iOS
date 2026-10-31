@@ -4169,6 +4169,8 @@ struct PlayerScreen: View {
             coverURL: "",
             pluginName: controller.source?.pluginName ?? "",
             road: roadIndex,
+            // 条目身份一起存：回放时它才是接口模式要的 vod_id（LP 5508/5512）。
+            itemSource: controller.source?.detailURL ?? "",
             episodes: items
         )
         withAnimation(.easeOut(duration: 0.18)) {

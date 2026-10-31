@@ -113,6 +113,7 @@ final class DownloadCenter {
         coverURL: String,
         pluginName: String,
         road: Int,
+        itemSource: String = "",
         episodes: [(number: Int, title: String, pageURL: String)]
     ) {
         guard !episodes.isEmpty else { return }
@@ -126,6 +127,10 @@ final class DownloadCenter {
             episodes: [],
             createdAt: Date()
         )
+
+        // 条目身份（接口模式当 vod_id）：老记录里没有，这次入队能拿到就补上，
+        // 回放时才不用拿剧集地址去凑（LP 5508）。
+        if !itemSource.isEmpty { record.itemSource = itemSource }
 
         var added: [QueueItem] = []
         for item in episodes {

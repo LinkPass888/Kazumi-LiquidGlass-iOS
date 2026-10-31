@@ -412,14 +412,19 @@ struct DownloadScreen: View {
 
     /// 放本地那份文件（Colo 5174）。播放器里先看本地，有就跳过解析。
     private func play(record: DownloadRecord, episode: DownloadEpisode) {
+        // detailURL 要的是**条目身份**，不是这集的地址：接口模式的规则把它当 vod_id 发给站点，
+        // 站点只收数字 id（LP 5512 的规则：sourcePath = $.vod_id，vod_id = @source）。
+        // 这里原来塞的是 episode.pageURL（这一集的 m3u8），抓包里就成了
+        // `get_detail?vod_id=<m3u8 地址>` → code 1001「vod_id必须是数字」（LP 5508）。
+        // 老记录没存 itemSource，退回 pageURL 保持原样，至少不比以前更差。
+        let identity = record.itemSource.isEmpty ? episode.pageURL : record.itemSource
         router.push(.player(
             bangumiID: record.bangumiID,
             episode: episode.number,
-            // 详情页地址用这集的页面：抓章节时能取到列表，取不到也有本地文件兜底。
             source: PlaybackSource(
                 pluginName: record.pluginName,
                 itemName: record.title,
-                detailURL: episode.pageURL,
+                detailURL: identity,
                 directMediaURL: nil
             ),
             resumeRoad: record.road,

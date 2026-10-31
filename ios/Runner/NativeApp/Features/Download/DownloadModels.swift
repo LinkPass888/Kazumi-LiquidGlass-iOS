@@ -110,6 +110,12 @@ struct DownloadRecord: Codable, Identifiable, Sendable {
     var road: Int
     var episodes: [DownloadEpisode]
     var createdAt: Date
+    /// 这条记录在规则里的「条目身份」（搜索结果的 src / item id）。
+    ///
+    /// 接口模式的规则拿它当 `vod_id` 用，站点要的是数字 id，不是剧集地址
+    /// （LP 5508 抓包：`get_detail?vod_id=<m3u8 地址>` → 1001 参数错误）。
+    /// 旧记录没有这个字段，解码出来是空串，回放时退回老样子。
+    var itemSource: String = ""
 
     /// 记录主键：同一部番、同一条规则、同一条线路算一份。
     var id: String { Self.key(bangumiID: bangumiID, pluginName: pluginName, road: road) }
