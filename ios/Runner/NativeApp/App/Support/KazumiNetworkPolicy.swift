@@ -11,8 +11,8 @@
 //  iOS 上没有「全局代理」这种东西，`connectionProxyDictionary` 是每份 URLSession
 //  配置自己的，所以做成一个建配置时调一下的方法，替掉 main 那边的「重置工厂」。
 //
-//  已知限制：session 是静态的、第一次用网络时才建，建好之后改代理不会重建，
-//  得等重启。main 是靠 `applyProxy()` 主动重置绕开这一点的。
+//  代理变了还要把已经建好的 session 作废重建（`ProxyAwareURLSession`），
+//  不然设完代理得重启才生效，跟播放器那一路当场生效对不上（Fuck 5352）。
 //
 
 import Foundation
@@ -30,6 +30,8 @@ enum KazumiNetworkPolicy {
         var imageAcceleration: ImageAcceleration = .direct
         /// 手动代理地址，一整串（`127.0.0.1:6152`）；空串表示不代理。
         var proxyURL: String = ""
+        /// 代理地址变过几次。`ProxyAwareURLSession` 凭它认出自己是不是过期了。
+        var proxyGeneration: Int = 0
     }
 
     private static let state = OSAllocatedUnfairLock(initialState: State())
@@ -43,8 +45,23 @@ enum KazumiNetworkPolicy {
     /// 手动代理地址（`proxyUrl`）；空串表示不代理。
     static var proxyURL: String {
         get { state.withLock { $0.proxyURL } }
-        set { state.withLock { $0.proxyURL = newValue } }
+        set {
+            state.withLock {
+                guard $0.proxyURL != newValue else { return }
+                $0.proxyURL = newValue
+                $0.proxyGeneration += 1
+            }
+        }
     }
+
+    /// 代理地址变过几次；没变过就是 0。
+    static var proxyGeneration: Int {
+        state.withLock { $0.proxyGeneration }
+    }
+
+    /// 替代 `URLSession.shared` 的那一份：shared 的配置改不了，也就永远不走我们
+    /// 填的代理。各调用点自己设 `request.timeoutInterval`，所以这里用默认配置。
+    static let requestSession = ProxyAwareURLSession { URLSessionConfiguration.default }
 
     /// 把当前手动代理套到一份 session 配置上。
     ///
@@ -61,6 +78,38 @@ enum KazumiNetworkPolicy {
             "HTTPProxy": parsed.host,
             "HTTPPort": parsed.port,
         ]
+    }
+}
+
+/// 一份「代理变了就重建」的 URLSession。
+///
+/// `URLSession` 的配置建好就不能改，所以设代理这件事只能在**建**的时候生效。
+/// main 靠 `ProxyManager.applyProxy()` 重置 Dio 工厂绕开这点；iOS 这边让各接口
+/// 把 session 换成这个盒子，代理一改就重建一份新的（配置在重建那一刻读，
+/// 自然带上当时的代理），于是和播放器那一路一样是当场生效。
+final class ProxyAwareURLSession: @unchecked Sendable {
+    private struct State: Sendable {
+        var generation = -1
+        var session: URLSession?
+    }
+
+    private let lock = OSAllocatedUnfairLock(initialState: State())
+    private let configuration: @Sendable () -> URLSessionConfiguration
+
+    init(configuration: @escaping @Sendable () -> URLSessionConfiguration) {
+        self.configuration = configuration
+    }
+
+    /// 当前代理下该用的那份 session；代理变过就重建。
+    var session: URLSession {
+        let generation = KazumiNetworkPolicy.proxyGeneration
+        return lock.withLock { state in
+            if let session = state.session, state.generation == generation { return session }
+            let session = URLSession(configuration: configuration())
+            state.session = session
+            state.generation = generation
+            return session
+        }
     }
 }
 

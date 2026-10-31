@@ -87,7 +87,7 @@ struct KazumiSyncClient {
             </d:prop></d:propfind>
             """.utf8)
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await KazumiNetworkPolicy.requestSession.session.data(for: request)
         guard let http = response as? HTTPURLResponse else { return [] }
         switch http.statusCode {
         case 207, 200: break
@@ -146,7 +146,7 @@ struct KazumiSyncClient {
     func read(_ components: [String]) async throws -> Data {
         var request = try authorizedRequest(url: try url(components), method: "GET")
         request.setValue("*/*", forHTTPHeaderField: "Accept")
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await KazumiNetworkPolicy.requestSession.session.data(for: request)
         guard let http = response as? HTTPURLResponse else { return data }
         switch http.statusCode {
         case 200..<300: return data
@@ -176,7 +176,7 @@ struct KazumiSyncClient {
         var request = try authorizedRequest(url: try url(components), method: "PUT")
         request.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
         request.httpBody = data
-        let (_, response) = try await URLSession.shared.data(for: request)
+        let (_, response) = try await KazumiNetworkPolicy.requestSession.session.data(for: request)
         guard let http = response as? HTTPURLResponse else { return }
         switch http.statusCode {
         case 200..<300: return
@@ -189,7 +189,7 @@ struct KazumiSyncClient {
     func ensureDirectory(_ components: [String]) async throws {
         var request = try authorizedRequest(url: try url(components, isDirectory: true), method: "MKCOL")
         request.setValue("0", forHTTPHeaderField: "content-length")
-        let (_, response) = try await URLSession.shared.data(for: request)
+        let (_, response) = try await KazumiNetworkPolicy.requestSession.session.data(for: request)
         guard let http = response as? HTTPURLResponse else { return }
         switch http.statusCode {
         case 200..<300, 301, 405, 409: return

@@ -24,12 +24,15 @@ enum AniSkipClient {
     private static let shardPath = "/shards"
     private static let mapMaxAge: TimeInterval = 7 * 24 * 60 * 60
 
-    private static let session: URLSession = {
+    private static let sessionProvider = ProxyAwareURLSession {
         let configuration = URLSessionConfiguration.default
-        KazumiNetworkPolicy.applyProxy(to: configuration)
         configuration.timeoutIntervalForRequest = 15
-        return URLSession(configuration: configuration)
-    }()
+        KazumiNetworkPolicy.applyProxy(to: configuration)
+        return configuration
+    }
+
+    /// 代理变了就重建，见 `ProxyAwareURLSession`。
+    private static var session: URLSession { sessionProvider.session }
 
     // MARK: - bangumi id -> mal id
 

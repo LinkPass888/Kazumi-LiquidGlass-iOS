@@ -24,15 +24,20 @@ final class RulesRepoClient: Sendable {
     /// 由设置页写入；仅影响后续请求，与 interceptor 的即时读取行为一致。
     static let enableMirror = OSAllocatedUnfairLock(initialState: false)
 
-    private let session: URLSession
+    private let sessionProvider: ProxyAwareURLSession
+
+    /// 代理变了就重建，见 `ProxyAwareURLSession`。
+    private var session: URLSession { sessionProvider.session }
 
     init() {
         let config = URLSessionConfiguration.ephemeral
-        KazumiNetworkPolicy.applyProxy(to: config)
         config.timeoutIntervalForRequest = 12
         config.timeoutIntervalForResource = 24
         config.requestCachePolicy = .reloadIgnoringLocalCacheData
-        session = URLSession(configuration: config)
+        sessionProvider = ProxyAwareURLSession {
+            KazumiNetworkPolicy.applyProxy(to: config)
+            return config
+        }
     }
 
     /// 对应 RulesRepoClient.instance.getText。

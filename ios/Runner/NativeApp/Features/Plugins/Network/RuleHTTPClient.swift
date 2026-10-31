@@ -24,12 +24,14 @@ final class RuleHTTPClient: RuleRequestExecutor, @unchecked Sendable {
     private static let connectTimeout: TimeInterval = 12
     private static let receiveTimeout: TimeInterval = 12
 
-    private let session: URLSession
+    private let sessionProvider: ProxyAwareURLSession
     private let cookies: PluginCookieStore
+
+    /// 代理变了就重建，见 `ProxyAwareURLSession`。
+    private var session: URLSession { sessionProvider.session }
 
     init(cookies: PluginCookieStore = .shared, configuration: URLSessionConfiguration? = nil) {
         let config = configuration ?? URLSessionConfiguration.ephemeral
-        KazumiNetworkPolicy.applyProxy(to: config)
         config.timeoutIntervalForRequest = RuleHTTPClient.receiveTimeout
         config.timeoutIntervalForResource = RuleHTTPClient.connectTimeout + RuleHTTPClient.receiveTimeout
         config.httpShouldSetCookies = false
@@ -39,7 +41,10 @@ final class RuleHTTPClient: RuleRequestExecutor, @unchecked Sendable {
             "user-agent": HTTPHeaders.randomUserAgent(),
             "accept-language": HTTPHeaders.randomAcceptLanguage()
         ]
-        self.session = URLSession(configuration: config)
+        self.sessionProvider = ProxyAwareURLSession {
+            KazumiNetworkPolicy.applyProxy(to: config)
+            return config
+        }
         self.cookies = cookies
     }
 

@@ -17,15 +17,19 @@ enum TraceAPI {
     /// 对应 ApiEndpoints.traceApi。
     static let searchEndpoint = "https://api.trace.moe/search"
 
-    private static let session: URLSession = {
+    private static let sessionProvider = ProxyAwareURLSession {
         let configuration = URLSessionConfiguration.default
         // 图片识别耗时较长，读超时与 NetworkConfig 的接收超时保持一致的 12s 太短，
         // 原版 trace_client 使用独立的 30s 接收超时。
         configuration.timeoutIntervalForRequest = 30
         configuration.timeoutIntervalForResource = 60
         configuration.waitsForConnectivity = false
-        return URLSession(configuration: configuration)
-    }()
+        KazumiNetworkPolicy.applyProxy(to: configuration)
+        return configuration
+    }
+
+    /// 代理变了就重建，见 `ProxyAwareURLSession`。
+    private static var session: URLSession { sessionProvider.session }
 
     /// 对应 searchAnimeByImageFile。
     static func searchByImageData(_ data: Data, anilistInfo: Int = 2) async throws -> ImageSearchItem {

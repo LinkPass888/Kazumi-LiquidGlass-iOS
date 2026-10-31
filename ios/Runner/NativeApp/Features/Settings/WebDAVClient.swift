@@ -184,7 +184,7 @@ struct WebDAVClient {
         request.setValue("application/json", forHTTPHeaderField: "content-type")
         let body = try Self.encoder().encode(payload)
         request.httpBody = body
-        let (_, response) = try await URLSession.shared.data(for: request)
+        let (_, response) = try await KazumiNetworkPolicy.requestSession.session.data(for: request)
         let status = (response as? HTTPURLResponse)?.statusCode ?? -1
         // 云盘上出现过 0 字节的备份文件，靠这两个数分得清是「我们没发出去」
         // 还是「服务器没存」——不然只能猜。
@@ -200,7 +200,7 @@ struct WebDAVClient {
         var request = try authorizedRequest(url: target, method: "GET")
         // 备份文件绝不能吃本地缓存：缓存里可能躺着一份旧的（或空的）。
         request.cachePolicy = .reloadIgnoringLocalCacheData
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await KazumiNetworkPolicy.requestSession.session.data(for: request)
         let status = (response as? HTTPURLResponse)?.statusCode ?? -1
         KazumiLogBuffer.shared.append(
             "WebDAV GET \(Self.backupFileName) 收到 \(data.count) 字节，HTTP \(status)",
@@ -243,7 +243,7 @@ struct WebDAVClient {
             target.append(path: String(part))
         }
         let request = try authorizedRequest(url: target, method: "GET")
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await KazumiNetworkPolicy.requestSession.session.data(for: request)
         if let http = response as? HTTPURLResponse, http.statusCode == 404 { return nil }
         try Self.validate(response)
         return data
@@ -266,7 +266,7 @@ struct WebDAVClient {
         var request = try authorizedRequest(url: target, method: "PUT")
         request.setValue(contentType, forHTTPHeaderField: "content-type")
         request.httpBody = data
-        let (_, response) = try await URLSession.shared.data(for: request)
+        let (_, response) = try await KazumiNetworkPolicy.requestSession.session.data(for: request)
         try Self.validate(response)
     }
 
@@ -280,7 +280,7 @@ struct WebDAVClient {
         var request = try authorizedRequest(url: target, method: "PROPFIND")
         request.setValue("1", forHTTPHeaderField: "depth")
         request.setValue("application/xml", forHTTPHeaderField: "content-type")
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await KazumiNetworkPolicy.requestSession.session.data(for: request)
         if let http = response as? HTTPURLResponse, http.statusCode == 404 { return [] }
         try Self.validate(response)
         return Self.hrefs(in: data).filter { !$0.hasSuffix("/") }
@@ -299,7 +299,7 @@ struct WebDAVClient {
         var request = try authorizedRequest(url: target, method: "PROPFIND")
         request.setValue("1", forHTTPHeaderField: "depth")
         request.setValue("application/xml", forHTTPHeaderField: "content-type")
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await KazumiNetworkPolicy.requestSession.session.data(for: request)
         if let http = response as? HTTPURLResponse, http.statusCode == 404 { return [] }
         try Self.validate(response)
         return Self.fileEntries(in: data)
@@ -378,7 +378,7 @@ struct WebDAVClient {
             var request = try authorizedRequest(url: target, method: "PROPFIND")
             request.setValue("0", forHTTPHeaderField: "depth")
             request.setValue("application/xml", forHTTPHeaderField: "content-type")
-            let (data, response) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await KazumiNetworkPolicy.requestSession.session.data(for: request)
             if let http = response as? HTTPURLResponse, http.statusCode == 404 { return nil }
             try Self.validate(response)
             return Self.fileEntries(in: data).first?.modified
@@ -442,7 +442,7 @@ struct WebDAVClient {
         var request = try authorizedRequest(url: url, method: "PROPFIND")
         request.setValue("0", forHTTPHeaderField: "depth")
         request.setValue("application/xml", forHTTPHeaderField: "content-type")
-        let (_, response) = try await URLSession.shared.data(for: request)
+        let (_, response) = try await KazumiNetworkPolicy.requestSession.session.data(for: request)
         try Self.validate(response)
     }
 
@@ -466,7 +466,7 @@ struct WebDAVClient {
     private func ensureDirectory(_ url: URL) async throws {
         var request = try authorizedRequest(url: url, method: "MKCOL")
         request.setValue("0", forHTTPHeaderField: "content-length")
-        let (_, response) = try await URLSession.shared.data(for: request)
+        let (_, response) = try await KazumiNetworkPolicy.requestSession.session.data(for: request)
         guard let http = response as? HTTPURLResponse else { return }
         switch http.statusCode {
         case 200..<300, 301, 405, 409:

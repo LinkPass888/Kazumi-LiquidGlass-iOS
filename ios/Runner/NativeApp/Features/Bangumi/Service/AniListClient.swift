@@ -74,14 +74,18 @@ final class AniListClient {
     private var queuedIDs: Set<Int> = []
     private var loading: Task<Void, Never>?
     private var diskLoaded = false
-    private let session: URLSession
+    private let sessionProvider: ProxyAwareURLSession
+    /// 代理变了就重建，见 `ProxyAwareURLSession`。
+    private var session: URLSession { sessionProvider.session }
     private let cacheURL: URL
 
     private init() {
         let configuration = URLSessionConfiguration.default
-        KazumiNetworkPolicy.applyProxy(to: configuration)
         configuration.timeoutIntervalForRequest = 15
-        session = URLSession(configuration: configuration)
+        sessionProvider = ProxyAwareURLSession {
+            KazumiNetworkPolicy.applyProxy(to: configuration)
+            return configuration
+        }
 
         let support = (try? FileManager.default.url(
             for: .applicationSupportDirectory,

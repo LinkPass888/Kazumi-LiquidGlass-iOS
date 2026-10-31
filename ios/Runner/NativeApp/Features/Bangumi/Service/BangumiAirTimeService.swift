@@ -59,7 +59,9 @@ final class BangumiAirTimeService {
     private static let cacheMaxAge: TimeInterval = 365 * 24 * 60 * 60
 
     private let directory: URL
-    private let session: URLSession
+    private let sessionProvider: ProxyAwareURLSession
+    /// 代理变了就重建，见 `ProxyAwareURLSession`。
+    private var session: URLSession { sessionProvider.session }
 
     private init() {
         // 和 main 一样落在 Application Support：Caches 会被系统在存储紧张时整目录
@@ -81,9 +83,11 @@ final class BangumiAirTimeService {
         }
 
         let configuration = URLSessionConfiguration.default
-        KazumiNetworkPolicy.applyProxy(to: configuration)
         configuration.timeoutIntervalForRequest = 15
-        session = URLSession(configuration: configuration)
+        sessionProvider = ProxyAwareURLSession {
+            KazumiNetworkPolicy.applyProxy(to: configuration)
+            return configuration
+        }
     }
 
     // MARK: - 查询

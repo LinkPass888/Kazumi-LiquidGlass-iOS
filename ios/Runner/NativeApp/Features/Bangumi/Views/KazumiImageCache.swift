@@ -64,7 +64,9 @@ final class KazumiImageLoader: @unchecked Sendable {
     }
     private var inFlight: [String: InFlight] = [:]
     private let directory: URL
-    private let session: URLSession
+    private let sessionProvider: ProxyAwareURLSession
+    /// 代理变了就重建，见 `ProxyAwareURLSession`。
+    private var session: URLSession { sessionProvider.session }
     /// 同时在跑的下载上限。一屏几十张图全放出去，连接会被自己挤爆、
     /// 单张动不动失败，表现就是「总有封面加载不出来」（LP 3446）。
     private let gate = DownloadGate(limit: 6)
@@ -111,12 +113,14 @@ final class KazumiImageLoader: @unchecked Sendable {
         let configuration = URLSessionConfiguration.default
         // 不再要 URLSession 自己那份缓存：它存的是同一批图片字节，
         // 磁盘上会跟下面按 URL 落盘的文件重复一遍（LP 3442 说的 200 多 M）。
-        KazumiNetworkPolicy.applyProxy(to: configuration)
         configuration.urlCache = nil
         configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
         configuration.timeoutIntervalForRequest = 20
         configuration.httpMaximumConnectionsPerHost = 6
-        session = URLSession(configuration: configuration)
+        sessionProvider = ProxyAwareURLSession {
+            KazumiNetworkPolicy.applyProxy(to: configuration)
+            return configuration
+        }
 
         // 启动时清一轮过期文件；放后台，不阻塞首屏。
         let target = directory

@@ -198,7 +198,7 @@ struct AboutScreen: View {
             var request = URLRequest(url: KazumiAppInfo.latestReleaseAPIURL)
             request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
             request.timeoutInterval = 15
-            let (data, response) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await KazumiNetworkPolicy.requestSession.session.data(for: request)
             if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
                 updateState = .failed("网络异常")
                 return

@@ -259,7 +259,7 @@ enum EmoticonStore {
         guard let text = CommentToken.emoticonURL(for: code), let url = URL(string: text) else {
             return []
         }
-        guard let (data, _) = try? await URLSession.shared.data(from: url) else { return [] }
+        guard let (data, _) = try? await KazumiNetworkPolicy.requestSession.session.data(from: url) else { return [] }
         let images = decode(data)
         if !images.isEmpty { cache[code] = images }
         return images

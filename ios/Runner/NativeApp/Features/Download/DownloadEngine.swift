@@ -405,15 +405,18 @@ final class DownloadEngine: @unchecked Sendable {
         _ = userAgent
     }
 
-    private lazy var session: URLSession = {
+    private lazy var sessionProvider = ProxyAwareURLSession {
         let config = URLSessionConfiguration.default
-        KazumiNetworkPolicy.applyProxy(to: config)
         config.timeoutIntervalForRequest = 30
         config.timeoutIntervalForResource = 60 * 60
         // 并发由我们自己的信号量控制，别让系统的每主机上限再压一层。
         config.httpMaximumConnectionsPerHost = 10
-        return URLSession(configuration: config)
-    }()
+        KazumiNetworkPolicy.applyProxy(to: config)
+        return config
+    }
+
+    /// 代理变了就重建，见 `ProxyAwareURLSession`。
+    private var session: URLSession { sessionProvider.session }
 }
 
 /// 给 `URLSession.download` 报进度用。它只在 session 的 delegate 队列上被调用。

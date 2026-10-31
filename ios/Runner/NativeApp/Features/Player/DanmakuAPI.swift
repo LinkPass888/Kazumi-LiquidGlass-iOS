@@ -93,13 +93,16 @@ enum DanmakuError: LocalizedError {
 enum DanmakuAPI {
     private static let domain = "https://api.dandanplay.net"
 
-    private static let session: URLSession = {
+    private static let sessionProvider = ProxyAwareURLSession {
         let configuration = URLSessionConfiguration.default
-        KazumiNetworkPolicy.applyProxy(to: configuration)
         configuration.timeoutIntervalForRequest = 15
         configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
-        return URLSession(configuration: configuration)
-    }()
+        KazumiNetworkPolicy.applyProxy(to: configuration)
+        return configuration
+    }
+
+    /// 代理变了就重建，见 `ProxyAwareURLSession`。
+    private static var session: URLSession { sessionProvider.session }
 
     // MARK: - 对外
 

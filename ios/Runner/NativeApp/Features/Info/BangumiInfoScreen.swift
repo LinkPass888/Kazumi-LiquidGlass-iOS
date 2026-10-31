@@ -949,7 +949,7 @@ extension BangumiInfoScreen {
         }
         Task { @MainActor in
             do {
-                let (data, _) = try await URLSession.shared.data(from: url)
+                let (data, _) = try await KazumiNetworkPolicy.requestSession.session.data(from: url)
                 // 交给 PlayerScreenshot 那条 nonisolated 的路（LP 4688 / Fuck 4696）：
                 // 这里原来是 Task { @MainActor } 里套 continuation，闭包照样被染成主线程隔离，
                 // PhotoKit 在自己队列上回调就撞断言直接崩。两个页面同一条路，不再各写一份。

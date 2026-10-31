@@ -94,14 +94,17 @@ enum BangumiAPI {
     private static let connectTimeout: TimeInterval = 12
     private static let receiveTimeout: TimeInterval = 12
 
-    private static let session: URLSession = {
+    private static let sessionProvider = ProxyAwareURLSession {
         let config = URLSessionConfiguration.ephemeral
-        KazumiNetworkPolicy.applyProxy(to: config)
         config.timeoutIntervalForRequest = receiveTimeout
         config.timeoutIntervalForResource = connectTimeout + receiveTimeout
         config.requestCachePolicy = .reloadIgnoringLocalCacheData
-        return URLSession(configuration: config)
-    }()
+        KazumiNetworkPolicy.applyProxy(to: config)
+        return config
+    }
+
+    /// 代理变了就重建，见 `ProxyAwareURLSession`。
+    private static var session: URLSession { sessionProvider.session }
 
     // MARK: - 每日放送
 
