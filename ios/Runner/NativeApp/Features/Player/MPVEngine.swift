@@ -192,7 +192,10 @@ final class MPVEngine {
 
         // 把 mpv 自己的日志接过来：着色器编译失败、色彩空间、帧格式这些
         // 只有它会说，不订阅就是纯瞎子。
-        mpv_request_log_messages(mpv, "warn")
+        // ffmpeg 这一路放开到 debug：它会把真实发出去的请求行和每一个头逐条打出来，
+        // 400 那种「本地能取、内核不行」只能靠这个看（Fuck 5523）。别的一律 warn，
+        // 免得日志被刷满。看一眼就把这行改回 "warn"。
+        mpv_request_log_messages(mpv, "warn,ffmpeg=debug")
 
         setupRenderContext(mpv)
         setupEvents(mpv)
