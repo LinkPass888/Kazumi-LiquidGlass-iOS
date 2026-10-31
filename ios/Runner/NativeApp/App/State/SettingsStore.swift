@@ -901,6 +901,11 @@ final class SettingsStore {
         RulesRepoClient.enableMirror.withLock { $0 = gitMirrorEnabled }
         KazumiNetworkPolicy.imageAcceleration =
             ImageAcceleration(rawValue: imageAcceleration) ?? .direct
+        // 代理也得补：漏了这一行，冷启动后开关是开着的、各 URLSession 却是
+        // 不带代理那份（`ProxyAwareURLSession` 的代号还是 0），得等用户进设置页
+        // 动一下才生效。模拟器上就是这样：开关开着指向一个没在听的端口，
+        // 主页照样正常加载。
+        syncNetworkProxyPolicy()
         // init 中给存储属性赋初值不会触发 didSet，这里补一次启动时的令牌注入；
         // 之后设置页改令牌、恢复备份都会走 `bangumiAccessToken.didSet`。
         BangumiAPI.accessToken = bangumiAccessToken
