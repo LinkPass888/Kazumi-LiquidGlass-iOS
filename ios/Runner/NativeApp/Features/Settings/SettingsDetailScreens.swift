@@ -545,12 +545,13 @@ struct DownloadSettingsScreen: View {
                             Spacer(minLength: 8)
                             Text(downloadDirectory.displayName)
                                 .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
+                                .multilineTextAlignment(.trailing)
+                                // 路径折两行、右对齐；不用中间省略号——路径截了中间等于没写（Camo 5304）。
+                                .lineLimit(2)
                         }
                     }
                     if downloadDirectory.hasCustomSelection {
-                        Button("改回应用内") {
+                        Button("恢复默认") {
                             downloadDirectory.reset()
                             message = nil
                         }
@@ -561,12 +562,14 @@ struct DownloadSettingsScreen: View {
                 if let message {
                     Text(message)
                 } else if downloadDirectory.customUnavailable {
-                    // 以前这里是静默回退：右边写着选的文件夹名，实际却写去应用内。
-                    Text("这个文件夹现在打不开，下载仍存在应用内。把 App 完全关掉重开一次，或重新选一次文件夹。")
+                    // 以前这里是静默回退：右边写着选的文件夹名，实际却写去默认位置。
+                    Text("这个文件夹现在打不开，下载仍存在文件 App 内。把 App 完全关掉重开一次，或重新选一次文件夹。")
                 } else {
-                    // main 两处都强调「只对之后下载的生效」（download_settings.dart:148）：
-                    // 换目录的人最容易以为旧文件会跟着搬过去，这句不能省。
-                    Text("选一个文件夹，之后的下载存到那里；没选过就放在应用内。换位置只对之后下载的剧集生效，之前的不会跟着搬。")
+                    // 第一句留给侧载装的用户：那种安装方式下选择器可能整个不响应，
+                    // 别让他以为是自己点错了（LP 5301）。
+                    // 第二句照 main（download_settings.dart:148）：换目录的人最容易以为
+                    // 旧文件会跟着搬过去，这句不能省。
+                    Text("侧载安装可能无法正常更改，这是已知问题。换位置只对之后下载的剧集生效，之前的不会跟着搬。")
                 }
             }
 

@@ -2,7 +2,7 @@
 //  DownloadDirectoryStore.swift
 //  Kazumi
 //
-//  下载目录：默认在应用内（Documents/Download），
+//  下载目录：默认在 Documents/下载（「文件」App 里看得见），
 //  用户可以选「文件」App 里的一个文件夹（或 iCloud 盘里的）当下载目录。
 //
 //  外部目录这次选择给的只是一个临时授权，App 一退出就没了，所以选完立刻
@@ -32,7 +32,7 @@ final class DownloadDirectoryStore {
 
     private let defaults: UserDefaults
     /// 选过的目录路径。书签这次没解析成功时也留着，页面不会在启动那一瞬
-    /// 闪回「应用内」；真正能不能写由 `hasAccess` 说了算。
+    /// 闪回默认位置；真正能不能写由 `hasAccess` 说了算。
     private(set) var savedPath: String
     /// 这次启动有没有真的拿到访问权。
     private(set) var hasAccess = false
@@ -55,25 +55,90 @@ final class DownloadDirectoryStore {
 
     // MARK: - 当前位置
 
-    /// 现在真正会写进去的目录：外部目录拿到访问权就是它，否则回应用内。
+    /// 现在真正会写进去的目录：外部目录拿到访问权就是它，否则回 Documents/下载。
     var directoryURL: URL {
         if let scopedURL { return scopedURL }
         return Self.defaultDirectory
     }
 
-    /// 页面右侧那行字：选过就显示文件夹名，没选过或换不回访问权就是「应用内」。
+    /// 页面右侧那行字：这个目录在「文件」App 里长什么样，就照那个写。
+    ///
+    /// 默认是「我的 iPhone › Kazumi › 下载」，用户照着去「文件」里找就行；
+    /// 换过目录就写他选的那个文件夹在「文件」里的位置（LP 5303）。
     var displayName: String {
-        guard !savedPath.isEmpty else { return "应用内" }
-        let name = (savedPath as NSString).lastPathComponent
-        if name.isEmpty { return savedPath }
-        // 「文件」App 里那个以 App 命名的文件夹，在磁盘上叫 File Provider Storage。
-        // 直接把系统内部名摆到设置行里，用户不知道那是什么（LP 5226 那一轮会问）。
-        if name == "File Provider Storage" {
-            return Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
-                ?? "应用内"
-        }
-        return name
+        guard !savedPath.isEmpty else { return Self.fileAppPath(for: Self.defaultDirectory) }
+        return Self.fileAppPath(for: URL(fileURLWithPath: savedPath))
     }
+
+    /// 把沙箱里的真实路径翻译成「文件」App 里看得见的那几层。
+    ///
+    /// 系统只给真实路径，不会给「文件」里的显示路径，所以只能按位置认：
+    ///
+    /// - 我们自己容器里的：`NSHomeDirectory()` 之后那几级，前面补
+    ///   「我的 iPhone › <应用名>」——「文件」把我们的 Documents 挂在以 App
+    ///   命名的那个文件夹下面（磁盘上那一层叫 File Provider Storage，不能直摆）。
+    /// - 本机存储里别的文件夹（选择器给的是 App 组容器下的路径）：
+    ///   从 `File Provider Storage` 之后那几级照写，前面补「我的 iPhone ›」。
+    /// - iCloud 盘：路径里那段 `com~apple~CloudDocs` 对应「iCloud 云盘」。
+    /// - 认不出来的（别的 App 的容器）：只写最后两级目录名，前面补一个「…」。
+    ///
+    /// 底线：UUID 一律不上屏。别的 App 容器那段是
+    /// `/var/mobile/Containers/Data/Application/<UUID>/…`，没有任何公开 API 能把
+    /// UUID 换回 App 名，露出来只会让人看不懂（Fuck 5305 / Camo 5306）。
+    static func fileAppPath(for url: URL) -> String {
+        let path = url.path(percentEncoded: false)
+        let components = path.split(separator: "/").map(String.init)
+
+        // 我们自己容器里的。
+        // Documents 这一层在「文件」App 里不显示——它的内容直接挂在以 App 命名的
+        // 那个文件夹下面，所以要把 Documents 抹掉，否则会多出一层。
+        let home = NSHomeDirectory()
+        if path.hasPrefix(home) {
+            var rest = path.dropFirst(home.count).split(separator: "/").map(String.init)
+            if rest.first == "Documents" { rest.removeFirst() }
+            return rest.isEmpty ? appFolderName : ([localRootName, appFolderName] + rest).joined(separator: " › ")
+        }
+
+        // iCloud 盘。
+        let iCloudMarker = "com~apple~CloudDocs"
+        if let markerIndex = components.firstIndex(of: iCloudMarker) {
+            let rest = components[(markerIndex + 1)...]
+            let tail = rest.count > 2 ? ["…"] + rest.suffix(2) : Array(rest)
+            return (["iCloud 云盘"] + tail).joined(separator: " › ")
+        }
+
+        // 本机存储（「我的 iPhone」）。系统把这一层放在 App 组容器下面的
+        // `File Provider Storage` 里，磁盘上还夹着 `Shared`、`AppGroup`、UUID
+        // 这几级，全是系统内部名，一个都不上屏（Camo 5314）。
+        // 用户选的是哪一级，就看这个标记后面还剩几级。
+        let fileProviderMarker = "File Provider Storage"
+        if let markerIndex = components.firstIndex(of: fileProviderMarker) {
+            let rest = Array(components[(markerIndex + 1)...])
+            return rest.isEmpty ? localRootName : ([localRootName] + rest).joined(separator: " › ")
+        }
+
+        // 认不出来：最后两级目录名，UUID 那类目录名不上屏。
+        let visible = components.filter { !looksLikeUUID($0) }
+        if visible.count <= 2 { return visible.joined(separator: " › ") }
+        return "… › " + visible.suffix(2).joined(separator: " › ")
+    }
+
+    /// 目录名长得像 UUID 吗（8-4-4-4-12 的十六进制）。
+    private static func looksLikeUUID(_ component: String) -> Bool {
+        component.count == 36
+            && component.filter { $0 == "-" }.count == 4
+            && component.allSatisfy { $0.isHexDigit || $0 == "-" }
+    }
+
+    /// 「文件」App 里我们的文稿目录挂在一个以 App 命名的文件夹下面。
+    static var appFolderName: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
+            ?? Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String
+            ?? "Kazumi"
+    }
+
+    /// 「文件」App 里本机存储那一层的叫法。iPad 上显示的是设备名，我们按 iPhone 口径写。
+    private static let localRootName = "我的 iPhone"
 
     /// 选过一个外部目录（不管这次解析成功没有）。
     var hasCustomSelection: Bool { !savedPath.isEmpty }
@@ -85,7 +150,7 @@ final class DownloadDirectoryStore {
     /// 现在把这个状态摆到页面上，不再默默写去别的地方。
     var customUnavailable: Bool { !savedPath.isEmpty && !hasAccess }
 
-    /// 应用内目录。下载列表、播放器落盘都从这里取默认值。
+    /// 默认目录。下载列表、播放器落盘都从这里取默认值。
     ///
     /// 固定在 Documents/下载：「文件」App 只能看见 Documents，
     /// 下完的东西要在「我的 iPhone」里拿得到（LP 5262）。
@@ -143,12 +208,12 @@ final class DownloadDirectoryStore {
             relativeTo: nil,
             bookmarkDataIsStale: &stale
         ) else {
-            log("下载目录：书签换不回地址，退回应用内")
+            log("下载目录：书签换不回地址，退回默认位置")
             reset()
             return
         }
         guard url.startAccessingSecurityScopedResource() else {
-            log("下载目录：书签解析到了但拿不到访问权，退回应用内")
+            log("下载目录：书签解析到了但拿不到访问权，退回默认位置")
             reset()
             return
         }
