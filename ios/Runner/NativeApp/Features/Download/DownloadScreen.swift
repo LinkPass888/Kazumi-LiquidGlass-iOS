@@ -298,8 +298,12 @@ struct DownloadScreen: View {
         case .downloading, .resolving, .paused, .pending:
             Image(systemName: "arrow.down.circle.dotted")
                 .foregroundStyle(.primary)
-        case .completed:
+        case .completed where episode.fileName != nil:
             Image(systemName: "arrow.down.circle.fill")
+                .foregroundStyle(.primary)
+        // 记录说下完、文件却不在：跟其他没下完的一个符号，别让行里留一个放不了的实心勾。
+        case .completed:
+            Image(systemName: "arrow.down.circle.dotted")
                 .foregroundStyle(.primary)
         case .failed:
             Image(systemName: "exclamationmark.circle")
@@ -320,6 +324,8 @@ struct DownloadScreen: View {
         case .paused:
             return "已暂停"
         case .completed:
+            // 文件不在时大小是假的，写清楚能重下，别只写一个数。
+            guard episode.fileName != nil else { return "文件不在，可重新下载" }
             return ByteCountFormatter.string(fromByteCount: episode.totalBytes, countStyle: .file)
         case .failed:
             // 失败原因直接说，不再只画个红点。
@@ -368,6 +374,21 @@ struct DownloadScreen: View {
                     .foregroundStyle(KazumiPalette.accent(for: colorScheme))
             }
             .buttonStyle(.plain)
+        case .completed where episode.fileName == nil:
+            // 文件不在了：给一条重下的路，不然这集只能看着、既放不了也重下不了。
+            Button("重下") {
+                downloads.enqueue(
+                    bangumiID: record.bangumiID,
+                    title: record.title,
+                    coverURL: record.coverURL,
+                    pluginName: record.pluginName,
+                    road: record.road,
+                    episodes: [(number: episode.number, title: episode.title, pageURL: episode.pageURL)]
+                )
+            }
+            .font(.footnote.weight(.medium))
+            .buttonStyle(.plain)
+            .foregroundStyle(KazumiPalette.accent(for: colorScheme))
         case .completed:
             EmptyView()
         }
