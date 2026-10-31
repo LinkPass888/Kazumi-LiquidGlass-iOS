@@ -220,7 +220,7 @@ final class MPVEngine {
         // ffmpeg 这一路放开到 debug：它会把真实发出去的请求行和每一个头逐条打出来，
         // 400 那种「本地能取、内核不行」只能靠这个看（Fuck 5523）。别的一律 warn，
         // 免得日志被刷满。看一眼就把这行改回 "warn"。
-        mpv_request_log_messages(mpv, "warn,ffmpeg=debug,hwdec=debug")
+        mpv_request_log_messages(mpv, "warn,ffmpeg=debug,hwdec=v,gpu=v,vo=v")
 
         setupRenderContext(mpv)
         setupEvents(mpv)
@@ -1065,9 +1065,17 @@ final class MPVEventPump: @unchecked Sendable {
         if snap.hasVideo { lastError = nil }
         // 第一帧出来的时候把源的真实格式记下来：位深、矩阵、范围这三样
         // 直接决定颜色对不对，pixelformat 里带 10 就是 10bit 片源。
+        // 只在**真取到值**之后才打印一次（Fuck 5592 指出来的）。
+        // 原来只判 `hasVideo`，而它只代表 `video-params` 这个节点存在——节点刚出现
+        // 那一拍里 pixelformat / 颜色三件套 / hwdec-current 还都是空的，于是整行
+        // 变成 `px=? 矩阵=? 原色=? 伽马=? 位深=? hwdec=?`，等于没打。
+        // 现在取空就等下一拍（250ms 一拍）再取，直到取到为止。
         if snap.hasVideo, !loggedVideoInfo {
-            loggedVideoInfo = true
-            onLog("片源 \(videoInfoLine())")
+            let line = videoInfoLine()
+            if !line.hasSuffix("px=? 矩阵=? 原色=? 伽马=? 位深=? hwdec=?") {
+                loggedVideoInfo = true
+                onLog("片源 \(line)")
+            }
         }
         snap.loadError = lastError
         snap.loadPhase = loadPhase
