@@ -54,6 +54,24 @@ struct PlayerSettingsScreen: View {
 
     var body: some View {
         Form {
+            // LP 5565/5568：解码与缓存这两项提到最上面单独一组。
+            // 组名「解码与缓存」由 Camo 定：硬件解码管怎么解、低内存模式管缓存多大，
+            // 两个字各管一项；main 那组叫「解码与渲染」，但低内存模式在 main 里也不在那组。
+            Section {
+                Group {
+                    Toggle("硬件解码", isOn: hardwareDecodeBinding)
+                    // main 的「低内存模式」三档（LP 5547）。开着就把解复用缓存从
+                    // 1500 MiB 降到 2 MiB，省内存和流量，代价是慢速源更容易缓冲。
+                    Picker("低内存模式", selection: lowMemoryModeBinding) {
+                        ForEach(LowMemoryMode.allCases) { mode in
+                            Text(mode.label).tag(mode)
+                        }
+                    }
+                }
+                .listRowBackground(KazumiPalette.groupedRow(for: colorScheme))
+            } header: {
+                Text("解码与缓存")
+            }
             // `Section("标题") { } footer: { }` 这个重载不存在，带页脚就得改成 header 写法。
             Section {
                 Group {
@@ -130,16 +148,6 @@ struct PlayerSettingsScreen: View {
                     row {
                         Picker("默认视频比例", selection: aspectRatioBinding) {
                             ForEach(PlayerAspectRatioMode.allCases) { mode in
-                                Text(mode.label).tag(mode)
-                            }
-                        }
-                    }
-                    Toggle("硬件解码", isOn: hardwareDecodeBinding)
-                    row {
-                        // main 的「低内存模式」三档（LP 5547）。开着就把解复用缓存从
-                        // 1500 MiB 降到 2 MiB，省内存和流量，代价是慢速源更容易缓冲。
-                        Picker("低内存模式", selection: lowMemoryModeBinding) {
-                            ForEach(LowMemoryMode.allCases) { mode in
                                 Text(mode.label).tag(mode)
                             }
                         }

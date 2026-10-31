@@ -327,17 +327,21 @@ final class MPVEngine {
 
     /// 前台该用的硬解档位。
     ///
-    /// 开关关掉就纯软解。开着用 `auto-safe`——与 main 的默认档一致（LP 5549/5551：
-    /// 他在 main 上一直用这一档，没出过问题）。更早一轮为花屏换过
-    /// `videotoolbox-copy`（零拷贝互操作和 10bit / 双平面帧对不上），那批报告在
-    /// 直通链路上；现在跟 main 对齐，真机再出现花屏就把这里换回 copy 那一档。
+    /// 开关关掉就纯软解；开着走 `videotoolbox-copy`（copy-back）。
+    ///
+    /// 不用 `auto-safe`：它在这台机器上落到 `videotoolbox`，日志里 `px=videotoolbox`，
+    /// 也就是零拷贝直通帧。我们的画面是自己用 GL 画的（渲染 API + FBO），
+    /// 直通帧进来后颜色对不上——表现就是刚起播偏色、切后台再回来才正常
+    /// （LP 5563：切前后台会让渲染上下文重建一次，颜色被纠回来）。同一类问题在
+    /// LP 2026-10-28 也报过（花屏、发绿发紫、只剩红绿两色），当时的解法就是 copy-back。
+    /// copy-back 多一次拷贝，1080p 这点开销换颜色一定是对的。
     ///
     /// 模拟器没有硬解，开与关都是 `no`。
     static func hwdec(enabled: Bool) -> String {
         #if targetEnvironment(simulator)
         return "no"
         #else
-        return enabled ? "auto-safe" : "no"
+        return enabled ? "videotoolbox-copy" : "no"
         #endif
     }
 
