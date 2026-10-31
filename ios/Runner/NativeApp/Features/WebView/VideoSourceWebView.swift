@@ -135,9 +135,9 @@ final class VideoSourceWebView: NSObject {
             return
         }
         // 登录态要在导航之前就位：Cookie 先落进这个会话，UA 跟登录时一致。
-        if let sessionUserAgent {
-            webView.customUserAgent = sessionUserAgent
-        }
+        // 没有登录态的规则要显式回到原来那个随机 UA：不然换一条不用登录的规则，
+        // 会继承上一条登录规则的 UA。
+        webView.customUserAgent = sessionUserAgent ?? userAgent
         if !sessionCookies.isEmpty {
             let cookieStore = webView.configuration.websiteDataStore.httpCookieStore
             for cookie in sessionCookies {
