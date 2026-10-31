@@ -266,6 +266,14 @@ final class MPVEngine {
         if let cookie, !cookie.isEmpty { headers.append("Cookie: \(cookie)") }
         // init 之后只能用属性接口改，`mpv_set_option_string` 这时候会被拒。
         setOptionForPlayback("http-header-fields", headers.joined(separator: "\n"))
+        // 内核起播前把这次带过去的头记一行（Fuck 5487）：登录态有没有送到，
+        // 看一眼运行日志就知道，不用在界面上猜是站点限了还是 Cookie 没带上。
+        // 只记名字和个数，值不落盘。
+        let cookieCount = (cookie ?? "").split(separator: ";").filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }.count
+        KazumiLogBuffer.shared.append(
+            "内核起播 host=\(url.host() ?? "-") cookie=\(cookieCount)个 referer=\(referer == nil ? "无" : "有") ua=\(userAgent == nil ? "无" : "有")",
+            category: .player
+        )
         // 换集 / 重试都按「接着看」处理：内核里 pause 可能还是上一集留下的 true，
         // 不显式放开，加载完了就停在那儿黑着（LP 2026-10-28 第 4 条「不会自动播放」）。
         reportedFirstFrame = false

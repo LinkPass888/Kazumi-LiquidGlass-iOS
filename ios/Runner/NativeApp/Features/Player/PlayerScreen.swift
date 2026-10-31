@@ -2815,11 +2815,14 @@ struct PlayerScreen: View {
     }
 
     private func errorOverlay(_ message: String, controller: PlayerController) -> some View {
-        // 内容按 1/4 那条线放（Colo 2026-10-28），压暗底照旧铺满整块画面。
+        // 错误要整块居中（LP 5485：符号、文字、按钮原来都偏上）：
+        // 1/4 那条线是给转圈的加载提示留的，出错时用它会显得没居中。
         ZStack {
             Color.black.opacity(0.55)
-            hudAtQuarter(interactive: true) { errorContent(message, controller: controller) }
+            errorContent(message, controller: controller)
+                .padding(.horizontal, 24)
         }
+        .allowsHitTesting(true)
     }
 
     private func errorContent(_ message: String, controller: PlayerController) -> some View {
@@ -4009,20 +4012,20 @@ struct PlayerScreen: View {
                     EmptyView()
                 }
             }
-            .overlay(alignment: .bottom) {
-                // 真的在下才给进度条，排队中只有钟（Colo 5090 特意分开的两条）。
+            .overlay {
+                // 真的在下才给进度，排队中只有钟（Colo 5090 特意分开的两条）。
+                // 进度贴着格子自己的圆角绕一圈（LP 5481）：原来那条直条压在圆角底边上，
+                // 两头戳出弧线以外，跟胶囊的 R 对不上。
                 if case .downloading(let progress) = lite {
-                    GeometryReader { proxy in
-                        ZStack(alignment: .leading) {
-                            Color.clear
-                            Rectangle()
-                                .fill(Color.accentColor)
-                                .frame(width: proxy.size.width * max(0.02, min(1, progress)))
-                        }
-                    }
-                    .frame(height: 2)
-                    .padding(.horizontal, 1)
-                    .padding(.bottom, 1)
+                    let fraction = max(0.02, min(1, progress))
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .trim(from: 0, to: fraction)
+                        .stroke(
+                            Color.accentColor,
+                            style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round)
+                        )
+                        .padding(1)
+                        .animation(.easeOut(duration: 0.25), value: fraction)
                 }
             }
             .overlay(

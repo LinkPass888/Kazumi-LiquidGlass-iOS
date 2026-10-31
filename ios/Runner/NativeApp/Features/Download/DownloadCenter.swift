@@ -264,6 +264,13 @@ final class DownloadCenter {
         updateMany(recordKey: recordKey, numbers: Set(numbers)) { episodes, number in
             episodes.removeAll { $0.number == number }
         }
+        // 集全删光了就整条记录一起走（LP 5482）：不然下载管理里留一个空番剧名，
+        // 点进去什么都没有，删也删不掉。
+        if let updated = records.first(where: { $0.id == recordKey }), updated.episodes.isEmpty {
+            // `removeRecord` 自己会停任务、删文件夹、落盘。
+            removeRecord(updated)
+            return
+        }
         persist()
     }
 

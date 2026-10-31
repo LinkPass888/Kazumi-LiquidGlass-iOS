@@ -167,6 +167,11 @@ struct DownloadScreen: View {
 
         return HStack(spacing: 10) {
             Button {
+                // LP 5482：编辑时点番剧名就该把这部番的集全选上，别只能一集一集点。
+                if isSelecting {
+                    toggleSelection(for: record)
+                    return
+                }
                 withAnimation(.easeOut(duration: 0.18)) {
                     if collapsed.contains(record.id) { collapsed.remove(record.id) }
                     else { collapsed.insert(record.id) }
@@ -184,10 +189,19 @@ struct DownloadScreen: View {
                             .foregroundStyle(.secondary)
                     }
                     Spacer(minLength: 0)
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.tertiary)
-                        .rotationEffect(.degrees(collapsed.contains(record.id) ? -90 : 0))
+                    if isSelecting {
+                        // 编辑态：勾 / 半勾 / 空，一眼看出这部是整部选中还是只选了几集。
+                        Image(systemName: recordSelectionSymbol(record))
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(
+                                recordSelectionIsEmpty(record) ? Color.secondary : Color.accentColor
+                            )
+                    } else {
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(.tertiary)
+                            .rotationEffect(.degrees(collapsed.contains(record.id) ? -90 : 0))
+                    }
                 }
                 .contentShape(.rect)
             }
@@ -433,6 +447,38 @@ struct DownloadScreen: View {
             }
         }
         return keys
+    }
+
+    /// 这部番的全部集键。
+    private func selectionKeys(for record: DownloadRecord) -> Set<String> {
+        Set(record.episodes.map { selectionKey(record: record, number: $0.number) })
+    }
+
+    private func recordSelectionIsEmpty(_ record: DownloadRecord) -> Bool {
+        selectionKeys(for: record).isDisjoint(with: selection)
+    }
+
+    private func recordSelectionIsFull(_ record: DownloadRecord) -> Bool {
+        let keys = selectionKeys(for: record)
+        return !keys.isEmpty && keys.isSubset(of: selection)
+    }
+
+    private func recordSelectionSymbol(_ record: DownloadRecord) -> String {
+        if recordSelectionIsFull(record) { return "checkmark.circle.fill" }
+        if recordSelectionIsEmpty(record) { return "circle" }
+        return "minus.circle.fill"
+    }
+
+    /// 点番剧名：整部没选满就全选，已经选满就整部取消。
+    private func toggleSelection(for record: DownloadRecord) {
+        let keys = selectionKeys(for: record)
+        withAnimation(.easeOut(duration: 0.15)) {
+            if keys.isSubset(of: selection) {
+                selection.subtract(keys)
+            } else {
+                selection.formUnion(keys)
+            }
+        }
     }
 
     private func selectAll() {

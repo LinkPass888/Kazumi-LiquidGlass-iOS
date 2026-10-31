@@ -420,7 +420,7 @@ final class PlayerController {
         return header.isEmpty ? nil : header
     }
 
-    /// 解析最多等 15 秒（LP 5473：25 秒太久）。地址一直不来，多半是站点那边没放行：网络、规则本身，
+    /// 解析最多等 10 秒（LP 5473 先要 15 秒，LP 5479 再收到 10 秒）。地址一直不来，多半是站点那边没放行：网络、规则本身，
     /// 或者这条规则存的登录过期了——把三处都写进提示里，别让人对着转圈猜（LP 5465）。
     private func startParseWatchdog() {
         parseWatchdog?.cancel()
