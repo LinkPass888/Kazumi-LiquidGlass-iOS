@@ -191,13 +191,11 @@ struct WebDAVScreen: View {
                     Text("WebDAV")
                         .foregroundStyle(Color.primary)
                     Spacer(minLength: 8)
-                    // 展开时不显示摘要，下面框里就是内容（LP 5396）。
-                    if !isCredentialsExpanded {
-                        Text(serverSummary)
-                            .foregroundStyle(Color.secondary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                    }
+                    // 展开时也显示摘要（LP「展开时也显示」）。
+                    Text(serverSummary)
+                        .foregroundStyle(Color.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
                     Image(systemName: "chevron.down")
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(Color.secondary)

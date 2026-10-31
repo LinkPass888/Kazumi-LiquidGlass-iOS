@@ -1201,15 +1201,13 @@ struct NetworkSettingsScreen: View {
                     Text("代理配置")
                         .foregroundStyle(Color.primary)
                     Spacer(minLength: 8)
-                    // 展开时不显示摘要：下面框里就是内容，这行只留箭头（LP 5396）。
-                    if !isProxyConfigExpanded {
-                        Text(proxyConfigSummary)
-                            .foregroundStyle(Color.secondary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                            // 大字号或窄屏时让摘要先拿到要的宽度，别第一个被截。
-                            .layoutPriority(1)
-                    }
+                    // 展开时也显示摘要（LP「展开时也显示」）。
+                    Text(proxyConfigSummary)
+                        .foregroundStyle(Color.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        // 大字号或窄屏时让摘要先拿到要的宽度，别第一个被截。
+                        .layoutPriority(1)
                     Image(systemName: "chevron.down")
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(Color.secondary)
