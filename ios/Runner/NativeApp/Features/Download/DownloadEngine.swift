@@ -407,6 +407,7 @@ final class DownloadEngine: @unchecked Sendable {
 
     private lazy var session: URLSession = {
         let config = URLSessionConfiguration.default
+        KazumiNetworkPolicy.applyProxy(to: config)
         config.timeoutIntervalForRequest = 30
         config.timeoutIntervalForResource = 60 * 60
         // 并发由我们自己的信号量控制，别让系统的每主机上限再压一层。

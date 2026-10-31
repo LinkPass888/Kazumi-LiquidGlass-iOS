@@ -242,8 +242,12 @@ enum SettingsKey {
     static let webDavEnableCollect = "webDavEnableCollect"
     static let webDavEnableDanmakuShield = "webDavEnableDanmakuShield"
     static let proxyEnabled = "proxyEnabled"
-    static let proxyHost = "proxyHost"
-    static let proxyPort = "proxyPort"
+    /// 代理地址，一整串（原版 `proxyUrl`）。
+    static let proxyUrl = "proxyUrl"
+    /// 代理地址测通了没有（原版 `proxyConfigured`）。
+    static let proxyConfigured = "proxyConfigured"
+    /// 「保存并测试」用的测试地址（原版 `proxyTestUrl`）。
+    static let proxyTestUrl = "proxyTestUrl"
     /// 播放内核跟随系统代理（LP 5063 加，LP 5331 把设置里那行拿掉）。
     ///
     /// 现在没有界面用它，存储留着：旧备份里带着这个键，恢复时不丢。
@@ -615,47 +619,48 @@ final class SettingsStore {
         didSet { persist(webDavEnableDanmakuShield, SettingsKey.webDavEnableDanmakuShield) }
     }
 
-    /// 代理开关（LP 5331：改回手动填地址端口，交给播放内核）。
+    /// 代理开关（LP 5331 加，LP 5342 起照 main 的存法）。
     var proxyEnabled: Bool {
-        didSet { persist(proxyEnabled, SettingsKey.proxyEnabled) }
+        didSet {
+            persist(proxyEnabled, SettingsKey.proxyEnabled)
+            syncNetworkProxyPolicy()
+        }
     }
 
-    /// 播放内核要用的代理，形如 `http://127.0.0.1:6152`；开关关着或没填全就是 nil。
+    /// 代理地址，一整串（`127.0.0.1:6152`，也可以带 `http://` 壳），对应原版 `proxyUrl`。
+    ///
+    /// 之前拆成地址 / 端口两栏（LP 5331），LP 5342 起并成一栏：main 就是让用户贴
+    /// 一整串、`ProxyUtils.parseProxyUrl` 一次解析，我们没有更优的原生做法。
+    var proxyUrl: String {
+        didSet {
+            persist(proxyUrl, SettingsKey.proxyUrl)
+            syncNetworkProxyPolicy()
+        }
+    }
+
+    /// 代理地址测通了才算「已配置」，对应原版 `proxyConfigured`。
+    /// 开关打开前要求这个，跟 main 一样。
+    var proxyConfigured: Bool {
+        didSet { persist(proxyConfigured, SettingsKey.proxyConfigured) }
+    }
+
+    /// 「保存并测试」时拿哪个地址试，对应原版 `proxyTestUrl`。
+    var proxyTestUrl: String {
+        didSet { persist(proxyTestUrl, SettingsKey.proxyTestUrl) }
+    }
+
+    /// 播放内核要用的代理，形如 `http://127.0.0.1:6152`；开关关着或地址写错了就是 nil。
     ///
     /// iOS 上 App 拿不到代理软件（Surge 之类）在 HTTP 模式下监听的那个端口，
     /// 读系统那份（Wi-Fi 代理）对不上，所以只认用户自己填的（LP 5331）。
     var playerProxyURL: String? {
-        guard proxyEnabled, proxyPort > 0 else { return nil }
-        let host = normalizedProxyHost
-        guard !host.isEmpty else { return nil }
-        return "http://\(host):\(proxyPort)"
+        guard proxyEnabled else { return nil }
+        return ProxyURL.formatted(proxyUrl)
     }
 
-    /// 地址栏里顺手粘来的东西可能已经带壳：`http://127.0.0.1`、`127.0.0.1:6152`、
-    /// 后面还跟个路径。剥干净再拼，不然给 mpv 的就是 `http://http://...` 这种
-    /// 自相矛盾的地址——设属性失败，片子照旧放不出来（Fuck 5335）。
-    private var normalizedProxyHost: String {
-        var host = proxyHost.trimmingCharacters(in: .whitespacesAndNewlines)
-        for prefix in ["http://", "https://"] where host.lowercased().hasPrefix(prefix) {
-            host.removeFirst(prefix.count)
-        }
-        // `[::1]:6152` 这种 IPv6 写法：方括号里那截整个保住。
-        if host.hasPrefix("["), let close = host.firstIndex(of: "]") {
-            return String(host[...close])
-        }
-        // 从第一个 `/` 切：`127.0.0.1:6152/v2ray/more` 只认到主机，后面整段丢掉（Fuck 5337）。
-        if let slash = host.firstIndex(of: "/") {
-            host = String(host[..<slash])
-        }
-        // 只在「看起来就是 host:port」时才剥端口：前面得有个点或是 localhost，
-        // 不然 `::1` 这种裸 IPv6 会被削成半截。
-        if let colon = host.lastIndex(of: ":") {
-            let name = String(host[..<colon])
-            if name.contains(".") || name == "localhost" {
-                host = name
-            }
-        }
-        return host
+    /// 把代理同步进那份进程内网络策略（各 URLSession 建配置时读它）。
+    private func syncNetworkProxyPolicy() {
+        KazumiNetworkPolicy.proxyURL = proxyEnabled ? proxyUrl : ""
     }
 
     /// 播放内核跟随系统代理（LP 5063/5067 加，LP 5331 把设置里那行拿掉了）。
@@ -681,14 +686,6 @@ final class SettingsStore {
             persist(imageAcceleration, SettingsKey.imageAcceleration)
             KazumiNetworkPolicy.imageAcceleration = ImageAcceleration(rawValue: imageAcceleration) ?? .direct
         }
-    }
-
-    var proxyHost: String {
-        didSet { persist(proxyHost, SettingsKey.proxyHost) }
-    }
-
-    var proxyPort: Int {
-        didSet { persist(proxyPort, SettingsKey.proxyPort) }
     }
 
     var meteredNetworkLimit: Bool {
@@ -871,8 +868,9 @@ final class SettingsStore {
         webDavEnableDanmakuShield = Self.read(defaults, SettingsKey.webDavEnableDanmakuShield, false)
         proxyEnabled = Self.read(defaults, SettingsKey.proxyEnabled, false)
         useSystemProxy = Self.read(defaults, SettingsKey.useSystemProxy, false)
-        proxyHost = Self.read(defaults, SettingsKey.proxyHost, "")
-        proxyPort = Self.read(defaults, SettingsKey.proxyPort, 0)
+        proxyUrl = Self.read(defaults, SettingsKey.proxyUrl, "")
+        proxyConfigured = Self.read(defaults, SettingsKey.proxyConfigured, false)
+        proxyTestUrl = Self.read(defaults, SettingsKey.proxyTestUrl, "")
         enableGitProxy = Self.read(defaults, SettingsKey.enableGitProxy, false)
         imageAcceleration = Self.read(defaults, SettingsKey.imageAcceleration, ImageAcceleration.mirror.rawValue)
         meteredNetworkLimit = Self.read(defaults, SettingsKey.meteredNetworkLimit, false)

@@ -95,6 +95,7 @@ enum DanmakuAPI {
 
     private static let session: URLSession = {
         let configuration = URLSessionConfiguration.default
+        KazumiNetworkPolicy.applyProxy(to: configuration)
         configuration.timeoutIntervalForRequest = 15
         configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
         return URLSession(configuration: configuration)

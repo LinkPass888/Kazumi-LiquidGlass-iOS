@@ -26,6 +26,7 @@ enum AniSkipClient {
 
     private static let session: URLSession = {
         let configuration = URLSessionConfiguration.default
+        KazumiNetworkPolicy.applyProxy(to: configuration)
         configuration.timeoutIntervalForRequest = 15
         return URLSession(configuration: configuration)
     }()

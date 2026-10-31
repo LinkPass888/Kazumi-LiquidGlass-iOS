@@ -29,6 +29,7 @@ final class RuleHTTPClient: RuleRequestExecutor, @unchecked Sendable {
 
     init(cookies: PluginCookieStore = .shared, configuration: URLSessionConfiguration? = nil) {
         let config = configuration ?? URLSessionConfiguration.ephemeral
+        KazumiNetworkPolicy.applyProxy(to: config)
         config.timeoutIntervalForRequest = RuleHTTPClient.receiveTimeout
         config.timeoutIntervalForResource = RuleHTTPClient.connectTimeout + RuleHTTPClient.receiveTimeout
         config.httpShouldSetCookies = false

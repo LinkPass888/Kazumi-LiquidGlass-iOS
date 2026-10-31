@@ -30,7 +30,9 @@ extension SettingsStore {
         SettingsKey.buttonSkipTime: "buttonSkipTime",
         SettingsKey.playerControllerLayerDisappearTime: "playerControllerLayerDisappearTime",
         SettingsKey.proxyEnabled: "proxyEnable",
-        SettingsKey.proxyHost: "proxyUrl",
+        SettingsKey.proxyUrl: "proxyUrl",
+        SettingsKey.proxyConfigured: "proxyConfigured",
+        SettingsKey.proxyTestUrl: "proxyTestUrl",
         SettingsKey.updateNotificationEnabled: "bangumiUpdateNotifyEnable",
         SettingsKey.anime4kMode: "defaultSuperResolutionType",
         SettingsKey.danmakuShieldSyncEnabled: SettingsKey.webDavEnableDanmakuShield,
@@ -64,6 +66,7 @@ extension SettingsStore {
         "bangumiProgressQueue",
         "bangumiUsername",
         "bangumiUserId",
+        "proxyConfigured",
         "downloadDirectory",
         "downloadDirectoryBookmark",
         "onboardingCompleted",
@@ -121,7 +124,9 @@ extension SettingsStore {
             SettingsKey.updateNotificationEnabled,
             SettingsKey.bangumiAccessToken,
             SettingsKey.bangumiUsername,
-            SettingsKey.proxyPort,
+            SettingsKey.proxyUrl,
+            SettingsKey.proxyConfigured,
+            SettingsKey.proxyTestUrl,
             SettingsKey.bangumiSyncEnable,
             SettingsKey.bangumiSyncPriority,
             SettingsKey.bangumiImmediateSyncToastEnable,
@@ -184,6 +189,7 @@ extension SettingsStore {
             (SettingsKey.webDavEnableHistory, .bool(webDavEnableHistory)),
             (SettingsKey.webDavEnableCollect, .bool(webDavEnableCollect)),
             (SettingsKey.webDavEnableDanmakuShield, .bool(webDavEnableDanmakuShield)),
+            (SettingsKey.proxyEnabled, .bool(proxyEnabled)),
         ]
         if !omitCredentials {
             pairs += [
@@ -192,9 +198,8 @@ extension SettingsStore {
                 (SettingsKey.webDAVPassword, .string(webDAVPassword)),
                 (SettingsKey.bangumiAccessToken, .string(bangumiAccessToken)),
                 (SettingsKey.bangumiUsername, .string(bangumiUsername)),
-                (SettingsKey.proxyEnabled, .bool(proxyEnabled)),
-                (SettingsKey.proxyHost, .string(proxyHost)),
-                (SettingsKey.proxyPort, .int(proxyPort)),
+                (SettingsKey.proxyUrl, .string(proxyUrl)),
+                (SettingsKey.proxyTestUrl, .string(proxyTestUrl)),
             ]
         }
         return pairs
@@ -457,12 +462,16 @@ extension SettingsStore {
             proxyEnabled = flag
             restored += 1
         }
-        if let text = value(SettingsKey.proxyHost)?.stringValue {
-            proxyHost = text
+        if let text = value(SettingsKey.proxyUrl)?.stringValue {
+            proxyUrl = text
             restored += 1
         }
-        if let number = value(SettingsKey.proxyPort)?.intValue {
-            proxyPort = number
+        if let flag = value(SettingsKey.proxyConfigured)?.boolValue {
+            proxyConfigured = flag
+            restored += 1
+        }
+        if let text = value(SettingsKey.proxyTestUrl)?.stringValue {
+            proxyTestUrl = text
             restored += 1
         }
         // 未被上面任何属性接收的键整段写回（原版恢复备份就是整段覆盖设置箱）。

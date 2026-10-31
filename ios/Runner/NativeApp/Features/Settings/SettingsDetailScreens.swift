@@ -1006,11 +1006,12 @@ struct ThemeSettingsScreen: View {
 struct NetworkSettingsScreen: View {
     @Environment(SettingsStore.self) private var settings
     @Environment(\.colorScheme) private var colorScheme
+    /// 开关被拦下来时顶上那句提示；两秒后自己收起来。
+    @State private var message: String?
 
     var body: some View {
         Form {
             // 一段三行照原版 NetworkMirrorSettings：番剧条目、规则仓库、图片。
-            // 代理那两行 LP 2559 让删了（iOS 上开 VPN 就够），LP 5331 又加回来。
             Section {
                 Group {
                     Picker("番剧条目加速", selection: bangumiAccelerationBinding) {
@@ -1030,27 +1031,25 @@ struct NetworkSettingsScreen: View {
                 .listRowBackground(KazumiPalette.groupedRow(for: colorScheme))
             } header: {
                 Text("访问加速")
-            } footer: {
-                Text("代理只交给播放内核：界面这一路（URLSession）iOS 会自己看系统代理。")
-                    .foregroundStyle(.secondary)
             }
 
-            // LP 5331：代理改回手动填。
-            // iOS 上 App 读不到代理软件（Surge 之类）在 HTTP 模式下监听的那个端口，
-            // 读系统那份（Wi-Fi 里的 HTTP 代理）对不上，只能让用户自己填。
+            // 代理这一段照 main 的 proxy_settings_page.dart：只有开关 + 「代理配置」一栏。
+            // 地址不再在这里拆成两行填，点进去贴一整串（LP 5342）。
             Section {
                 Group {
-                    Toggle("使用代理", isOn: proxyEnabledBinding)
+                    Toggle("启用代理", isOn: proxyEnabledBinding)
 
-                    TextField("代理地址", text: proxyHostBinding)
-                        .keyboardType(.URL)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .disabled(!settings.proxyEnabled)
-
-                    TextField("代理端口", text: proxyPortBinding)
-                        .keyboardType(.numberPad)
-                        .disabled(!settings.proxyEnabled)
+                    NavigationLink {
+                        ProxyEditorScreen()
+                    } label: {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("代理配置")
+                                .foregroundStyle(.primary)
+                            Text("配置代理服务器地址和认证信息")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                 }
                 .listRowBackground(KazumiPalette.groupedRow(for: colorScheme))
             } header: {
@@ -1062,6 +1061,16 @@ struct NetworkSettingsScreen: View {
             }
         }
         .kazumiSettingsDetail("网络设置")
+        .overlay(alignment: .top) {
+            if let message {
+                Text(message)
+                    .font(.footnote)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(.thinMaterial, in: Capsule())
+                    .padding(.top, 8)
+            }
+        }
     }
 
     private var bangumiAccelerationBinding: Binding<Bool> {
@@ -1082,28 +1091,164 @@ struct NetworkSettingsScreen: View {
         )
     }
 
+    /// 开关：还没测通过的代理不让打开（照 main 的 `_setProxyEnabled`）。
     private var proxyEnabledBinding: Binding<Bool> {
-        Binding(get: { settings.proxyEnabled }, set: { settings.proxyEnabled = $0 })
-    }
-
-    private var proxyHostBinding: Binding<String> {
-        Binding(get: { settings.proxyHost }, set: { settings.proxyHost = $0 })
-    }
-
-    /// 端口在存储里是 Int，输入框只认字符串；只收数字，空着就当 0（没填）。
-    private var proxyPortBinding: Binding<String> {
         Binding(
-            get: { settings.proxyPort > 0 ? String(settings.proxyPort) : "" },
-            set: { settings.proxyPort = Int($0) ?? 0 }
+            get: { settings.proxyEnabled },
+            set: { enabled in
+                if enabled, !settings.proxyConfigured {
+                    flash("请先在代理配置中完成测试")
+                    return
+                }
+                settings.proxyEnabled = enabled
+            }
         )
+    }
+
+    /// 顶上那句提示，两秒后自己收起来。
+    private func flash(_ text: String) {
+        withAnimation { message = text }
+        Task {
+            try? await Task.sleep(for: .seconds(2))
+            withAnimation { message = nil }
+        }
     }
 
     /// 开关旁边那一句：现在到底走不走。
     private var proxyState: String {
-        guard let url = settings.playerProxyURL else {
-            return "关闭或地址端口没填全时，播放内核直连，不走代理"
+        guard settings.proxyEnabled else {
+            return "关闭时播放内核和 App 内请求都直连"
         }
-        return "播放走 \(url)"
+        guard settings.proxyConfigured else {
+            return "还没测试通过，先点「代理配置」填地址并测试"
+        }
+        guard let url = settings.playerProxyURL else {
+            return "地址格式不对，先回「代理配置」改一下"
+        }
+        return "播放内核和 App 内请求都走 \(url)"
+    }
+}
+
+// MARK: - 代理配置
+
+/// 代理地址编辑页，照 main 的 `proxy_editor_page.dart`：一行地址 + 一行测试地址，
+/// 「保存并测试」一个按钮。
+///
+/// 输入框用本地状态，点按钮才落盘——中途退出不该改设置（main 也是点按钮才存）。
+struct ProxyEditorScreen: View {
+    @Environment(SettingsStore.self) private var settings
+    @Environment(\.colorScheme) private var colorScheme
+    @State private var address = ""
+    @State private var testAddress = ""
+    @State private var addressError: String?
+    @State private var isTesting = false
+    @State private var message: String?
+
+    var body: some View {
+        Form {
+            Section {
+                Group {
+                    VStack(alignment: .leading, spacing: 4) {
+                        TextField("代理地址", text: $address)
+                            .keyboardType(.URL)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                        if let addressError {
+                            Text(addressError)
+                                .font(.footnote)
+                                .foregroundStyle(.red)
+                        }
+                    }
+                    TextField("测试地址", text: $testAddress)
+                        .keyboardType(.URL)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                }
+                .listRowBackground(KazumiPalette.groupedRow(for: colorScheme))
+            } footer: {
+                Text("地址写 127.0.0.1:6152 这种，带不带 http:// 都行。")
+            }
+
+            Section {
+                Group {
+                    Button {
+                        saveAndTest()
+                    } label: {
+                        HStack {
+                            Text("保存并测试")
+                                .frame(maxWidth: .infinity)
+                            if isTesting {
+                                ProgressView()
+                            }
+                        }
+                    }
+                    .disabled(isTesting)
+                }
+                .listRowBackground(KazumiPalette.groupedRow(for: colorScheme))
+            }
+        }
+        .kazumiSettingsDetail("代理配置")
+        .overlay(alignment: .top) {
+            if let message {
+                Text(message)
+                    .font(.footnote)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(.thinMaterial, in: Capsule())
+                    .padding(.top, 8)
+            }
+        }
+        .onAppear {
+            if address.isEmpty { address = settings.proxyUrl }
+            if testAddress.isEmpty { testAddress = settings.proxyTestUrl }
+        }
+    }
+
+    /// 照 main 的 `saveAndTest`：校验 → 存地址与测试地址 → 清「已配置」→
+    /// 开开关 → 真发一次请求；通了才把「已配置」置回去，不通就把开关关回去。
+    private func saveAndTest() {
+        let url = address.trimmingCharacters(in: .whitespacesAndNewlines)
+        if url.isEmpty {
+            addressError = "请输入代理地址"
+            return
+        }
+        guard ProxyURL.parse(url) != nil else {
+            addressError = "格式错误，请使用 http://host:port 格式"
+            return
+        }
+        addressError = nil
+
+        let target = testAddress.trimmingCharacters(in: .whitespacesAndNewlines)
+        let testURL = target.isEmpty ? "https://www.google.com" : target
+
+        settings.proxyUrl = url
+        settings.proxyTestUrl = testURL
+        settings.proxyConfigured = false
+        settings.proxyEnabled = true
+
+        isTesting = true
+        Task { @MainActor in
+            let ok = await ProxyURL.test(proxy: url, target: testURL)
+            isTesting = false
+            if ok {
+                settings.proxyConfigured = true
+                flash("测试成功")
+                KazumiLogBuffer.network("代理测试通过 \(ProxyURL.formatted(url) ?? url)")
+            } else {
+                settings.proxyConfigured = false
+                settings.proxyEnabled = false
+                flash("代理连接失败")
+                KazumiLogBuffer.network("代理测试失败 \(ProxyURL.formatted(url) ?? url) -> \(testURL)")
+            }
+        }
+    }
+
+    private func flash(_ text: String) {
+        withAnimation { message = text }
+        Task {
+            try? await Task.sleep(for: .seconds(2))
+            withAnimation { message = nil }
+        }
     }
 }
 

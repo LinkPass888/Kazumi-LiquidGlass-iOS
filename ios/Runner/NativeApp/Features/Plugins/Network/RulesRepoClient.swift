@@ -28,6 +28,7 @@ final class RulesRepoClient: Sendable {
 
     init() {
         let config = URLSessionConfiguration.ephemeral
+        KazumiNetworkPolicy.applyProxy(to: config)
         config.timeoutIntervalForRequest = 12
         config.timeoutIntervalForResource = 24
         config.requestCachePolicy = .reloadIgnoringLocalCacheData

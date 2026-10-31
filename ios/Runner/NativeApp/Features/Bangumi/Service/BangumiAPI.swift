@@ -96,6 +96,7 @@ enum BangumiAPI {
 
     private static let session: URLSession = {
         let config = URLSessionConfiguration.ephemeral
+        KazumiNetworkPolicy.applyProxy(to: config)
         config.timeoutIntervalForRequest = receiveTimeout
         config.timeoutIntervalForResource = connectTimeout + receiveTimeout
         config.requestCachePolicy = .reloadIgnoringLocalCacheData

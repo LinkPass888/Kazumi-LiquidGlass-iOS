@@ -111,6 +111,7 @@ final class KazumiImageLoader: @unchecked Sendable {
         let configuration = URLSessionConfiguration.default
         // 不再要 URLSession 自己那份缓存：它存的是同一批图片字节，
         // 磁盘上会跟下面按 URL 落盘的文件重复一遍（LP 3442 说的 200 多 M）。
+        KazumiNetworkPolicy.applyProxy(to: configuration)
         configuration.urlCache = nil
         configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
         configuration.timeoutIntervalForRequest = 20

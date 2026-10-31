@@ -6,6 +6,14 @@
 //  都是静态的、建得比界面早，所以照 BangumiAcceleration 的做法放一份进程内状态：
 //  SettingsStore 写入时更新它，各 session 建配置时读它。
 //
+//  手动代理也在这里（LP 5342 起照 main 接）：main 那边是 `ProxyManager.applyProxy()`
+//  重置 Dio 工厂 + 图片缓存管理器，同一个 `proxyUrl` 同时给 mpv、Dio 和图片缓存用。
+//  iOS 上没有「全局代理」这种东西，`connectionProxyDictionary` 是每份 URLSession
+//  配置自己的，所以做成一个建配置时调一下的方法，替掉 main 那边的「重置工厂」。
+//
+//  已知限制：session 是静态的、第一次用网络时才建，建好之后改代理不会重建，
+//  得等重启。main 是靠 `applyProxy()` 主动重置绕开这一点的。
+//
 
 import Foundation
 import os
@@ -20,6 +28,8 @@ enum ImageAcceleration: String, Sendable {
 enum KazumiNetworkPolicy {
     private struct State: Sendable {
         var imageAcceleration: ImageAcceleration = .direct
+        /// 手动代理地址，一整串（`127.0.0.1:6152`）；空串表示不代理。
+        var proxyURL: String = ""
     }
 
     private static let state = OSAllocatedUnfairLock(initialState: State())
@@ -28,6 +38,29 @@ enum KazumiNetworkPolicy {
     static var imageAcceleration: ImageAcceleration {
         get { state.withLock { $0.imageAcceleration } }
         set { state.withLock { $0.imageAcceleration = newValue } }
+    }
+
+    /// 手动代理地址（`proxyUrl`）；空串表示不代理。
+    static var proxyURL: String {
+        get { state.withLock { $0.proxyURL } }
+        set { state.withLock { $0.proxyURL = newValue } }
+    }
+
+    /// 把当前手动代理套到一份 session 配置上。
+    ///
+    /// 没开代理、或者地址写错了（`ProxyURL.parse` 返回 nil）就什么都不做，
+    /// 交给系统代理——跟 main 的 `findProxy` 为空时一样。
+    ///
+    /// 键名用的是 `kCFNetworkProxies*` 那几个常量的字符串值（`HTTPEnable` /
+    /// `HTTPProxy` / `HTTPPort`）：直接写常量名在这份代码里不一定拿得到，
+    /// 而 URLSession 认的是这几个字符串，效果一样。
+    static func applyProxy(to configuration: URLSessionConfiguration) {
+        guard !proxyURL.isEmpty, let parsed = ProxyURL.parse(proxyURL) else { return }
+        configuration.connectionProxyDictionary = [
+            "HTTPEnable": 1,
+            "HTTPProxy": parsed.host,
+            "HTTPPort": parsed.port,
+        ]
     }
 }
 

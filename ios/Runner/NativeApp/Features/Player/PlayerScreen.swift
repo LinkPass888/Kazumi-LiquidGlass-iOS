@@ -612,14 +612,11 @@ struct PlayerScreen: View {
                 break
             }
         }
-        // 手填的代理改了也要重读：地址/端口任何一个变了都算。
+        // 手填的代理改了也要重读：开关或地址任何一个变了都算。
         .onChange(of: settings.proxyEnabled) { _, _ in
             refreshProxy()
         }
-        .onChange(of: settings.proxyHost) { _, _ in
-            refreshProxy()
-        }
-        .onChange(of: settings.proxyPort) { _, _ in
+        .onChange(of: settings.proxyUrl) { _, _ in
             refreshProxy()
         }
         // 设置被关掉：画中画立刻收掉（连同窗口里那块图层），内联画面恢复。

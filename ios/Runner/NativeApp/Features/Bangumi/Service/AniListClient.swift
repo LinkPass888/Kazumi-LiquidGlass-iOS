@@ -79,6 +79,7 @@ final class AniListClient {
 
     private init() {
         let configuration = URLSessionConfiguration.default
+        KazumiNetworkPolicy.applyProxy(to: configuration)
         configuration.timeoutIntervalForRequest = 15
         session = URLSession(configuration: configuration)
 
