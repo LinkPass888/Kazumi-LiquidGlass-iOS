@@ -58,7 +58,14 @@ final class DownloadDirectoryStore {
     var displayName: String {
         guard !savedPath.isEmpty else { return "应用内" }
         let name = (savedPath as NSString).lastPathComponent
-        return name.isEmpty ? savedPath : name
+        if name.isEmpty { return savedPath }
+        // 「文件」App 里那个以 App 命名的文件夹，在磁盘上叫 File Provider Storage。
+        // 直接把系统内部名摆到设置行里，用户不知道那是什么（LP 5226 那一轮会问）。
+        if name == "File Provider Storage" {
+            return Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
+                ?? "应用内"
+        }
+        return name
     }
 
     /// 选过一个外部目录（不管这次解析成功没有）。

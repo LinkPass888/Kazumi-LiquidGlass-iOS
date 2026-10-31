@@ -103,6 +103,23 @@ targets:
         UIStatusBarHidden: false
         UIViewControllerBasedStatusBarAppearance: true
         CADisableMinimumFrameDurationOnPhone: true
+        # 「原地打开」开关。缺了它，文件夹面板点「打开」会把文件夹交不回 App
+        # （面板不关、什么也不发生），而导入模式（先拷进沙箱）照样能用——
+        # 正好就是 LP 5218/5226 报的形状。
+        # 这两个键以前只写在 Runner/Info.plist 里，构建脚本每次都用 xcodegen
+        # 按本文件重写 Info.plist，于是它们被悄悄丢掉了；必须写在这里。
+        LSSupportsOpeningDocumentsInPlace: true
+        # 让 App 的文件夹在「文件」App 的「我的 iPhone」里看得见。
+        UIFileSharingEnabled: true
+        # 声明能打开文件夹。原地打开是把东西交给「能打开它的 App」，
+        # 一条类型都不声明时这条交接链没有落点。Alternate 让它只在
+        # 「打开方式」里垫底，不抢默认处理者。
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: Folder
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Alternate
+            LSItemContentTypes:
+              - public.folder
         UIBackgroundModes:
           - audio
           - picture-in-picture
