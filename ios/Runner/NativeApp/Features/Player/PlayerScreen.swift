@@ -2037,6 +2037,7 @@ struct PlayerScreen: View {
                     url: url,
                     referer: controller.referer,
                     userAgent: controller.userAgent,
+                    cookie: controller.playbackCookieHeader(for: text),
                     proxyURL: proxyURL,
                     shaderPaths: settings.superResolutionMode.shaderPaths,
                     fillMode: aspectRatioMode.fillMode,
@@ -3853,7 +3854,9 @@ struct PlayerScreen: View {
                             // （LP 2026-10-28；Colo 划的界）。
                             tint: .accentColor,
                             showsChevron: true,
-                            menuTint: .accentColor
+                            menuTint: .accentColor,
+                            // 「选一项」的钮套胶囊（Colo 5439）。
+                            capsule: true
                         )
                         .frame(height: 44)
                     }
@@ -4185,7 +4188,9 @@ struct PlayerScreen: View {
                     // 评论区那颗，跟选集数 / 排序一样回主题色（LP 2026-10-28）。
                     tint: .accentColor,
                     showsChevron: true,
-                    menuTint: .accentColor
+                    menuTint: .accentColor,
+                    // 「选一项」的钮套胶囊（Colo 5439）。
+                    capsule: true
                 )
                 .frame(height: 44)
                 Spacer(minLength: 8)
@@ -4220,15 +4225,24 @@ struct PlayerScreen: View {
                     // 同选集数那颗：剧集/评论区的菜单钮用主题色。
                     tint: .accentColor,
                     showsChevron: true,
-                    menuTint: .accentColor
+                    menuTint: .accentColor,
+                    // 「选一项」的钮套胶囊（Colo 5439）。
+                    capsule: true
                 )
                 .frame(height: 44)
                 Button {
                     Task { await reloadComments() }
                 } label: {
+                    // 跟下载入口那颗同一种钮：图标钮、主题色、灰胶囊（LP 5441）。
+                    // 同一行里一颗有底一颗没底，看着就是没做完。
                     Image(systemName: "arrow.clockwise")
                         .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(Color.accentColor)
+                        .frame(width: 44, height: 32)
+                        .background(
+                            Capsule(style: .continuous)
+                                .fill(Color(.secondarySystemBackground))
+                        )
                         .frame(width: 44, height: 44)
                         .contentShape(Rectangle())
                 }
@@ -4422,7 +4436,9 @@ struct PlayerScreen: View {
             // （LP 2026-10-28；Colo 指的位置）。
             tint: .accentColor,
             showsChevron: true,
-            menuTint: .accentColor
+            menuTint: .accentColor,
+            // 「选一项」的钮套胶囊（Colo 5439）：四颗之一。
+            capsule: true
         )
         .frame(height: 44)
     }

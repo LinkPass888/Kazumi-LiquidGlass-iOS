@@ -552,6 +552,8 @@ struct MPVPlayerContainer: UIViewRepresentable {
     let url: URL
     let referer: String?
     let userAgent: String?
+    /// 登录态的 Cookie 头（规则登录过才有）。
+    let cookie: String?
     /// 代理地址（`http://主机:端口`），nil 表示不走（LP 5331：用户在设置里手填）。
     let proxyURL: String?
     /// 超分着色器的绝对路径，空数组表示关闭（顺序就是挂载顺序）。
@@ -615,6 +617,7 @@ struct MPVPlayerContainer: UIViewRepresentable {
             url: url,
             referer: referer,
             userAgent: userAgent,
+            cookie: cookie,
             shaders: shaderPaths,
             fill: fillMode,
             proxyURL: proxyURL
@@ -635,6 +638,7 @@ struct MPVPlayerContainer: UIViewRepresentable {
             url: url,
             referer: referer,
             userAgent: userAgent,
+            cookie: cookie,
             shaders: shaderPaths,
             fill: fillMode,
             proxyURL: proxyURL
@@ -673,6 +677,7 @@ struct MPVPlayerContainer: UIViewRepresentable {
             url: URL,
             referer: String?,
             userAgent: String?,
+            cookie: String?,
             shaders: [String],
             fill: MPVFillMode,
             proxyURL: String?
@@ -709,7 +714,7 @@ struct MPVPlayerContainer: UIViewRepresentable {
             }
             guard lastURL != url else { return }
             lastURL = url
-            engine.load(url: url, referer: referer, userAgent: userAgent)
+            engine.load(url: url, referer: referer, userAgent: userAgent, cookie: cookie)
         }
     }
 }

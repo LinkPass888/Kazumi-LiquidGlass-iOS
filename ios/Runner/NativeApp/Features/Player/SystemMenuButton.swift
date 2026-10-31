@@ -72,6 +72,10 @@ struct SystemMenuButton: View {
     var symbolWeight: Font.Weight = .regular
     /// 菜单被点开时回调：控制栏要靠它知道「先别收」。
     var onOpen: () -> Void = {}
+    /// 带字的「选一项」钮套一颗胶囊（Colo 5439）：
+    /// 选集/评论顶行那四颗（线路、页码、第几集、排序）现在是没底的一行字，
+    /// 看不出是按钮。灰底、视觉高 32、命中 44，跟下载入口那颗同一套。
+    var capsule: Bool = false
 
     var body: some View {
         Menu {
@@ -177,6 +181,17 @@ struct SystemMenuButton: View {
                 }
             }
             .foregroundStyle(tint)
+            .padding(.horizontal, capsule ? 12 : 0)
+            .frame(height: capsule ? 32 : nil)
+            .background {
+                if capsule {
+                    Capsule(style: .continuous)
+                        .fill(Color(.secondarySystemBackground))
+                }
+            }
+            // 胶囊只有 32 高，手指该点得中 44（同下载入口那颗）。
+            .frame(height: capsule ? 44 : nil)
+            .contentShape(Rectangle())
         } else {
             Image(systemName: symbol)
                 .font(.system(size: symbolSize, weight: symbolWeight))

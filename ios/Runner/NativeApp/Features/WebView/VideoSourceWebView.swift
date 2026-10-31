@@ -56,6 +56,12 @@ final class VideoSourceWebView: NSObject {
 
     private let userAgent = HTTPHeaders.randomUserAgent()
 
+    /// 规则登录留下的 Cookie 与 UA（LP 5447）：
+    /// 播放页要登录才给真地址，这个 WebView 原来是一次性会话、自己的随机 UA，
+    /// 登录态永远到不了这儿，页面停在登录墙，解析就一直「正在解析播放地址」。
+    private var sessionCookies: [HTTPCookie] = []
+    private var sessionUserAgent: String?
+
     func initialize() async {
         guard webView == nil else { return }
         let configuration = WKWebViewConfiguration()
@@ -92,6 +98,23 @@ final class VideoSourceWebView: NSObject {
         emit("WebView: created")
     }
 
+    /// 把某条规则的登录态交给解析用的 WebView：Cookie 按目标地址的域和路径筛，
+    /// UA 用登录时那个（站点把 Cookie 绑 UA 时才对得上）。
+    func configureSession(pluginName: String, url: String) {
+        let store = PluginCookieStore.shared
+        sessionCookies = store.cookies(pluginName: pluginName, url: url).compactMap { cookie in
+            HTTPCookie(properties: [
+                .name: cookie.name,
+                .value: cookie.value,
+                .domain: cookie.domain,
+                .path: cookie.path
+            ])
+        }
+        let storedUA = store.userAgent(for: pluginName)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        sessionUserAgent = (storedUA?.isEmpty ?? true) ? nil : storedUA
+    }
+
     func load(url: String, useLegacyParser: Bool, offset: Int = 0) async {
         await initialize()
         guard let webView else { return }
@@ -110,6 +133,19 @@ final class VideoSourceWebView: NSObject {
         guard let target = URL(string: url) else {
             emit("Invalid URL: \(url)")
             return
+        }
+        // 登录态要在导航之前就位：Cookie 先落进这个会话，UA 跟登录时一致。
+        if let sessionUserAgent {
+            webView.customUserAgent = sessionUserAgent
+        }
+        if !sessionCookies.isEmpty {
+            let cookieStore = webView.configuration.websiteDataStore.httpCookieStore
+            for cookie in sessionCookies {
+                await withCheckedContinuation { continuation in
+                    cookieStore.setCookie(cookie) { continuation.resume() }
+                }
+            }
+            emit("applied \(sessionCookies.count) login cookies")
         }
         emit("started loading: \(url)")
         webView.load(URLRequest(url: target))

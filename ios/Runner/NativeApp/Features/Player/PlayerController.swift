@@ -212,6 +212,9 @@ final class PlayerController {
             return
         }
         phase = .parsingMedia
+        // 登录态交给解析页（LP 5450）：页面里那一步拿地址要登录，
+        // 这个 WebView 原先是一次性会话，Cookie 到不了，就一直卡在解析。
+        webView.configureSession(pluginName: plugin.name, url: target)
         await webView.load(url: target, useLegacyParser: plugin.useLegacyParser)
     }
 
@@ -376,9 +379,24 @@ final class PlayerController {
     }
 
     private func applyHeaders(plugin: Plugin) {
-        userAgent = plugin.userAgent.isEmpty ? HTTPHeaders.randomUserAgent() : plugin.userAgent
+        // 登录过就用登录那页的 UA：站点常把登录 Cookie 绑 UA，
+        // 播放和解析拿规则里另写的 UA 过去，Cookie 会被当成别人的（LP 5450）。
+        let loginUA = PluginCookieStore.shared.userAgent(for: plugin.name)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if let loginUA, !loginUA.isEmpty {
+            userAgent = loginUA
+        } else {
+            userAgent = plugin.userAgent.isEmpty ? HTTPHeaders.randomUserAgent() : plugin.userAgent
+        }
         let refererValue = plugin.referer.isEmpty ? plugin.baseUrl : plugin.referer
         referer = refererValue.isEmpty ? nil : refererValue
+    }
+
+    /// 媒体地址要带的 Cookie 头：这条规则登录过才有，按媒体地址的域和路径筛。
+    func playbackCookieHeader(for urlString: String) -> String? {
+        guard let pluginName = source?.pluginName else { return nil }
+        let header = PluginCookieStore.shared.cookieHeader(pluginName: pluginName, url: urlString)
+        return header.isEmpty ? nil : header
     }
 
     private func handleParsedMedia(_ event: VideoParserEvent) {

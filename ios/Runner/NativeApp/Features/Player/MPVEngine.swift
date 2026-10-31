@@ -257,11 +257,13 @@ final class MPVEngine {
     // MARK: - 播放
 
     /// 换集 / 首次起播。UA 与 Referer 规则站点校验，缺一不可。
-    func load(url: URL, referer: String?, userAgent: String?) {
+    func load(url: URL, referer: String?, userAgent: String?, cookie: String? = nil) {
         guard handle != nil else { return }
         var headers: [String] = []
         if let userAgent, !userAgent.isEmpty { headers.append("User-Agent: \(userAgent)") }
         if let referer, !referer.isEmpty { headers.append("Referer: \(referer)") }
+        // 有的源「链接公开、播放要登录」（LP 5450）：内核对媒体地址也得带登录态。
+        if let cookie, !cookie.isEmpty { headers.append("Cookie: \(cookie)") }
         // init 之后只能用属性接口改，`mpv_set_option_string` 这时候会被拒。
         setOptionForPlayback("http-header-fields", headers.joined(separator: "\n"))
         // 换集 / 重试都按「接着看」处理：内核里 pause 可能还是上一集留下的 true，
