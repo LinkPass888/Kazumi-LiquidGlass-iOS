@@ -403,9 +403,12 @@ final class PlayerController {
     /// 出问题时把人往「网络 / 规则 / 登录」三处引，别只说「解析失败」。
     private func failed(_ reason: String) {
         var text = reason
+        let hint = "请检查网络、规则或 Cookie。"
+        // 只说一遍：调用方自己带了这句就不再重复（LP 5476 看到两遍）。
         if let pluginName = source?.pluginName,
-           PluginCookieStore.shared.hasCookies(pluginName: pluginName) {
-            text += "\n请检查网络、规则或 Cookie。"
+           PluginCookieStore.shared.hasCookies(pluginName: pluginName),
+           !text.contains(hint) {
+            text += "\n" + hint
         }
         phase = .failed(text)
     }
@@ -425,7 +428,7 @@ final class PlayerController {
             try? await Task.sleep(for: .seconds(15))
             guard !Task.isCancelled, let self else { return }
             guard case .parsingMedia = self.phase else { return }
-            self.failed("没解析到播放地址：请检查网络、规则或 Cookie。")
+            self.failed("没解析到播放地址")
         }
     }
 

@@ -61,12 +61,16 @@ final class VideoSourceWebView: NSObject {
     /// 登录态永远到不了这儿，页面停在登录墙，解析就一直「正在解析播放地址」。
     private var sessionCookies: [HTTPCookie] = []
     private var sessionUserAgent: String?
+    /// 这条规则登录过就用 App 那个持久仓库：登录态不只在 Cookie 里，
+    /// 播放页常常把 token 放在 localStorage / IndexedDB，一次性仓库是空的，
+    /// 光塞 Cookie 页面还是当没登录（LP 5476 仍然卡在解析）。
+    private var usesPersistentStore = false
 
     func initialize() async {
         guard webView == nil else { return }
         let configuration = WKWebViewConfiguration()
         configuration.mediaTypesRequiringUserActionForPlayback = .all
-        configuration.websiteDataStore = .nonPersistent()
+        configuration.websiteDataStore = usesPersistentStore ? .default() : .nonPersistent()
         configuration.defaultWebpagePreferences.allowsContentJavaScript = true
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
 
@@ -102,6 +106,13 @@ final class VideoSourceWebView: NSObject {
     /// UA 用登录时那个（站点把 Cookie 绑 UA 时才对得上）。
     func configureSession(pluginName: String, url: String) {
         let store = PluginCookieStore.shared
+        let wantsPersistent = store.hasCookies(pluginName: pluginName)
+            || store.userAgent(for: pluginName) != nil
+        if wantsPersistent != usesPersistentStore {
+            usesPersistentStore = wantsPersistent
+            // 仓库种类变了就得重建：配置定好之后改不了。
+            if webView != nil { dispose() }
+        }
         sessionCookies = store.cookies(pluginName: pluginName, url: url).compactMap { cookie in
             HTTPCookie(properties: [
                 .name: cookie.name,
