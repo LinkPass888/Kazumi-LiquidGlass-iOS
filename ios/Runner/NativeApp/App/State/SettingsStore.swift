@@ -643,7 +643,8 @@ final class SettingsStore {
         if host.hasPrefix("["), let close = host.firstIndex(of: "]") {
             return String(host[...close])
         }
-        if let slash = host.lastIndex(of: "/") {
+        // 从第一个 `/` 切：`127.0.0.1:6152/v2ray/more` 只认到主机，后面整段丢掉（Fuck 5337）。
+        if let slash = host.firstIndex(of: "/") {
             host = String(host[..<slash])
         }
         // 只在「看起来就是 host:port」时才剥端口：前面得有个点或是 localhost，
