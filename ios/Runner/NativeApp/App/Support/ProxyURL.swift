@@ -54,16 +54,18 @@ enum ProxyURL {
         guard let parsed = parse(proxy), let url = URL(string: target) else { return false }
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = timeout
-        // 键名是 `kCFNetworkProxies*` 那几个常量的字符串值，见 `KazumiNetworkPolicy.applyProxy`。
-        configuration.connectionProxyDictionary = [
-            "HTTPEnable": 1,
-            "HTTPProxy": parsed.host,
-            "HTTPPort": parsed.port,
-        ]
+        // HTTP 和 HTTPS 两组键都要给，见 `KazumiNetworkPolicy.proxyDictionary`。
+        configuration.connectionProxyDictionary = KazumiNetworkPolicy.proxyDictionary(
+            host: parsed.host,
+            port: parsed.port
+        )
         let session = URLSession(configuration: configuration)
         defer { session.invalidateAndCancel() }
         do {
             let (_, response) = try await session.data(from: url)
+            // 407 是代理自己把人拦了（要认证），那是「代理不通」而不是
+            // 「代理通了、目标不让进」，别当成通过。
+            if let http = response as? HTTPURLResponse, http.statusCode == 407 { return false }
             return response is HTTPURLResponse
         } catch {
             return false

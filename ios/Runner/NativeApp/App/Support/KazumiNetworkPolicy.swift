@@ -67,16 +67,30 @@ enum KazumiNetworkPolicy {
     ///
     /// 没开代理、或者地址写错了（`ProxyURL.parse` 返回 nil）就什么都不做，
     /// 交给系统代理——跟 main 的 `findProxy` 为空时一样。
-    ///
-    /// 键名用的是 `kCFNetworkProxies*` 那几个常量的字符串值（`HTTPEnable` /
-    /// `HTTPProxy` / `HTTPPort`）：直接写常量名在这份代码里不一定拿得到，
-    /// 而 URLSession 认的是这几个字符串，效果一样。
     static func applyProxy(to configuration: URLSessionConfiguration) {
         guard !proxyURL.isEmpty, let parsed = ProxyURL.parse(proxyURL) else { return }
-        configuration.connectionProxyDictionary = [
+        configuration.connectionProxyDictionary = proxyDictionary(host: parsed.host, port: parsed.port)
+    }
+
+    /// `connectionProxyDictionary` 里要给的那几项。
+    ///
+    /// **HTTP 和 HTTPS 两组键都要给。** CFNetwork 对 `https://` 的请求看的是
+    /// `HTTPSProxy` 那组，只写 `HTTPProxy` 的话 https 照样直连——而这里几乎
+    /// 所有请求都是 https，漏了就等于没代理。这是模拟器上试出来的：拿一个
+    /// 根本没在听的 `127.0.0.1:1` 去「保存并测试」，居然报成功，因为请求
+    /// 直连 google 拿到了响应。main 的 `findProxy` 不分协议，两组都给才是等价翻译。
+    ///
+    /// 键名用的是 `kCFNetworkProxies*` 那几个常量的字符串值（`HTTPEnable` /
+    /// `HTTPProxy` / `HTTPPort` / `HTTPSEnable` / `HTTPSProxy` / `HTTPSPort`）：
+    /// 直接写常量名在这份代码里不一定拿得到，而 URLSession 认的就是这几个字符串。
+    static func proxyDictionary(host: String, port: Int) -> [AnyHashable: Any] {
+        [
             "HTTPEnable": 1,
-            "HTTPProxy": parsed.host,
-            "HTTPPort": parsed.port,
+            "HTTPProxy": host,
+            "HTTPPort": port,
+            "HTTPSEnable": 1,
+            "HTTPSProxy": host,
+            "HTTPSPort": port,
         ]
     }
 }
