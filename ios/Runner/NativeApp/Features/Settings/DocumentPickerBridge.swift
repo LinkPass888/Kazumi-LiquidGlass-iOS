@@ -23,9 +23,11 @@ final class DocumentPickerBridge: NSObject, UIDocumentPickerDelegate {
 
     /// 面板期间必须有人持有 bridge，否则 delegate 当场被释放，回调不会来。
     private static var active: DocumentPickerBridge?
+    private let picker: UIDocumentPickerViewController
     private let completion: Completion
 
-    private init(completion: @escaping Completion) {
+    private init(picker: UIDocumentPickerViewController, completion: @escaping Completion) {
+        self.picker = picker
         self.completion = completion
     }
 
@@ -72,11 +74,23 @@ final class DocumentPickerBridge: NSObject, UIDocumentPickerDelegate {
         // （LP 5242：装的是最新版，但「我的 iPhone」里没有 Kazumi 文件夹）。
         logCapabilities()
         KazumiLogBuffer.storage("文件面板：已打开（\(mode)模式）")
+        // 已经有一个面板开着就不要再开第二个。
+        //
+        // bridge 是**静态单份**的：第二次调用会直接顶掉第一次那个的强引用，
+        // 而 UIDocumentPickerViewController 的 delegate 是 weak，于是第一个面板还
+        // 停在屏幕上，它的 delegate 已经是 nil——点「打开」永远等不到回调，
+        // 面板不关、什么也不发生（LP 5218/5226/5236/5242/5246 的形状）。
+        // UIKit 对一个正在 present 的控制器再 present 第二次是静默丢弃，
+        // 屏幕上留下的偏偏是第一个。所以这里必须拦住。
+        guard active == nil else {
+            KazumiLogBuffer.storage("文件面板：已经有一个开着，这次调用忽略")
+            return
+        }
         guard let host = host ?? topViewController() else {
             completion(.failure(PickerError.noHost))
             return
         }
-        let bridge = DocumentPickerBridge(completion: completion)
+        let bridge = DocumentPickerBridge(picker: picker, completion: completion)
         active = bridge
         picker.delegate = bridge
         picker.allowsMultipleSelection = false
