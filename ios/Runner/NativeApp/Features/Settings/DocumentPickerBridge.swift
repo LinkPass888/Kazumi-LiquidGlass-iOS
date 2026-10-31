@@ -22,7 +22,12 @@ final class DocumentPickerBridge: NSObject, UIDocumentPickerDelegate {
     typealias Completion = (Result<[URL], Error>) -> Void
 
     /// 面板期间必须有人持有 bridge，否则 delegate 当场被释放，回调不会来。
-    private static var active: DocumentPickerBridge?
+    ///
+    /// 按 picker 归档而不是全局单份：单份时第二次调用会顶掉第一个的强引用，
+    /// 而 UIDocumentPickerViewController 的 delegate 是 weak——屏幕上那个面板的
+    /// delegate 当场变 nil，点「打开」永远等不到回调：面板不关、什么也不发生
+    /// （LP 5218/5226/5236/5242/5246 的形状）。
+    private static var bridges: [ObjectIdentifier: DocumentPickerBridge] = [:]
     private let picker: UIDocumentPickerViewController
     private let completion: Completion
 
@@ -74,24 +79,12 @@ final class DocumentPickerBridge: NSObject, UIDocumentPickerDelegate {
         // （LP 5242：装的是最新版，但「我的 iPhone」里没有 Kazumi 文件夹）。
         logCapabilities()
         KazumiLogBuffer.storage("文件面板：已打开（\(mode)模式）")
-        // 已经有一个面板开着就不要再开第二个。
-        //
-        // bridge 是**静态单份**的：第二次调用会直接顶掉第一次那个的强引用，
-        // 而 UIDocumentPickerViewController 的 delegate 是 weak，于是第一个面板还
-        // 停在屏幕上，它的 delegate 已经是 nil——点「打开」永远等不到回调，
-        // 面板不关、什么也不发生（LP 5218/5226/5236/5242/5246 的形状）。
-        // UIKit 对一个正在 present 的控制器再 present 第二次是静默丢弃，
-        // 屏幕上留下的偏偏是第一个。所以这里必须拦住。
-        guard active == nil else {
-            KazumiLogBuffer.storage("文件面板：已经有一个开着，这次调用忽略")
-            return
-        }
         guard let host = host ?? topViewController() else {
             completion(.failure(PickerError.noHost))
             return
         }
         let bridge = DocumentPickerBridge(picker: picker, completion: completion)
-        active = bridge
+        Self.bridges[ObjectIdentifier(picker)] = bridge
         picker.delegate = bridge
         picker.allowsMultipleSelection = false
         picker.shouldShowFileExtensions = true
@@ -139,7 +132,7 @@ final class DocumentPickerBridge: NSObject, UIDocumentPickerDelegate {
 
     private func finish(_ result: Result<[URL], Error>) {
         // 面板正在退场：这一拍只放行 bridge，等它退干净再由上层动作。
-        Self.active = nil
+        Self.bridges[ObjectIdentifier(picker)] = nil
         completion(result)
     }
 
